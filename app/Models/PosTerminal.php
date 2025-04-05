@@ -1,6 +1,7 @@
 <?php
 
-use Laravel\Sanctum\HasApiTokens;
+namespace App\Models;
+
 use Illuminate\Database\Eloquent\Model;
 
 class PosTerminal extends Model
@@ -19,4 +20,3 @@ class PosTerminal extends Model
         return $this->belongsTo(Tenant::class);
     }
 }
-

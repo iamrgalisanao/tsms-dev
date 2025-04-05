@@ -40,6 +40,15 @@ return [
             'driver' => 'session',
             'provider' => 'users',
         ],
+        'api' => [
+            'driver' => 'sanctum',
+            'provider' => 'users',
+        ],
+    
+        'pos_api' => [
+            'driver' => 'sanctum',
+            'provider' => 'pos_terminals',
+        ],
     ],
 
     /*
@@ -63,6 +72,10 @@ return [
         'users' => [
             'driver' => 'eloquent',
             'model' => env('AUTH_MODEL', App\Models\User::class),
+        ],
+        'pos_terminals' => [
+            'driver' => 'eloquent',
+            'model' => App\Models\PosTerminal::class,
         ],
 
         // 'users' => [
