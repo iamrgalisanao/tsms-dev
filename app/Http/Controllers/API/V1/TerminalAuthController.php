@@ -11,8 +11,14 @@ class TerminalAuthController extends Controller
 {
     public function register(Request $request)
     {
+
+    
+       try{
+        $request->merge([
+            'tenant_code' => trim(strtoupper($request->tenant_code)),
+        ]);
         $request->validate([
-            'tenant_code' => 'required|exists:tenants,code',
+            'tenant_code' =>  'required|string|max:255',
             'terminal_uid' => 'required|string|max:255',
         ]);
 
@@ -36,6 +42,13 @@ class TerminalAuthController extends Controller
             'token' => $token,
             'terminal_id' => $terminal->id
         ]);
+       } catch(\Throwable $e){
+        return response()->json([
+            'status' => 'error',
+            'message' => $e->getMessage(),
+        ], 500);
+       }
+        
     }
 }
 
