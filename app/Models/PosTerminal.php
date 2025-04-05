@@ -1,13 +1,15 @@
 <?php
 
+
 namespace App\Models;
 
-use Illuminate\Database\Eloquent\Model;
-use Laravel\Sanctum\HasApiTokens;
+use Illuminate\Foundation\Auth\User as Authenticatable; // ⬅️ Use this instead of just Model
+use Illuminate\Notifications\Notifiable;
+use Tymon\JWTAuth\Contracts\JWTSubject;
 
-class PosTerminal extends Model
+class PosTerminal extends Authenticatable implements JWTSubject
 {
-    use HasApiTokens;
+    use Notifiable;
 
     protected $fillable = [
         'tenant_id',
@@ -16,8 +18,15 @@ class PosTerminal extends Model
         'status',
     ];
 
-    public function tenant()
+    // JWT-required methods:
+    public function getJWTIdentifier()
     {
-        return $this->belongsTo(Tenant::class);
+        return $this->getKey();
+    }
+
+    public function getJWTCustomClaims()
+    {
+        return [];
     }
 }
+

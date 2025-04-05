@@ -6,6 +6,8 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use App\Models\Tenant;
 use App\Models\PosTerminal;
+use Tymon\JWTAuth\Facades\JWTAuth;
+
 
 class TerminalAuthController extends Controller
 {
@@ -35,7 +37,9 @@ class TerminalAuthController extends Controller
             ]
         );
 
-        $token = $terminal->createToken('POS Terminal')->plainTextToken;
+        // $token = $terminal->createToken('POS Terminal')->plainTextToken;
+        $token = JWTAuth::fromUser($terminal);
+
 
         return response()->json([
             'status' => 'success',

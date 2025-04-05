@@ -41,12 +41,12 @@ return [
             'provider' => 'users',
         ],
         'api' => [
-            'driver' => 'sanctum',
+            'driver' => 'jwt',
             'provider' => 'users',
         ],
     
         'pos_api' => [
-            'driver' => 'sanctum',
+            'driver' => 'jwt',
             'provider' => 'pos_terminals',
         ],
     ],
