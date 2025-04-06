@@ -1,6 +1,6 @@
 <?php
 
-
+use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\API\V1\TerminalAuthController;
 use App\Http\Controllers\API\V1\TransactionController;
 
