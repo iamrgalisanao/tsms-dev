@@ -16,6 +16,8 @@ class PosTerminal extends Authenticatable implements JWTSubject
         'terminal_uid',
         'registered_at',
         'status',
+        'machine_number',
+        'jwt_token', 
     ];
 
     // JWT-required methods:
