@@ -47,8 +47,9 @@ class RetryTransactionJob implements ShouldQueue
          * @throws \RuntimeException If the 'RETRY_TRANSACTION_ENDPOINT' configuration is missing.
          */
         $endpoint = config('app.retry_transaction_endpoint');
-        if (!$endpoint) {
-            throw new \RuntimeException('Missing RETRY_TRANSACTION_ENDPOINT config.');
+        $token = config('app.retry_transaction_token');
+        if (!$endpoint || !$token) {
+            throw new \RuntimeException('Missing retry transaction endpoint or token in configuration.');
         }
 
         try {
