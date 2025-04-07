@@ -1,0 +1,22 @@
+[90m= [39m[34;4mApp\Models\IntegrationLog[39;24m {#5786
+    [34mid[39m: [35m1[39m,
+    [34mtenant_id[39m: [35m1[39m,
+    [34mterminal_id[39m: [35m1[39m,
+    [34mtransaction_id[39m: [36mnull[39m,
+    [34mrequest_payload[39m: "[32m{"tenant_id": "C-T1007", "gross_sales": 1000.5, "hardware_id": "HW-8888", "transaction_id": "TXN-001", "payload_checksum": "1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef", "transaction_timestamp": "2025-04-05T16:00:00"}[39m",
+    [34mresponse_payload[39m: "[32m{"errors": {"transaction_id": ["The transaction id field must be a valid UUID."]}}[39m",
+    [34mresponse_metadata[39m: [36mnull[39m,
+    [34mstatus[39m: "[32mFAILED[39m",
+    [34mvalidation_status[39m: [36mnull[39m,
+    [34merror_message[39m: "[32mValidation failed[39m",
+    [34mhttp_status_code[39m: [35m422[39m,
+    [34mresponse_time[39m: [36mnull[39m,
+    [34mretry_count[39m: [35m0[39m,
+    [34mretry_attempts[39m: [35m0[39m,
+    [34mnext_retry_at[39m: "[32m2025-04-06 03:09:32[39m",
+    [34mretry_reason[39m: [36mnull[39m,
+    [34msource_ip[39m: [36mnull[39m,
+    [34mcreated_at[39m: "[32m2025-04-05 16:28:22[39m",
+    [34mupdated_at[39m: "[32m2025-04-06 03:10:32[39m",
+  }
+

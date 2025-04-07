@@ -123,4 +123,6 @@ return [
         'store' => env('APP_MAINTENANCE_STORE', 'database'),
     ],
 
+    'retry_transaction_endpoint' => env('RETRY_TRANSACTION_ENDPOINT', 'http://localhost/fallback-endpoint'),
+
 ];
