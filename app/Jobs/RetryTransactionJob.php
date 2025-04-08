@@ -22,6 +22,20 @@ class RetryTransactionJob implements ShouldQueue
     }
 
     /**
+     * Get the backoff times for retrying the job.
+     *
+     * This method defines the intervals (in seconds) at which the job
+     * should be retried in case of failure. The backoff times are
+     * specified as an array of integers.
+     *
+     * @return array The array of backoff times in seconds.
+     */
+    public function backoff(): array
+    {
+        return [ 10, 30, 60, 120, 300];
+    }
+
+    /**
      * Handles the retry logic for a failed transaction log.
      *
      * This method checks if the transaction log status is 'FAILED' before proceeding.
@@ -103,5 +117,7 @@ class RetryTransactionJob implements ShouldQueue
             $this->log->save();
         }
     }
+
+
 }
 
