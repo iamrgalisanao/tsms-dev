@@ -36,6 +36,7 @@ class RetryTransactionJob implements ShouldQueue
      */
     public function handle(): void
     {
+        // sleep(10);
         if ($this->log->status !== 'FAILED') {
             return;
         }
