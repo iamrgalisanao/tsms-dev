@@ -5,7 +5,7 @@ use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
 use App\Console\Commands\RetryFailedTransactions;
-
+use Illuminate\Console\Command;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
@@ -15,7 +15,7 @@ return Application::configure(basePath: dirname(__DIR__))
     )
     ->withCommands([
         __DIR__.'/../routes/console.php',
-        App\Console\Commands\RetryFailedTransactions::class,
+        RetryFailedTransactions::class,
     ])
     ->withMiddleware(function (Middleware $middleware) {
         $middleware->alias([
