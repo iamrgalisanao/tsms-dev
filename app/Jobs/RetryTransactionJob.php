@@ -66,6 +66,16 @@ class RetryTransactionJob implements ShouldQueue
             ->latest()
             ->first();
 
+        /**
+         * Checks the status of the log and triggers a webhook if the status is either 'SUCCESS' or 'PERMANENTLY_FAILED'.
+         *
+         * @return void
+         */
+        if (in_array($this->log->status, ['SUCCESS', 'PERMANENTLY_FAILED'])) {
+            $this->triggerWebhook();
+        }
+            
+
         if (!$token || !$token->token) {
             $this->log->response_metadata = ['error' => 'No valid terminal token found'];
             $this->log->error_message = 'Missing JWT token';
@@ -102,6 +112,11 @@ class RetryTransactionJob implements ShouldQueue
                 'latency_ms' => $this->log->response_time,
             ];
 
+
+            if ($this->log->status === 'SUCCESS') {
+                $this->triggerWebhook(); // ✅ Webhook call here
+            }
+
             $this->log->save();
         } catch (\Throwable $e) {
             $this->log->status = 'FAILED';
@@ -117,6 +132,35 @@ class RetryTransactionJob implements ShouldQueue
             $this->log->save();
         }
     }
+
+    /**
+     * Triggers a webhook for the associated terminal if a webhook URL is configured.
+     *
+     * This method sends a POST request to the terminal's webhook URL with details
+     * about the transaction log, including transaction ID, status, HTTP status code,
+     * validation status, retry attempts, retry reason, and the finalized timestamp.
+     *
+     * @return void
+     */
+    protected function triggerWebhook()
+    {
+        $terminal = $this->log->terminal;
+
+        if (!$terminal || !$terminal->webhook_url) {
+            return; // No webhook configured
+        }
+
+        Http::post($terminal->webhook_url, [
+            'transaction_id'     => $this->log->request_payload['transaction_id'] ?? null,
+            'status'             => $this->log->status,
+            'http_status_code'   => $this->log->http_status_code,
+            'validation_status'  => $this->log->validation_status,
+            'retry_attempts'     => $this->log->retry_attempts,
+            'retry_reason'       => $this->log->retry_reason,
+            'finalized_at'       => now()->toDateTimeString(),
+        ]);
+    }
+
 
 
 }
