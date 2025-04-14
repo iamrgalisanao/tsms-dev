@@ -14,11 +14,11 @@ class WebhookLog extends Model
         'http_code',
         'response_body',
         'error_message',
-        'sent_at',
         'retry_count',
+        'max_retries',
+        'sent_at',
         'last_attempt_at',
         'next_retry_at',
-        'max_retries'
     ];
 
     protected $casts = [
