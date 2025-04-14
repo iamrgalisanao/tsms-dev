@@ -113,8 +113,13 @@ class RetryTransactionJob implements ShouldQueue
             ];
 
 
+            /**
+             * Checks the status of the log and triggers a webhook if the status is 'SUCCESS'.
+             *
+             * @return void
+             */
             if ($this->log->status === 'SUCCESS') {
-                $this->triggerWebhook(); // ✅ Webhook call here
+                $this->triggerWebhook(); 
             }
 
             $this->log->save();
