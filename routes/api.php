@@ -4,6 +4,7 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\API\V1\TerminalAuthController;
 use App\Http\Controllers\API\V1\TransactionController;
 use App\Http\Controllers\API\V1\TransactionStatusController;
+use App\Http\Controllers\Admin\WebhookLogController;
 
 Route::post('/v1/register-terminal', [TerminalAuthController::class, 'register']);
 
@@ -19,3 +20,8 @@ Route::middleware('auth:pos_api')->prefix('v1')->group(function () {
     Route::get('/transaction-status/{transaction_id}/poll', [TransactionStatusController::class, 'poll']);
     Route::get('/transaction-status/poll', [TransactionStatusController::class, 'poll']);
 });
+
+Route::middleware('auth:pos_api')->prefix('v1')->group(function () {
+    Route::get('/webhook-logs', [WebhookLogController::class, 'index']);
+});
+

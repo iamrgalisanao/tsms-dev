@@ -32,7 +32,7 @@ class TransactionController extends Controller
         // Validate the payload
         $validator = Validator::make($request->all(), [
             'transaction_id' => 'required|uuid|unique:transactions',
-            'tenant_id' => 'required|exists:tenants,code',
+            'tenant_id' => 'required|exists:tenants,id',
             'hardware_id' => 'required|string',
             'transaction_timestamp' => 'required|date',
             'gross_sales' => 'required|numeric',
