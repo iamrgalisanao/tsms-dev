@@ -50,7 +50,17 @@ class RetryTransactionJob implements ShouldQueue
      */
     public function handle(): void
     {
-        // sleep(10);
+
+        if ($this->log->retry_count >= $this->log->max_retries) {
+            $this->log->status = 'PERMANENTLY_FAILED';
+            $this->log->retry_reason = 'MAX_RETRIES_EXCEEDED';
+            $this->log->next_retry_at = null;
+            $this->log->save();
+        
+            $this->triggerWebhook(); // notify webhook of terminal failure
+            return;
+        }
+        // Check if the log status is 'FAILED' before proceeding
         if ($this->log->status !== 'FAILED') {
             return;
         }
