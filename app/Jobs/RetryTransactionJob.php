@@ -10,13 +10,14 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Queue\{InteractsWithQueue, SerializesModels};
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 
 class RetryTransactionJob implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
-    protected $log;
-    protected $terminal;
+    protected IntegrationLog $log;
+    protected ?PosTerminal $terminal;
 
     public function __construct(IntegrationLog $log)
     {
@@ -25,99 +26,98 @@ class RetryTransactionJob implements ShouldQueue
     }
 
     /**
-     * Terminal-aware retry interval.
+     * Configure backoff interval per terminal settings.
      */
     public function backoff(): array
     {
-        if ($this->terminal && $this->terminal->retry_enabled) {
-            $interval = $this->terminal->retry_interval_sec ?? 60;
-            return [$interval];
-        }
-
-        return [60]; // default fallback
+        return [$this->terminal->retry_interval_sec ?? 60];
     }
 
     public function handle(): void
     {
         if (!$this->terminal || !$this->terminal->retry_enabled) {
+            Log::warning("[Retry] Terminal missing or retry disabled", ['terminal_id' => $this->log->terminal_id]);
             return;
         }
 
-        if ($this->log->status !== 'FAILED') {
+        if (!in_array($this->log->status, ['FAILED'])) {
+            Log::info("[Retry] Skipped log with status: {$this->log->status}", ['log_id' => $this->log->id]);
             return;
         }
 
-        // Abort if retries exceed max allowed
-        if ($this->terminal->max_retries > 0 &&
-            $this->log->retry_count >= $this->terminal->max_retries) {
-            $this->log->status = 'PERMANENTLY_FAILED';
-            $this->log->retry_reason = 'MAX_RETRIES_EXCEEDED';
-            $this->log->save();
+        if ($this->terminal->max_retries > 0 && $this->log->retry_count >= $this->terminal->max_retries) {
+            $this->log->update([
+                'status' => 'PERMANENTLY_FAILED',
+                'retry_reason' => 'MAX_RETRIES_EXCEEDED',
+            ]);
+            Log::info("[Retry] Max retries exceeded", ['log_id' => $this->log->id]);
             return;
         }
 
         $endpoint = config('app.retry_transaction_endpoint');
         if (!$endpoint) {
+            Log::error("[Retry] Missing RETRY_TRANSACTION_ENDPOINT config");
             throw new \RuntimeException('Missing RETRY_TRANSACTION_ENDPOINT config.');
         }
 
-        $token = TerminalToken::where('terminal_id', $this->log->terminal_id)
-            ->latest()
-            ->first();
-
-        if (in_array($this->log->status, ['SUCCESS', 'PERMANENTLY_FAILED'])) {
-            return;
-        }
-
+        $token = TerminalToken::where('terminal_id', $this->log->terminal_id)->latest()->first();
         if (!$token || !$token->token) {
-            $this->log->response_metadata = ['error' => 'No valid terminal token found'];
-            $this->log->error_message = 'Missing JWT token';
-            $this->log->status = 'FAILED';
-            $this->log->retry_reason = 'TOKEN_MISSING';
-            $this->log->save();
+            $this->log->update([
+                'status' => 'FAILED',
+                'retry_reason' => 'TOKEN_MISSING',
+                'error_message' => 'No valid terminal token found',
+                'response_metadata' => ['error' => 'Missing JWT token'],
+            ]);
+            Log::warning("[Retry] No valid terminal token found", ['log_id' => $this->log->id]);
             return;
         }
 
         try {
-            $startTime = microtime(true);
+            $start = microtime(true);
 
             $response = Http::withToken($token->token)
                 ->acceptJson()
                 ->post($endpoint, $this->log->request_payload);
 
-            $endTime = microtime(true);
-            $responseTime = round(($endTime - $startTime) * 1000, 2);
-            $headers = $response->headers();
-            $body = $response->body();
-            $jsonPayload = json_decode($body, true);
+            $end = microtime(true);
+            $latency = round(($end - $start) * 1000, 2); // ms
+            $json = json_decode($response->body(), true);
 
-            $this->log->status = $response->successful() ? 'SUCCESS' : 'FAILED';
-            $this->log->response_payload = $jsonPayload ?? $body;
-            $this->log->http_status_code = $response->status();
-            $this->log->retry_count += 1;
-            $this->log->next_retry_at = now()->addSeconds($this->terminal->retry_interval_sec ?? 300);
-            $this->log->response_time = $responseTime;
-            $this->log->validation_status = isset($jsonPayload['errors']) ? 'FAILED' : 'PASSED';
-            $this->log->retry_reason = 'RETRY_ATTEMPT';
-            $this->log->source_ip = gethostbyname(gethostname());
-            $this->log->response_metadata = [
-                'headers' => $headers,
-                'latency_ms' => $responseTime,
-            ];
+            $this->log->update([
+                'status' => $response->successful() ? 'SUCCESS' : 'FAILED',
+                'http_status_code' => $response->status(),
+                'retry_count' => $this->log->retry_count + 1,
+                'next_retry_at' => now()->addSeconds($this->terminal->retry_interval_sec ?? 300),
+                'validation_status' => isset($json['errors']) ? 'FAILED' : 'PASSED',
+                'response_payload' => $json ?? $response->body(),
+                'retry_reason' => 'RETRY_ATTEMPT',
+                'response_time' => $latency,
+                'source_ip' => gethostbyname(gethostname()),
+                'response_metadata' => [
+                    'headers' => $response->headers(),
+                    'latency_ms' => $latency,
+                ],
+            ]);
 
-            $this->log->save();
+            Log::info("[Retry] Retry attempt recorded", ['log_id' => $this->log->id]);
         } catch (\Throwable $e) {
-            $this->log->status = 'FAILED';
-            $this->log->error_message = $e->getMessage();
-            $this->log->retry_count += 1;
-            $this->log->next_retry_at = now()->addSeconds($this->terminal->retry_interval_sec ?? 300);
-            $this->log->retry_reason = 'RETRY_EXCEPTION';
-            $this->log->response_metadata = [
-                'exception' => get_class($e),
-                'message' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
-            ];
-            $this->log->save();
+            $this->log->update([
+                'status' => 'FAILED',
+                'retry_count' => $this->log->retry_count + 1,
+                'next_retry_at' => now()->addSeconds($this->terminal->retry_interval_sec ?? 300),
+                'retry_reason' => 'RETRY_EXCEPTION',
+                'error_message' => $e->getMessage(),
+                'response_metadata' => [
+                    'exception' => get_class($e),
+                    'message' => $e->getMessage(),
+                    'trace' => $e->getTraceAsString(),
+                ],
+            ]);
+
+            Log::error("[Retry] Exception during retry", [
+                'log_id' => $this->log->id,
+                'exception' => $e->getMessage(),
+            ]);
         }
     }
 }
