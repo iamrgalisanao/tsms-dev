@@ -2,48 +2,50 @@
 
 namespace App\Http\Controllers\API\V1;
 
-
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Validator;
-use App\Models\Transactions;
-use App\Models\IntegrationLog;
 use Illuminate\Support\Facades\Log;
 use Tymon\JWTAuth\Facades\JWTAuth;
+use App\Models\Transactions;
+use App\Models\IntegrationLog;
+use App\Services\TransactionValidationService;
 
 class TransactionController extends Controller
 {
+    protected $validator;
+
+    public function __construct(TransactionValidationService $validator)
+    {
+        $this->validator = $validator;
+    }
+
     public function store(Request $request)
     {
-
         $user = JWTAuth::parseToken()->authenticate();
+        $payload = $request->all();
 
-        // Log raw payload first
+        // Create log first
         $log = new IntegrationLog();
-
         $log->tenant_id = $user->tenant_id ?? null;
         $log->terminal_id = $user->id ?? null;
-        // $log->tenant_id = auth()->user()->tenant_id ?? null;
-        // $log->terminal_id = auth()->user()->terminal_id ?? null;
-        $log->request_payload = json_encode($request->all()); // ✅ Encode as string
-        $log->status = 'FAILED'; // default
+        $log->request_payload = json_encode($payload);
+        $log->status = 'FAILED';
         $log->save();
 
-        // Validate the payload
-        $validator = Validator::make($request->all(), [
-            'transaction_id' => 'required|uuid|unique:transactions',
-            'tenant_id' => 'required|exists:tenants,id',
-            'hardware_id' => 'required|string',
-            'transaction_timestamp' => 'required|date',
-            'gross_sales' => 'required|numeric',
-            'payload_checksum' => 'required|string|size:64',
-        ]);
+        // Run validation using service
+        $validation = $this->validator->validate($payload);
 
-        if ($validator->fails()) {
-            // $log->response_payload = ['errors' => $validator->errors()];
-            $log->response_payload = json_encode(['errors' => $validator->errors()]);
+        // Attach validation results to payload
+        $payload['validation_status'] = $validation['validation_status'];
+        $payload['error_code'] = $validation['error_code'];
+        $payload['payload_checksum'] = $validation['computed_checksum']; // override or confirm
 
-            $log->status = 'FAILED';
+        // If invalid, log and return 422
+        if ($validation['validation_status'] === 'ERROR') {
+            $log->response_payload = json_encode([
+                'errors' => $validation['errors'],
+                'error_code' => $validation['error_code']
+            ]);
             $log->error_message = 'Validation failed';
             $log->http_status_code = 422;
             $log->save();
@@ -51,12 +53,12 @@ class TransactionController extends Controller
             return response()->json([
                 'status' => 'error',
                 'message' => 'Validation failed',
-                'errors' => $validator->errors(),
+                'errors' => $validation['errors'],
+                'error_code' => $validation['error_code'],
             ], 422);
         }
 
-        // Save transaction
-        // $transaction = Transactions::create($request->all());
+        // Store transaction
         $transaction = Transactions::create(array_merge(
             $request->only([
                 'transaction_id',
@@ -86,18 +88,21 @@ class TransactionController extends Controller
                 'terminal_id' => $user->id,
             ]
         ));
-        
-        $log->status = 'SUCCESS';
-        $log->response_payload = json_encode(['transaction_id' => $transaction->id]);
 
+        // Update log with success status
+        $log->status = 'SUCCESS';
+        $log->response_payload = json_encode([
+            'transaction_id' => $transaction->id,
+            'validation_status' => $payload['validation_status']
+        ]);
         $log->http_status_code = 200;
         $log->save();
 
         return response()->json([
             'status' => 'success',
             'message' => 'Transaction recorded',
-            'transaction_id' => $transaction->id
+            'transaction_id' => $transaction->id,
+            'validation_status' => $payload['validation_status'],
         ], 200);
     }
 }
-
