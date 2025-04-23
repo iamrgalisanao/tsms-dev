@@ -13,16 +13,46 @@ class RegisterTerminalController extends Controller
 {
     public function __invoke(Request $request)
     {
-        // Step 1: Validate input
+        /**
+         * Handles the registration of a new POS terminal for a tenant.
+         *
+         * Validates the incoming request to ensure the tenant code exists and the terminal UID is unique.
+         * Fetches the tenant record based on the provided tenant code.
+         * Creates a new POS terminal associated with the tenant.
+         * Attempts to request a JWT token from an external authentication service.
+         *
+         * @param  \Illuminate\Http\Request  $request  The incoming HTTP request containing terminal registration data.
+         * @return \Illuminate\Http\JsonResponse       The response containing the result of the registration process.
+         *
+         * @throws \Illuminate\Validation\ValidationException If the request validation fails.
+         * @throws \Illuminate\Database\Eloquent\ModelNotFoundException If the tenant is not found.
+         */
+        
         $validated = $request->validate([
             'tenant_code'   => 'required|string|exists:tenants,code',
             'terminal_uid'  => 'required|string|unique:pos_terminals,terminal_uid',
         ]);
 
-        // Step 2: Fetch tenant
+        
+        /**
+         * Retrieves the Tenant model instance matching the provided tenant code from the validated request data.
+         * Throws a ModelNotFoundException if no matching tenant is found.
+         *
+         * @var Tenant $tenant The tenant instance corresponding to the given tenant code.
+         *
+         * @throws \Illuminate\Database\Eloquent\ModelNotFoundException If the tenant with the specified code does not exist.
+         */
         $tenant = Tenant::where('code', $validated['tenant_code'])->firstOrFail();
 
-        // Step 3: Create the POS terminal
+        
+        /**
+         * Creates a new POS terminal record in the database.
+         *
+         * The terminal is associated with the given tenant and uses the validated terminal UID.
+         * The registration timestamp is set to the current time, and the status is set to 'active'.
+         *
+         * @var \App\Models\PosTerminal $terminal The newly created POS terminal instance.
+         */
         $terminal = PosTerminal::create([
             'tenant_id'     => $tenant->id,
             'terminal_uid'  => $validated['terminal_uid'],
