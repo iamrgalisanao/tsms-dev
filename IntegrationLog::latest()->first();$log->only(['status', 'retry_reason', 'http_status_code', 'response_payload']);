@@ -1,0 +1,28 @@
+[90m= [39m[
+    "[34mstatus[39m" => "[32merror[39m",
+    "[34mmessage[39m" => "[32mValidation failed[39m",
+    "[34merrors[39m" => [
+      "[32mMissing required field: tenant_id[39m",
+      "[32mMissing required field: hardware_id[39m",
+      "[32mMissing required field: machine_number[39m",
+      "[32mMissing required field: store_name[39m",
+      "[32mMissing required field: transaction_timestamp[39m",
+      "[32mMissing required field: gross_sales[39m",
+      "[32mMissing required field: net_sales[39m",
+      "[32mMissing required field: vatable_sales[39m",
+      "[32mMissing required field: vat_exempt_sales[39m",
+      "[32mMissing required field: promo_discount_amount[39m",
+      "[32mMissing required field: promo_status[39m",
+      "[32mMissing required field: discount_total[39m",
+      "[32mMissing required field: discount_details[39m",
+      "[32mMissing required field: other_tax[39m",
+      "[32mMissing required field: management_service_charge[39m",
+      "[32mMissing required field: employee_service_charge[39m",
+      "[32mMissing required field: vat_amount[39m",
+      "[32mMissing required field: transaction_count[39m",
+      "[32mMissing required field: payload_checksum[39m",
+      "[32mChecksum mismatch[39m",
+    ],
+    "[34merror_code[39m" => "[32mERR-102[39m",
+  ]
+
