@@ -25,7 +25,26 @@ class TransactionController extends Controller
     public function store(Request $request)
     {
         $startTime = microtime(true);
-        $user = JWTAuth::parseToken()->authenticate();
+
+        // Authenticate terminal
+        $terminal = TerminalToken::where('terminal_id', $request->input('terminal_id'))
+            ->latest()
+            ->first();
+
+        if (!$terminal || !$terminal->isValid()) {
+            return response()->json([
+                'status' => 'unauthenticated',
+                'message' => 'Invalid or expired terminal token.',
+            ], 401);
+        }
+
+        // Proceed with transaction logic
+        $terminal = JWTAuth::parseToken()->authenticate();
+        if (!$terminal) {
+            Log::error('Authentication failed: POS Terminal not found');
+            return response()->json(['status' => 'unauthenticated', 'message' => 'Authentication required or token invalid.'], 401);
+        }
+        Log::info('Authenticated user:', ['user' => $user]);
         $jwt = JWTAuth::parseToken();
         $payload = $jwt->getPayload();
 
@@ -59,6 +78,23 @@ class TransactionController extends Controller
             ]);
             $log->error_message = 'Validation failed';
             $log->http_status_code = 422;
+            
+            // Automatically set up for retry if this terminal has retries enabled
+            $terminal = \App\Models\PosTerminal::find($log->terminal_id);
+            if ($terminal && $terminal->retry_enabled) {
+                $log->retry_count = 0;
+                $log->retry_reason = 'VALIDATION_ERROR';
+                
+                // Use exponential backoff with jitter for more resilient retries
+                $baseInterval = $terminal->retry_interval_sec ?? 300;
+                $backoffMultiplier = pow(2, $log->retry_count); 
+                $jitter = mt_rand(-30, 30); // Add random jitter to prevent thundering herd
+                $retryDelay = min($baseInterval * $backoffMultiplier + $jitter, 86400); // Max 24 hours
+                
+                $log->next_retry_at = now()->addSeconds($retryDelay);
+                \Log::info("Transaction failed, scheduled for retry at {$log->next_retry_at} (delay: {$retryDelay}s)");
+            }
+            
             $log->save();
 
             return response()->json([

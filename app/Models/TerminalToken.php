@@ -44,4 +44,17 @@ class TerminalToken extends Model
                            ->orWhere('expires_at', '>', now());
                      });
     }
+    // public function isValid()
+    // {
+    //     return $this->expires_at > now();
+    // }
+
+    public function isValid(): bool
+    {
+        return !$this->revoked
+            && (!isset($this->expires_at) || now()->lt($this->expires_at))
+            && (!isset($this->issued_at) || now()->gte($this->issued_at));
+    }
+
+    
 }
