@@ -4,7 +4,14 @@ import react from '@vitejs/plugin-react';
 
 export default defineConfig({
     plugins: [
-        react(),
+        react({
+            jsxRuntime: 'classic',
+            babel: {
+                plugins: [
+                    ['@babel/plugin-transform-react-jsx', { runtime: 'classic' }]
+                ]
+            }
+        }),
         laravel({
             input: [
                 'resources/css/app.css',
@@ -18,11 +25,5 @@ export default defineConfig({
         watch: {
             usePolling: true,
         }
-    },
-    resolve: {
-        extensions: ['.js', '.jsx', '.json'],
-    },
-    optimizeDeps: {
-        include: ['react', 'react-dom'],
-    },
+    }
 });

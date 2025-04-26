@@ -1,3 +1,5 @@
+/** @jsxRuntime classic */
+/** @jsx React.createElement */
 import React from 'react';
 
 const Button = ({ children, onClick, variant = 'primary', disabled = false, type = 'button' }) => {
@@ -20,25 +22,25 @@ const Button = ({ children, onClick, variant = 'primary', disabled = false, type
       color: '#333',
     },
     danger: {
-      backgroundColor: '#dc3545',
+      backgroundColor: '#dc2626',
       color: 'white',
     }
   };
 
-  const style = {
+  const styles = {
     ...baseStyles,
     ...variants[variant],
-    opacity: disabled ? 0.7 : 1,
+    opacity: disabled ? 0.6 : 1,
     cursor: disabled ? 'not-allowed' : 'pointer',
   };
 
   return React.createElement(
     'button',
     {
-      style,
       onClick,
       disabled,
-      type
+      type,
+      style: styles
     },
     children
   );
