@@ -86,6 +86,25 @@ class RetryTransactionJob implements ShouldQueue
     if (!$endpoint) {
         throw new \RuntimeException('Missing RETRY_TRANSACTION_ENDPOINT config.');
     }
+    
+    // Check circuit breaker status before proceeding
+    $circuitBreaker = \App\Models\CircuitBreaker::forService('api.transactions', $this->log->tenant_id);
+    if (!$circuitBreaker->isAllowed()) {
+        \Log::warning("[RetryJob] Circuit breaker is OPEN for tenant {$this->log->tenant_id}, blocking retry");
+        $this->log->retry_count += 1;
+        $this->log->next_retry_at = now()->addSeconds($this->terminal->retry_interval_sec ?? 300);
+        $this->log->status = 'FAILED';
+        $this->log->retry_reason = 'CIRCUIT_BREAKER_OPEN';
+        $this->log->error_message = 'Retry blocked by circuit breaker';
+        $this->log->response_metadata = [
+            'circuit_breaker' => [
+                'state' => $circuitBreaker->state,
+                'cooldown_until' => $circuitBreaker->cooldown_until
+            ]
+        ];
+        $this->log->save();
+        return;
+    }
 
     $token = TerminalToken::where('terminal_id', $this->log->terminal_id)->latest()->first();
 
