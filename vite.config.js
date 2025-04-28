@@ -4,7 +4,9 @@ import react from '@vitejs/plugin-react';
 
 export default defineConfig({
     plugins: [
-        react(),
+        react({
+            jsxRuntime: 'classic'
+        }),
         laravel({
             input: [
                 'resources/css/app.css',
@@ -19,10 +21,12 @@ export default defineConfig({
             usePolling: true,
         }
     },
-    resolve: {
-        extensions: ['.js', '.jsx', '.json'],
-    },
     optimizeDeps: {
-        include: ['react', 'react-dom'],
+        include: ['react', 'react-dom']
     },
+    esbuild: {
+        loader: { '.js': 'jsx' },
+        jsxFactory: 'React.createElement',
+        jsxFragment: 'React.Fragment'
+    }
 });

@@ -3,13 +3,17 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class IntegrationLog extends Model
 {
     protected $casts = [
         'request_payload' => 'array',
         'response_payload' => 'array',
-        'response_metadata' => 'array', // ✅ THIS IS REQUIRED
+        'response_metadata' => 'array',
+        'created_at' => 'datetime',
+        'updated_at' => 'datetime',
+        'next_retry_at' => 'datetime',
     ];
     
     protected $fillable = [
@@ -18,7 +22,7 @@ class IntegrationLog extends Model
         'transaction_id',
         'request_payload',
         'response_payload',
-        'response_metadata', // ✅ This should be included
+        'response_metadata',
         'status',
         'validation_status',
         'error_message',
@@ -30,5 +34,21 @@ class IntegrationLog extends Model
         'retry_reason',
         'source_ip',
     ];
-    
+
+    public function tenant(): BelongsTo
+    {
+        return $this->belongsTo(Tenant::class);
+    }
+
+    public function terminal(): BelongsTo
+    {
+        return $this->belongsTo(PosTerminal::class, 'terminal_id');
+    }
+
+    protected $attributes = [
+        'retry_count' => 0,
+        'retry_attempts' => 0,
+        'response_payload' => '{}',
+        'response_metadata' => '{}',
+    ];
 }

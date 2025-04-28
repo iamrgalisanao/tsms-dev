@@ -1,51 +1,81 @@
 /** @jsxRuntime classic */
 /** @jsx React.createElement */
 
-// Use ES module imports instead of require
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import './bootstrap';
 import '../css/app.css';
 import TransactionLogs from './components/features/transactions/TransactionLogs.js';
 
-// Minimal App component
-function App() {
-  const [selectedLog, setSelectedLog] = React.useState(null);
+// Error Boundary Component
+class ErrorBoundary extends React.Component {
+    constructor(props) {
+        super(props);
+        this.state = { hasError: false };
+    }
 
-  return React.createElement(
-    'div',
-    { 
-      style: {
-        padding: '20px',
-        backgroundColor: '#f0f2f5',
-        minHeight: '100vh',
-        color: '#333'
-      }
-    },
-    React.createElement(
-      'h1',
-      {
-        style: {
-          fontSize: '24px',
-          fontWeight: 'bold',
-          marginBottom: '20px'
+    static getDerivedStateFromError(error) {
+        return { hasError: true };
+    }
+
+    componentDidCatch(error, errorInfo) {
+        console.error('Error:', error, errorInfo);
+    }
+
+    render() {
+        if (this.state.hasError) {
+            return React.createElement('div', null, 'Something went wrong.');
         }
-      },
-      'Transaction System Dashboard'
-    ),
-    React.createElement(TransactionLogs, {
-      onSelectLog: setSelectedLog
-    })
-  );
+
+        return this.props.children;
+    }
 }
 
-// Initialize React app
+// App component
+function App() {
+    const [isAuthenticated, setIsAuthenticated] = React.useState(true);
+
+    React.useEffect(() => {
+        // Check authentication status on mount
+        fetch('/api/web/dashboard/transactions', {
+            credentials: 'same-origin',
+            headers: {
+                'Accept': 'application/json',
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+        }).then(response => {
+            if (response.status === 401) {
+                setIsAuthenticated(false);
+                window.location.href = '/login';
+            }
+        });
+    }, []);
+
+    if (!isAuthenticated) {
+        return null;
+    }
+
+    return React.createElement(
+        ErrorBoundary,
+        null,
+        React.createElement(
+            'div',
+            { 
+                style: {
+                    padding: '20px',
+                    backgroundColor: '#f0f2f5',
+                    minHeight: '100vh',
+                    color: '#333'
+                }
+            },
+            React.createElement(TransactionLogs)
+        )
+    );
+}
+
+// Mount app
 const container = document.getElementById('app');
 if (container) {
-  const root = createRoot(container);
-  root.render(
-    React.createElement(React.StrictMode, null,
-      React.createElement(App)
-    )
-  );
+    const root = createRoot(container);
+    root.render(React.createElement(App));
 }

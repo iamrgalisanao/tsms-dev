@@ -15,21 +15,40 @@ class LoginController extends Controller
             'password' => ['required'],
         ]);
 
-        if (Auth::guard('web')->attempt($credentials)) {
+        if (Auth::guard('web')->attempt($credentials, $request->filled('remember'))) {
             $request->session()->regenerate();
-            return redirect()->intended('dashboard');
+            
+            if ($request->expectsJson()) {
+                return response()->json(['status' => 'success']);
+            }
+
+            return redirect()->intended('/dashboard');
         }
 
-        return back()->withErrors([
-            'email' => 'The provided credentials do not match our records.',
-        ]);
+        if ($request->expectsJson()) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Invalid credentials'
+            ], 401);
+        }
+
+        return back()
+            ->withInput($request->only('email'))
+            ->withErrors([
+                'email' => 'The provided credentials do not match our records.',
+            ]);
     }
 
     public function logout(Request $request)
     {
-        Auth::logout();
+        Auth::guard('web')->logout();
         $request->session()->invalidate();
         $request->session()->regenerateToken();
+        
+        if ($request->expectsJson()) {
+            return response()->json(['status' => 'success']);
+        }
+        
         return redirect('/login');
     }
 }

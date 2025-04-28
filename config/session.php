@@ -3,22 +3,7 @@
 use Illuminate\Support\Str;
 
 return [
-
-    /*
-    |--------------------------------------------------------------------------
-    | Default Session Driver
-    |--------------------------------------------------------------------------
-    |
-    | This option determines the default session driver that is utilized for
-    | incoming requests. Laravel supports a variety of storage options to
-    | persist session data. Database storage is a great default choice.
-    |
-    | Supported: "file", "cookie", "database", "apc",
-    |            "memcached", "redis", "dynamodb", "array"
-    |
-    */
-
-    'driver' => env('SESSION_DRIVER', 'database'),
+    'driver' => 'file',
 
     /*
     |--------------------------------------------------------------------------
@@ -34,20 +19,9 @@ return [
 
     'lifetime' => env('SESSION_LIFETIME', 120),
 
-    'expire_on_close' => env('SESSION_EXPIRE_ON_CLOSE', false),
+    'expire_on_close' => false,
 
-    /*
-    |--------------------------------------------------------------------------
-    | Session Encryption
-    |--------------------------------------------------------------------------
-    |
-    | This option allows you to easily specify that all of your session data
-    | should be encrypted before it's stored. All encryption is performed
-    | automatically by Laravel and you may use the session like normal.
-    |
-    */
-
-    'encrypt' => env('SESSION_ENCRYPT', false),
+    'encrypt' => false,
 
     /*
     |--------------------------------------------------------------------------
@@ -86,7 +60,7 @@ return [
     |
     */
 
-    'table' => env('SESSION_TABLE', 'sessions'),
+    'table' => 'sessions',
 
     /*
     |--------------------------------------------------------------------------
@@ -144,7 +118,7 @@ return [
     |
     */
 
-    'path' => env('SESSION_PATH', '/'),
+    'path' => '/',
 
     /*
     |--------------------------------------------------------------------------
@@ -183,7 +157,7 @@ return [
     |
     */
 
-    'http_only' => env('SESSION_HTTP_ONLY', true),
+    'http_only' => true,
 
     /*
     |--------------------------------------------------------------------------
@@ -200,19 +174,5 @@ return [
     |
     */
 
-    'same_site' => env('SESSION_SAME_SITE', 'lax'),
-
-    /*
-    |--------------------------------------------------------------------------
-    | Partitioned Cookies
-    |--------------------------------------------------------------------------
-    |
-    | Setting this value to true will tie the cookie to the top-level site for
-    | a cross-site context. Partitioned cookies are accepted by the browser
-    | when flagged "secure" and the Same-Site attribute is set to "none".
-    |
-    */
-
-    'partitioned' => env('SESSION_PARTITIONED_COOKIE', false),
-
+    'same_site' => 'lax',
 ];
