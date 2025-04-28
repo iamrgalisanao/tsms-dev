@@ -1,10 +1,4 @@
-<<<<<<< HEAD
-/** @jsxRuntime classic */
-/** @jsx React.createElement */
-import React, { useState, useEffect } from 'react';
-=======
 import React from 'react';
->>>>>>> parent of 7ffbd4e (refactor: update React configuration and components)
 
 function TransactionLogs() {
     const [logs, setLogs] = React.useState([]);
@@ -23,10 +17,9 @@ function TransactionLogs() {
                         'Accept': 'application/json',
                         'Content-Type': 'application/json',
                         'X-CSRF-TOKEN': csrfToken,
-                        'X-Requested-With': 'XMLHttpRequest',
-                        'Authorization': `Bearer ${csrfToken}` // Add this for Laravel 11's security
+                        'X-Requested-With': 'XMLHttpRequest'
                     },
-                    credentials: 'include' // Changed to include for cross-domain support if needed
+                    credentials: 'same-origin'
                 });
 
                 if (response.status === 401) {
