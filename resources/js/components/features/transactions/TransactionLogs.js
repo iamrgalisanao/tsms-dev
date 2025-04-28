@@ -1,12 +1,10 @@
 
-import React, { useState, useEffect } from 'react';
-
+import React from 'react';
 
 function TransactionLogs() {
     const [logs, setLogs] = React.useState([]);
     const [loading, setLoading] = React.useState(true);
     const [error, setError] = React.useState(null);
-
     React.useEffect(() => {
         const fetchLogs = async () => {
             try {
