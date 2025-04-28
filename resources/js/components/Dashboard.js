@@ -1,3 +1,5 @@
+/** @jsxRuntime classic */
+/** @jsx React.createElement */
 import React, { useState } from 'react';
 import BasicLogs from './dashboard/BasicLogs.js';
 import RetryHistory from './dashboard/RetryHistory.js';
