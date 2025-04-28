@@ -1,10 +1,6 @@
-<<<<<<< HEAD
-/** @jsxRuntime classic */
-/** @jsx React.createElement */
+
 import React, { useState, useEffect } from 'react';
-=======
-import React from 'react';
->>>>>>> parent of 7ffbd4e (refactor: update React configuration and components)
+
 
 function TransactionLogs() {
     const [logs, setLogs] = React.useState([]);
