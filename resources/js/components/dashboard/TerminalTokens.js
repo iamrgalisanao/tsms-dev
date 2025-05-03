@@ -1,130 +1,113 @@
-
 /** @jsxRuntime classic */
 /** @jsx React.createElement */
-import React, { useState, useEffect } from 'react';
-import axios from 'axios';
 
-const TerminalTokens = () => {
-    const [tokens, setTokens] = useState([]);
-    const [loading, setLoading] = useState(true);
-    const [filters, setFilters] = useState({
-        terminal_id: '',
-        status: 'active' // active, expired, revoked
-    });
-    const [newTokenForm, setNewTokenForm] = useState({
-        terminal_id: '',
-        expiration_days: 30,
-        isOpen: false
-    });
+import React from 'react';
 
-    useEffect(() => {
-        const fetchTokens = async () => {
-            try {
-                setLoading(true);
-                const response = await axios.get('/api/dashboard/tokens', {
-                    params: filters
-                });
-                setTokens(response.data);
-                setLoading(false);
-            } catch (error) {
-                console.error('Error fetching tokens:', error);
-                setLoading(false);
-            }
-        };
+function TerminalTokens() {
+    const [tokens, setTokens] = React.useState([]);
+    const [loading, setLoading] = React.useState(true);
+    const [error, setError] = React.useState(null);
 
+    React.useEffect(() => {
         fetchTokens();
-    }, [filters]);
+    }, []);
+
+    const fetchTokens = async () => {
+        try {
+            const response = await fetch('/api/web/dashboard/terminal-tokens', {
+                credentials: 'same-origin',
+                headers: {
+                    'Accept': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest'
+                }
+            });
+
+            if (!response.ok) throw new Error('Failed to fetch terminal tokens');
+            const data = await response.json();
+            setTokens(data.data);
+            setLoading(false);
+        } catch (err) {
+            setError(err.message);
+            setLoading(false);
+        }
+    };
+
+    const regenerateToken = async (terminalId) => {
+        try {
+            const response = await fetch(`/api/web/dashboard/terminal-tokens/${terminalId}/regenerate`, {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: {
+                    'Accept': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest'
+                }
+            });
+
+            if (!response.ok) throw new Error('Failed to regenerate token');
+            await fetchTokens(); // Refresh the list
+        } catch (err) {
+            setError(err.message);
+        }
+    };
 
     if (loading) {
-        return React.createElement('div', null, 'Loading tokens...');
+        return React.createElement('div', { className: 'flex justify-center items-center h-32' },
+            React.createElement('div', { className: 'animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500' })
+        );
     }
 
-    return React.createElement(
-        'div',
-        { className: 'p-4' },
-        React.createElement('h2', { className: 'text-2xl font-bold mb-4' }, 'Terminal Tokens'),
-        React.createElement(
-            'div',
-            { className: 'mb-4' },
-            React.createElement(
-                'button',
-                {
-                    className: 'bg-blue-500 text-white px-4 py-2 rounded',
-                    onClick: () => setNewTokenForm(prev => ({ ...prev, isOpen: true }))
-                },
-                'New Token'
-            )
-        ),
-        React.createElement(
-            'div',
-            { className: 'overflow-x-auto' },
-            React.createElement(
-                'table',
-                { className: 'min-w-full divide-y divide-gray-200' },
-                React.createElement(
-                    'thead',
-                    { className: 'bg-gray-50' },
-                    React.createElement(
-                        'tr',
-                        null,
-                        React.createElement('th', { className: 'px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase' }, 'Terminal ID'),
-                        React.createElement('th', { className: 'px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase' }, 'Status'),
-                        React.createElement('th', { className: 'px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase' }, 'Created'),
-                        React.createElement('th', { className: 'px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase' }, 'Expires'),
-                        React.createElement('th', { className: 'px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase' }, 'Actions')
+    if (error) {
+        return React.createElement('div', { className: 'text-red-600 p-4 border border-red-200 rounded' },
+            'Error: ', error
+        );
+    }
+
+    return React.createElement('div', { className: 'space-y-6' },
+        React.createElement('div', { className: 'overflow-x-auto' },
+            React.createElement('table', { className: 'min-w-full divide-y divide-gray-200' },
+                React.createElement('thead', { className: 'bg-gray-50' },
+                    React.createElement('tr', null,
+                        ['Terminal ID', 'Status', 'Last Used', 'Expires At', 'Actions'].map(header =>
+                            React.createElement('th', {
+                                key: header,
+                                className: 'px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider'
+                            }, header)
+                        )
                     )
                 ),
-                React.createElement(
-                    'tbody',
-                    { className: 'bg-white divide-y divide-gray-200' },
-                    tokens.length === 0 
-                        ? React.createElement(
-                            'tr',
-                            null,
-                            React.createElement(
-                                'td',
-                                { colSpan: '5', className: 'px-6 py-4 text-center text-sm text-gray-500' },
-                                'No tokens found'
+                React.createElement('tbody', { className: 'bg-white divide-y divide-gray-200' },
+                    tokens.map(token =>
+                        React.createElement('tr', { key: token.id },
+                            React.createElement('td', { className: 'px-6 py-4 whitespace-nowrap' },
+                                token.terminal_id
+                            ),
+                            React.createElement('td', { className: 'px-6 py-4 whitespace-nowrap' },
+                                React.createElement('span', {
+                                    className: `px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
+                                        token.is_active
+                                            ? 'bg-green-100 text-green-800'
+                                            : 'bg-red-100 text-red-800'
+                                    }`
+                                }, token.is_active ? 'Active' : 'Inactive')
+                            ),
+                            React.createElement('td', { className: 'px-6 py-4 whitespace-nowrap text-sm text-gray-500' },
+                                token.last_used_at ? new Date(token.last_used_at).toLocaleString() : 'Never'
+                            ),
+                            React.createElement('td', { className: 'px-6 py-4 whitespace-nowrap text-sm text-gray-500' },
+                                new Date(token.expires_at).toLocaleString()
+                            ),
+                            React.createElement('td', { className: 'px-6 py-4 whitespace-nowrap text-right text-sm font-medium' },
+                                React.createElement('button', {
+                                    onClick: () => regenerateToken(token.terminal_id),
+                                    className: 'text-blue-600 hover:text-blue-900'
+                                }, 'Regenerate Token')
                             )
                         )
-                        : tokens.map(token => React.createElement(
-                            'tr',
-                            { key: token.id },
-                            React.createElement('td', { className: 'px-6 py-4 whitespace-nowrap' }, token.terminal_id),
-                            React.createElement(
-                                'td',
-                                { className: 'px-6 py-4 whitespace-nowrap' },
-                                React.createElement(
-                                    'span',
-                                    {
-                                        className: `px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                                            token.status === 'active'
-                                                ? 'bg-green-100 text-green-800'
-                                                : 'bg-red-100 text-red-800'
-                                        }`
-                                    },
-                                    token.status
-                                )
-                            ),
-                            React.createElement('td', { className: 'px-6 py-4 whitespace-nowrap' }, new Date(token.created_at).toLocaleString()),
-                            React.createElement('td', { className: 'px-6 py-4 whitespace-nowrap' }, new Date(token.expires_at).toLocaleString()),
-                            React.createElement(
-                                'td',
-                                { className: 'px-6 py-4 whitespace-nowrap text-sm text-gray-500' },
-                                React.createElement(
-                                    'button',
-                                    {
-                                        className: 'text-red-600 hover:text-red-900',
-                                        onClick: () => {/* Revoke logic */}
-                                    },
-                                    'Revoke'
-                                )
-                            )
-                        ))
+                    )
                 )
             )
         )
     );
-};
+}
 
 export default TerminalTokens;

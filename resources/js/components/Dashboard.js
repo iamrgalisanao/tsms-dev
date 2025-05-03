@@ -1,90 +1,43 @@
 /** @jsxRuntime classic */
 /** @jsx React.createElement */
-import React, { useState } from 'react';
-import BasicLogs from './dashboard/BasicLogs.js';
-import RetryHistory from './dashboard/RetryHistory.js';
-import CircuitBreakers from './dashboard/CircuitBreakers.js';
-import TerminalTokens from './dashboard/TerminalTokens.js';
-import LogDetail from './dashboard/LogDetail.js';
 
-const Dashboard = () => {
-    const [activeTab, setActiveTab] = useState('transactions');
-    const [selectedLog, setSelectedLog] = useState(null);
+import React from 'react';
+import TransactionLogs from './features/transactions/TransactionLogs';
+import CircuitBreakers from './dashboard/CircuitBreakers';
+import RetryHistory from './dashboard/RetryHistory';
+import TerminalTokens from './dashboard/TerminalTokens';
 
-    return React.createElement(
-        'div',
-        { className: 'dashboard' },
-        React.createElement(
-            'header',
-            { className: 'mb-6' },
-            React.createElement(
-                'h1',
-                { className: 'text-2xl font-bold text-gray-800' },
-                'Transaction Monitoring Dashboard'
-            ),
-            React.createElement(
-                'p',
-                { className: 'text-sm text-gray-600' },
-                'Monitor and manage transaction states, retries, and system health'
-            )
-        ),
-        React.createElement(
-            'nav',
-            { className: 'dashboard-nav' },
-            React.createElement(
-                'ul',
-                null,
-                React.createElement(
-                    'li',
-                    { className: activeTab === 'transactions' ? 'active' : '' },
-                    React.createElement(
-                        'button',
-                        { onClick: () => setActiveTab('transactions') },
-                        'Transaction Logs'
-                    )
-                ),
-                React.createElement(
-                    'li',
-                    { className: activeTab === 'retries' ? 'active' : '' },
-                    React.createElement(
-                        'button',
-                        { onClick: () => setActiveTab('retries') },
-                        'Retry History'
-                    )
-                ),
-                React.createElement(
-                    'li',
-                    { className: activeTab === 'circuit-breakers' ? 'active' : '' },
-                    React.createElement(
-                        'button',
-                        { onClick: () => setActiveTab('circuit-breakers') },
-                        'Circuit Breaker Status'
-                    )
-                ),
-                React.createElement(
-                    'li',
-                    { className: activeTab === 'tokens' ? 'active' : '' },
-                    React.createElement(
-                        'button',
-                        { onClick: () => setActiveTab('tokens') },
-                        'Terminal Tokens'
-                    )
+function Dashboard() {
+    const [activeTab, setActiveTab] = React.useState('transactions');
+
+    const tabs = [
+        { id: 'transactions', label: 'Transaction Logs', component: TransactionLogs },
+        { id: 'retries', label: 'Retry History', component: RetryHistory },
+        { id: 'circuit-breakers', label: 'Circuit Breaker Status', component: CircuitBreakers },
+        { id: 'tokens', label: 'Terminal Tokens', component: TerminalTokens }
+    ];
+
+    return React.createElement('div', { className: 'container mx-auto px-4 py-6' },
+        React.createElement('h1', { className: 'text-2xl font-bold mb-6' }, 'Transaction Monitoring Dashboard'),
+        React.createElement('div', { className: 'border-b border-gray-200 mb-6' },
+            React.createElement('nav', { className: '-mb-px flex space-x-8' },
+                tabs.map(tab => 
+                    React.createElement('button', {
+                        key: tab.id,
+                        onClick: () => setActiveTab(tab.id),
+                        className: `${
+                            activeTab === tab.id
+                                ? 'border-blue-500 text-blue-600'
+                                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                        } whitespace-nowrap pb-4 px-1 border-b-2 font-medium`
+                    }, tab.label)
                 )
             )
         ),
-        React.createElement(
-            'div',
-            { className: 'dashboard-content' },
-            activeTab === 'transactions' && React.createElement(BasicLogs, { onSelectLog: setSelectedLog }),
-            activeTab === 'retries' && React.createElement(RetryHistory),
-            activeTab === 'circuit-breakers' && React.createElement(CircuitBreakers),
-            activeTab === 'tokens' && React.createElement(TerminalTokens)
-        ),
-        selectedLog && React.createElement(LogDetail, {
-            log: selectedLog,
-            onClose: () => setSelectedLog(null)
-        })
+        React.createElement('main', { className: 'mt-6' },
+            React.createElement(tabs.find(tab => tab.id === activeTab).component)
+        )
     );
-};
+}
 
 export default Dashboard;

@@ -1,125 +1,129 @@
 /** @jsxRuntime classic */
 /** @jsx React.createElement */
-import React, { useState, useEffect } from 'react';
-import axios from 'axios';
 
-const RetryHistory = () => {
-    const [retries, setRetries] = useState([]);
-    const [loading, setLoading] = useState(true);
-    const [filters, setFilters] = useState({
-        terminal_id: '',
-        from_date: '',
-        to_date: '',
-        page: 1
+import React from 'react';
+
+function RetryHistory() {
+    const [retries, setRetries] = React.useState([]);
+    const [loading, setLoading] = React.useState(true);
+    const [error, setError] = React.useState(null);
+    const [pagination, setPagination] = React.useState({
+        currentPage: 1,
+        totalPages: 1,
+        perPage: 10
     });
 
-    useEffect(() => {
-        // Mock data for initial development - remove when API is ready
-        const mockData = {
-            data: [
-                {
-                    id: 1,
-                    transaction_id: 'TRANS-12345',
-                    terminal_id: 'TERM-001',
-                    retry_count: 2,
-                    retry_at: '2025-04-26T10:30:00',
-                    status: 'SUCCESS'
-                },
-                {
-                    id: 2,
-                    transaction_id: 'TRANS-12346',
-                    terminal_id: 'TERM-002', 
-                    retry_count: 3,
-                    retry_at: '2025-04-26T11:15:00',
-                    status: 'FAILED'
+    React.useEffect(() => {
+        fetchRetryHistory();
+        const interval = setInterval(fetchRetryHistory, 15000); // Refresh every 15s
+        return () => clearInterval(interval);
+    }, [pagination.currentPage]);
+
+    const fetchRetryHistory = async () => {
+        try {
+            const response = await fetch(`/api/web/dashboard/retry-history?page=${pagination.currentPage}`, {
+                credentials: 'same-origin',
+                headers: {
+                    'Accept': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest'
                 }
-            ],
-            meta: {
-                current_page: 1,
-                last_page: 1,
-                total: 2
-            }
+            });
+
+            if (!response.ok) throw new Error('Failed to fetch retry history');
+            const data = await response.json();
+            setRetries(data.data);
+            setPagination({
+                currentPage: data.meta.current_page,
+                totalPages: data.meta.last_page,
+                perPage: data.meta.per_page
+            });
+            setLoading(false);
+        } catch (err) {
+            setError(err.message);
+            setLoading(false);
         }
+    };
 
-        // Simulate API call
-        setTimeout(() => {
-            setRetries(mockData)
-            setLoading(false)
-        }, 500)
-    }, [filters])
-
-    const handleFilterChange = (key, value) => {
-        setFilters(prev => ({
-            ...prev,
-            [key]: value,
-            page: key === 'page' ? value : 1 // Reset page when other filters change
-        }))
+    if (loading) {
+        return React.createElement('div', { className: 'flex justify-center items-center h-32' },
+            React.createElement('div', { className: 'animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500' })
+        );
     }
 
-    // Simplified render method using React.createElement instead of JSX
-    return React.createElement(
-        'div', 
-        { className: 'retry-history' },
-        React.createElement('h2', { className: 'text-xl font-semibold mb-4' }, 'Retry History Viewer'),
-        
-        React.createElement(
-            'div',
-            { className: 'filters' },
-            React.createElement(
-                'div',
-                { className: 'filter-group' },
-                React.createElement('label', null, 'Terminal ID:'),
-                React.createElement('input', { 
-                    type: 'text',
-                    value: filters.terminal_id,
-                    onChange: (e) => handleFilterChange('terminal_id', e.target.value),
-                    placeholder: 'Enter terminal ID...'
-                })
-            )
-        ),
-        
-        loading ? 
-            React.createElement('div', { className: 'loading' }, 'Loading retry history...') :
-            React.createElement(
-                'div',
-                { className: 'retry-table-container' },
-                React.createElement(
-                    'table',
-                    { className: 'retry-table' },
-                    React.createElement(
-                        'thead',
-                        null,
-                        React.createElement(
-                            'tr',
-                            null,
-                            React.createElement('th', null, 'ID'),
-                            React.createElement('th', null, 'Transaction ID'),
-                            React.createElement('th', null, 'Terminal ID'),
-                            React.createElement('th', null, 'Retry Count'),
-                            React.createElement('th', null, 'Retry Date'),
-                            React.createElement('th', null, 'Status')
+    if (error) {
+        return React.createElement('div', { className: 'text-red-600 p-4 border border-red-200 rounded' },
+            'Error: ', error
+        );
+    }
+
+    return React.createElement('div', null,
+        // Table
+        React.createElement('div', { className: 'overflow-x-auto' },
+            React.createElement('table', { className: 'min-w-full divide-y divide-gray-200' },
+                React.createElement('thead', { className: 'bg-gray-50' },
+                    React.createElement('tr', null,
+                        ['Transaction ID', 'Terminal ID', 'Attempt #', 'Status', 'Timestamp'].map(header =>
+                            React.createElement('th', {
+                                key: header,
+                                className: 'px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider'
+                            }, header)
                         )
-                    ),
-                    React.createElement(
-                        'tbody',
-                        null,
-                        retries.data && retries.data.map(retry => 
-                            React.createElement(
-                                'tr',
-                                { key: retry.id },
-                                React.createElement('td', null, retry.id),
-                                React.createElement('td', null, retry.transaction_id),
-                                React.createElement('td', null, retry.terminal_id),
-                                React.createElement('td', null, retry.retry_count),
-                                React.createElement('td', null, new Date(retry.retry_at).toLocaleString()),
-                                React.createElement('td', null, retry.status)
+                    )
+                ),
+                React.createElement('tbody', { className: 'bg-white divide-y divide-gray-200' },
+                    retries.map(retry =>
+                        React.createElement('tr', { key: retry.id },
+                            React.createElement('td', { className: 'px-6 py-4 whitespace-nowrap' },
+                                retry.transaction_id
+                            ),
+                            React.createElement('td', { className: 'px-6 py-4 whitespace-nowrap' },
+                                retry.terminal_id
+                            ),
+                            React.createElement('td', { className: 'px-6 py-4 whitespace-nowrap' },
+                                retry.attempt_number
+                            ),
+                            React.createElement('td', { className: 'px-6 py-4 whitespace-nowrap' },
+                                React.createElement('span', {
+                                    className: `px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
+                                        retry.status === 'SUCCESS'
+                                            ? 'bg-green-100 text-green-800'
+                                            : 'bg-red-100 text-red-800'
+                                    }`
+                                }, retry.status)
+                            ),
+                            React.createElement('td', { className: 'px-6 py-4 whitespace-nowrap text-sm text-gray-500' },
+                                new Date(retry.created_at).toLocaleString()
                             )
                         )
                     )
                 )
             )
-    )
+        ),
+        // Pagination
+        React.createElement('div', { className: 'mt-4 flex justify-between items-center' },
+            React.createElement('button', {
+                onClick: () => setPagination(prev => ({ ...prev, currentPage: prev.currentPage - 1 })),
+                disabled: pagination.currentPage === 1,
+                className: `px-4 py-2 border rounded ${
+                    pagination.currentPage === 1
+                        ? 'bg-gray-100 text-gray-400'
+                        : 'bg-white text-blue-500 hover:bg-blue-50'
+                }`
+            }, 'Previous'),
+            React.createElement('span', { className: 'text-sm text-gray-700' },
+                `Page ${pagination.currentPage} of ${pagination.totalPages}`
+            ),
+            React.createElement('button', {
+                onClick: () => setPagination(prev => ({ ...prev, currentPage: prev.currentPage + 1 })),
+                disabled: pagination.currentPage === pagination.totalPages,
+                className: `px-4 py-2 border rounded ${
+                    pagination.currentPage === pagination.totalPages
+                        ? 'bg-gray-100 text-gray-400'
+                        : 'bg-white text-blue-500 hover:bg-blue-50'
+                }`
+            }, 'Next')
+        )
+    );
 }
 
-// Export the component in a way that's explicitly clear to the module system
-export { RetryHistory as default }
+export default RetryHistory;

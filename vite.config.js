@@ -4,15 +4,15 @@ import react from '@vitejs/plugin-react';
 
 export default defineConfig({
     plugins: [
-        react({
-            jsxRuntime: 'classic'
-        }),
         laravel({
             input: [
                 'resources/css/app.css',
                 'resources/js/app.js',
             ],
             refresh: true,
+        }),
+        react({
+            include: "**/*.{jsx,js}",
         }),
     ],
     server: {
@@ -25,7 +25,7 @@ export default defineConfig({
         include: ['react', 'react-dom']
     },
     esbuild: {
-        loader: { '.js': 'jsx' },
+        loader: 'jsx',
         jsxFactory: 'React.createElement',
         jsxFragment: 'React.Fragment'
     }

@@ -5,7 +5,7 @@ import React from 'react';
 import { createRoot } from 'react-dom/client';
 import './bootstrap';
 import '../css/app.css';
-import TransactionLogs from './components/features/transactions/TransactionLogs.js';
+import Dashboard from './components/Dashboard';
 
 // Error Boundary Component
 class ErrorBoundary extends React.Component {
@@ -62,15 +62,16 @@ function App() {
             'div',
             { 
                 style: {
-                    padding: '20px',
                     backgroundColor: '#f0f2f5',
                     minHeight: '100vh',
                     color: '#333'
                 }
             },
-            React.createElement(TransactionLogs)
+            React.createElement(Dashboard)
         )
     );
+    
+    
 }
 
 // Mount app

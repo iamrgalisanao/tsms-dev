@@ -18,5 +18,10 @@ class Tenant extends Model
     {
         return $this->hasMany(PosTerminal::class);
     }
+
+    public function circuitBreakers()
+    {
+        return $this->hasMany(CircuitBreaker::class);
+    }
 }
 

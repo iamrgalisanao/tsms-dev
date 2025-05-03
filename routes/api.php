@@ -5,11 +5,25 @@ use App\Http\Controllers\API\V1\TerminalAuthController;
 use App\Http\Controllers\API\V1\TransactionController;
 use App\Http\Controllers\API\V1\TransactionStatusController;
 use App\Http\Controllers\API\V1\DashboardController;
+use App\Http\Controllers\API\V1\RetryHistoryController;
+use App\Http\Controllers\API\V1\CircuitBreakersController;
+use App\Http\Controllers\API\V1\TerminalTokensController;
 
 // Web Dashboard API Routes
-Route::prefix('web')->middleware(['web', 'auth:web'])->group(function () {
+Route::prefix('web')->middleware(['api'])->group(function () {
     Route::get('/dashboard/transactions', [DashboardController::class, 'transactions']);
     Route::post('/dashboard/transactions/{id}/retry', [DashboardController::class, 'retryTransaction']);
+    
+    // Retry History
+    Route::get('/dashboard/retry-history', [RetryHistoryController::class, 'index']);
+    
+    // Circuit Breakers
+    Route::get('/dashboard/circuit-breakers', [CircuitBreakersController::class, 'index']);
+    Route::post('/dashboard/circuit-breakers/{id}/reset', [CircuitBreakersController::class, 'reset']);
+    
+    // Terminal Tokens
+    Route::get('/dashboard/terminal-tokens', [TerminalTokensController::class, 'index']);
+    Route::post('/dashboard/terminal-tokens/{terminalId}/regenerate', [TerminalTokensController::class, 'regenerate']);
 });
 
 // POS Terminal API Routes

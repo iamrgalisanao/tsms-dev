@@ -1,104 +1,122 @@
 /** @jsxRuntime classic */
 /** @jsx React.createElement */
-import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+
+import React from 'react';
 
 const CircuitBreakers = () => {
-    const [circuitBreakers, setCircuitBreakers] = useState([]);
-    const [loading, setLoading] = useState(true);
-    const [filters, setFilters] = useState({
-        tenant_id: '',
-        service_name: ''
-    });
+    const [services, setServices] = React.useState([]);
+    const [loading, setLoading] = React.useState(true);
+    const [error, setError] = React.useState(null);
+    const [filters, setFilters] = React.useState({ tenant: 'all' });
 
-    useEffect(() => {
-        const fetchCircuitBreakers = async () => {
-            try {
-                setLoading(true);
-                const response = await axios.get('/api/dashboard/circuit-breakers', {
-                    params: filters
-                });
-                setCircuitBreakers(response.data);
-                setLoading(false);
-            } catch (error) {
-                console.error('Error fetching circuit breakers:', error);
-                setLoading(false);
-            }
-        };
-
-        fetchCircuitBreakers();
+    React.useEffect(() => {
+        fetchServices();
+        const interval = setInterval(fetchServices, 30000); // Refresh every 30s
+        return () => clearInterval(interval);
     }, [filters]);
 
+    const fetchServices = async () => {
+        try {
+            const url = new URL('/api/web/dashboard/circuit-breakers', window.location.origin);
+            if (filters.tenant !== 'all') {
+                url.searchParams.append('tenant', filters.tenant);
+            }
+
+            const response = await fetch(url, {
+                credentials: 'same-origin',
+                headers: {
+                    'Accept': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest'
+                }
+            });
+
+            if (!response.ok) throw new Error('Failed to fetch services');
+            const data = await response.json();
+            setServices(data.data);
+            setLoading(false);
+        } catch (err) {
+            setError(err.message);
+            setLoading(false);
+        }
+    };
+
+    const resetCircuitBreaker = async (id) => {
+        try {
+            const response = await fetch(`/api/web/dashboard/circuit-breakers/${id}/reset`, {
+                method: 'POST',
+                credentials: 'same-origin',
+                headers: {
+                    'Accept': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest'
+                }
+            });
+
+            if (!response.ok) throw new Error('Failed to reset circuit breaker');
+            fetchServices(); // Refresh the list
+        } catch (err) {
+            setError(err.message);
+        }
+    };
+
     if (loading) {
-        return React.createElement('div', null, 'Loading circuit breakers...');
+        return React.createElement('div', { className: 'flex justify-center items-center h-32' },
+            React.createElement('div', { className: 'animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500' })
+        );
     }
 
-    return React.createElement(
-        'div',
-        { className: 'p-4' },
-        React.createElement('h2', { className: 'text-2xl font-bold mb-4' }, 'Circuit Breakers'),
-        React.createElement(
-            'div',
-            { className: 'overflow-x-auto' },
-            React.createElement(
-                'table',
-                { className: 'min-w-full divide-y divide-gray-200' },
-                React.createElement(
-                    'thead',
-                    { className: 'bg-gray-50' },
-                    React.createElement(
-                        'tr',
-                        null,
-                        React.createElement('th', { className: 'px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase' }, 'Service'),
-                        React.createElement('th', { className: 'px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase' }, 'Status'),
-                        React.createElement('th', { className: 'px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase' }, 'Tenant'),
-                        React.createElement('th', { className: 'px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase' }, 'Trip Count'),
-                        React.createElement('th', { className: 'px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase' }, 'Last Trip')
-                    )
-                ),
-                React.createElement(
-                    'tbody',
-                    { className: 'bg-white divide-y divide-gray-200' },
-                    circuitBreakers.length === 0 
-                        ? React.createElement(
-                            'tr',
-                            null,
-                            React.createElement(
-                                'td',
-                                { 
-                                    colSpan: '5',
-                                    className: 'px-6 py-4 text-center text-sm text-gray-500'
-                                },
-                                'No circuit breakers found'
-                            )
-                        )
-                        : circuitBreakers.map(breaker => React.createElement(
-                            'tr',
-                            { key: breaker.id },
-                            React.createElement('td', { className: 'px-6 py-4' }, breaker.service_name),
-                            React.createElement(
-                                'td',
-                                { className: 'px-6 py-4' },
-                                React.createElement(
-                                    'span',
-                                    {
-                                        className: `px-2 py-1 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                                            breaker.state === 'CLOSED'
-                                                ? 'bg-green-100 text-green-800'
-                                                : 'bg-red-100 text-red-800'
-                                        }`
-                                    },
-                                    breaker.state
-                                )
-                            ),
-                            React.createElement('td', { className: 'px-6 py-4' }, breaker.tenant_id || 'All'),
-                            React.createElement('td', { className: 'px-6 py-4' }, breaker.trip_count),
-                            React.createElement('td', { className: 'px-6 py-4' }, breaker.last_trip_at ? new Date(breaker.last_trip_at).toLocaleString() : 'Never')
-                        ))
+    if (error) {
+        return React.createElement('div', { className: 'text-red-600 p-4 border border-red-200 rounded' },
+            'Error: ', error
+        );
+    }
+
+    return React.createElement('div', { className: 'space-y-6' },
+        // Filters
+        React.createElement('div', { className: 'mb-4' },
+            React.createElement('select', {
+                className: 'border border-gray-300 rounded px-3 py-2',
+                value: filters.tenant,
+                onChange: (e) => setFilters(prev => ({ ...prev, tenant: e.target.value }))
+            },
+                React.createElement('option', { value: 'all' }, 'All Tenants'),
+                // Add tenant options dynamically
+                services.map(service => 
+                    React.createElement('option', { 
+                        key: service.tenant_id, 
+                        value: service.tenant_id 
+                    }, service.tenant_name)
+                )
+            )
+        ),
+        // Grid of service cards
+        React.createElement('div', { className: 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4' },
+            services.map(service => 
+                React.createElement('div', { 
+                    key: service.id, 
+                    className: 'p-4 border rounded-lg shadow bg-white'
+                },
+                    React.createElement('h3', { className: 'font-bold text-lg' }, service.name),
+                    React.createElement('div', { 
+                        className: `mt-2 ${
+                            service.status === 'OPEN' ? 'text-red-600' : 
+                            service.status === 'HALF_OPEN' ? 'text-yellow-600' : 
+                            'text-green-600'
+                        }`
+                    }, 'Status: ', service.status),
+                    React.createElement('div', { className: 'mt-1' }, 
+                        'Trip Count: ', service.trip_count
+                    ),
+                    React.createElement('div', { className: 'mt-1' }, 
+                        'Last Failure: ', service.last_failure_at || 'N/A'
+                    ),
+                    React.createElement('button', {
+                        onClick: () => resetCircuitBreaker(service.id),
+                        className: 'mt-4 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600'
+                    }, 'Reset')
                 )
             )
         )
     );
-};
+}
 
 export default CircuitBreakers;
