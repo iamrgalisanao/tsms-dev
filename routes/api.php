@@ -8,6 +8,7 @@ use App\Http\Controllers\API\V1\DashboardController;
 use App\Http\Controllers\API\V1\RetryHistoryController;
 use App\Http\Controllers\API\V1\CircuitBreakersController;
 use App\Http\Controllers\API\V1\TerminalTokensController;
+use App\Http\Controllers\API\V1\TestController;
 
 // Web Dashboard API Routes
 Route::prefix('web')->middleware(['api'])->group(function () {
@@ -37,5 +38,12 @@ Route::prefix('v1')->middleware('auth:pos_api')->group(function () {
 Route::prefix('v1')->group(function () {
     Route::post('register-terminal', [TerminalAuthController::class, 'register']);
     Route::post('refresh-token', [TerminalAuthController::class, 'refresh']);
+});
+
+// Test Endpoints (for circuit breaker verification)
+Route::prefix('v1')->group(function () {
+    Route::get('/test-circuit-breaker', [TestController::class, 'testCircuitBreaker'])
+        ->middleware(['circuit-breaker:test_service'])
+        ->withoutMiddleware(['auth:api', 'auth:sanctum', 'auth:pos_api']); // Temporarily disable auth for testing
 });
 

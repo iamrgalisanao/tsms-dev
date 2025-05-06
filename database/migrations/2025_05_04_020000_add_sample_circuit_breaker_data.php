@@ -12,6 +12,7 @@ return new class extends Migration
             $tenantId = DB::table('tenants')->insertGetId([
                 'name' => 'Sample Tenant',
                 'code' => 'SAMPLE001',
+                'status' => 'active',
                 'created_at' => now(),
                 'updated_at' => now()
             ]);
@@ -19,38 +20,40 @@ return new class extends Migration
             $tenantId = DB::table('tenants')->where('code', 'SAMPLE001')->value('id');
         }
 
-        // Then add circuit breaker data
         DB::table('circuit_breakers')->insert([
             [
                 'tenant_id' => $tenantId,
-                'service_name' => 'Payment Gateway',
+                'name' => 'payment_gateway',
                 'status' => 'CLOSED',
                 'trip_count' => 0,
                 'failure_threshold' => 5,
-                'reset_timeout' => 300,
+                'reset_timeout' => 60,
+                'last_failure_at' => null,
+                'cooldown_until' => null,
                 'created_at' => now(),
                 'updated_at' => now()
             ],
             [
                 'tenant_id' => $tenantId,
-                'service_name' => 'SMS Service',
+                'name' => 'sms_service',
                 'status' => 'HALF_OPEN',
                 'trip_count' => 3,
                 'failure_threshold' => 5,
-                'reset_timeout' => 300,
+                'reset_timeout' => 60,
                 'last_failure_at' => now(),
+                'cooldown_until' => now()->addMinutes(1),
                 'created_at' => now(),
                 'updated_at' => now()
             ],
             [
                 'tenant_id' => $tenantId,
-                'service_name' => 'Email Service',
+                'name' => 'email_service',
                 'status' => 'OPEN',
                 'trip_count' => 5,
                 'failure_threshold' => 5,
-                'reset_timeout' => 300,
+                'reset_timeout' => 60,
                 'last_failure_at' => now(),
-                'cooldown_until' => now()->addMinutes(5),
+                'cooldown_until' => now()->addMinutes(1),
                 'created_at' => now(),
                 'updated_at' => now()
             ]
@@ -60,11 +63,12 @@ return new class extends Migration
     public function down(): void
     {
         // Remove circuit breakers
-        DB::table('circuit_breakers')->whereIn('service_name', [
-            'Payment Gateway',
-            'SMS Service',
-            'Email Service'
+        DB::table('circuit_breakers')->whereIn('name', [
+            'payment_gateway',
+            'sms_service',
+            'email_service'
         ])->delete();
+
 
         // Remove the tenant if it has no other dependencies
         DB::table('tenants')->where('code', 'SAMPLE001')->delete();

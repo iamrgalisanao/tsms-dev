@@ -1,7 +1,6 @@
 <?php
 
 return [
-
     /*
     |--------------------------------------------------------------------------
     | Third Party Services
@@ -31,4 +30,8 @@ return [
         ],
     ],
 
+    'circuit_breaker' => [
+        'threshold' => env('CIRCUIT_BREAKER_THRESHOLD', 3),
+        'cooldown_seconds' => env('CIRCUIT_BREAKER_COOLDOWN', 60),
+    ],
 ];

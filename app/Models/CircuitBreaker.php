@@ -9,6 +9,11 @@ use Carbon\Carbon;
 class CircuitBreaker extends Model
 {
     use HasFactory;
+
+    // Define status constants
+    public const STATUS_CLOSED = 'CLOSED';
+    public const STATUS_OPEN = 'OPEN';
+    public const STATUS_HALF_OPEN = 'HALF_OPEN';
     
     const STATE_CLOSED = 'CLOSED';
     const STATE_OPEN = 'OPEN';
@@ -16,8 +21,10 @@ class CircuitBreaker extends Model
     
     protected $fillable = [
         'tenant_id',
-        'service_name',
-        'state',
+        'name',
+        'status',
+        'failures',
+        'trip_count',
         'failure_count',
         'failure_threshold',
         'reset_timeout',
