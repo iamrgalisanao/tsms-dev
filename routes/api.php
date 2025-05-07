@@ -9,9 +9,19 @@ use App\Http\Controllers\API\V1\RetryHistoryController;
 use App\Http\Controllers\API\V1\CircuitBreakersController;
 use App\Http\Controllers\API\V1\TerminalTokensController;
 use App\Http\Controllers\API\V1\TestController;
+use App\Http\Controllers\API\Auth\AuthController;
+
+// Authentication Routes
+Route::prefix('auth')->group(function () {
+    Route::post('/login', [AuthController::class, 'login']);
+    Route::middleware('auth:sanctum')->group(function () {
+        Route::post('/logout', [AuthController::class, 'logout']);
+        Route::get('/user', [AuthController::class, 'user']);
+    });
+});
 
 // Web Dashboard API Routes
-Route::prefix('web')->middleware(['api'])->group(function () {
+Route::prefix('web')->middleware(['api', 'auth:sanctum'])->group(function () {
     Route::get('/dashboard/transactions', [DashboardController::class, 'transactions']);
     Route::post('/dashboard/transactions/{id}/retry', [DashboardController::class, 'retryTransaction']);
     

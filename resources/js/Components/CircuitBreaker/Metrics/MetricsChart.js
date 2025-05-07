@@ -83,8 +83,17 @@ const MetricsChart = ({ serviceName, tenantId }) => {
                 timeRange: selectedRange.seconds.toString()
             });
             
+            const token = localStorage.getItem('auth_token');
+            if (!token) {
+                throw new Error('Authentication required');
+            }
+
             console.log('Fetching metrics with params:', Object.fromEntries(params));
-            const response = await fetch(`/api/web/circuit-breaker/metrics?${params}`);
+            const response = await fetch(`/api/web/circuit-breaker/metrics?${params}`, {
+                headers: {
+                    'Authorization': `Bearer ${token}`
+                }
+            });
             
             if (!response.ok) {
                 throw new Error('Failed to fetch metrics');
