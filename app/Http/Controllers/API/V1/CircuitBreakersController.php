@@ -5,78 +5,93 @@ namespace App\Http\Controllers\API\V1;
 use App\Http\Controllers\Controller;
 use App\Models\CircuitBreaker;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Redis;
+use Illuminate\Support\Facades\Log;
 
 class CircuitBreakersController extends Controller
 {
-    public function index(Request $request)
+    public function getStates(Request $request)
     {
         try {
-            \Log::info('Starting circuit breakers fetch');
-            \Log::info('Request parameters:', $request->all());
+            Log::info('Fetching circuit breaker states');
             
-            $query = CircuitBreaker::with(['tenant:id,name'])
-                ->select([
-                    'id',
-                    'name',
-                    'status',
-                    'tenant_id',
-                    'trip_count',
-                    'last_failure_at',
-                    'cooldown_until',
-                    'created_at',
-                    'updated_at'
-                ]);
-            
-            \Log::info('Query built');
-
-            if ($request->has('tenant') && $request->tenant !== 'all') {
-                $query->where('tenant_id', $request->tenant);
-            }
-
-            $result = $query->get();
-
-            return response()->json([
-                'data' => $result->map(function($item) {
-                    return [
-                        'id' => $item->id,
-                        'name' => $item->name,
-                        'status' => $item->status,
-                        'tenant_id' => $item->tenant_id,
-                        'tenant_name' => $item->tenant->name ?? 'Unknown',
-                        'last_failure_at' => $item->last_failure_at ? $item->last_failure_at->toIso8601String() : null,
-                        'trip_count' => $item->trip_count ?? 0
-                    ];
-                })
+            $query = CircuitBreaker::select([
+                'id',
+                'name',
+                'status',
+                'tenant_id',
+                'trip_count',
+                'cooldown_until'
             ]);
+
+            if ($request->has('tenant_id')) {
+                $query->where('tenant_id', $request->tenant_id);
+            }
+            
+            $states = $query->get();
+            Log::info('Retrieved states:', ['count' => $states->count()]);
+
+            return response()->json($states);
         } catch (\Exception $e) {
-            \Log::error('Circuit breaker error: ' . $e->getMessage());
-            \Log::error($e->getTraceAsString());
-            return response()->json([
-                'error' => 'Failed to fetch circuit breakers',
-                'message' => $e->getMessage()
-            ], 500);
+            Log::error('Error fetching circuit breaker states: ' . $e->getMessage());
+            return response()->json(['error' => 'Failed to fetch circuit breaker states'], 500);
         }
     }
 
-    public function reset($id)
+    public function getMetrics(Request $request)
     {
         try {
-            $circuitBreaker = CircuitBreaker::findOrFail($id);
-            $circuitBreaker->status = 'CLOSED';
-            $circuitBreaker->trip_count = 0;
-            $circuitBreaker->last_failure_at = null;
-            $circuitBreaker->cooldown_until = null;
-            $circuitBreaker->save();
-
-            return response()->json([
-                'message' => 'Circuit breaker reset successfully',
-                'data' => $circuitBreaker
+            $service = $request->query('service');
+            $tenantId = $request->query('tenant');
+            
+            Log::info('Fetching metrics', [
+                'service' => $service,
+                'tenant' => $tenantId
             ]);
+
+            if (!$service) {
+                return response()->json(['error' => 'Service name is required'], 400);
+            }
+
+            // Generate some test metrics if Redis is empty
+            $key = "circuit_breaker:{$tenantId}:{$service}:metrics";
+            $metrics = Redis::get($key);
+
+            if (!$metrics) {
+                Log::info('No metrics found in Redis, generating test data');
+                // Generate test data for development
+                $timestamps = [];
+                $failureRates = [];
+                $responseTimes = [];
+                
+                for ($i = 10; $i >= 0; $i--) {
+                    $timestamps[] = now()->subMinutes($i)->format('H:i:s');
+                    $failureRates[] = rand(0, 100) / 10; // 0-10% failure rate
+                    $responseTimes[] = rand(50, 500); // 50-500ms response time
+                }
+
+                $metrics = [
+                    'timestamps' => $timestamps,
+                    'failure_rates' => $failureRates,
+                    'response_times' => $responseTimes
+                ];
+
+                // Store in Redis for 1 minute
+                Redis::setex($key, 60, json_encode($metrics));
+                
+                Log::info('Generated test metrics', ['metrics' => $metrics]);
+                return response()->json($metrics);
+            }
+
+            $metrics = json_decode($metrics, true);
+            Log::info('Retrieved metrics from Redis', [
+                'dataPoints' => count($metrics['timestamps'] ?? [])
+            ]);
+
+            return response()->json($metrics);
         } catch (\Exception $e) {
-            return response()->json([
-                'error' => 'Failed to reset circuit breaker',
-                'message' => config('app.debug') ? $e->getMessage() : null
-            ], 500);
+            Log::error('Error fetching metrics: ' . $e->getMessage());
+            return response()->json(['error' => 'Failed to fetch metrics'], 500);
         }
     }
 }

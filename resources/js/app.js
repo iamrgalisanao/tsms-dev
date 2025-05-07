@@ -1,82 +1,32 @@
-/** @jsxRuntime classic */
-/** @jsx React.createElement */
-
+import './bootstrap';
 import React from 'react';
 import { createRoot } from 'react-dom/client';
-import './bootstrap';
-import '../css/app.css';
-import Dashboard from './components/Dashboard';
+import CircuitBreakerDashboard from './Pages/CircuitBreaker/Dashboard';
 
-// Error Boundary Component
-class ErrorBoundary extends React.Component {
-    constructor(props) {
-        super(props);
-        this.state = { hasError: false };
-    }
-
-    static getDerivedStateFromError(error) {
-        return { hasError: true };
-    }
-
-    componentDidCatch(error, errorInfo) {
-        console.error('Error:', error, errorInfo);
-    }
-
-    render() {
-        if (this.state.hasError) {
-            return React.createElement('div', null, 'Something went wrong.');
-        }
-
-        return this.props.children;
-    }
-}
-
-// App component
+// Wrap dashboard in a container component
 function App() {
-    const [isAuthenticated, setIsAuthenticated] = React.useState(true);
-
-    React.useEffect(() => {
-        // Check authentication status on mount
-        fetch('/api/web/dashboard/transactions', {
-            credentials: 'same-origin',
-            headers: {
-                'Accept': 'application/json',
-                'X-Requested-With': 'XMLHttpRequest'
-            }
-        }).then(response => {
-            if (response.status === 401) {
-                setIsAuthenticated(false);
-                window.location.href = '/login';
-            }
-        });
-    }, []);
-
-    if (!isAuthenticated) {
-        return null;
-    }
-
-    return React.createElement(
-        ErrorBoundary,
-        null,
-        React.createElement(
-            'div',
-            { 
-                style: {
-                    backgroundColor: '#f0f2f5',
-                    minHeight: '100vh',
-                    color: '#333'
-                }
-            },
-            React.createElement(Dashboard)
-        )
+    console.log('App component rendering');
+    return React.createElement('div',
+        { className: "min-h-screen bg-gray-100" },
+        React.createElement(CircuitBreakerDashboard)
     );
-    
-    
 }
 
-// Mount app
-const container = document.getElementById('app');
-if (container) {
-    const root = createRoot(container);
-    root.render(React.createElement(App));
-}
+// Debug messages
+console.log('1. Script loaded');
+
+document.addEventListener('DOMContentLoaded', () => {
+    console.log('2. DOM loaded');
+    const container = document.getElementById('app');
+    console.log('3. Container found:', !!container);
+
+    if (container) {
+        try {
+            const root = createRoot(container);
+            root.render(React.createElement(App));
+            console.log('4. React rendered');
+        } catch (error) {
+            console.error('React error:', error);
+        }
+    }
+});

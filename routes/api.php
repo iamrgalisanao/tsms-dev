@@ -19,6 +19,10 @@ Route::prefix('web')->middleware(['api'])->group(function () {
     Route::get('/dashboard/retry-history', [RetryHistoryController::class, 'index']);
     
     // Circuit Breakers
+    Route::prefix('circuit-breaker')->group(function () {
+        Route::get('/states', [CircuitBreakersController::class, 'getStates']);
+        Route::get('/metrics', [CircuitBreakersController::class, 'getMetrics']);
+    });
     Route::get('/dashboard/circuit-breakers', [CircuitBreakersController::class, 'index']);
     Route::post('/dashboard/circuit-breakers/{id}/reset', [CircuitBreakersController::class, 'reset']);
     

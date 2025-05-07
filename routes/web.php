@@ -23,5 +23,9 @@ Route::middleware('auth')->group(function () {
         return view('dashboard');
     })->name('dashboard');
 
+    Route::get('/circuit-breaker', function () {
+        return view('circuit-breaker.dashboard');
+    })->name('circuit-breaker.dashboard');
+
     Route::post('/logout', [LoginController::class, 'logout'])->name('logout');
 });

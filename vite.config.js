@@ -7,26 +7,26 @@ export default defineConfig({
         laravel({
             input: [
                 'resources/css/app.css',
-                'resources/js/app.js',
+                'resources/js/app.js'
             ],
             refresh: true,
         }),
         react({
-            include: "**/*.{jsx,js}",
-        }),
+            jsxRuntime: 'automatic',
+            babel: {
+                plugins: [
+                    '@babel/plugin-transform-react-jsx'
+                ]
+            }
+        })
     ],
     server: {
         hmr: true,
         watch: {
-            usePolling: true,
+            usePolling: true
         }
     },
     optimizeDeps: {
         include: ['react', 'react-dom']
-    },
-    esbuild: {
-        loader: 'jsx',
-        jsxFactory: 'React.createElement',
-        jsxFragment: 'React.Fragment'
     }
 });
