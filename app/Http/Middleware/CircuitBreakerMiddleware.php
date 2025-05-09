@@ -71,9 +71,8 @@ class CircuitBreakerMiddleware
                     if ($failureCount >= $threshold) {
                         $circuitBreaker->status = CircuitBreaker::STATUS_OPEN;
                         $circuitBreaker->trip_count++;
-                        $circuitBreaker->cooldown_until = now()->addSeconds(
-                            config('services.circuit_breaker.cooldown', 60)
-                        );
+                        $cooldownSeconds = (int) config('services.circuit_breaker.cooldown', 60);
+                        $circuitBreaker->cooldown_until = now()->addSeconds($cooldownSeconds);
                         $circuitBreaker->save();
                     }
                     

@@ -25,7 +25,7 @@ Route::prefix('auth')->group(function () {
 
 // Web Dashboard API Routes
 Route::prefix('web')->middleware(['api', 'auth:sanctum'])->group(function () {
-    Route::middleware('throttle:circuit-breaker')->group(function() {
+    Route::middleware(['circuit-breaker'])->group(function() {
         Route::get('/dashboard/transactions', [DashboardController::class, 'transactions']);
         Route::post('/dashboard/transactions/{id}/retry', [DashboardController::class, 'retryTransaction']);
         
