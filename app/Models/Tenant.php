@@ -4,10 +4,12 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Laravel\Sanctum\HasApiTokens;
-
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 
 class Tenant extends Model
 {
+    use HasFactory;
+
     protected $fillable = [
         'name',
         'code',
@@ -24,4 +26,3 @@ class Tenant extends Model
         return $this->hasMany(CircuitBreaker::class);
     }
 }
-

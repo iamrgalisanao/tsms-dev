@@ -64,4 +64,16 @@ Route::prefix('v1')->group(function () {
     Route::get('/test-circuit-breaker', [TestController::class, 'testCircuitBreaker'])
         ->middleware(['circuit-breaker:test_service'])
         ->withoutMiddleware(['auth:api', 'auth:sanctum', 'auth:pos_api']); // Temporarily disable auth for testing
+
+    Route::get('/circuit-breakers/test-endpoint', [TestController::class, 'testEndpoint'])
+        ->middleware(['circuit-breaker:test_service'])
+        ->withoutMiddleware(['auth:api', 'auth:sanctum', 'auth:pos_api']);
+        
+    Route::post('/circuit-breakers/test-circuit', [TestController::class, 'testCircuit'])
+        ->middleware(['circuit-breaker:test_service'])
+        ->withoutMiddleware(['auth:api', 'auth:sanctum', 'auth:pos_api']);
+        
+    // Reset test service circuit breaker
+    Route::post('/circuit-breakers/test-circuit/reset', [TestController::class, 'resetTestCircuit'])
+        ->withoutMiddleware(['auth:api', 'auth:sanctum', 'auth:pos_api']);
 });

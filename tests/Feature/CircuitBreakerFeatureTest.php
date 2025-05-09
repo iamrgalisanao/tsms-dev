@@ -24,6 +24,9 @@ class CircuitBreakerFeatureTest extends TestCase
 
         // Authenticate user
         Sanctum::actingAs($user);
+        
+        // Reset circuit breaker state
+        $this->postJson('/api/v1/circuit-breakers/test-circuit/reset');
     }
 
     /** @test */
@@ -36,6 +39,9 @@ class CircuitBreakerFeatureTest extends TestCase
     /** @test */
     public function circuit_opens_after_failures()
     {
+        // Reset circuit breaker state
+        $this->postJson('/api/v1/circuit-breakers/test-circuit/reset');
+        
         for ($i = 0; $i < 3; $i++) {
             $response = $this->postJson('/api/v1/circuit-breakers/test-circuit', [
                 'should_fail' => true
@@ -52,6 +58,9 @@ class CircuitBreakerFeatureTest extends TestCase
     /** @test */
     public function circuit_remains_closed_below_threshold()
     {
+        // Reset circuit breaker state
+        $this->postJson('/api/v1/circuit-breakers/test-circuit/reset');
+        
         for ($i = 0; $i < 2; $i++) {
             $response = $this->postJson('/api/v1/circuit-breakers/test-circuit', [
                 'should_fail' => true

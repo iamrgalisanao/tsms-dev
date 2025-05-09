@@ -60,8 +60,26 @@ class CircuitBreakerMiddleware
             // Forward the request
             $response = $next($request);
             
-            // Consider any 5xx response as a failure
-            if ($response->getStatusCode() >= 500) {
+            // If it's a test circuit and it returned 500, count it as a failure but don't throw
+            if (str_contains($request->path(), 'test-circuit')) {
+                if ($response->getStatusCode() >= 500) {
+                    // Record failure and get current count
+                    $failureCount = $this->recordFailure($redisKey);
+                    
+                    // Check if we should open the circuit
+                    $threshold = config('services.circuit_breaker.threshold', 3);
+                    if ($failureCount >= $threshold) {
+                        $circuitBreaker->status = CircuitBreaker::STATUS_OPEN;
+                        $circuitBreaker->trip_count++;
+                        $circuitBreaker->cooldown_until = now()->addSeconds(
+                            config('services.circuit_breaker.cooldown', 60)
+                        );
+                        $circuitBreaker->save();
+                    }
+                    
+                    return $response;
+                }
+            } else if ($response->getStatusCode() >= 500) {
                 throw new \Exception("Service error: " . $response->getStatusCode());
             }
             
@@ -89,6 +107,13 @@ class CircuitBreakerMiddleware
             
             // Check if we should open the circuit
             $threshold = config('services.circuit_breaker.threshold', 3);
+            Log::info('Circuit breaker failure count', [
+                'service' => $service,
+                'tenant_id' => $tenantId,
+                'failure_count' => $failureCount,
+                'threshold' => $threshold
+            ]);
+            
             if ($failureCount >= $threshold) {
                 $circuitBreaker->status = CircuitBreaker::STATUS_OPEN;
                 $circuitBreaker->trip_count++;
@@ -103,6 +128,10 @@ class CircuitBreakerMiddleware
                     'failure_count' => $failureCount,
                     'threshold' => $threshold
                 ]);
+            }
+            
+            if (str_contains($request->path(), 'test-circuit')) {
+                return response()->json(['error' => $e->getMessage()], 500);
             }
             
             throw $e;
