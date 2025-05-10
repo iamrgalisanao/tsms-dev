@@ -21,6 +21,6 @@ class AuthServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        Route::middlewareAlias('ensure.dashboard.auth', EnsureDashboardAuth::class);
+        $this->app['router']->aliasMiddleware('ensure.dashboard.auth', EnsureDashboardAuth::class);
     }
 }
