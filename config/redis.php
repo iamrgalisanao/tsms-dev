@@ -1,7 +1,7 @@
 <?php
 
 return [
-    'default' => env('REDIS_CLIENT', 'phpredis'),
+    'default' => env('REDIS_CLIENT', 'predis'),
 
     'options' => [
         'cluster' => env('REDIS_CLUSTER', 'redis'),

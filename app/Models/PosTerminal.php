@@ -3,13 +3,14 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable; // ⬅️ Use this instead of just Model
 use Illuminate\Notifications\Notifiable;
 use Tymon\JWTAuth\Contracts\JWTSubject;
 
 class PosTerminal extends Authenticatable implements JWTSubject
 {
-    use Notifiable;
+    use Notifiable, HasFactory;
 
     protected $fillable = [
         'tenant_id',
@@ -31,4 +32,3 @@ class PosTerminal extends Authenticatable implements JWTSubject
         return [];
     }
 }
-

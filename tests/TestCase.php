@@ -25,6 +25,10 @@ abstract class TestCase extends BaseTestCase
     {
         $app = require __DIR__.'/../bootstrap/app.php';
         $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
+        
+        // Set a JWT secret for testing
+        config(['jwt.secret' => 'test_jwt_secret_for_testing_purposes_only']);
+        
         return $app;
     }
 }

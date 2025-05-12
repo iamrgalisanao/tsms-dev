@@ -36,6 +36,32 @@ class CircuitBreaker extends Model
         'last_failure_at' => 'datetime',
         'cooldown_until' => 'datetime'
     ];
+    
+    // Add accessors for backward compatibility with tests
+    public function getStateAttribute()
+    {
+        return $this->status;
+    }
+    
+    public function setStateAttribute($value)
+    {
+        $this->attributes['status'] = $value;
+    }
+    
+    public function getFailureCountAttribute()
+    {
+        return $this->failures;
+    }
+    
+    public function setFailureCountAttribute($value)
+    {
+        $this->attributes['failures'] = $value;
+    }
+    
+    public function getOpenedAtAttribute()
+    {
+        return $this->last_failure_at;
+    }
 
     public function tenant()
     {
@@ -44,11 +70,11 @@ class CircuitBreaker extends Model
     
     public function recordFailure()
     {
-        $this->failure_count++;
+        $this->failures++;
         $this->last_failure_at = Carbon::now();
         
-        if ($this->failure_count >= $this->failure_threshold) {
-            $this->state = self::STATE_OPEN;
+        if ($this->failures >= $this->failure_threshold) {
+            $this->status = self::STATE_OPEN;
             $this->cooldown_until = Carbon::now()->addSeconds($this->reset_timeout);
         }
         
@@ -57,27 +83,27 @@ class CircuitBreaker extends Model
     
     public function recordSuccess()
     {
-        if ($this->state === self::STATE_HALF_OPEN) {
-            $this->state = self::STATE_CLOSED;
+        if ($this->status === self::STATE_HALF_OPEN) {
+            $this->status = self::STATE_CLOSED;
         }
         
-        $this->failure_count = 0;
+        $this->failures = 0;
         $this->save();
     }
     
     public function isAllowed(): bool
     {
-        if ($this->state === self::STATE_CLOSED) {
+        if ($this->status === self::STATE_CLOSED) {
             return true;
         }
         
-        if ($this->state === self::STATE_OPEN && $this->cooldown_until->isPast()) {
-            $this->state = self::STATE_HALF_OPEN;
+        if ($this->status === self::STATE_OPEN && $this->cooldown_until->isPast()) {
+            $this->status = self::STATE_HALF_OPEN;
             $this->save();
             return true;
         }
         
-        if ($this->state === self::STATE_HALF_OPEN) {
+        if ($this->status === self::STATE_HALF_OPEN) {
             return true;
         }
         
@@ -88,12 +114,12 @@ class CircuitBreaker extends Model
     {
         return static::firstOrCreate(
             [
-                'service_name' => $serviceName,
+                'name' => $serviceName,
                 'tenant_id' => $tenantId
             ],
             [
-                'state' => self::STATE_CLOSED,
-                'failure_count' => 0,
+                'status' => self::STATE_CLOSED,
+                'failures' => 0,
                 'failure_threshold' => 5,
                 'reset_timeout' => 300
             ]

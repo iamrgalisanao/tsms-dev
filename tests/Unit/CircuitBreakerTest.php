@@ -1,35 +1,39 @@
 <?php
 
-
 namespace Tests\Unit;
 
 use App\Models\CircuitBreaker;
 use App\Models\Tenant;
 use Tests\TestCase;
+use Tests\Traits\CircuitBreakerTestHelpers;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Carbon\Carbon;
 
 class CircuitBreakerTest extends TestCase
 {
-    use RefreshDatabase;
+    use RefreshDatabase, CircuitBreakerTestHelpers;
     
     protected function setUp(): void
     {
         parent::setUp();
         
-        // Create tenants manually for tests
-        $tenant1 = new Tenant();
-        $tenant1->id = 1;
-        $tenant1->name = 'Test Tenant 1';
-        $tenant1->code = 'TEST1'; // Add required code field
-        $tenant1->save();
+        // Create tenants for tests, checking if they exist first
+        $tenant1 = Tenant::firstOrCreate(
+            ['code' => 'TEST1'],
+            [
+                'name' => 'Test Tenant 1',
+                'code' => 'TEST1'
+            ]
+        );
         
         // Create a second tenant for multi-tenant tests
-        $tenant2 = new Tenant();
-        $tenant2->id = 2;
-        $tenant2->name = 'Test Tenant 2';
-        $tenant2->code = 'TEST2'; // Add required code field
-        $tenant2->save();
+        $tenant2 = Tenant::firstOrCreate(
+            ['code' => 'TEST2'],
+            [
+                'name' => 'Test Tenant 2',
+                'code' => 'TEST2'
+            ]
+        );
     }
 
     /** @test */
@@ -149,9 +153,13 @@ class CircuitBreakerTest extends TestCase
     /** @test */
     public function it_creates_unique_circuit_breakers_per_tenant_and_service()
     {
-        $cb1 = CircuitBreaker::forService('api.transactions', 1);
-        $cb2 = CircuitBreaker::forService('api.transactions', 2);
-        $cb3 = CircuitBreaker::forService('api.payments', 1);
+        // Get the actual tenant IDs from the database to avoid foreign key issues
+        $tenant1 = Tenant::where('code', 'TEST1')->first();
+        $tenant2 = Tenant::where('code', 'TEST2')->first();
+        
+        $cb1 = CircuitBreaker::forService('api.transactions', $tenant1->id);
+        $cb2 = CircuitBreaker::forService('api.transactions', $tenant2->id);
+        $cb3 = CircuitBreaker::forService('api.payments', $tenant1->id);
         
         $this->assertNotEquals($cb1->id, $cb2->id);
         $this->assertNotEquals($cb1->id, $cb3->id);

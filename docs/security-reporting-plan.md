@@ -112,8 +112,8 @@ The Security Reporting module will provide administrators with comprehensive vis
 -   **Backend**: Laravel 11 PHP Framework
 -   **Database**: MySQL with Eloquent ORM
 -   **API**: RESTful API with Laravel Resources
--   **PDF Generation**: Laravel Snappy with wkhtmltopdf
--   **CSV Export**: League CSV package
+-   **PDF Generation**: DomPDF package via Laravel wrapper (barryvdh/laravel-dompdf)
+-   **CSV Export**: Native PHP fputcsv functionality
 -   **Frontend Visualization**: Chart.js or ApexCharts
 -   **Real-time Updates**: Laravel Echo with Pusher
 
@@ -146,10 +146,32 @@ The Security Reporting module will provide administrators with comprehensive vis
 
 ## Required Dependencies
 
--   Laravel Snappy for PDF generation
--   League CSV for CSV exports
+-   barryvdh/laravel-dompdf for PDF generation
+-   Native PHP functions for CSV exports
 -   Chart.js or ApexCharts for visualizations
 -   Laravel Echo and Pusher for real-time updates
+
+## Implementation Progress
+
+### Completed
+
+-   Backend service structure established
+-   Data formatting and standardization for reports
+-   CSV export functionality implemented
+-   Foundation for PDF export with DomPDF placeholder
+
+### In Progress
+
+-   PDF export implementation pending DomPDF installation
+-   Security report template system
+-   API endpoints for report generation
+
+### Pending
+
+-   Frontend components for visualization
+-   Dashboard metrics implementation
+-   Alert management workflow
+-   Report scheduling and email delivery
 
 ## Success Criteria
 

@@ -4,6 +4,7 @@ namespace Tests\Traits;
 
 use App\Models\User;
 use Laravel\Sanctum\Sanctum;
+use Spatie\Permission\Models\Role;
 
 trait WithTestUser
 {

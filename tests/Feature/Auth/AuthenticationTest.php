@@ -6,7 +6,7 @@ use App\Models\User;
 use Laravel\Sanctum\Sanctum;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;
-use Tests\Traits\WithTestUser;
+use Tests\Traits\AuthTestHelpers;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Support\Facades\Hash;
 
@@ -14,26 +14,20 @@ use Spatie\Permission\Models\Role;
 
 class AuthenticationTest extends TestCase
 {
-    use DatabaseTransactions;
+    use DatabaseTransactions, AuthTestHelpers;
 
     protected function setUp(): void
     {
         parent::setUp();
         
-        // Create a test role that won't conflict with existing ones
-        Role::firstOrCreate(['name' => 'test_user', 'guard_name' => 'web']);
-
-        // Reset cached roles and permissions
-        app()[\Spatie\Permission\PermissionRegistrar::class]->forgetCachedPermissions();
+        // Set up auth test environment with mocked cookie service
+        $this->setUpAuthTestEnvironment();
     }
 
     public function test_user_can_login_with_valid_credentials(): void
     {
-        $user = User::factory()->create([
-            'email' => 'test@example.com',
-            'password' => Hash::make('password123')
-        ]);
-        $user->assignRole('test_user');
+        // Create a test user with known credentials
+        $this->createTestUser();
         
         $this->withoutMiddleware(\App\Http\Middleware\EnsureDashboardAuth::class);
 
@@ -58,7 +52,8 @@ class AuthenticationTest extends TestCase
 
     public function test_user_cannot_login_with_invalid_credentials(): void
     {
-        $user = User::factory()->create();
+        // Create a user with our helper
+        $user = $this->createTestUser();
 
         $response = $this->postJson('/api/auth/login', [
             'email' => $user->email,
@@ -76,10 +71,8 @@ class AuthenticationTest extends TestCase
 
     public function test_user_can_logout(): void
     {
-        $user = User::factory()->create();
-        $user->assignRole('test_user');
-        
-        Sanctum::actingAs($user);
+        // Use our helper to create and authenticate a user
+        $this->actAsAuthenticatedUser();
 
         $response = $this->postJson('/api/auth/logout');
 
@@ -93,7 +86,8 @@ class AuthenticationTest extends TestCase
 
     public function test_can_get_authenticated_user_details(): void
     {
-        $user = User::factory()->create();
+        // Create a user and get a token
+        $user = $this->createTestUser();
         $token = $user->createToken('test-token')->plainTextToken;
 
         $response = $this->withHeader('Authorization', 'Bearer ' . $token)
@@ -123,5 +117,11 @@ class AuthenticationTest extends TestCase
             ->getJson('/api/web/circuit-breaker/metrics');
 
         $response->assertUnauthorized();
+    }
+    
+    protected function tearDown(): void
+    {
+        $this->tearDownAuthTestEnvironment();
+        parent::tearDown();
     }
 }

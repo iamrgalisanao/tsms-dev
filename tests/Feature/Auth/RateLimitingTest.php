@@ -5,10 +5,19 @@ namespace Tests\Feature\Auth;
 use Tests\TestCase;
 use App\Models\User;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
+use Tests\Traits\AuthTestHelpers;
 
 class RateLimitingTest extends TestCase
 {
-    use DatabaseTransactions;
+    use DatabaseTransactions, AuthTestHelpers;
+    
+    protected function setUp(): void
+    {
+        parent::setUp();
+        
+        // Set up auth test environment with mocked cookie service
+        $this->setUpAuthTestEnvironment();
+    }
 
     public function test_login_endpoint_is_rate_limited(): void
     {
@@ -27,7 +36,8 @@ class RateLimitingTest extends TestCase
 
     public function test_api_endpoints_are_rate_limited(): void
     {
-        $user = User::factory()->create();
+        // Create and authenticate a user using our helper
+        $user = $this->createTestUser();
         $token = $user->createToken('test-token')->plainTextToken;
 
         // Make multiple requests to an API endpoint
@@ -42,7 +52,8 @@ class RateLimitingTest extends TestCase
 
     public function test_circuit_breaker_endpoints_have_separate_rate_limits(): void
     {
-        $user = User::factory()->create();
+        // Create and authenticate a user using our helper
+        $user = $this->createTestUser();
         $token = $user->createToken('test-token')->plainTextToken;
 
         // Make multiple requests to a circuit breaker endpoint
@@ -54,5 +65,11 @@ class RateLimitingTest extends TestCase
 
         // The 31st request should be rate limited
         $response->assertStatus(429);
+    }
+    
+    protected function tearDown(): void
+    {
+        $this->tearDownAuthTestEnvironment();
+        parent::tearDown();
     }
 }

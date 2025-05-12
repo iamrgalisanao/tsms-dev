@@ -161,6 +161,10 @@ return [
         App\Providers\AppServiceProvider::class,
         App\Providers\AuthServiceProvider::class,
         App\Providers\SecurityMonitoringServiceProvider::class,
+        
+        // Third Party Service Providers...
+        Barryvdh\DomPDF\ServiceProvider::class,
     ],
+   
 
 ];

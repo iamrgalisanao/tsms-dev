@@ -9,11 +9,13 @@ use Illuminate\Http\Request;
 use Tymon\JWTAuth\Facades\JWTAuth;
 use App\Models\Transactions;
 use App\Models\IntegrationLog;
+use App\Models\TerminalToken;
+use App\Events\TransactionPermanentlyFailed;
 use App\Services\TransactionValidationService;
 use Illuminate\Support\Facades\Log;
 use Carbon\Carbon;
 use Illuminate\Support\Str;
-use App\Events\TransactionPermanentlyFailed;
+
 
 class TransactionController extends Controller
 {
@@ -45,7 +47,7 @@ class TransactionController extends Controller
         }
 
         // Authenticate terminal
-        $terminal = TerminalToken::where('terminal_id', $request->input('terminal_id'))
+        $terminal = \App\Models\TerminalToken::where('terminal_id', $request->input('terminal_id'))
             ->latest()
             ->first();
 

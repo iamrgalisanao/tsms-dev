@@ -11,12 +11,14 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Foundation\Testing\WithFaker;
 use Tests\TestCase;
 use Carbon\Carbon;
+use Tests\Traits\AuthTestHelpers;
 use Tymon\JWTAuth\Facades\JWTAuth;
 
 class TransactionCircuitBreakerTest extends TestCase
 {
     use RefreshDatabase;
     use WithFaker;
+    use AuthTestHelpers;
 
     protected $terminal;
     protected $token;
@@ -26,6 +28,16 @@ class TransactionCircuitBreakerTest extends TestCase
     {
         parent::setUp();
         
+        // Set up auth test environment (includes cookie mock)
+        $this->setUpAuthTestEnvironment();
+        
+        // Configure security logging for tests
+        config(['logging.channels.security' => [
+            'driver' => 'single',
+            'path' => storage_path('logs/security-test.log'),
+            'level' => 'debug',
+        ]]);
+        
         // Create tenant and terminal
         $tenant = Tenant::factory()->create();
         $this->terminal = PosTerminal::factory()->create([
@@ -34,11 +46,13 @@ class TransactionCircuitBreakerTest extends TestCase
         ]);
         
         // Generate JWT token for authentication
+        $this->terminal->tenant_id = $tenant->id; // Ensure tenant ID is set
         $this->token = JWTAuth::fromUser($this->terminal);
         $this->headers = [
             'Authorization' => 'Bearer ' . $this->token,
             'Content-Type' => 'application/json',
-            'Accept' => 'application/json'
+            'Accept' => 'application/json',
+            'X-Tenant-ID' => $tenant->id // Add tenant ID to headers
         ];
     }
 
@@ -56,11 +70,11 @@ class TransactionCircuitBreakerTest extends TestCase
         $circuitBreaker->recordFailure();
         
         // Verify circuit is still closed
-        $this->assertEquals(CircuitBreaker::STATE_CLOSED, $circuitBreaker->state);
+        $this->assertEquals(CircuitBreaker::STATUS_CLOSED, $circuitBreaker->status);
         
         // One more failure should trip the circuit
         $circuitBreaker->recordFailure();
-        $this->assertEquals(CircuitBreaker::STATE_OPEN, $circuitBreaker->state);
+        $this->assertEquals(CircuitBreaker::STATUS_OPEN, $circuitBreaker->status);
         
         // Verify that requests are now blocked
         $this->assertFalse($circuitBreaker->isAllowed());
@@ -71,9 +85,19 @@ class TransactionCircuitBreakerTest extends TestCase
     {
         // Create and trip a circuit breaker
         $circuitBreaker = CircuitBreaker::forService('api.transactions', $this->terminal->tenant_id);
-        $circuitBreaker->state = CircuitBreaker::STATE_OPEN;
+        $circuitBreaker->status = CircuitBreaker::STATUS_OPEN;
         $circuitBreaker->cooldown_until = Carbon::now()->addMinutes(5);
         $circuitBreaker->save();
+        
+        // Debug output
+        \Illuminate\Support\Facades\Log::info('Circuit breaker status check: ' . json_encode([
+            'id' => $circuitBreaker->id,
+            'status' => $circuitBreaker->status,
+            'tenant_id' => $circuitBreaker->tenant_id,
+            'name' => $circuitBreaker->name,
+            'is_open' => $circuitBreaker->status === CircuitBreaker::STATUS_OPEN,
+            'cooldown_until' => $circuitBreaker->cooldown_until,
+        ]));
         
         // Create 10 failed logs to trigger circuit breaker in controller
         for ($i = 0; $i < 11; $i++) {
@@ -96,5 +120,11 @@ class TransactionCircuitBreakerTest extends TestCase
         $response->assertStatus(503);
         $response->assertJsonPath('status', 'error');
         $response->assertJsonStructure(['retry_at']);
+    }
+    
+    protected function tearDown(): void
+    {
+        $this->tearDownAuthTestEnvironment();
+        parent::tearDown();
     }
 }

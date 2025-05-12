@@ -166,6 +166,25 @@ WHERE updated_at < DATE_SUB(NOW(), INTERVAL 30 DAY)
     - Clear Redis keys manually if needed
 
 3. **Multi-tenant Issues**
+
     - Verify tenant ID in headers
     - Check Redis key isolation
     - Monitor tenant-specific metrics
+
+4. **Testing Issues**
+    - Column name mismatches between tests and database schema
+    - Ensure tenant records exist before testing with their IDs
+    - Check for model accessor/mutator compatibility
+    - Verify database constraint handling in test environment
+
+## Implementation Notes
+
+### Model-Database Compatibility
+
+The CircuitBreaker model uses accessors and mutators to maintain compatibility between different naming conventions:
+
+-   `state` attribute maps to the `status` database column
+-   `failure_count` attribute maps to the `failures` database column
+-   `opened_at` attribute maps to the `last_failure_at` database column
+
+This design allows backward compatibility with existing code while maintaining a cleaner database schema.
