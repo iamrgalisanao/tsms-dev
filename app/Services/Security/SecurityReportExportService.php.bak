@@ -1,0 +1,240 @@
+<?php
+
+namespace App\Services\Security;
+
+use App\Models\SecurityReport;
+use Illuminate\Support\Facades\Log;
+use Barryvdh\DomPDF\Facade\Pdf;
+
+class SecurityReportExportService
+{
+    private const DATETIME_FORMAT = 'Y-m-d H:i:s';
+    
+    public function exportReport(SecurityReport $report, string $format = 'pdf'): ?array
+    {
+        try {
+            if (!in_array($format, ['pdf', 'csv'])) {
+                return null;
+            }
+
+            $dateStr = now()->format('Ymd_His');
+            $safeName = preg_replace('/[^a-zA-Z0-9]/', '_', $report->name ?? '');
+            $safeName = trim($safeName, '_');
+            $filename = "security_report_{$safeName}_{$dateStr}.{$format}";
+            
+            if (!$report->id) {
+                Log::error('Invalid report state - missing ID');
+                return null;
+            }
+            
+            $reportData = $this->prepareReportData($report);
+            
+            if ($format === 'pdf') {
+                return $this->generatePdf($filename, $reportData);
+            }
+            return $this->generateCsv($reportData, $filename);
+            
+        } catch (\Exception $e) {
+            Log::error('Failed to export security report: ' . $e->getMessage(), [
+                'report_id' => $report->id ?? 'unknown',
+                'format' => $format,
+                'trace' => $e->getTraceAsString()
+            ]);
+            return null;
+        }
+    }
+    
+    private function prepareReportData(SecurityReport $report): array
+    {
+        $report->load(['generatedBy', 'tenant']);
+        $reportData = json_decode($report->results, true) ?? [];
+        
+        $fromDate = $report->from_date ? $report->from_date->format(self::DATETIME_FORMAT) : null;
+        $toDate = $report->to_date ? $report->to_date->format(self::DATETIME_FORMAT) : null;
+        
+        return [
+            'report' => [
+                'id' => $report->id,
+                'name' => $report->name ?? 'Untitled Report',
+                'description' => $report->description ?? '',
+                'created_at' => $report->created_at ? $report->created_at->format(self::DATETIME_FORMAT) : now()->format(self::DATETIME_FORMAT),
+                'generated_by' => $report->generatedBy ? $report->generatedBy->name : 'System',
+                'tenant' => $report->tenant ? $report->tenant->name : 'System',
+                'date_range' => ['from' => $fromDate, 'to' => $toDate],
+            ],
+            'summary' => [
+                'total_events' => (int)($reportData['total_events'] ?? 0),
+                'total_alerts' => (int)($reportData['total_alerts'] ?? 0),
+                'severity_breakdown' => $reportData['severity_breakdown'] ?? [],
+                'event_types' => $reportData['event_types'] ?? [],
+            ],
+            'data' => [
+                'events' => $this->sanitizeEvents($reportData['events'] ?? []),
+                'alerts' => $this->sanitizeAlerts($reportData['alerts'] ?? [])
+            ]
+        ];
+    }
+
+    private function sanitizeEvents(array $events): array
+    {
+        return array_map(function($event) {
+            return [
+                'timestamp' => $event['timestamp'] ?? '',
+                'event_type' => htmlspecialchars($event['event_type'] ?? '', ENT_QUOTES | ENT_HTML5, 'UTF-8'),
+                'severity' => $event['severity'] ?? '',
+                'user' => htmlspecialchars($event['user'] ?? '', ENT_QUOTES | ENT_HTML5, 'UTF-8'),
+                'ip_address' => $event['ip_address'] ?? '',
+                'description' => htmlspecialchars($event['description'] ?? '', ENT_QUOTES | ENT_HTML5, 'UTF-8')
+            ];
+        }, $events);
+    }
+
+    private function sanitizeAlerts(array $alerts): array
+    {
+        return array_map(function($alert) {
+            return [
+                'created_at' => $alert['created_at'] ?? '',
+                'title' => htmlspecialchars($alert['title'] ?? '', ENT_QUOTES | ENT_HTML5, 'UTF-8'),
+                'severity' => $alert['severity'] ?? '',
+                'status' => $alert['status'] ?? '',
+                'description' => htmlspecialchars($alert['description'] ?? '', ENT_QUOTES | ENT_HTML5, 'UTF-8')
+            ];
+        }, $alerts);
+    }
+    
+    private function generatePdf(string $filename, array $reportData): array
+    {
+        try {
+            $pdf = Pdf::loadView('reports.security.pdf', ['report' => $reportData]);
+            $pdf->setOption('isRemoteEnabled', true);
+            $pdf->setOption('isUnicode', true);
+            $pdf->setPaper('a4', 'portrait');
+            
+            $content = $pdf->output();
+            $mime = 'application/pdf';
+        } catch (\Exception $e) {
+            Log::error('PDF generation failed: ' . $e->getMessage(), [
+                'filename' => $filename,
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            $content = '%PDF-1.4\nPDF generation failed: ' . $e->getMessage();
+            $mime = 'application/pdf';
+        }
+
+        return ['content' => $content, 'filename' => $filename, 'mime' => $mime];
+    }
+    
+    private function generateCsv(array $reportData, string $filename): array
+    {
+        $output = fopen('php://temp', 'r+b');
+        fputs($output, "\xEF\xBB\xBF");  // Add BOM for Excel UTF-8 compatibility
+        
+        $this->writeCsvMetadata($output, $reportData);
+        $this->writeCsvSummary($output, $reportData);
+        $this->writeCsvEventTypes($output, $reportData);
+        $this->writeCsvEvents($output, $reportData);
+        $this->writeCsvAlerts($output, $reportData);
+        
+        rewind($output);
+        $csvContent = stream_get_contents($output);
+        fclose($output);
+        
+        return ['content' => $csvContent, 'filename' => $filename, 'mime' => 'text/csv'];
+    }
+    
+    private function writeCsvMetadata($output, array $reportData): void
+    {
+        $this->writeCsvRow($output, ['Security Report: ' . $reportData['report']['name']]);
+        $this->writeCsvRow($output, ['Generated:', $reportData['report']['created_at']]);
+        $this->writeCsvRow($output, ['By:', $reportData['report']['generated_by']]);
+        $this->writeCsvRow($output, ['Tenant:', $reportData['report']['tenant']]);
+        
+        if ($reportData['report']['date_range']['from'] && $reportData['report']['date_range']['to']) {
+            $dateRange = $reportData['report']['date_range']['from'] . ' to ' . $reportData['report']['date_range']['to'];
+            $this->writeCsvRow($output, ['Date Range:', $dateRange]);
+        }
+        
+        $this->writeCsvRow($output, []);
+    }
+    
+    private function writeCsvSummary($output, array $reportData): void
+    {
+        $this->writeCsvRow($output, ['Total Events,' . (string)$reportData['summary']['total_events']]);
+        $this->writeCsvRow($output, ['Total Alerts,' . (string)$reportData['summary']['total_alerts']]);
+        $this->writeCsvRow($output, []);
+        
+        if (!empty($reportData['summary']['severity_breakdown'])) {
+            $this->writeCsvRow($output, ['Severity Breakdown']);
+            $this->writeCsvRow($output, ['Severity', 'Count']);
+            foreach ($reportData['summary']['severity_breakdown'] as $severity => $count) {
+                $this->writeCsvRow($output, [$severity, (string)$count]);
+            }
+            $this->writeCsvRow($output, []);
+        }
+    }
+    
+    private function writeCsvEventTypes($output, array $reportData): void
+    {
+        if (empty($reportData['summary']['event_types'])) {
+            return;
+        }
+        
+        $this->writeCsvRow($output, ['Event Types']);
+        $this->writeCsvRow($output, ['Type', 'Count']);
+        foreach ($reportData['summary']['event_types'] as $type => $count) {
+            $this->writeCsvRow($output, [$type, (string)$count]);
+        }
+        $this->writeCsvRow($output, []);
+    }
+    
+    private function writeCsvEvents($output, array $reportData): void
+    {
+        if (empty($reportData['data']['events'])) {
+            return;
+        }
+        
+        $this->writeCsvRow($output, ['Security Events']);
+        $this->writeCsvRow($output, ['Time', 'Type', 'Severity', 'User', 'IP Address', 'Description']);
+        
+        foreach ($reportData['data']['events'] as $event) {
+            $this->writeCsvRow($output, [
+                $event['timestamp'],
+                $event['event_type'],
+                $event['severity'],
+                $event['user'],
+                $event['ip_address'],
+                $event['description']
+            ]);
+        }
+        $this->writeCsvRow($output, []);
+    }
+    
+    private function writeCsvAlerts($output, array $reportData): void
+    {
+        if (empty($reportData['data']['alerts'])) {
+            return;
+        }
+        
+        $this->writeCsvRow($output, ['Security Alerts']);
+        $this->writeCsvRow($output, ['Time', 'Title', 'Severity', 'Status', 'Description']);
+        
+        foreach ($reportData['data']['alerts'] as $alert) {
+            $this->writeCsvRow($output, [
+                $alert['created_at'],
+                $alert['title'],
+                $alert['severity'],
+                $alert['status'],
+                $alert['description']
+            ]);
+        }
+        $this->writeCsvRow($output, []);
+    }
+    
+    private function writeCsvRow($output, array $row): void
+    {
+        fputcsv($output, array_map(function($value) {
+            return is_string($value) ? $value : (string)$value;
+        }, $row));
+    }
+}

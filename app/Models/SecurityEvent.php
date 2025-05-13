@@ -4,14 +4,18 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 
 class SecurityEvent extends Model
 {
+    use HasFactory;
+
     /**
      * The attributes that are mass assignable.
      *
      * @var array<string>
-     */    protected $fillable = [
+     */
+    protected $fillable = [
         'tenant_id',
         'event_type',
         'severity',
@@ -27,7 +31,8 @@ class SecurityEvent extends Model
      * @var array<string, string>
      */
     protected $casts = [
-        'context' => 'array',        'event_timestamp' => 'datetime',
+        'context' => 'array',
+        'event_timestamp' => 'datetime',
         'created_at' => 'datetime',
         'updated_at' => 'datetime'
     ];

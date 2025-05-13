@@ -3,7 +3,7 @@
 
 <head>
   <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
-  <title>{{ $report['report']['title'] }}</title>
+  <title>{{ $report['report']['name'] }}</title>
   <style>
   body {
     font-family: Arial, sans-serif;
@@ -163,10 +163,10 @@
       <tr>
         <td>
           <h1>Security Report</h1>
-          <h2>{{ $report['report']['title'] }}</h2>
+          <h2>{{ $report['report']['name'] }}</h2>
         </td>
         <td style="text-align: right;">
-          <img src="{{ public_path('images/logo.png') }}" class="logo" />
+          <img src="{{ public_path('images/logo.png') }}" class="logo" alt="Company Logo" />
         </td>
       </tr>
     </table>

@@ -56,16 +56,39 @@ Route::prefix('web')->middleware(['api', 'auth:sanctum'])->group(function () {
             Route::get('/dashboard/advanced-visualization', [App\Http\Controllers\API\SecurityDashboardController::class, 'advancedVisualization']);
             
             // Reports endpoints
-            Route::get('/reports', [App\Http\Controllers\API\SecurityReportController::class, 'index']);
-            Route::post('/reports', [App\Http\Controllers\API\SecurityReportController::class, 'store']);
-            Route::get('/reports/{id}', [App\Http\Controllers\API\SecurityReportController::class, 'show']);
-            Route::get('/reports/{id}/export', [App\Http\Controllers\API\SecurityReportController::class, 'export']);
+            Route::get('/reports', [SecurityReportController::class, 'index']);
+            Route::post('/reports', [SecurityReportController::class, 'store']);
+            Route::get('/reports/{id}', [SecurityReportController::class, 'show']);
+            Route::get('/reports/{id}/export', [SecurityReportController::class, 'export']);
+            
+            // Report templates endpoints
+            Route::get('/report-templates', [SecurityReportController::class, 'getTemplates']);
+            Route::post('/report-templates', [SecurityReportController::class, 'storeTemplate']);
+            Route::get('/report-templates/{id}', [SecurityReportController::class, 'getTemplate']);
             
             // Report scheduling endpoints
             Route::get('/reports/schedule', [App\Http\Controllers\API\SecurityReportController::class, 'getSchedules']);
             Route::post('/reports/schedule', [App\Http\Controllers\API\SecurityReportController::class, 'scheduleReport']);
             Route::put('/reports/schedule/{id}', [App\Http\Controllers\API\SecurityReportController::class, 'updateSchedule']);
             Route::delete('/reports/schedule/{id}', [App\Http\Controllers\API\SecurityReportController::class, 'deleteSchedule']);
+        });
+    });
+});
+
+// Security Report Routes
+Route::middleware(['api', 'auth:sanctum'])->group(function () {
+    Route::prefix('security')->group(function () {
+        Route::prefix('reports')->group(function () {
+            Route::get('/', [SecurityReportController::class, 'index']);
+            Route::post('/', [SecurityReportController::class, 'store']);
+            Route::get('/{id}', [SecurityReportController::class, 'show']);
+            Route::get('/{id}/export', [SecurityReportController::class, 'export']);
+        });
+
+        Route::prefix('report-templates')->group(function () {
+            Route::get('/', [SecurityReportController::class, 'getTemplates']);
+            Route::post('/', [SecurityReportController::class, 'storeTemplate']);
+            Route::get('/{id}', [SecurityReportController::class, 'getTemplate']);
         });
     });
 });

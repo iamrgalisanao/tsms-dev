@@ -3,244 +3,164 @@
 namespace App\Services\Security;
 
 use App\Models\SecurityReport;
+use Barryvdh\DomPDF\Facade\Pdf;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Storage;
-use Illuminate\Support\Str;
-use Barryvdh\DomPDF\Facade\Pdf as PDF;
-use Symfony\Component\HttpFoundation\StreamedResponse;
+use App\Exceptions\SecurityReportExportException;
 
 class SecurityReportExportService
 {
-    // Define constants to avoid duplicating strings
-    private const DATE_TIME_FORMAT = 'Y-m-d H:i:s';
-    
-    /**
-     * Export a security report as PDF or CSV
-     *
-     * @param SecurityReport $report
-     * @param string $format
-     * @return array|null
-     */
-    public function exportReport(SecurityReport $report, string $format = 'pdf'): ?array
+    private const DATETIME_FORMAT = 'Y-m-d H:i:s';
+    private const ALLOWED_FORMATS = ['pdf', 'csv'];
+
+    public function __construct(
+        private readonly CsvExportService $csvExporter = new CsvExportService(),
+        private readonly PdfExportService $pdfExporter = new PdfExportService()
+    ) {}
+
+    public function exportReport(SecurityReport $report, string $format = 'pdf'): array
     {
         try {
-            // Generate appropriate filename
-            $dateStr = now()->format('Y-m-d');
-            $filename = Str::slug($report->title) . '-' . $dateStr . '.' . $format;
-            $reportData = $this->prepareReportData($report);
-            $result = null;
-            
-            if ($format === 'pdf') {
-                $result = $this->generatePdf($filename);
-            } elseif ($format === 'csv') {
-                $result = $this->generateCsv($reportData, $filename);
+            if (!in_array($format, self::ALLOWED_FORMATS, true)) {
+                throw new SecurityReportExportException('Invalid export format');
             }
-            
-            return $result;
+
+            $reportData = $this->prepareReportData($report);
+            $filename = $this->generateFilename($report, $format);
+
+            return match($format) {
+                'pdf' => $this->pdfExporter->generate($filename, $reportData),
+                'csv' => $this->csvExporter->generate($reportData, $filename),
+                default => throw new SecurityReportExportException('Invalid export format'),
+            };
         } catch (\Exception $e) {
-            Log::error('Failed to export security report: ' . $e->getMessage(), [
+            Log::error('Report export failed', [
                 'report_id' => $report->id,
                 'format' => $format,
-                'exception' => $e
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
             ]);
-            
-            return null;
+            throw new SecurityReportExportException('Failed to export report: ' . $e->getMessage());
         }
     }
-    
-    /**
-     * Prepare report data for export
-     *
-     * @param SecurityReport $report
-     * @return array
-     */
+
+    private function generateFilename(SecurityReport $report, string $format): string
+    {
+        $safeName = preg_replace('/[^a-zA-Z0-9]/', '_', $report->name ?? '');
+        $timestamp = now()->format('Y-m-d_H-i-s');
+        return sprintf('security_report_%s_%s.%s', $safeName, $timestamp, $format);
+    }
+
     private function prepareReportData(SecurityReport $report): array
     {
-        // Load report data and related template
-        $report->load(['template', 'user', 'tenant']);
-        $reportData = json_decode($report->report_data, true) ?? [];
-        
-        return [
-            'report' => [
-                'id' => $report->id,
-                'title' => $report->title,
-                'description' => $report->description,
-                'created_at' => $report->created_at->format(self::DATE_TIME_FORMAT),
-                'generated_by' => $report->user ? $report->user->name : 'System',
-                'tenant' => $report->tenant ? $report->tenant->name : 'System',
-                'template_name' => $report->template ? $report->template->name : 'Custom Report',
-                'date_range' => [
-                    'from' => $report->date_range_start ? date(self::DATE_TIME_FORMAT, strtotime($report->date_range_start)) : null,
-                    'to' => $report->date_range_end ? date(self::DATE_TIME_FORMAT, strtotime($report->date_range_end)) : null,
-                ],
-            ],
-            'data' => $reportData,
-            'summary' => [
-                'total_events' => $reportData['total_events'] ?? 0,
-                'total_alerts' => $reportData['total_alerts'] ?? 0,
-                'severity_breakdown' => $reportData['severity_breakdown'] ?? [],
-                'event_types' => $reportData['event_types'] ?? [],
-            ]
-        ];
-    }
-      /**
-     * Generate PDF report
-     *
-     * @param string $filename
-     * @param array $reportData
-     * @return array
-     */
-    private function generatePdf(string $filename): array
-    {
         try {
-            // Get report data for PDF generation
-            // Note: We need to modify the method signature to accept reportData as a parameter
-            // For now, we're assuming the report data is passed from the exportReport method
-            $reportData = $this->prepareReportData(SecurityReport::latest()->first());
-            
-            // Load the PDF view with the report data
-            $pdf = PDF::loadView('reports.security.pdf', ['report' => $reportData]);
-            
-            // Configure PDF options if needed
-            $pdf->setOption('isRemoteEnabled', true);
-            $pdf->setPaper('a4', 'portrait');
-            
-            // Generate PDF content
-            $content = $pdf->output();
-            
+            if (!$report->relationLoaded('generatedBy') || !$report->relationLoaded('tenant')) {
+                $report->load(['generatedBy', 'tenant']);
+            }
+
+            $reportData = json_decode($report->results, true);
+            if (json_last_error() !== JSON_ERROR_NONE) {
+                Log::error('Failed to decode report results', [
+                    'report_id' => $report->id,
+                    'error' => json_last_error_msg()
+                ]);
+                $reportData = [];
+            }
+
+            $fromDate = $report->from_date
+                ? $report->from_date->format(self::DATETIME_FORMAT)
+                : null;
+            $toDate = $report->to_date
+                ? $report->to_date->format(self::DATETIME_FORMAT)
+                : null;
+
             return [
-                'content' => $content,
-                'filename' => $filename,
-                'mime' => 'application/pdf'
+                'report' => [
+                    'id' => $report->id,
+                    'name' => $report->name ?? 'Untitled Report',
+                    'description' => $report->description ?? '',
+                    'created_at' => $report->created_at
+                        ? $report->created_at->format(self::DATETIME_FORMAT)
+                        : now()->format(self::DATETIME_FORMAT),
+                    'generated_by' => $report->generatedBy
+                        ? $report->generatedBy->name
+                        : 'System',
+                    'tenant' => $report->tenant
+                        ? $report->tenant->name
+                        : 'System',
+                    'date_range' => ['from' => $fromDate, 'to' => $toDate],
+                ],
+                'summary' => [
+                    'total_events' => (int)($reportData['total_events'] ?? 0),
+                    'total_alerts' => (int)($reportData['total_alerts'] ?? 0),
+                    'severity_breakdown' => $reportData['severity_breakdown'] ?? [],
+                    'event_types' => $reportData['event_types'] ?? [],
+                ],
+                'data' => [
+                    'events' => $this->sanitizeEvents($reportData['events'] ?? []),
+                    'alerts' => $this->sanitizeAlerts($reportData['alerts'] ?? [])
+                ]
             ];
         } catch (\Exception $e) {
-            // Log the error and return a placeholder content
-            Log::error('PDF generation failed: ' . $e->getMessage(), [
-                'filename' => $filename,
-                'exception' => $e
+            Log::error('Failed to prepare report data', [
+                'report_id' => $report->id ?? 'unknown',
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
             ]);
-            
+            throw new SecurityReportExportException(
+                'Failed to prepare report data: ' . $e->getMessage()
+            );
+        }
+    }
+
+    private function sanitizeEvents(array $events): array
+    {
+        $charset = 'UTF-8';
+        return array_map(function($event) use ($charset) {
+            $normalize = $this->getNormalizer($charset);
+
             return [
-                'content' => 'PDF generation failed: ' . $e->getMessage(),
-                'filename' => $filename,
-                'mime' => 'application/pdf'
+                'timestamp' => $event['timestamp'] ?? '',
+                'event_type' => htmlspecialchars($normalize($event['event_type']), ENT_QUOTES | ENT_HTML5, $charset),
+                'severity' => $event['severity'] ?? '',
+                'user' => htmlspecialchars($normalize($event['user']), ENT_QUOTES | ENT_HTML5, $charset),
+                'ip_address' => filter_var($event['ip_address'] ?? '', FILTER_VALIDATE_IP) ?: '',
+                'description' => htmlspecialchars($normalize($event['description']), ENT_QUOTES | ENT_HTML5, $charset)
             ];
-        }
+        }, $events);
     }
-    
-    /**
-     * Generate CSV report
-     *
-     * @param array $reportData
-     * @param string $filename
-     * @return array
-     */
-    private function generateCsv(array $reportData, string $filename): array
+
+    private function sanitizeAlerts(array $alerts): array
     {
-        $csvContent = $this->convertReportToCsv($reportData);
-        
-        return [
-            'content' => $csvContent,
-            'filename' => $filename,
-            'mime' => 'text/csv'
-        ];
+        $charset = 'UTF-8';
+        return array_map(function($alert) use ($charset) {
+            $normalize = $this->getNormalizer($charset);
+
+            $validStatuses = ['Open', 'Closed', 'In Progress'];
+            $normalizedStatus = ucfirst(strtolower($alert['status'] ?? ''));
+            $status = in_array($normalizedStatus, $validStatuses) ? $normalizedStatus : 'Open';
+
+            return [
+                'created_at' => $alert['created_at'] ?? '',
+                'title' => htmlspecialchars($normalize($alert['title']), ENT_QUOTES | ENT_HTML5, $charset),
+                'severity' => ucfirst(strtolower($alert['severity'] ?? 'medium')),
+                'status' => $status,
+                'description' => htmlspecialchars($normalize($alert['description']), ENT_QUOTES | ENT_HTML5, $charset)
+            ];
+        }, $alerts);
     }
-    
-    /**
-     * Convert report data to CSV format
-     *
-     * @param array $reportData
-     * @return string
-     */
-    private function convertReportToCsv(array $reportData): string
+
+    private function getNormalizer(string $charset): callable
     {
-        $output = fopen('php://temp', 'r+');
-        
-        // Add report metadata
-        fputcsv($output, ['Security Report: ' . $reportData['report']['title']]);
-        fputcsv($output, ['Generated:', $reportData['report']['created_at']]);
-        fputcsv($output, ['By:', $reportData['report']['generated_by']]);
-        fputcsv($output, ['Tenant:', $reportData['report']['tenant']]);
-        fputcsv($output, ['Date Range:',
-            $reportData['report']['date_range']['from'] . ' to ' .
-            $reportData['report']['date_range']['to']
-        ]);
-        fputcsv($output, []); // Empty line
-        
-        // Summary section
-        fputcsv($output, ['Summary']);
-        fputcsv($output, ['Total Events', $reportData['summary']['total_events']]);
-        fputcsv($output, ['Total Alerts', $reportData['summary']['total_alerts']]);
-        fputcsv($output, []);
-        
-        // Severity breakdown
-        if (!empty($reportData['summary']['severity_breakdown'])) {
-            fputcsv($output, ['Severity Breakdown']);
-            fputcsv($output, ['Severity', 'Count']);
-            
-            foreach ($reportData['summary']['severity_breakdown'] as $severity => $count) {
-                fputcsv($output, [$severity, $count]);
+        return function($str) use ($charset) {
+            if (!is_string($str)) {
+                return '';
             }
-            fputcsv($output, []);
-        }
-        
-        // Event types
-        if (!empty($reportData['summary']['event_types'])) {
-            fputcsv($output, ['Event Types']);
-            fputcsv($output, ['Type', 'Count']);
-            
-            foreach ($reportData['summary']['event_types'] as $type => $count) {
-                fputcsv($output, [$type, $count]);
+            $encoding = mb_detect_encoding($str, 'UTF-8, ISO-8859-1', true);
+            if ($encoding !== $charset) {
+                $str = mb_convert_encoding($str, $charset, $encoding);
             }
-            fputcsv($output, []);
-        }
-        
-        // Security events
-        if (!empty($reportData['data']['events'])) {
-            fputcsv($output, ['Security Events']);
-            
-            // Headers
-            $headers = ['Time', 'Type', 'Severity', 'User', 'IP Address', 'Description'];
-            fputcsv($output, $headers);
-            
-            // Event data
-            foreach ($reportData['data']['events'] as $event) {
-                $row = [
-                    $event['timestamp'] ?? '',
-                    $event['event_type'] ?? '',
-                    $event['severity'] ?? '',
-                    $event['user'] ?? '',
-                    $event['ip_address'] ?? '',
-                    $event['description'] ?? ''
-                ];
-                fputcsv($output, $row);
-            }
-            fputcsv($output, []);
-        }
-        
-        // Security alerts
-        if (!empty($reportData['data']['alerts'])) {
-            fputcsv($output, ['Security Alerts']);
-            
-            // Headers
-            $headers = ['Time', 'Title', 'Severity', 'Status', 'Description'];
-            fputcsv($output, $headers);
-            
-            // Alert data
-            foreach ($reportData['data']['alerts'] as $alert) {
-                $row = [
-                    $alert['created_at'] ?? '',
-                    $alert['title'] ?? '',
-                    $alert['severity'] ?? '',
-                    $alert['status'] ?? '',
-                    $alert['description'] ?? ''
-                ];
-                fputcsv($output, $row);
-            }
-        }
-          rewind($output);
-        $csvContent = stream_get_contents($output);
-        fclose($output);
-        return $csvContent;
+            $str = preg_replace('/[\x00-\x08\x0B\x0C\x0E-\x1F\x80-\x9F]/u', '', $str);
+            return preg_replace('/\R/u', "\n", trim($str));
+        };
     }
 }

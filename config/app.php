@@ -143,6 +143,7 @@ return [
         Illuminate\Bus\BusServiceProvider::class,
         Illuminate\Cache\CacheServiceProvider::class,
         Illuminate\Foundation\Providers\ConsoleSupportServiceProvider::class,
+        Illuminate\Cookie\CookieServiceProvider::class,  // Added for cookie support
         Illuminate\Database\DatabaseServiceProvider::class,
         Illuminate\Encryption\EncryptionServiceProvider::class,
         Illuminate\Filesystem\FilesystemServiceProvider::class,
@@ -161,10 +162,10 @@ return [
         App\Providers\AppServiceProvider::class,
         App\Providers\AuthServiceProvider::class,
         App\Providers\SecurityMonitoringServiceProvider::class,
+        App\Providers\CookieServiceProvider::class,  // Added our custom provider
         
         // Third Party Service Providers...
         Barryvdh\DomPDF\ServiceProvider::class,
     ],
-   
 
 ];

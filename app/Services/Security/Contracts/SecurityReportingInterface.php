@@ -2,6 +2,8 @@
 
 namespace App\Services\Security\Contracts;
 
+use App\Models\SecurityReport;
+
 interface SecurityReportingInterface
 {
     /**
@@ -14,11 +16,10 @@ interface SecurityReportingInterface
      * @param int|null $userId
      * @return int Report ID
      */
-    public function generateReport(
-        int $tenantId, 
-        array $filters, 
-        string $format = 'html', 
-        ?int $templateId = null, 
+    public function generateReport(        int $tenantId,
+        array $filters,
+        string $format = 'html',
+        ?int $templateId = null,
         ?int $userId = null
     ): int;
 
@@ -64,6 +65,14 @@ interface SecurityReportingInterface
      * @param int $tenantId
      * @param array $filters
      * @return array
-     */
-    public function getReportTemplates(int $tenantId, array $filters = []): array;
+     */    public function getReportTemplates(int $tenantId, array $filters = []): array;
+
+    /**    * Export a security report to the specified format
+    *
+    * @param SecurityReport $report
+    * @param string $format The export format (pdf, csv)
+    * @return string The path to the exported file
+    * @throws SecurityReportExportException
+    */
+    public function exportReport(SecurityReport $report, string $format = 'pdf'): string;
 }
