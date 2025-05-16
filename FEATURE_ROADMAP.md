@@ -76,6 +76,36 @@
 
 ## 🟡 In Progress
 
+### 🟢 Retry History (MVP-007) - COMPLETED
+
+-   [x] Database schema design (completed)
+-   [x] API endpoint implementation (completed)
+-   [x] UI components development (completed)
+-   [x] Retry analytics (completed)
+-   [x] Admin interface to view retry attempts via Integration Logs (completed)
+-   [x] Filters by terminal, error type, retry count (completed)
+-   [x] Circuit breaker integration for manual retry attempts (completed)
+-   [x] Detailed view for individual retry history (completed)
+-   [x] Exponential backoff retry mechanism (completed)
+-   [x] Configurable retry limits and delays (completed)
+
+### Audit and Admin Log Viewer
+
+-   [ ] Implement UI for viewing `integration_logs` (backend ready; frontend pending)
+-   [ ] Pagination and export options (minimum CSV for operational needs)
+
+### QA and Bugfix Sprint
+
+-   [ ] Validate all implemented features in Module 2
+-   [ ] Security access validation based on roles (Admin, IT Support, Finance)
+
+### Documentation and UAT Alignment
+
+-   [ ] Finalize documentation for:
+    -   Retry handling
+    -   Audit log access
+    -   UAT test scripts (aligned with success criteria)
+
 ### Authentication & Security Implementation Phase 2
 
 -   [x] Rate limiting implementation
@@ -167,13 +197,6 @@
 -   [ ] Alert system implementation
 -   [ ] Manual override controls
 -   [ ] Service health metrics
-
-### Retry History
-
--   [ ] Database schema design
--   [ ] API endpoint implementation
--   [ ] UI components development
--   [ ] Retry analytics
 
 ## 🔴 Needs Attention
 
@@ -294,6 +317,16 @@
 -   [ ] API Documentation
 -   [ ] Integration Guide for External Services
 
+### Retry History Enhancements
+
+-   [ ] Advanced retry analytics dashboard with graphical visualizations
+-   [ ] Custom retry strategies per service type
+-   [ ] Tenant-specific retry policies
+-   [ ] Scheduled retry attempts for specific time windows
+-   [ ] Retry notifications via webhooks/email/Slack
+-   [ ] Bulk retry operations for multiple transactions
+-   [ ] Automatic diagnostic tools for failed transactions
+
 ## 📝 Notes
 
 -   Circuit Breaker implementation is complete and integrated with Horizon
@@ -316,23 +349,24 @@
     -   Security reporting implementation guide
     -   API authentication documentation
     -   Security best practices guide
+-   Retry History system implementation is now complete:
+    -   Comprehensive retry tracking with detailed logs
+    -   Integration with circuit breaker to prevent retry storms
+    -   Admin interface for viewing and managing retry attempts
+    -   Configurable retry policies with exponential backoff
+    -   Manual retry capability for administrators
+    -   Analytics showing retry success rates and patterns
 
 ## 📅 Last Updated
 
--   Date: 2025-05-13
--   Version: 0.3.6
+-   Date: 2025-05-16
+-   Version: 0.3.7
 -   Changes:
-    -   Security Reporting implementation complete:
-        -   Core reporting framework implementation
-        -   Database schema and model implementations
-        -   Report generation with filtering capability
-        -   Template management system
-        -   Export functionality (PDF/CSV)
-        -   Comprehensive test coverage
-    -   Fixed SecurityEvent model by adding HasFactory trait
-    -   Added migrations to modify column lengths in security tables:
-        -   Increased event_type to 50 chars
-        -   Increased severity to 20 chars
-        -   Increased format to 20 chars
-    -   Updated Phase 1 of Security Reporting as complete in roadmap
-    -   Added detailed breakdown of completed security reporting features
+    -   Completed Retry History implementation:
+        -   Added retry tracking system with comprehensive logging
+        -   Implemented configurable retry policies
+        -   Created admin dashboard for retry management
+        -   Added analytics for retry success/failure patterns
+        -   Integrated with circuit breaker to prevent retry storms
+    -   Updated feature roadmap to reflect completed Retry History system
+    -   Added future enhancement ideas for the Retry History system

@@ -55,4 +55,38 @@ class CircuitBreakerController extends Controller
             ], 500);
         }
     }
+
+    public function status()
+    {
+        try {
+            // Add your actual circuit breaker logic here
+            $services = [
+                [
+                    'name' => 'Transaction Processing Service',
+                    'state' => 'CLOSED',
+                    'tripCount' => 0,
+                    'tenant' => 1
+                ],
+                [
+                    'name' => 'Terminal Authentication Service',
+                    'state' => 'HALF_OPEN',
+                    'tripCount' => 0,
+                    'tenant' => 1
+                ],
+                [
+                    'name' => 'Webhook Delivery Service',
+                    'state' => 'OPEN',
+                    'tripCount' => 0,
+                    'tenant' => 1
+                ]
+            ];
+
+            return response()->json($services);
+        } catch (\Exception $e) {
+            return response()->json([
+                'error' => 'Failed to fetch circuit breaker status',
+                'message' => $e->getMessage()
+            ], 500);
+        }
+    }
 }

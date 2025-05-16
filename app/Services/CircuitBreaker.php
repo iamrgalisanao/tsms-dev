@@ -2,138 +2,190 @@
 
 namespace App\Services;
 
-use Exception;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Filesystem\Filesystem;
 
 class CircuitBreaker
 {
-    private const STATE_CLOSED = 'CLOSED';
-    private const STATE_OPEN = 'OPEN';
-    private const STATE_HALF_OPEN = 'HALF_OPEN';
-
-    private string $serviceKey;
-    private int $failureThreshold;
-    private int $retryTimeoutSeconds;
-    private int $monitoringWindowSeconds;
-
-    public function __construct(
-        string $serviceKey,
-        int $failureThreshold = 5,
-        int $retryTimeoutSeconds = 30,
-        int $monitoringWindowSeconds = 120
-    ) {
+    protected string $serviceKey;
+    protected string $storagePath;
+    protected int $failureThreshold = 5;
+    protected int $resetTimeout = 60; // seconds
+    protected Filesystem $filesystem;
+    
+    /**
+     * Create a new CircuitBreaker instance.
+     */
+    public function __construct(string $serviceKey)
+    {
         $this->serviceKey = $serviceKey;
-        $this->failureThreshold = $failureThreshold;
-        $this->retryTimeoutSeconds = $retryTimeoutSeconds;
-        $this->monitoringWindowSeconds = $monitoringWindowSeconds;
-    }
-
-    public function execute(callable $operation)
-    {
-        $this->ensureCircuitExists();
-
-        if ($this->isOpen()) {
-            if ($this->canReset()) {
-                $this->transitionToHalfOpen();
-            } else {
-                throw new Exception("Circuit breaker is OPEN for service: {$this->serviceKey}");
-            }
-        }
-
-        try {
-            $result = $operation();
-            
-            if ($this->getState() === self::STATE_HALF_OPEN) {
-                $this->reset();
-            }
-            
-            return $result;
-        } catch (Exception $e) {
-            $this->recordFailure();
-            throw $e;
-        }
-    }
-
-    public function isOpen(): bool
-    {
-        return $this->getState() === self::STATE_OPEN;
-    }
-
-    public function getState(): string
-    {
-        return Cache::get($this->getStateKey(), self::STATE_CLOSED);
-    }
-
-    public function reset(): void
-    {
-        Cache::put($this->getStateKey(), self::STATE_CLOSED);
-        Cache::put($this->getFailureCountKey(), 0);
-        Cache::put($this->getLastFailureKey(), null);
+        $this->filesystem = new Filesystem();
+        $this->storagePath = storage_path('framework/circuit-breakers');
         
-        Log::info("Circuit breaker reset", [
-            'service' => $this->serviceKey,
-            'state' => self::STATE_CLOSED
-        ]);
-    }
-
-    private function recordFailure(): void
-    {
-        $failureCount = $this->incrementFailureCount();
-        $now = time();
-
-        Cache::put($this->getLastFailureKey(), $now);
-
-        if ($failureCount >= $this->failureThreshold) {
-            Cache::put($this->getStateKey(), self::STATE_OPEN);
-            
-            Log::warning("Circuit breaker opened", [
-                'service' => $this->serviceKey,
-                'failures' => $failureCount,
-                'threshold' => $this->failureThreshold
-            ]);
+        // Ensure the storage directory exists
+        if (!$this->filesystem->exists($this->storagePath)) {
+            $this->filesystem->makeDirectory($this->storagePath, 0755, true);
         }
     }
-
-    private function canReset(): bool
+    
+    /**
+     * Check if the service is available
+     */
+    public function isAvailable(): bool
     {
-        $lastFailure = Cache::get($this->getLastFailureKey());
-        return $lastFailure && (time() - $lastFailure) >= $this->retryTimeoutSeconds;
-    }
-
-    private function transitionToHalfOpen(): void
-    {
-        Cache::put($this->getStateKey(), self::STATE_HALF_OPEN);
+        $state = $this->getState();
         
-        Log::info("Circuit breaker half-open", [
-            'service' => $this->serviceKey
-        ]);
+        if ($state === 'open') {
+            $lastFailure = $this->getLastFailureTime();
+            
+            // Check if reset timeout has passed
+            if ($lastFailure && (time() - $lastFailure) > $this->resetTimeout) {
+                // Move to half-open state
+                $this->setState('half-open');
+                return true;
+            }
+            
+            return false;
+        }
+        
+        return true;
     }
-
-    private function incrementFailureCount(): int
+    
+    /**
+     * Record a successful operation
+     */
+    public function recordSuccess(): void
     {
-        return Cache::increment($this->getFailureCountKey());
-    }
-
-    private function ensureCircuitExists(): void
-    {
-        if (!Cache::has($this->getStateKey())) {
+        $state = $this->getState();
+        
+        if ($state === 'half-open') {
+            // Reset the circuit on success in half-open state
             $this->reset();
         }
     }
-
-    private function getStateKey(): string
+    
+    /**
+     * Record a failed operation
+     */
+    public function recordFailure(): void
     {
-        return "circuit_breaker:{$this->serviceKey}:state";
+        $failureCount = $this->getFailureCount() + 1;
+        $this->setFailureCount($failureCount);
+        $this->setLastFailureTime(time());
+        
+        if ($failureCount >= $this->failureThreshold) {
+            $this->setState('open');
+        }
     }
-
-    private function getFailureCountKey(): string
+    
+    /**
+     * Reset the circuit breaker
+     */
+    public function reset(): void
     {
-        return "circuit_breaker:{$this->serviceKey}:failures";
+        $this->setState('closed');
+        $this->setFailureCount(0);
+        $this->setLastFailureTime(null);
     }
-
-    private function getLastFailureKey(): string
+    
+    /**
+     * Get the file path for a specific property
+     */
+    protected function getFilePath(string $property): string
     {
-        return "circuit_breaker:{$this->serviceKey}:last_failure";
+        return $this->storagePath . '/' . $this->serviceKey . '_' . $property . '.txt';
+    }
+    
+    /**
+     * Get the current state
+     */
+    protected function getState(): string
+    {
+        try {
+            $path = $this->getFilePath('state');
+            if ($this->filesystem->exists($path)) {
+                return trim($this->filesystem->get($path));
+            }
+        } catch (\Exception $e) {
+            Log::error('Circuit breaker error', ['error' => $e->getMessage()]);
+        }
+        return 'closed';
+    }
+    
+    /**
+     * Set the current state
+     */
+    protected function setState(string $state): void
+    {
+        try {
+            $path = $this->getFilePath('state');
+            $this->filesystem->put($path, $state);
+        } catch (\Exception $e) {
+            Log::error('Circuit breaker error', ['error' => $e->getMessage()]);
+        }
+    }
+    
+    /**
+     * Get the failure count
+     */
+    protected function getFailureCount(): int
+    {
+        try {
+            $path = $this->getFilePath('failure_count');
+            if ($this->filesystem->exists($path)) {
+                return (int) trim($this->filesystem->get($path));
+            }
+        } catch (\Exception $e) {
+            Log::error('Circuit breaker error', ['error' => $e->getMessage()]);
+        }
+        return 0;
+    }
+    
+    /**
+     * Set the failure count
+     */
+    protected function setFailureCount(int $count): void
+    {
+        try {
+            $path = $this->getFilePath('failure_count');
+            $this->filesystem->put($path, (string) $count);
+        } catch (\Exception $e) {
+            Log::error('Circuit breaker error', ['error' => $e->getMessage()]);
+        }
+    }
+    
+    /**
+     * Get the last failure time
+     */
+    protected function getLastFailureTime(): ?int
+    {
+        try {
+            $path = $this->getFilePath('last_failure_time');
+            if ($this->filesystem->exists($path)) {
+                return (int) trim($this->filesystem->get($path));
+            }
+        } catch (\Exception $e) {
+            Log::error('Circuit breaker error', ['error' => $e->getMessage()]);
+        }
+        return null;
+    }
+    
+    /**
+     * Set the last failure time
+     */
+    protected function setLastFailureTime(?int $time): void
+    {
+        try {
+            $path = $this->getFilePath('last_failure_time');
+            if ($time === null) {
+                if ($this->filesystem->exists($path)) {
+                    $this->filesystem->delete($path);
+                }
+            } else {
+                $this->filesystem->put($path, (string) $time);
+            }
+        } catch (\Exception $e) {
+            Log::error('Circuit breaker error', ['error' => $e->getMessage()]);
+        }
     }
 }

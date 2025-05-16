@@ -1,58 +1,22 @@
-import './bootstrap';
-import React from 'react';
-import { createRoot } from 'react-dom/client';
-import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
-import { AuthProvider } from './Contexts/AuthContext';
-import ProtectedRoute from './Components/Auth/ProtectedRoute';
-import Login from './Pages/Auth/Login';
-import CircuitBreakerDashboard from './Pages/CircuitBreaker/Dashboard';
+/**
+ * First we will load all of this project's JavaScript dependencies which
+ * includes React and other libraries. It is a great starting point when
+ * building robust, powerful web applications using React and Laravel.
+ */
 
-// Wrap dashboard in AuthProvider and Router
-function App() {
-    console.log('App component rendering');
-    return React.createElement(AuthProvider, null,
-        React.createElement(Router, null,
-            React.createElement('div', 
-                { className: "min-h-screen bg-gray-100" },
-                React.createElement(Routes, null, [
-                    React.createElement(Route, {
-                        key: 'root',
-                        path: '/',
-                        element: React.createElement(Navigate, { to: '/dashboard', replace: true })
-                    }),
-                    React.createElement(Route, {
-                        key: 'login',
-                        path: '/login',
-                        element: React.createElement(Login)
-                    }),
-                    React.createElement(Route, {
-                        key: 'dashboard',
-                        path: '/dashboard',
-                        element: React.createElement(ProtectedRoute, null,
-                            React.createElement(CircuitBreakerDashboard)
-                        )
-                    })
-                ])
-            )
-        )
-    );
-}
+require("./bootstrap");
 
-// Debug messages
-console.log('1. Script loaded');
+/**
+ * Next, we will create a fresh React component instance and attach it to
+ * the page. Then, you may begin adding components to this application
+ * or customize the JavaScript scaffolding to fit your unique needs.
+ */
 
-document.addEventListener('DOMContentLoaded', () => {
-    console.log('2. DOM loaded');
-    const container = document.getElementById('app');
-    console.log('3. Container found:', !!container);
-
-    if (container) {
-        try {
-            const root = createRoot(container);
-            root.render(React.createElement(App));
-            console.log('4. React rendered');
-        } catch (error) {
-            console.error('React error:', error);
-        }
+// If React setup isn't working, this will still provide basic functionality
+console.log("App.js loaded - Authentication status:", !!window.authUser);
+document.addEventListener("DOMContentLoaded", function () {
+    const appElement = document.getElementById("app");
+    if (appElement && window.authUser) {
+        console.log("User authenticated:", window.authUser.name);
     }
 });

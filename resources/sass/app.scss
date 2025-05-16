@@ -1,0 +1,21 @@
+// Variables
+@import "variables";
+
+// Bootstrap
+@import "~bootstrap/scss/bootstrap";
+
+// Custom styles
+body {
+    background-color: #f8f9fa;
+}
+
+.navbar-laravel {
+    background-color: #fff;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.04);
+}
+
+// Dashboard specific styles
+.sidebar {
+    min-height: calc(100vh - 56px);
+    padding-top: 20px;
+}

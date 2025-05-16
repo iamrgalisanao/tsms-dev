@@ -1,15 +1,24 @@
-import axios from 'axios';
-window.axios = axios;
+window._ = require("lodash");
 
-window.axios.defaults.headers.common['X-Requested-With'] = 'XMLHttpRequest';
+/**
+ * We'll load the axios HTTP library which allows us to easily issue requests
+ * to our Laravel back-end. This library automatically handles sending the
+ * CSRF token as a header based on the value of the "XSRF" token cookie.
+ */
 
-// Add CSRF token to all requests
-const token = document.head.querySelector('meta[name="csrf-token"]');
-if (token) {
-    window.axios.defaults.headers.common['X-CSRF-TOKEN'] = token.content;
-} else {
-    console.error('CSRF token not found');
+try {
+    window.axios = require("axios");
+    window.axios.defaults.headers.common["X-Requested-With"] = "XMLHttpRequest";
+
+    // Add CSRF token to axios requests
+    const token = document.head.querySelector('meta[name="csrf-token"]');
+    if (token) {
+        window.axios.defaults.headers.common["X-CSRF-TOKEN"] = token.content;
+    } else {
+        console.error(
+            "CSRF token not found: https://laravel.com/docs/csrf#csrf-x-csrf-token"
+        );
+    }
+} catch (e) {
+    console.error("Error setting up axios:", e);
 }
-
-// Set base URL for API requests
-window.axios.defaults.baseURL = window.location.origin;

@@ -4,6 +4,7 @@ namespace Database\Seeders;
 
 use App\Models\User;
 use Illuminate\Database\Seeder;
+use Illuminate\Support\Facades\Hash;
 
 class DatabaseSeeder extends Seeder
 {
@@ -13,15 +14,26 @@ class DatabaseSeeder extends Seeder
     public function run(): void
     {
         // Always create admin user
-        User::factory()->create([
-            'name' => 'Admin User',
-            'email' => 'admin@example.com',
-            'password' => bcrypt('password123'),
-        ]);
+        User::updateOrCreate(
+            ['email' => 'admin@example.com'],
+            [
+                'name' => 'Admin User',
+                'email' => 'admin@example.com',
+                'password' => Hash::make('password123'),
+                'role' => 'admin',
+                'is_active' => 1,
+                'tenant_id' => 1,
+            ]
+        );
 
         // In test environment, seed test data
         if (app()->environment('testing')) {
             $this->call(TestDataSeeder::class);
         }
+
+        //  $this->call([
+        //     // ...other seeders...
+        //     TerminalTokenSeeder::class,
+        // ]);
     }
 }

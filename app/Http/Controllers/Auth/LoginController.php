@@ -5,6 +5,7 @@ namespace App\Http\Controllers\Auth;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
 
 class LoginController extends Controller
 {
@@ -15,39 +16,33 @@ class LoginController extends Controller
             'password' => ['required'],
         ]);
 
-        if (Auth::guard('web')->attempt($credentials, $request->filled('remember'))) {
+        if (Auth::attempt($credentials, $request->boolean('remember'))) {
             $request->session()->regenerate();
-            
-            if ($request->expectsJson()) {
-                return response()->json(['status' => 'success']);
+
+            $user = \App\Models\User::find(Auth::id());
+            if ($user) {
+                $user->last_login_at = now();
+                $user->save();
             }
 
+            Log::info('User logged in successfully', ['email' => $request->email]);
+            
             return redirect()->intended('/dashboard');
         }
 
-        if ($request->expectsJson()) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Invalid credentials'
-            ], 401);
-        }
-
-        return back()
-            ->withInput($request->only('email'))
-            ->withErrors([
-                'email' => 'The provided credentials do not match our records.',
-            ]);
+        Log::warning('Failed login attempt', ['email' => $request->email]);
+        
+        return back()->withErrors([
+            'email' => 'The provided credentials do not match our records.',
+        ])->withInput($request->except('password'));
     }
 
     public function logout(Request $request)
     {
-        Auth::guard('web')->logout();
+        Auth::logout();
+        
         $request->session()->invalidate();
         $request->session()->regenerateToken();
-        
-        if ($request->expectsJson()) {
-            return response()->json(['status' => 'success']);
-        }
         
         return redirect('/login');
     }

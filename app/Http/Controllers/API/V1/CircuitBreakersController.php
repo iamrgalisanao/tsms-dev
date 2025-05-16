@@ -94,4 +94,43 @@ class CircuitBreakersController extends Controller
             return response()->json(['error' => 'Failed to fetch metrics'], 500);
         }
     }
+
+    public function index(Request $request)
+    {
+        try {
+            Log::info('Fetching circuit breakers');
+            
+            $query = CircuitBreaker::with(['tenant:id,name'])
+                ->select([
+                    'id',
+                    'name as service_name',
+                    'status as state',
+                    'tenant_id',
+                    'last_failure_at',
+                    'cooldown_until',
+                    'trip_count',  // Added trip_count
+                    'created_at',
+                    'updated_at'
+                ]);
+
+            if ($request->has('tenant_id') && $request->tenant_id !== '') {
+                $query->where('tenant_id', $request->tenant_id);
+            }
+
+            $result = $query->get();
+            Log::info('Circuit breakers fetched', ['count' => $result->count()]);
+
+            return response()->json($result);
+        } catch (\Exception $e) {
+            Log::error('Failed to fetch circuit breakers', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return response()->json([
+                'error' => 'Failed to fetch circuit breakers',
+                'message' => config('app.debug') ? $e->getMessage() : null
+            ], 500);
+        }
+    }
 }

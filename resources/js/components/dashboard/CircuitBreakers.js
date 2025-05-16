@@ -1,119 +1,127 @@
 /** @jsxRuntime classic */
 /** @jsx React.createElement */
 
-import React from 'react';
+import React, { useState, useEffect } from "react";
 
-const CircuitBreakers = () => {
-    const [services, setServices] = React.useState([]);
-    const [loading, setLoading] = React.useState(true);
-    const [error, setError] = React.useState(null);
-    const [filters, setFilters] = React.useState({ tenant: 'all' });
+function CircuitBreakers() {
+    const [services, setServices] = useState([]);
+    const [error, setError] = useState(null);
+    const [loading, setLoading] = useState(true);
 
-    React.useEffect(() => {
-        fetchServices();
-        const interval = setInterval(fetchServices, 30000); // Refresh every 30s
-        return () => clearInterval(interval);
-    }, [filters]);
+    useEffect(() => {
+        fetchCircuitBreakerStatus();
+    }, []);
 
-    const fetchServices = async () => {
+    const fetchCircuitBreakerStatus = async () => {
         try {
-            const url = new URL('/api/web/dashboard/circuit-breakers', window.location.origin);
-            if (filters.tenant !== 'all') {
-                url.searchParams.append('tenant', filters.tenant);
+            const csrfToken = document
+                .querySelector('meta[name="csrf-token"]')
+                .getAttribute("content");
+
+            const response = await fetch(
+                "/api/web/dashboard/circuit-breakers",
+                {
+                    method: "GET",
+                    headers: {
+                        Accept: "application/json",
+                        "Content-Type": "application/json",
+                        "X-CSRF-TOKEN": csrfToken,
+                    },
+                    credentials: "same-origin",
+                }
+            );
+
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
             }
-
-            const response = await fetch(url, {
-                credentials: 'same-origin',
-                headers: {
-                    'Accept': 'application/json',
-                    'X-Requested-With': 'XMLHttpRequest'
-                }
-            });
-
-            if (!response.ok) throw new Error('Failed to fetch services');
             const data = await response.json();
-            setServices(data.data);
+            setServices(data);
+            setError(null);
+        } catch (error) {
+            console.error("Error fetching circuit breaker status:", error);
+            setError(
+                "Failed to load circuit breaker status. Please try again later."
+            );
+        } finally {
             setLoading(false);
-        } catch (err) {
-            setError(err.message);
-            setLoading(false);
-        }
-    };
-
-    const resetCircuitBreaker = async (id) => {
-        try {
-            const response = await fetch(`/api/web/dashboard/circuit-breakers/${id}/reset`, {
-                method: 'POST',
-                credentials: 'same-origin',
-                headers: {
-                    'Accept': 'application/json',
-                    'X-Requested-With': 'XMLHttpRequest'
-                }
-            });
-
-            if (!response.ok) throw new Error('Failed to reset circuit breaker');
-            fetchServices(); // Refresh the list
-        } catch (err) {
-            setError(err.message);
         }
     };
 
     if (loading) {
-        return React.createElement('div', { className: 'flex justify-center items-center h-32' },
-            React.createElement('div', { className: 'animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500' })
-        );
+        return React.createElement("div", { className: "p-4" }, "Loading...");
     }
 
     if (error) {
-        return React.createElement('div', { className: 'text-red-600 p-4 border border-red-200 rounded' },
-            'Error: ', error
+        return React.createElement(
+            "div",
+            { className: "p-4 bg-red-50 border border-red-200 rounded-md" },
+            React.createElement("p", { className: "text-red-600" }, error)
         );
     }
 
-    return React.createElement('div', { className: 'space-y-6' },
-        // Filters
-        React.createElement('div', { className: 'mb-4' },
-            React.createElement('select', {
-                className: 'border border-gray-300 rounded px-3 py-2',
-                value: filters.tenant,
-                onChange: (e) => setFilters(prev => ({ ...prev, tenant: e.target.value }))
-            },
-                React.createElement('option', { value: 'all' }, 'All Tenants'),
-                // Add tenant options dynamically
-                services.map(service => 
-                    React.createElement('option', { 
-                        key: service.tenant_id, 
-                        value: service.tenant_id 
-                    }, service.tenant_name)
-                )
-            )
-        ),
-        // Grid of service cards
-        React.createElement('div', { className: 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4' },
-            services.map(service => 
-                React.createElement('div', { 
-                    key: service.id, 
-                    className: 'p-4 border rounded-lg shadow bg-white'
+    return React.createElement(
+        "div",
+        { className: "grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4" },
+        services.map((service) =>
+            React.createElement(
+                "div",
+                {
+                    key: service.id,
+                    className: "p-4 bg-white shadow rounded-lg",
                 },
-                    React.createElement('h3', { className: 'font-bold text-lg' }, service.name),
-                    React.createElement('div', { 
-                        className: `mt-2 ${
-                            service.status === 'OPEN' ? 'text-red-600' : 
-                            service.status === 'HALF_OPEN' ? 'text-yellow-600' : 
-                            'text-green-600'
-                        }`
-                    }, 'Status: ', service.status),
-                    React.createElement('div', { className: 'mt-1' }, 
-                        'Trip Count: ', service.trip_count
+                [
+                    React.createElement(
+                        "h3",
+                        { className: "text-lg font-semibold mb-2" },
+                        service.service_name
                     ),
-                    React.createElement('div', { className: 'mt-1' }, 
-                        'Last Failure: ', service.last_failure_at || 'N/A'
+                    React.createElement(
+                        "div",
+                        {
+                            className: `inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                                service.state === "CLOSED"
+                                    ? "bg-green-100 text-green-800"
+                                    : service.state === "HALF_OPEN"
+                                    ? "bg-yellow-100 text-yellow-800"
+                                    : "bg-red-100 text-red-800"
+                            }`,
+                        },
+                        service.state
                     ),
-                    React.createElement('button', {
-                        onClick: () => resetCircuitBreaker(service.id),
-                        className: 'mt-4 px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600'
-                    }, 'Reset')
-                )
+                    React.createElement(
+                        "div",
+                        { className: "mt-2 text-sm text-gray-600" },
+                        [
+                            React.createElement(
+                                "p",
+                                null,
+                                `Last Failure: ${
+                                    service.last_failure_at
+                                        ? new Date(
+                                              service.last_failure_at
+                                          ).toLocaleString()
+                                        : "None"
+                                }`
+                            ),
+                            React.createElement(
+                                "p",
+                                null,
+                                `Cooldown Until: ${
+                                    service.cooldown_until
+                                        ? new Date(
+                                              service.cooldown_until
+                                          ).toLocaleString()
+                                        : "N/A"
+                                }`
+                            ),
+                            React.createElement(
+                                "p",
+                                null,
+                                `Tenant: ${service.tenant?.name || "N/A"}`
+                            ),
+                        ]
+                    ),
+                ]
             )
         )
     );

@@ -31,4 +31,9 @@ class PosTerminal extends Authenticatable implements JWTSubject
     {
         return [];
     }
+
+    public function tenant()
+    {
+        return $this->belongsTo(Tenant::class);
+    }
 }

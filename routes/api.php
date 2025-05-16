@@ -12,6 +12,8 @@ use App\Http\Controllers\API\V1\TestController;
 use App\Http\Controllers\API\Auth\AuthController;
 use App\Http\Controllers\API\SecurityDashboardController;
 use App\Http\Controllers\API\SecurityReportController;
+use App\Http\Controllers\CircuitBreakerController;
+use App\Http\Controllers\TerminalTokenController;
 
 // Authentication Routes
 Route::prefix('auth')->group(function () {
@@ -33,18 +35,25 @@ Route::prefix('web')->middleware(['api', 'auth:sanctum'])->group(function () {
         
         // Retry History
         Route::get('/dashboard/retry-history', [RetryHistoryController::class, 'index']);
+        Route::get('/dashboard/retry-history/analytics', [RetryHistoryController::class, 'getAnalytics']);
+        Route::get('/dashboard/retry-history/config', [RetryHistoryController::class, 'getRetryConfig']);
+        Route::post('/dashboard/retry-history/{id}/retry', [RetryHistoryController::class, 'retrigger']);
         
         // Circuit Breakers
         Route::prefix('circuit-breaker')->group(function () {
             Route::get('/states', [CircuitBreakersController::class, 'getStates']);
             Route::get('/metrics', [CircuitBreakersController::class, 'getMetrics']);
         });
-        Route::get('/dashboard/circuit-breakers', [CircuitBreakersController::class, 'index']);
-        Route::post('/dashboard/circuit-breakers/{id}/reset', [CircuitBreakersController::class, 'reset']);
+        Route::prefix('dashboard')->group(function () {
+            Route::get('/circuit-breakers', [CircuitBreakersController::class, 'index']);
+            Route::post('/circuit-breakers/{id}/reset', [CircuitBreakersController::class, 'reset']);
+        });
         
         // Terminal Tokens
-        Route::get('/dashboard/terminal-tokens', [TerminalTokensController::class, 'index']);
-        Route::post('/dashboard/terminal-tokens/{terminalId}/regenerate', [TerminalTokensController::class, 'regenerate']);
+        Route::prefix('dashboard')->group(function () {
+            Route::get('/terminal-tokens', [TerminalTokensController::class, 'index']);
+            Route::post('/terminal-tokens/{terminalId}/regenerate', [TerminalTokensController::class, 'regenerate']);
+        });
         
         // Security Reporting
         Route::prefix('security')->group(function () {
@@ -123,4 +132,51 @@ Route::prefix('v1')->group(function () {
     // Reset test service circuit breaker
     Route::post('/circuit-breakers/test-circuit/reset', [TestController::class, 'resetTestCircuit'])
         ->withoutMiddleware(['auth:api', 'auth:sanctum', 'auth:pos_api']);
+        
+    Route::get('terminal-tokens', [TerminalTokensController::class, 'index']);
+    Route::get('terminal-tokens/{id}', [TerminalTokensController::class, 'show']);
+    Route::post('terminal-tokens/verify', [TerminalTokensController::class, 'verify']);
+    Route::post('terminal-tokens/{terminalId}/regenerate', [TerminalTokensController::class, 'regenerate']);
+    Route::post('terminal-tokens/{id}/revoke', [TerminalTokensController::class, 'revoke']);
 });
+
+// Additional Terminal Tokens Route
+
+Route::get('/test-password-hash', function () {
+    $user = \App\Models\User::find(1);
+    $plainPassword = 'password123';
+    $result = [
+        'user_exists' => $user ? true : false,
+        'password_matches' => $user ? \Illuminate\Support\Facades\Hash::check($plainPassword, $user->password) : false,
+        'hash' => $user ? $user->password : null,
+        'email' => $user ? $user->email : null
+    ];
+    return response()->json($result);
+})->withoutMiddleware(['auth:api', 'auth:sanctum', 'auth:pos_api']);
+
+// Add this route at the end of your routes file
+
+Route::post('/test-login', function (\Illuminate\Http\Request $request) {
+    $credentials = $request->validate([
+        'email' => 'required|email',
+        'password' => 'required',
+    ]);
+    
+    $user = \App\Models\User::where('email', $credentials['email'])->first();
+    
+    if (!$user || !\Illuminate\Support\Facades\Hash::check($credentials['password'], $user->password)) {
+        return response()->json([
+            'success' => false,
+            'message' => 'Invalid credentials'
+        ], 401);
+    }
+    
+    // Create token directly
+    $token = $user->createToken('test-token')->plainTextToken;
+    
+    return response()->json([
+        'success' => true,
+        'token' => $token,
+        'user' => $user
+    ]);
+})->withoutMiddleware(['auth:api', 'auth:sanctum', 'auth:pos_api']);

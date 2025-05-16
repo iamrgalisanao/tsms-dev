@@ -1,128 +1,67 @@
-import React, { useState } from 'react';
-import StateOverview from '../../Components/CircuitBreaker/Dashboard/StateOverview';
-import MetricsChart from '../../Components/CircuitBreaker/Metrics/MetricsChart';
-import Navbar from '../../Components/Layout/Navbar';
+import React, { useState } from "react";
+import Navbar from "../../Components/Layout/Navbar";
+// import TransactionLogs from "../Components/features/transactions/TransactionLogs";
+import TransactionLogs from "../../Components/features/transactions/TransactionLogs";
+// import CircuitBreakers from "../../Pages/CircuitBreaker/Dashboard";
+import CircuitBreakers from "../../Components/dashboard/CircuitBreakers";
+import RetryHistory from "../../Components/dashboard/RetryHistory";
+import TerminalTokens from "../../Components/dashboard/TerminalTokens";
 
-function CircuitBreakerDashboard() {
-    console.log('CircuitBreakerDashboard rendering');
-    const [selectedService, setSelectedService] = useState(null);
-    const [selectedTenant, setSelectedTenant] = useState(1);
+function Dashboard() {
+    const [activeTab, setActiveTab] = useState("transactions");
 
-    const handleServiceSelect = (serviceName) => {
-        console.log('Service selected:', serviceName);
-        setSelectedService(serviceName);
-    };
+    const tabs = [
+        {
+            id: "transactions",
+            label: "Transaction Logs",
+            component: TransactionLogs,
+        },
+        {
+            id: "circuit-breakers",
+            label: "Circuit Breaker Status",
+            component: CircuitBreakers,
+        },
+        {
+            id: "retries",
+            label: "Retry History",
+            component: RetryHistory,
+        },
+        {
+            id: "tokens",
+            label: "Terminal Tokens",
+            component: TerminalTokens,
+        },
+    ];
 
-    return React.createElement(
-        'div',
-        { className: "min-h-screen bg-gray-100" },
-        [
-            React.createElement(Navbar, { key: 'navbar' }),
-            React.createElement(
-                'div',
-                { key: 'content', className: "p-6 space-y-6" },
-                [
-                    // Header section
-                    React.createElement(
-                        'div',
-                        {
-                            key: 'header',
-                            className: "flex justify-between items-center mb-6"
-                        },
-                        [
-                            React.createElement(
-                                'h1',
-                                {
-                                    key: 'title',
-                                    className: "text-2xl font-semibold text-gray-900"
-                                },
-                                'Circuit Breaker Dashboard'
-                            ),
-                            React.createElement(
-                                'div',
-                                {
-                                    key: 'filters',
-                                    className: "flex space-x-4"
-                                },
-                                React.createElement(
-                                    'select',
-                                    {
-                                        className: "rounded-md border-gray-300 py-1 px-2",
-                                        onChange: (e) => setSelectedTenant(parseInt(e.target.value)),
-                                        value: selectedTenant
-                                    },
-                                    [
-                                        React.createElement('option', { key: '1', value: 1 }, 'Tenant 1'),
-                                        React.createElement('option', { key: '2', value: 2 }, 'Tenant 2'),
-                                        React.createElement('option', { key: '3', value: 3 }, 'Tenant 3')
-                                    ]
-                                )
-                            )
-                        ]
-                    ),
-                    // StateOverview section
-                    React.createElement(
-                        'div',
-                        {
-                            key: 'overview',
-                            className: "mb-6"
-                        },
-                        React.createElement(StateOverview, {
-                            tenantId: selectedTenant,
-                            onServiceSelect: handleServiceSelect
-                        })
-                    ),
-                    // MetricsChart section (conditional render with visual feedback)
-                    selectedService &&
-                        React.createElement(
-                            'div',
-                            {
-                                key: 'metrics-section',
-                                className: "mt-8 bg-white rounded-lg shadow"
-                            },
-                            [
-                                React.createElement(
-                                    'div',
-                                    {
-                                        key: 'metrics-header',
-                                        className: "px-6 py-4 border-b border-gray-200"
-                                    },
-                                    [
-                                        React.createElement(
-                                            'h2',
-                                            {
-                                                key: 'metrics-title',
-                                                className: "text-lg font-medium text-gray-900"
-                                            },
-                                            `Metrics for ${selectedService}`
-                                        ),
-                                        React.createElement(
-                                            'p',
-                                            {
-                                                key: 'metrics-subtitle',
-                                                className: "mt-1 text-sm text-gray-500"
-                                            },
-                                            `Showing real-time metrics for Tenant ${selectedTenant}`
-                                        )
-                                    ]
-                                ),
-                                React.createElement(
-                                    'div',
-                                    {
-                                        key: 'metrics-content',
-                                        className: "p-6"
-                                    },
-                                    React.createElement(MetricsChart, {
-                                        serviceName: selectedService,
-                                        tenantId: selectedTenant
-                                    })
-                                )
-                            ]
-                        )
-                ]
-            )
-        ]
+    const ActiveComponent = tabs.find((tab) => tab.id === activeTab)?.component;
+
+    return (
+        <div className="min-h-screen bg-gray-100">
+            <Navbar />
+            <div className="container mx-auto px-4 py-6">
+                <div className="border-b border-gray-200 mb-6">
+                    <nav className="-mb-px flex space-x-8">
+                        {tabs.map((tab) => (
+                            <button
+                                key={tab.id}
+                                onClick={() => setActiveTab(tab.id)}
+                                className={`${
+                                    activeTab === tab.id
+                                        ? "border-blue-500 text-blue-600"
+                                        : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                                } whitespace-nowrap pb-4 px-1 border-b-2 font-medium`}
+                            >
+                                {tab.label}
+                            </button>
+                        ))}
+                    </nav>
+                </div>
+                <main className="mt-6">
+                    {ActiveComponent && <ActiveComponent />}
+                </main>
+            </div>
+        </div>
     );
 }
 
-export default CircuitBreakerDashboard;
+export default Dashboard;
