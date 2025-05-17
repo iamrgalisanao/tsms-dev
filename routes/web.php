@@ -8,6 +8,7 @@ use App\Http\Controllers\TransactionController;
 use App\Http\Controllers\CircuitBreakerController;
 use App\Http\Controllers\TerminalTokenController;
 use App\Http\Controllers\RetryHistoryController;
+use App\Http\Controllers\LogViewerController;
 
 // Home route redirects based on auth status
 Route::get('/', function () {
@@ -39,6 +40,11 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/dashboard/retry-history', [RetryHistoryController::class, 'index'])->name('dashboard.retry-history');
     Route::get('/dashboard/retry-history/{id}', [RetryHistoryController::class, 'show'])->name('dashboard.retry-history.show');
     Route::post('/dashboard/retry-history/{id}/retry', [RetryHistoryController::class, 'retry'])->name('dashboard.retry-history.retry');
+    
+    // Log Viewer Routes
+    Route::get('/dashboard/logs', [LogViewerController::class, 'index'])->name('dashboard.log-viewer');
+    Route::get('/dashboard/logs/{id}', [LogViewerController::class, 'show'])->name('dashboard.log-viewer.show');
+    Route::post('/dashboard/logs/export', [LogViewerController::class, 'export'])->name('dashboard.log-viewer.export');
     
     // Add direct route for token regeneration
     Route::post('/dashboard/terminal-tokens/{terminalId}/regenerate', [TerminalTokenController::class, 'regenerate'])

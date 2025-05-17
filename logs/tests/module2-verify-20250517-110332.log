@@ -1,0 +1,113 @@
+
+   WARN  Class Tests\Feature\API\SecurityReportControllerTest declared in C:\xampp\htdocs\PITX\TSMS\tsms-dev\tests\Feature\SecurityReportControllerTest.php does not extend PHPUnit\Framework\TestCase
+
+   FAIL  Tests\Feature\Module2VerificationTest
+  ⨯ transaction api exists
+  ⨯ text format parser exists
+  ⨯ job queues exist
+  ⨯ error handling exists
+  ⨯ module2 implementation status
+  ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Feature\Module2VerificationTest > transaction api exists                              QueryException   
+  SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it (Connection: mysql, SQL: select exists (select 1 from information_schema.tables where table_schema = 'tsms_db' and table_name = 'migrations' and table_type in ('BASE TABLE', 'SYSTEM VERSIONED')) as `exists`)
+
+  at vendor\laravel\framework\src\Illuminate\Database\Connection.php:825
+    821▕                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    822▕                 );
+    823▕             }
+    824▕ 
+  ➜ 825▕             throw new QueryException(
+    826▕                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    827▕             );
+    828▕         }
+    829▕     }
+
+  1   vendor\laravel\framework\src\Illuminate\Database\Connection.php:825
+
+  2   vendor\laravel\framework\src\Illuminate\Database\Connectors\Connector.php:66
+      NunoMaduro\Collision\Exceptions\TestException::("SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it")
+
+  ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Feature\Module2VerificationTest > text format parser exists                           QueryException   
+  SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it (Connection: mysql, SQL: select exists (select 1 from information_schema.tables where table_schema = 'tsms_db' and table_name = 'migrations' and table_type in ('BASE TABLE', 'SYSTEM VERSIONED')) as `exists`)
+
+  at vendor\laravel\framework\src\Illuminate\Database\Connection.php:825
+    821▕                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    822▕                 );
+    823▕             }
+    824▕ 
+  ➜ 825▕             throw new QueryException(
+    826▕                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    827▕             );
+    828▕         }
+    829▕     }
+
+  1   vendor\laravel\framework\src\Illuminate\Database\Connection.php:825
+
+  2   vendor\laravel\framework\src\Illuminate\Database\Connectors\Connector.php:66
+      NunoMaduro\Collision\Exceptions\TestException::("SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it")
+
+  ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Feature\Module2VerificationTest > job queues exist                                    QueryException   
+  SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it (Connection: mysql, SQL: select exists (select 1 from information_schema.tables where table_schema = 'tsms_db' and table_name = 'migrations' and table_type in ('BASE TABLE', 'SYSTEM VERSIONED')) as `exists`)
+
+  at vendor\laravel\framework\src\Illuminate\Database\Connection.php:825
+    821▕                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    822▕                 );
+    823▕             }
+    824▕ 
+  ➜ 825▕             throw new QueryException(
+    826▕                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    827▕             );
+    828▕         }
+    829▕     }
+
+  1   vendor\laravel\framework\src\Illuminate\Database\Connection.php:825
+
+  2   vendor\laravel\framework\src\Illuminate\Database\Connectors\Connector.php:66
+      NunoMaduro\Collision\Exceptions\TestException::("SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it")
+
+  ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Feature\Module2VerificationTest > error handling exists                               QueryException   
+  SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it (Connection: mysql, SQL: select exists (select 1 from information_schema.tables where table_schema = 'tsms_db' and table_name = 'migrations' and table_type in ('BASE TABLE', 'SYSTEM VERSIONED')) as `exists`)
+
+  at vendor\laravel\framework\src\Illuminate\Database\Connection.php:825
+    821▕                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    822▕                 );
+    823▕             }
+    824▕ 
+  ➜ 825▕             throw new QueryException(
+    826▕                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    827▕             );
+    828▕         }
+    829▕     }
+
+  1   vendor\laravel\framework\src\Illuminate\Database\Connection.php:825
+
+  2   vendor\laravel\framework\src\Illuminate\Database\Connectors\Connector.php:66
+      NunoMaduro\Collision\Exceptions\TestException::("SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it")
+
+  ────────────────────────────────────────────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Feature\Module2VerificationTest > module2 implementation status                       QueryException   
+  SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it (Connection: mysql, SQL: select exists (select 1 from information_schema.tables where table_schema = 'tsms_db' and table_name = 'migrations' and table_type in ('BASE TABLE', 'SYSTEM VERSIONED')) as `exists`)
+
+  at vendor\laravel\framework\src\Illuminate\Database\Connection.php:825
+    821▕                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    822▕                 );
+    823▕             }
+    824▕ 
+  ➜ 825▕             throw new QueryException(
+    826▕                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    827▕             );
+    828▕         }
+    829▕     }
+
+  1   vendor\laravel\framework\src\Illuminate\Database\Connection.php:825
+
+  2   vendor\laravel\framework\src\Illuminate\Database\Connectors\Connector.php:66
+      NunoMaduro\Collision\Exceptions\TestException::("SQLSTATE[HY000] [2002] No connection could be made because the target machine actively refused it")
+
+
+  Tests:    5 failed (0 assertions)
+  Duration: 46.18s
+

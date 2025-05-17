@@ -169,6 +169,14 @@
 document.addEventListener('DOMContentLoaded', function() {
   let currentPage = 1;
   let perPage = 10;
+  let activeFilters = {}; // Store active filters
+
+  // Initialize Bootstrap Modal
+  let retryModal = null;
+  const retryModalEl = document.getElementById('retryModal');
+  if (retryModalEl && typeof bootstrap !== 'undefined') {
+    retryModal = new bootstrap.Modal(retryModalEl);
+  }
 
   // Initial load
   loadRetryHistory();
@@ -177,6 +185,18 @@ document.addEventListener('DOMContentLoaded', function() {
   // Filter form submission
   document.getElementById('filter-form').addEventListener('submit', function(e) {
     e.preventDefault();
+
+    const formData = new FormData(this);
+    activeFilters = {}; // Reset active filters
+
+    // Process form data into activeFilters object
+    for (const [key, value] of formData.entries()) {
+      if (value) {
+        activeFilters[key] = value;
+      }
+    }
+
+    console.log('Active filters:', activeFilters);
     currentPage = 1; // Reset to first page when applying filters
     loadRetryHistory();
     loadAnalytics();
@@ -185,6 +205,7 @@ document.addEventListener('DOMContentLoaded', function() {
   // Reset filters
   document.getElementById('reset-filters').addEventListener('click', function() {
     document.getElementById('filter-form').reset();
+    activeFilters = {}; // Clear active filters
     currentPage = 1;
     loadRetryHistory();
     loadAnalytics();
@@ -192,24 +213,25 @@ document.addEventListener('DOMContentLoaded', function() {
 
   // Per page change
   document.getElementById('per-page').addEventListener('change', function() {
-    perPage = this.value;
+    perPage = parseInt(this.value);
     currentPage = 1; // Reset to first page when changing items per page
     loadRetryHistory();
   });
 
-  // Retry modal setup
-  const retryModal = new bootstrap.Modal(document.getElementById('retryModal'));
-
+  // Event delegation for dynamic elements
   document.addEventListener('click', function(e) {
     // Handle retry button clicks
     if (e.target.classList.contains('retry-btn')) {
       const transactionId = e.target.getAttribute('data-transaction-id');
       const logId = e.target.getAttribute('data-log-id');
 
-      document.getElementById('retry-transaction-id').textContent = transactionId;
-      document.getElementById('retry-form').action = `/dashboard/retry-history/${logId}/retry`;
+      const rtId = document.getElementById('retry-transaction-id');
+      if (rtId) rtId.textContent = transactionId;
 
-      retryModal.show();
+      const form = document.getElementById('retry-form');
+      if (form) form.action = `/dashboard/retry-history/${logId}/retry`;
+
+      if (retryModal) retryModal.show();
     }
 
     // Handle pagination clicks
@@ -220,10 +242,12 @@ document.addEventListener('DOMContentLoaded', function() {
         currentPage = parseInt(page);
         loadRetryHistory();
 
-        // Scroll to top of the table
-        document.querySelector('.table-responsive').scrollIntoView({
-          behavior: 'smooth'
-        });
+        const tableResponsive = document.querySelector('.table-responsive');
+        if (tableResponsive) {
+          tableResponsive.scrollIntoView({
+            behavior: 'smooth'
+          });
+        }
       }
     }
   });
@@ -231,33 +255,38 @@ document.addEventListener('DOMContentLoaded', function() {
   // Load retry history data
   function loadRetryHistory() {
     const tableBody = document.getElementById('retry-history-table');
+    if (!tableBody) return;
+
     tableBody.innerHTML = '<tr><td colspan="7" class="text-center">Loading retry history...</td></tr>';
 
-    // Build query parameters from filters
-    const formData = new FormData(document.getElementById('filter-form'));
+    // Build query parameters using active filters
     const params = new URLSearchParams();
 
-    for (const [key, value] of formData.entries()) {
-      if (value) {
-        params.append(key, value);
-      }
-    }
+    // Add all active filters to params
+    Object.entries(activeFilters).forEach(([key, value]) => {
+      params.append(key, value);
+    });
 
     params.append('per_page', perPage);
     params.append('page', currentPage);
+
+    console.log('Fetching retry history with params:', Object.fromEntries(params));
 
     // Fetch data from API
     fetch(`/api/web/dashboard/retry-history?${params.toString()}`)
       .then(response => {
         if (!response.ok) {
-          throw new Error('Network response was not ok');
+          throw new Error(`Network response was not ok: ${response.status}`);
         }
         return response.json();
       })
       .then(data => {
-        if (data.data.length === 0) {
+        console.log('Received retry history data:', data);
+
+        if (!data.data || data.data.length === 0) {
           tableBody.innerHTML = '<tr><td colspan="7" class="text-center">No retry history found</td></tr>';
-          document.getElementById('pagination').innerHTML = '';
+          const pagination = document.getElementById('pagination');
+          if (pagination) pagination.innerHTML = '';
           return;
         }
 
@@ -266,14 +295,14 @@ document.addEventListener('DOMContentLoaded', function() {
         data.data.forEach(log => {
           html += `
                         <tr>
-                            <td>${log.transaction_id}</td>
-                            <td>${log.posTerminal?.terminal_uid || 'Unknown'}</td>
+                            <td>${log.transaction_id || 'N/A'}</td>
+                            <td>${(log.posTerminal && log.posTerminal.terminal_uid) || 'Unknown'}</td>
                             <td>
-                                <span class="badge ${getStatusBadgeClass(log.status)}">
-                                    ${log.status}
+                                <span class="badge ${getStatusBadgeClass(log.status || 'UNKNOWN')}">
+                                    ${log.status || 'Unknown'}
                                 </span>
                             </td>
-                            <td>${log.retry_count}</td>
+                            <td>${log.retry_count || 0}</td>
                             <td>${formatDate(log.last_retry_at) || 'N/A'}</td>
                             <td title="${log.retry_reason || 'No reason provided'}">${truncateText(log.retry_reason, 30) || 'N/A'}</td>
                             <td>
@@ -282,8 +311,8 @@ document.addEventListener('DOMContentLoaded', function() {
                                         Details
                                     </a>
                                     <button type="button" class="btn btn-sm btn-primary retry-btn" 
-                                            data-transaction-id="${log.transaction_id}" 
-                                            data-log-id="${log.id}">
+                                            data-transaction-id="${log.transaction_id || ''}" 
+                                            data-log-id="${log.id || ''}">
                                         Retry
                                     </button>
                                 </div>
@@ -294,52 +323,69 @@ document.addEventListener('DOMContentLoaded', function() {
         tableBody.innerHTML = html;
 
         // Update pagination
-        renderPagination(data.meta);
+        if (data.meta) {
+          renderPagination(data.meta);
+        }
       })
       .catch(error => {
         console.error('Error fetching retry history:', error);
         tableBody.innerHTML =
-          '<tr><td colspan="7" class="text-center text-danger">Error loading retry history</td></tr>';
+          '<tr><td colspan="7" class="text-center text-danger">Error loading retry history. Please try again later.</td></tr>';
       });
   }
 
   // Load analytics data
   function loadAnalytics() {
-    // Build query parameters from filters
-    const formData = new FormData(document.getElementById('filter-form'));
+    // Build query parameters from active filters
     const params = new URLSearchParams();
 
-    for (const [key, value] of formData.entries()) {
-      if (value) {
-        params.append(key, value);
-      }
-    }
+    // Add all active filters to params
+    Object.entries(activeFilters).forEach(([key, value]) => {
+      params.append(key, value);
+    });
+
+    // Update analytics placeholders
+    document.getElementById('total-retries').textContent = 'Loading...';
+    document.getElementById('success-rate').textContent = 'Loading...';
+    document.getElementById('avg-response-time').textContent = 'Loading...';
+    document.getElementById('active-circuit-breakers').textContent = 'Loading...';
 
     // Fetch analytics from API
     fetch(`/api/web/dashboard/retry-history/analytics?${params.toString()}`)
       .then(response => {
         if (!response.ok) {
-          throw new Error('Network response was not ok');
+          throw new Error(`Network response was not ok: ${response.status}`);
         }
         return response.json();
       })
       .then(data => {
-        document.getElementById('total-retries').textContent = data.total_retries || 0;
-        document.getElementById('success-rate').textContent = `${data.success_rate || 0}%`;
-        document.getElementById('avg-response-time').textContent =
-          `${formatResponseTime(data.avg_response_time)}`;
+        console.log('Received analytics data:', data);
 
-        // Get circuit breaker status from separate endpoint
-        fetch('/api/web/circuit-breaker/states')
-          .then(response => response.json())
-          .then(cbData => {
-            const openBreakers = Object.values(cbData).filter(state => state === 'open').length;
-            document.getElementById('active-circuit-breakers').textContent = openBreakers;
-          })
-          .catch(error => {
-            console.error('Error fetching circuit breaker states:', error);
-            document.getElementById('active-circuit-breakers').textContent = 'N/A';
-          });
+        document.getElementById('total-retries').textContent = data.total_retries !== undefined ? data
+          .total_retries : 0;
+        document.getElementById('success-rate').textContent =
+          `${data.success_rate !== undefined ? data.success_rate : 0}%`;
+        document.getElementById('avg-response-time').textContent = formatResponseTime(data.avg_response_time);
+
+        // Get circuit breaker status if endpoint exists
+        try {
+          fetch('/api/web/circuit-breaker/states')
+            .then(response => {
+              if (!response.ok) throw new Error('Circuit breaker endpoint not available');
+              return response.json();
+            })
+            .then(cbData => {
+              const openBreakers = Object.values(cbData).filter(state => state === 'open').length;
+              document.getElementById('active-circuit-breakers').textContent = openBreakers;
+            })
+            .catch(error => {
+              console.warn('Could not fetch circuit breaker states:', error);
+              document.getElementById('active-circuit-breakers').textContent = 'N/A';
+            });
+        } catch (e) {
+          console.warn('Circuit breaker fetch error:', e);
+          document.getElementById('active-circuit-breakers').textContent = 'N/A';
+        }
       })
       .catch(error => {
         console.error('Error fetching analytics:', error);
@@ -353,8 +399,8 @@ document.addEventListener('DOMContentLoaded', function() {
   // Render pagination links
   function renderPagination(meta) {
     const pagination = document.getElementById('pagination');
-    if (!meta || !meta.last_page) {
-      pagination.innerHTML = '';
+    if (!pagination || !meta || !meta.last_page) {
+      if (pagination) pagination.innerHTML = '';
       return;
     }
 
@@ -415,13 +461,17 @@ document.addEventListener('DOMContentLoaded', function() {
 
   function formatDate(dateString) {
     if (!dateString) return null;
-    const date = new Date(dateString);
-    return date.toLocaleString();
+    try {
+      const date = new Date(dateString);
+      return isNaN(date.getTime()) ? 'Invalid Date' : date.toLocaleString();
+    } catch (e) {
+      return 'Invalid Date';
+    }
   }
 
   function formatResponseTime(time) {
     if (!time) return 'N/A';
-    return `${Math.round(time * 100) / 100}ms`;
+    return `${Math.round((time + Number.EPSILON) * 100) / 100}ms`;
   }
 
   function truncateText(text, maxLength) {

@@ -12,6 +12,7 @@ use App\Models\IntegrationLog;
 use App\Models\TerminalToken;
 use App\Events\TransactionPermanentlyFailed;
 use App\Services\TransactionValidationService;
+use App\Jobs\ProcessTransactionJob;
 use Illuminate\Support\Facades\Log;
 use Carbon\Carbon;
 use Illuminate\Support\Str;
@@ -92,99 +93,79 @@ class TransactionController extends Controller
 
         if ($recentFailures > 10) {
             // Circuit is open - stop immediate processing and delay retry
-            $log->retry_count = 0;
-            $log->retry_reason = 'CIRCUIT_BREAKER_OPEN';
-            $log->next_retry_at = now()->addMinutes(15);
-            $log->save();
-            
-            Log::warning("Circuit breaker open due to {$recentFailures} failures in last 5 minutes");
-            
             return response()->json([
                 'status' => 'error',
                 'message' => 'Service temporarily unavailable, transaction will be retried automatically',
-                'retry_at' => $log->next_retry_at
+                'retry_at' => now()->addMinutes(15)
             ], 503);
         }
 
-        // Step 2: Validate payload
-        $result = $this->validator->validate($payloadData);
-        $payloadData['validation_status'] = $result['validation_status'];
-        $payloadData['error_code'] = $result['error_code'];
-        $payloadData['payload_checksum'] = $result['computed_checksum'];
-
-        // Step 3: Handle validation failure
-        if ($result['validation_status'] === 'ERROR') {
-            $log->response_payload = json_encode([
-                'errors' => $result['errors'],
-                'error_code' => $result['error_code']
-            ]);
-            $log->error_message = 'Validation failed';
-            $log->http_status_code = 422;
-            
-            // Automatically set up for retry based on error type and terminal settings
-            $errorCategory = $this->categorizeError($result['error_code'], $result['errors']);
-            $this->configureRetryParams($log, $terminal, $errorCategory);
-            
-            $log->save();
-
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Validation failed',
-                'errors' => $result['errors'],
-                'error_code' => $result['error_code'],
-                'retry_scheduled_at' => $log->next_retry_at
-            ], 422);
-        }
-
-        // Step 4: Store transaction
-        $transaction = Transactions::create(array_merge(
-            $request->only([
-                'transaction_id',
-                'hardware_id',
-                'transaction_timestamp',
-                'gross_sales',
-                'net_sales',
-                'vatable_sales',
-                'vat_exempt_sales',
-                'vat_amount',
-                'promo_discount_amount',
-                'promo_status',
-                'discount_total',
-                'discount_details',
-                'other_tax',
-                'management_service_charge',
-                'employee_service_charge',
-                'transaction_count',
-                'payload_checksum',
-                'validation_status',
-                'error_code',
-                'store_name',
-                'machine_number'
-            ]),
-            [
-                'tenant_id' => $terminal->tenant_id,
-                'terminal_id' => $terminal->id,
-                'idempotency_key' => $idempotencyKey, // Store for future idempotency checks
-            ]
-        ));
-
-        // Step 5: Finalize log with response and latency
-        $endTime = microtime(true);
-        $log->status = 'SUCCESS';
-        $log->response_payload = json_encode([
-            'transaction_id' => $transaction->id,
-            'validation_status' => $payloadData['validation_status']
-        ]);
-        $log->http_status_code = 200;
-        $log->latency_ms = round(($endTime - $startTime) * 1000);
+        // Create initial log entry for tracking
+        $log = new IntegrationLog();
+        $log->tenant_id = $terminal->tenant_id ?? null;
+        $log->terminal_id = $terminal->id ?? null;
+        $log->transaction_id = $request->input('transaction_id') ?? $idempotencyKey;
+        $log->request_payload = json_encode($request->all());
+        $log->status = 'PENDING'; // Set to pending since we're queueing
+        $log->source_ip = $request->ip();
+        $log->log_type = 'transaction';
+        $log->severity = 'info';
+        $log->message = 'Transaction queued for processing';
         $log->save();
 
-        return response()->json([
-            'status' => 'success',
-            'message' => 'Transaction recorded',
-            'transaction_id' => $transaction->id,
-            'validation_status' => $payloadData['validation_status'],
-        ], 200);
+        // Determine content type of the request
+        $contentType = $request->header('Content-Type', 'application/json');
+        
+        try {
+            // Queue the transaction for processing
+            $payload = $contentType === 'text/plain' ? $request->getContent() : $request->all();
+            
+            // Dispatch the job to process the transaction asynchronously
+            ProcessTransactionJob::dispatch(
+                $payload,
+                $terminal->id,
+                $log->transaction_id,
+                $contentType,
+                $idempotencyKey
+            );
+            
+            // Update the log to indicate the transaction was queued
+            $endTime = microtime(true);
+            $log->http_status_code = 202; // Accepted
+            $log->response_payload = json_encode([
+                'message' => 'Transaction queued for processing',
+                'transaction_id' => $log->transaction_id
+            ]);
+            $log->response_time = round(($endTime - $startTime) * 1000);
+            $log->save();
+            
+            // Return a response indicating the transaction was accepted for processing
+            return response()->json([
+                'status' => 'pending',
+                'message' => 'Transaction queued for processing',
+                'transaction_id' => $log->transaction_id,
+            ], 202);
+            
+        } catch (\Exception $e) {
+            // Log error and return error response
+            $log->status = 'FAILED';
+            $log->error_message = $e->getMessage();
+            $log->severity = 'error';
+            $log->http_status_code = 500;
+            $log->save();
+            
+            Log::error('Error queueing transaction', [
+                'transaction_id' => $log->transaction_id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to queue transaction',
+                'error' => $e->getMessage()
+            ], 500);
+        }
     }
 
     /**

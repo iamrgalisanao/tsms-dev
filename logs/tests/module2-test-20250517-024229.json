@@ -1,0 +1,60 @@
+{
+    "test_time": "2025-05-17 02:42:29",
+    "test_results": [
+        {
+            "component": "Module Verification",
+            "test": "Verification completed",
+            "result": "PASS",
+            "message": "",
+            "time": "2025-05-17 02:42:28"
+        },
+        {
+            "component": "Text Format Parser",
+            "test": "Parser tests completed",
+            "result": "PASS",
+            "message": "",
+            "time": "2025-05-17 02:42:28"
+        },
+        {
+            "component": "Transaction API",
+            "test": "Endpoint verification completed",
+            "result": "PASS",
+            "message": "",
+            "time": "2025-05-17 02:42:28"
+        },
+        {
+            "component": "Transaction API",
+            "test": "cURL test",
+            "result": "FAIL",
+            "message": "HTTP code: 404",
+            "time": "2025-05-17 02:42:29"
+        },
+        {
+            "component": "Transaction API",
+            "test": "Text format test",
+            "result": "FAIL",
+            "message": "HTTP code: 404",
+            "time": "2025-05-17 02:42:29"
+        }
+    ],
+    "errors": [
+        {
+            "component": "Transaction API",
+            "message": "Test failed: cURL test - HTTP code: 404",
+            "time": "2025-05-17 02:42:29"
+        },
+        {
+            "component": "Transaction API",
+            "message": "Test failed: Text format test - HTTP code: 404",
+            "time": "2025-05-17 02:42:29"
+        }
+    ],
+    "warnings": [],
+    "summary": {
+        "total_tests": 5,
+        "passed": 3,
+        "failed": 2,
+        "error_count": 2,
+        "warning_count": 0
+    }
+}
