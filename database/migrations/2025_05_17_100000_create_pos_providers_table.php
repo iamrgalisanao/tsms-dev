@@ -12,18 +12,20 @@ return new class extends Migration
      */
     public function up(): void
     {
-        // First, create the pos_providers table
-        Schema::create('pos_providers', function (Blueprint $table) {
-            $table->id();
-            $table->string('name');
-            $table->string('code')->unique();
-            $table->string('api_key')->nullable();
-            $table->text('description')->nullable();
-            $table->string('contact_email')->nullable();
-            $table->string('contact_phone')->nullable();
-            $table->string('status')->default('active');
-            $table->timestamps();
-        });
+        // First, create the pos_providers table if it doesn't exist
+        if (!Schema::hasTable('pos_providers')) {
+            Schema::create('pos_providers', function (Blueprint $table) {
+                $table->id();
+                $table->string('name');
+                $table->string('code')->unique();
+                $table->string('api_key')->nullable();
+                $table->text('description')->nullable();
+                $table->string('contact_email')->nullable();
+                $table->string('contact_phone')->nullable();
+                $table->string('status')->default('active');
+                $table->timestamps();
+            });
+        }
         
         // Add columns to pos_terminals table
         if (Schema::hasTable('pos_terminals')) {
@@ -48,20 +50,27 @@ return new class extends Migration
             }
         }
         
-        // Finally create the provider_statistics table
-        Schema::create('provider_statistics', function (Blueprint $table) {
-            $table->id();
-            $table->unsignedBigInteger('provider_id');
-            $table->date('date');
-            $table->integer('terminal_count')->default(0);
-            $table->integer('active_terminal_count')->default(0);
-            $table->integer('inactive_terminal_count')->default(0);
-            $table->integer('new_enrollments')->default(0);
-            $table->timestamps();
-            
-            $table->unique(['provider_id', 'date']);
-            $table->foreign('provider_id')->references('id')->on('pos_providers')->cascadeOnDelete();
-        });
+        // Only create provider_statistics if it doesn't already exist
+        if (!Schema::hasTable('provider_statistics')) {
+            Schema::create('provider_statistics', function (Blueprint $table) {
+                $table->id();
+                $table->unsignedBigInteger('provider_id');
+                $table->date('date');
+                $table->integer('terminal_count')->default(0);
+                $table->integer('active_terminal_count')->default(0);
+                $table->integer('inactive_terminal_count')->default(0);
+                $table->integer('new_enrollments')->default(0);
+                $table->timestamps();
+                
+                $table->unique(['provider_id', 'date']);
+                
+                // Define the foreign key with on delete cascade
+                $table->foreign('provider_id')
+                      ->references('id')
+                      ->on('pos_providers')
+                      ->onDelete('cascade');
+            });
+        }
     }
 
     /**
@@ -69,7 +78,12 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::dropIfExists('provider_statistics');
+        // Down migrations should be idempotent, so we check existence before dropping
+        
+        // Only drop provider_statistics if we actually created it in this migration
+        if (Schema::hasTable('provider_statistics')) {
+            Schema::dropIfExists('provider_statistics');
+        }
         
         // Remove the foreign key constraint if it exists
         if (Schema::hasTable('pos_terminals') && $this->hasConstraint('pos_terminals', 'pos_terminals_provider_id_foreign')) {
@@ -80,17 +94,22 @@ return new class extends Migration
         
         // Drop columns if they exist
         if (Schema::hasTable('pos_terminals')) {
-            Schema::table('pos_terminals', function (Blueprint $table) {
-                if (Schema::hasColumn('pos_terminals', 'provider_id')) {
-                    $table->dropColumn('provider_id');
-                }
+            if (Schema::hasColumn('pos_terminals', 'provider_id') || 
+                Schema::hasColumn('pos_terminals', 'enrolled_at')) {
                 
-                if (Schema::hasColumn('pos_terminals', 'enrolled_at')) {
-                    $table->dropColumn('enrolled_at');
-                }
-            });
+                Schema::table('pos_terminals', function (Blueprint $table) {
+                    if (Schema::hasColumn('pos_terminals', 'provider_id')) {
+                        $table->dropColumn('provider_id');
+                    }
+                    
+                    if (Schema::hasColumn('pos_terminals', 'enrolled_at')) {
+                        $table->dropColumn('enrolled_at');
+                    }
+                });
+            }
         }
         
+        // Finally drop the pos_providers table
         Schema::dropIfExists('pos_providers');
     }
     

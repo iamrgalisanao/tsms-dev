@@ -3,24 +3,36 @@
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
-use App\Console\Commands\RetryFailedTransactions;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withRouting(
         web: __DIR__.'/../routes/web.php',
-        api: __DIR__.'/../routes/api.php', // ✅ Include API route file
+        commands: __DIR__.'/../routes/console.php',
         health: '/up',
     )
-    ->withCommands([
-        __DIR__.'/../routes/console.php',
-        RetryFailedTransactions::class,
-    ])
     ->withMiddleware(function (Middleware $middleware) {
-        $middleware->alias([
-            'auth' => \App\Http\Middleware\Authenticate::class,
-            'circuit-breaker' => \App\Http\Middleware\CircuitBreakerMiddleware::class,
+        // Define middleware groups
+        $middleware->group('api', [
+            // Laravel's built-in middleware
+            \Illuminate\Http\Middleware\HandleCors::class,
+            \Illuminate\Cookie\Middleware\EncryptCookies::class,
+            \Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse::class,
+            \Illuminate\Session\Middleware\StartSession::class,
+            \Illuminate\View\Middleware\ShareErrorsFromSession::class,
+            \Illuminate\Routing\Middleware\ThrottleRequests::class,
+            \Illuminate\Routing\Middleware\SubstituteBindings::class,
+            
+            // Our custom middleware for API
+            \App\Http\Middleware\TransformTextFormat::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {
-        //
+        // Your custom error reporting logic
+        $exceptions->reportable(function (\Throwable $e) {
+            // Custom reporting logic
+        });
+        
+        $exceptions->renderable(function (\Throwable $e) {
+            // Custom rendering logic 
+        });
     })->create();

@@ -3,42 +3,28 @@
 namespace App\Providers;
 
 use Illuminate\Support\ServiceProvider;
-use App\Http\Middleware\RateLimitingMiddleware;
+use Illuminate\Routing\Router;
 use App\Http\Middleware\TransformTextFormat;
-use Illuminate\Contracts\Foundation\Application;
-use Illuminate\Support\Facades\Route;
 
 class MiddlewareServiceProvider extends ServiceProvider
 {
-    public function register(): void
-    {
-        $this->app->singleton(RateLimitingMiddleware::class);
-    }
-
+    /**
+     * Register middleware with the application.
+     */
     public function boot(): void
     {
-        /** @var \Illuminate\Routing\Router $router */
-        $router = $this->app['router'];
-
-        // Register the rate limiting middleware
-        $router->aliasMiddleware('rate.limit', RateLimitingMiddleware::class);
+        // Use dependency injection instead of Facade
+        $router = $this->app->make(Router::class);
         
-        // Define middleware groups
-        $router->middlewareGroup('api', [
-            \Laravel\Sanctum\Http\Middleware\EnsureFrontendRequestsAreStateful::class,
-            \Illuminate\Routing\Middleware\SubstituteBindings::class,
-            RateLimitingMiddleware::class . ':api',
-        ]);
-
-        $router->middlewareGroup('circuit-breaker', [
-            'auth:sanctum',
-            RateLimitingMiddleware::class . ':circuit_breaker',
-        ]);
-
-        // Register middleware aliases - this replaces the old Kernel.php approach
-        Route::aliasMiddleware('transform.text', TransformTextFormat::class);
-        
-        // Add the middleware to the global middleware stack if needed
-        // $this->app['router']->pushMiddlewareToGroup('api', TransformTextFormat::class);
+        // Register middleware
+        $router->aliasMiddleware('transform.text', TransformTextFormat::class);
+    }
+    
+    /**
+     * Register any application services.
+     */
+    public function register(): void
+    {
+        // Register services, but do not use Facades here
     }
 }

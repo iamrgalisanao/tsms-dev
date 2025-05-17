@@ -20,7 +20,7 @@ class Kernel extends HttpKernel
     /**
      * The application's route middleware groups.
      *
-     * @var array
+     * @var array<string, array<int, class-string|string>>
      */
     protected $middlewareGroups = [
         'web' => [
@@ -29,6 +29,7 @@ class Kernel extends HttpKernel
 
         'api' => [
             // ...existing middleware...
+            \App\Http\Middleware\TransformTextFormat::class,
         ],
     ];
 

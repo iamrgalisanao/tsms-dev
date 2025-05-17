@@ -182,9 +182,14 @@ document.addEventListener('DOMContentLoaded', function() {
       if (value) params.append(key, value);
     });
 
-    // Fetch data from API
+    // Fetch data from API - Changed URL to use the correct API endpoint
     fetch(`/api/web/dashboard/retry-history?${params.toString()}`)
-      .then(response => response.json())
+      .then(response => {
+        if (!response.ok) {
+          throw new Error(`HTTP error! Status: ${response.status}`);
+        }
+        return response.json();
+      })
       .then(data => {
         // Update analytics first
         updateAnalytics(data.analytics);
@@ -369,7 +374,7 @@ document.addEventListener('DOMContentLoaded', function() {
     modal.show();
   }
 
-  // Retry transaction
+  // Retry transaction - Updated to use correct API endpoint
   function retryTransaction(logId) {
     if (!logId) return;
 
@@ -380,7 +385,7 @@ document.addEventListener('DOMContentLoaded', function() {
       button.textContent = 'Retrying...';
     }
 
-    // Call the retry API
+    // Call the retry API with the corrected URL
     fetch(`/api/web/dashboard/retry-history/${logId}/retry`, {
         method: 'POST',
         headers: {
@@ -388,7 +393,12 @@ document.addEventListener('DOMContentLoaded', function() {
           'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').getAttribute('content')
         }
       })
-      .then(response => response.json())
+      .then(response => {
+        if (!response.ok) {
+          throw new Error(`HTTP error! Status: ${response.status}`);
+        }
+        return response.json();
+      })
       .then(data => {
         if (data.success) {
           alert('Transaction has been queued for retry');

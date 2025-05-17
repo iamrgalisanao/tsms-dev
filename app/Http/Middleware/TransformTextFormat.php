@@ -2,20 +2,14 @@
 
 namespace App\Http\Middleware;
 
+use App\Services\TransactionValidationService;
 use Closure;
 use Illuminate\Http\Request;
-use App\Services\TransactionValidationService;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\App;
 
 class TransformTextFormat
 {
-    protected $validator;
-    
-    public function __construct(TransactionValidationService $validator)
-    {
-        $this->validator = $validator;
-    }
-    
     /**
      * Handle an incoming request.
      *
@@ -25,33 +19,46 @@ class TransformTextFormat
      */
     public function handle(Request $request, Closure $next)
     {
-        // Only process requests with text/plain content type
-        if ($request->header('Content-Type') === 'text/plain' && $request->isMethod('post')) {
-            try {
-                Log::info('Processing text/plain request', [
-                    'content_length' => strlen($request->getContent()),
-                    'path' => $request->path()
-                ]);
+        // Only process POST requests to the transactions endpoint
+        if ($request->isMethod('post') && str_contains($request->path(), 'transactions')) {
+            $contentType = $request->header('Content-Type');
+            
+            // Check if content is text-based (not JSON)
+            if ($contentType === 'text/plain' || 
+                $contentType === 'application/x-www-form-urlencoded' || 
+                !$request->isJson()) {
                 
-                // Parse the text content
-                $parsedData = $this->validator->parseTextFormat($request->getContent());
-                
-                // Replace the request content with the parsed JSON data
-                $request->replace($parsedData);
-                
-                // Update request to indicate it's now JSON
-                $request->headers->set('Content-Type', 'application/json');
-                
-                Log::info('Text content successfully parsed', [
-                    'fields' => array_keys($parsedData)
-                ]);
-            } catch (\Exception $e) {
-                Log::error('Failed to parse text format', [
-                    'error' => $e->getMessage(),
-                    'content' => substr($request->getContent(), 0, 200) . '...' // Log first 200 chars
-                ]);
-                
-                // Continue with the original content - the controller will handle validation failures
+                try {
+                    // Get raw content
+                    $content = $request->getContent();
+                    
+                    if (!empty($content)) {
+                        // Get the validation service from the container to avoid the facade issue
+                        $validationService = App::make(TransactionValidationService::class);
+                        
+                        // Parse text format into structured data
+                        $data = $validationService->parseTextFormat($content);
+                        
+                        if (!empty($data)) {
+                            // Replace request input with parsed data
+                            $request->replace($data);
+                            
+                            // Add metadata about the format
+                            $request->merge([
+                                '_data_format' => 'text'
+                            ]);
+                            
+                            Log::info('Text format transformation successful', [
+                                'parsed_fields' => array_keys($data)
+                            ]);
+                        }
+                    }
+                } catch (\Exception $e) {
+                    Log::error('Text format parsing failed', [
+                        'error' => $e->getMessage(),
+                        'content' => substr($content ?? '', 0, 100) . '...'
+                    ]);
+                }
             }
         }
         
