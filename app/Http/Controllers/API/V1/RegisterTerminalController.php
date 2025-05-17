@@ -8,6 +8,8 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use App\Models\Tenant;
 use App\Models\PosTerminal;
+use App\Models\PosProvider;
+use App\Models\ProviderStatistics;
 
 class RegisterTerminalController extends Controller
 {
@@ -31,9 +33,9 @@ class RegisterTerminalController extends Controller
         $validated = $request->validate([
             'tenant_code'   => 'required|string|exists:tenants,code',
             'terminal_uid'  => 'required|string|unique:pos_terminals,terminal_uid',
+            'provider_code' => 'required|string|exists:pos_providers,code',
         ]);
 
-        
         /**
          * Retrieves the Tenant model instance matching the provided tenant code from the validated request data.
          * Throws a ModelNotFoundException if no matching tenant is found.
@@ -43,8 +45,8 @@ class RegisterTerminalController extends Controller
          * @throws \Illuminate\Database\Eloquent\ModelNotFoundException If the tenant with the specified code does not exist.
          */
         $tenant = Tenant::where('code', $validated['tenant_code'])->firstOrFail();
+        $provider = PosProvider::where('code', $validated['provider_code'])->firstOrFail();
 
-        
         /**
          * Creates a new POS terminal record in the database.
          *
@@ -55,8 +57,10 @@ class RegisterTerminalController extends Controller
          */
         $terminal = PosTerminal::create([
             'tenant_id'     => $tenant->id,
+            'provider_id'   => $provider->id,
             'terminal_uid'  => $validated['terminal_uid'],
             'registered_at' => now(),
+            'enrolled_at'   => now(),
             'status'        => 'active',
         ]);
 
@@ -87,11 +91,72 @@ class RegisterTerminalController extends Controller
             ]);
         }
 
+        // Update provider statistics
+        $this->updateProviderStatistics($provider->id);
+
         // Step 5: Return response
         return response()->json([
             'status'      => 'success',
             'terminal_id' => $terminal->id,
             'token'       => $terminal->jwt_token,
         ]);
+    }
+    
+    /**
+     * Update statistics for a provider
+     */
+    private function updateProviderStatistics($providerId)
+    {
+        try {
+            $provider = PosProvider::find($providerId);
+            if (!$provider) return;
+            
+            $today = now()->format('Y-m-d');
+            
+            // Calculate statistics
+            $totalTerminals = PosTerminal::where('provider_id', $providerId)->count();
+            $activeTerminals = PosTerminal::where('provider_id', $providerId)
+                ->where('status', 'active')
+                ->count();
+            $newTerminalsToday = PosTerminal::where('provider_id', $providerId)
+                ->whereDate('enrolled_at', $today)
+                ->count();
+                
+            // Calculate growth rate (last 30 days vs previous 30 days)
+            $thirtyDaysAgo = now()->subDays(30);
+            $sixtyDaysAgo = now()->subDays(60);
+            
+            $last30Days = PosTerminal::where('provider_id', $providerId)
+                ->where('enrolled_at', '>=', $thirtyDaysAgo)
+                ->count();
+                
+            $previous30Days = PosTerminal::where('provider_id', $providerId)
+                ->where('enrolled_at', '>=', $sixtyDaysAgo)
+                ->where('enrolled_at', '<', $thirtyDaysAgo)
+                ->count();
+                
+            $growthRate = 0;
+            if ($previous30Days > 0) {
+                $growthRate = (($last30Days - $previous30Days) / $previous30Days) * 100;
+            } elseif ($last30Days > 0) {
+                $growthRate = 100; // 100% growth if there were no terminals before
+            }
+            
+            // Update or create statistics record
+            ProviderStatistics::updateOrCreate(
+                ['provider_id' => $providerId, 'date' => $today],
+                [
+                    'terminal_count' => $totalTerminals,
+                    'active_terminal_count' => $activeTerminals,
+                    'new_terminals_today' => $newTerminalsToday,
+                    'growth_rate' => $growthRate
+                ]
+            );
+        } catch (\Exception $e) {
+            Log::error('Failed to update provider statistics', [
+                'provider_id' => $providerId,
+                'error' => $e->getMessage()
+            ]);
+        }
     }
 }

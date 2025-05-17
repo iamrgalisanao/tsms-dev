@@ -193,6 +193,31 @@
       </div>
     </div>
 
+    <!-- Export Form -->
+    <div class="bg-white overflow-hidden shadow-sm sm:rounded-lg mb-6">
+      <div class="p-6">
+        <h3 class="text-lg font-medium mb-4">Export Logs</h3>
+        <form method="POST" action="{{ route('dashboard.log-viewer.export') }}" class="flex items-end gap-4">
+          @csrf
+          <input type="hidden" name="format" value="csv" id="export-format">
+
+          <div>
+            <label for="export-type" class="block text-sm font-medium text-gray-700 mb-1">Format</label>
+            <div class="flex gap-2">
+              <button type="button" onclick="document.getElementById('export-format').value='csv'; this.form.submit();"
+                class="bg-blue-600 text-white px-4 py-2 rounded-md hover:bg-blue-700">
+                Export CSV
+              </button>
+              <button type="button" onclick="document.getElementById('export-format').value='pdf'; this.form.submit();"
+                class="bg-red-600 text-white px-4 py-2 rounded-md hover:bg-red-700">
+                Export PDF
+              </button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+
     <!-- Logs Table -->
     <div class="table-responsive">
       <table class="table table-striped table-hover">
@@ -233,13 +258,6 @@
     </div>
   </div>
 </div>
-
-<!-- Export Form (hidden) -->
-<form id="export-form" method="POST" action="{{ route('dashboard.log-viewer.export') }}" class="d-none">
-  @csrf
-  <input type="hidden" name="format" id="export-format" value="csv">
-  <!-- Filter fields will be added dynamically via JavaScript -->
-</form>
 
 <!-- Log Detail Modal -->
 <div class="modal fade" id="logDetailModal" tabindex="-1" aria-labelledby="logDetailModalLabel" aria-hidden="true">

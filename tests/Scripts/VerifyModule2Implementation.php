@@ -97,13 +97,36 @@ class Module2Verifier
             file_exists($middlewarePath),
             "TransformTextFormat middleware should exist for handling text payloads");
             
-        // Check middleware registration
-        $kernelPath = __DIR__ . '/../../app/Http/Kernel.php';
-        $kernelContent = file_exists($kernelPath) ? file_get_contents($kernelPath) : '';
+        // Check middleware registration - Laravel 11 style
+        $middlewareProviderPath = app_path('Providers/MiddlewareServiceProvider.php');
+        $routeServiceProviderPath = app_path('Providers/RouteServiceProvider.php');
         
-        $this->addResult('Text format middleware registration', 
-            strpos($kernelContent, "TransformTextFormat") !== false,
-            "TransformTextFormat middleware should be registered in Kernel.php");
+        $middlewareRegistered = false;
+        
+        // First check the middleware provider
+        if (file_exists($middlewareProviderPath)) {
+            $providerContent = file_get_contents($middlewareProviderPath);
+            if (strpos($providerContent, 'TransformTextFormat') !== false) {
+                $middlewareRegistered = true;
+                $this->addResult('Text format middleware registration', 
+                    'Middleware registered in MiddlewareServiceProvider', 'PASS');
+            }
+        }
+        
+        // Then check RouteServiceProvider as an alternative
+        if (!$middlewareRegistered && file_exists($routeServiceProviderPath)) {
+            $providerContent = file_get_contents($routeServiceProviderPath);
+            if (strpos($providerContent, 'TransformTextFormat') !== false) {
+                $middlewareRegistered = true;
+                $this->addResult('Text format middleware registration', 
+                    'Middleware registered in RouteServiceProvider', 'PASS');
+            }
+        }
+        
+        if (!$middlewareRegistered) {
+            $this->addResult('Text format middleware registration', 
+                'No middleware registration found in providers', 'FAIL');
+        }
     }
     
     private function verifyJobQueues()

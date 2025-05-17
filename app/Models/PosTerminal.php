@@ -14,11 +14,18 @@ class PosTerminal extends Authenticatable implements JWTSubject
 
     protected $fillable = [
         'tenant_id',
+        'provider_id',
         'terminal_uid',
         'registered_at',
+        'enrolled_at',
         'status',
         'machine_number',
         'jwt_token', 
+    ];
+    
+    protected $casts = [
+        'registered_at' => 'datetime',
+        'enrolled_at' => 'datetime',
     ];
 
     // JWT-required methods:
@@ -32,8 +39,19 @@ class PosTerminal extends Authenticatable implements JWTSubject
         return [];
     }
 
+    /**
+     * Get the tenant that owns the terminal
+     */
     public function tenant()
     {
         return $this->belongsTo(Tenant::class);
+    }
+    
+    /**
+     * Get the provider that owns the terminal
+     */
+    public function provider()
+    {
+        return $this->belongsTo(PosProvider::class);
     }
 }

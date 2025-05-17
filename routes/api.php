@@ -15,6 +15,7 @@ use App\Http\Controllers\API\SecurityReportController;
 use App\Http\Controllers\CircuitBreakerController;
 use App\Http\Controllers\TerminalTokenController;
 use App\Http\Controllers\API\V1\LogViewerController;
+use App\Http\Controllers\API\V1\ProviderStatisticsController;
 
 // Authentication Routes
 Route::prefix('auth')->group(function () {
@@ -64,6 +65,14 @@ Route::prefix('web')->middleware(['api'])->group(function () {
             Route::prefix('dashboard')->group(function () {
                 Route::get('/terminal-tokens', [TerminalTokensController::class, 'index']);
                 Route::post('/terminal-tokens/{terminalId}/regenerate', [TerminalTokensController::class, 'regenerate']);
+            });
+            
+            // Provider Statistics Routes
+            Route::prefix('dashboard')->group(function () {
+                Route::get('/provider-statistics', [ProviderStatisticsController::class, 'overview']);
+                Route::get('/provider-statistics/{id}', [ProviderStatisticsController::class, 'providerDetail']);
+                Route::get('/provider-growth', [ProviderStatisticsController::class, 'growthStats']);
+                Route::get('/provider-terminals', [ProviderStatisticsController::class, 'terminals']);
             });
             
             // Security Reporting

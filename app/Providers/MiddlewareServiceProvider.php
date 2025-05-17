@@ -4,7 +4,9 @@ namespace App\Providers;
 
 use Illuminate\Support\ServiceProvider;
 use App\Http\Middleware\RateLimitingMiddleware;
+use App\Http\Middleware\TransformTextFormat;
 use Illuminate\Contracts\Foundation\Application;
+use Illuminate\Support\Facades\Route;
 
 class MiddlewareServiceProvider extends ServiceProvider
 {
@@ -32,5 +34,11 @@ class MiddlewareServiceProvider extends ServiceProvider
             'auth:sanctum',
             RateLimitingMiddleware::class . ':circuit_breaker',
         ]);
+
+        // Register middleware aliases - this replaces the old Kernel.php approach
+        Route::aliasMiddleware('transform.text', TransformTextFormat::class);
+        
+        // Add the middleware to the global middleware stack if needed
+        // $this->app['router']->pushMiddlewareToGroup('api', TransformTextFormat::class);
     }
 }

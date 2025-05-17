@@ -2,121 +2,135 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\PosTerminal;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
-use Firebase\JWT\JWT;
-use Illuminate\Support\Str;
+use Illuminate\Support\Facades\Schema;
+use Tymon\JWTAuth\Facades\JWTAuth;
 
 class TerminalTokenController extends Controller
 {
-    public function index()
+    public function index(Request $request)
     {
-        // Get terminal tokens sample data
-        $terminalTokens = $this->getSampleTokenData();
+        $query = PosTerminal::with('tenant');
         
-        return view('dashboard.terminal-tokens', compact('terminalTokens'));
+        // Apply filters
+        if ($request->has('terminal_id') && !empty($request->terminal_id)) {
+            $query->where('terminal_uid', 'like', '%' . $request->terminal_id . '%');
+        }
+        
+        if ($request->has('status')) {
+            switch ($request->status) {
+                case 'active':
+                    // If expires_at column exists, use it for filtering active terminals
+                    if (Schema::hasColumn('pos_terminals', 'expires_at') && Schema::hasColumn('pos_terminals', 'is_revoked')) {
+                        $query->where(function ($q) {
+                            $q->whereNull('expires_at')
+                              ->orWhere('expires_at', '>', now());
+                        })->where('is_revoked', false);
+                    } else {
+                        // When columns don't exist, assume terminals with status active are active
+                        $query->where('status', 'active');
+                    }
+                    break;
+                case 'expired':
+                    // Only apply if expires_at column exists
+                    if (Schema::hasColumn('pos_terminals', 'expires_at') && Schema::hasColumn('pos_terminals', 'is_revoked')) {
+                        $query->whereNotNull('expires_at')
+                              ->where('expires_at', '<=', now())
+                              ->where('is_revoked', false);
+                    } else {
+                        // When columns don't exist, assume terminals with status != active are expired
+                        $query->where('status', '!=', 'active');
+                    }
+                    break;
+                case 'revoked':
+                    // Only apply if is_revoked column exists
+                    if (Schema::hasColumn('pos_terminals', 'is_revoked')) {
+                        $query->where('is_revoked', true);
+                    } else {
+                        // When column doesn't exist, assume no terminals are revoked
+                        $query->where('id', -1); // This will return no results
+                    }
+                    break;
+            }
+        }
+        
+        // Get paginated results
+        $terminals = $query->paginate(15);
+        
+        return view('dashboard.terminal-tokens', compact('terminals'));
     }
     
     public function regenerate($terminalId)
     {
         try {
-            // In a real implementation, you'd verify the terminal exists in pos_terminals table
+            $terminal = PosTerminal::findOrFail($terminalId);
             
-            // Generate a JWT token as described in the documentation
-            $token = $this->generateJwtToken($terminalId);
-            $expiresAt = now()->addMonth()->format('Y-m-d H:i:s'); // Tokens typically expire in 30 days
+            // Generate a new JWT token
+            $token = $this->generateJWTToken($terminal);
             
-            $tokenData = [
-                'terminal_id' => $terminalId,
-                'access_token' => $token,
-                'expires_at' => $expiresAt,
-                'token_type' => 'Bearer' // As specified in the documentation
-            ];
+            // Update the token in the database
+            $updateData = ['jwt_token' => $token];
             
-            // Log the regeneration attempt
-            Log::info('JWT Token regenerated for POS terminal', ['terminal_id' => $terminalId]);
-            
-            if (request()->ajax()) {
-                return response()->json([
-                    'success' => true,
-                    'message' => 'Terminal token regenerated successfully',
-                    'data' => $tokenData
-                ]);
+            // Check if expires_at column exists before setting it
+            if (Schema::hasColumn('pos_terminals', 'expires_at')) {
+                $updateData['expires_at'] = now()->addDays(30);
             }
             
-            return redirect()->route('terminal-tokens')
-                ->with('success', 'Terminal token regenerated successfully')
-                ->with('token_info', $tokenData);
+            // Check if is_revoked column exists before setting it
+            if (Schema::hasColumn('pos_terminals', 'is_revoked')) {
+                $updateData['is_revoked'] = false;
+            }
+            
+            // Update just the columns that exist
+            $terminal->update($updateData);
+            
+            // Set status to active if no expires_at column
+            if (!Schema::hasColumn('pos_terminals', 'expires_at') && Schema::hasColumn('pos_terminals', 'status')) {
+                $terminal->status = 'active';
+                $terminal->save();
+            }
+            
+            Log::info('Terminal token regenerated', [
+                'terminal_uid' => $terminal->terminal_uid,
+                'user_id' => auth()->id()
+            ]);
+            
+            return redirect()
+                ->route('terminal-tokens')
+                ->with('success', 'Token successfully regenerated for terminal ' . $terminal->terminal_uid);
                 
         } catch (\Exception $e) {
             Log::error('Error regenerating terminal token', [
                 'terminal_id' => $terminalId,
-                'error' => $e->getMessage()
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
             ]);
             
-            if (request()->ajax()) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Error regenerating token: ' . $e->getMessage()
-                ], 500);
-            }
-            
-            return redirect()->route('terminal-tokens')
+            return redirect()
+                ->route('terminal-tokens')
                 ->with('error', 'Error regenerating token: ' . $e->getMessage());
         }
     }
     
     /**
-     * Generate a JWT token for terminal authentication
-     * Following the implementation details from the documentation
+     * Generate JWT token for a terminal
      */
-    private function generateJwtToken($terminalId)
+    private function generateJWTToken(PosTerminal $terminal)
     {
-        // In a real implementation, you would use a secret key from configuration
-        $secretKey = config('auth.jwt_secret', 'your-secret-key-for-jwt-tokens');
-        
+        // Create claims for the token
         $payload = [
-            'iss' => config('app.url'), // Issuer
-            'aud' => 'pos_terminal', // Audience
-            'iat' => time(), // Issued at
-            'exp' => time() + (30 * 24 * 60 * 60), // Expires in 30 days
-            'sub' => $terminalId, // Subject (terminal ID)
-            'jti' => Str::random(16), // JWT ID (unique identifier for the token)
+            'sub' => $terminal->id,  // Subject (terminal ID)
+            'iat' => now()->timestamp,         // Issued at
+            'exp' => now()->addDays(30)->timestamp, // Expires at
+            'tenant_id' => $terminal->tenant_id, // Include tenant ID for validation
+            'terminal_uid' => $terminal->terminal_uid
         ];
         
-        // In a real implementation, you would use the Firebase JWT package
-        // For the demonstration, we'll simulate a JWT token
-        // You would need: composer require firebase/php-jwt
-        
-        // Simulating JWT creation for demonstration
-        // In production use: $token = JWT::encode($payload, $secretKey, 'HS256');
-        $token = base64_encode(json_encode($payload)) . '.' . 
-                 base64_encode('header-data') . '.' . 
-                 base64_encode('signature');
+        // Generate the token
+        $token = JWTAuth::customClaims($payload)->fromUser($terminal);
         
         return $token;
-    }
-    
-    private function getSampleTokenData()
-    {
-        // Updated sample data to match the JWT token use cases
-        return collect([
-            (object)[
-                'terminal_id' => 1,
-                'is_revoked' => false,
-                'token_type' => 'Bearer',
-                'created_at' => '2025-05-16 04:01:47',
-                'expires_at' => '2025-06-15 04:01:47',
-                'status' => 'active'
-            ],
-            (object)[
-                'terminal_id' => 2,
-                'is_revoked' => false,
-                'token_type' => 'Bearer',
-                'created_at' => '2025-05-16 04:24:23',
-                'expires_at' => '2025-06-15 04:24:23',
-                'status' => 'active'
-            ],
-        ]);
     }
 }

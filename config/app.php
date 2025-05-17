@@ -166,9 +166,7 @@ return [
         App\Providers\AuthServiceProvider::class,
         App\Providers\EventServiceProvider::class,
         App\Providers\RouteServiceProvider::class,
-        
-        // Our custom service provider
-        App\Providers\CircuitBreakerServiceProvider::class,
+        App\Providers\MiddlewareServiceProvider::class, // Add our new middleware provider
     ],
 
 ];

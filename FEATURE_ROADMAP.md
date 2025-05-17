@@ -157,6 +157,48 @@
     -   [ ] Verify proper access control for Log Viewer
     -   [ ] Test permission-based UI modifications
 
+### 🟡 Transaction API Implementation - NEW PRIORITY
+
+- [ ] Fix the API endpoint for transactions
+  - [ ] Complete `/api/v1/transactions` route implementation
+  - [ ] Fix 404 errors observed in testing
+  - [ ] Ensure proper JWT validation in request pipeline
+  - [ ] Validate text format middleware
+- [ ] Database connection configuration
+  - [ ] Fix MySQL connection issues shown in tests
+  - [ ] Ensure proper environment configuration
+  - [ ] Add connection retry and fallback mechanisms
+- [ ] Laravel Horizon setup
+  - [ ] Complete configuration and deployment
+  - [ ] Configure queue workers for transaction processing
+  - [ ] Add monitoring dashboard for queue status
+
+### 🟡 Text Format Parsing Completion - NEW PRIORITY
+
+- [ ] Fix parser implementation
+  - [ ] Address "A facade root has not been set" error
+  - [ ] Complete support for KEY: VALUE format
+  - [ ] Complete support for KEY=VALUE format 
+  - [ ] Complete support for KEY VALUE format
+  - [ ] Add support for mixed formats
+  - [ ] Add comprehensive test coverage
+- [ ] Integration with Transaction API
+  - [ ] Ensure text format middleware is properly applied
+  - [ ] Add content-type detection and automatic format switching
+  - [ ] Validate conversion to JSON format
+
+### 🟡 Transaction Processing Pipeline - NEW PRIORITY 
+
+- [ ] Implement end-to-end processing flow
+  - [ ] Transaction validation
+  - [ ] Asynchronous processing via queued jobs
+  - [ ] Error handling and logging
+  - [ ] Response formatting
+- [ ] Idempotency handling
+  - [ ] Prevent duplicate transactions
+  - [ ] Transaction status lookup endpoint
+  - [ ] Transaction ID generation and validation
+
 ### Documentation and UAT Alignment
 
 -   [ ] Finalize documentation for:
@@ -426,7 +468,7 @@
 ## 📅 Last Updated
 
 -   Date: 2025-05-17
--   Version: 0.3.8
+-   Version: 0.4.0
 -   Changes:
     -   Completed Retry History implementation:
         -   Added retry tracking system with comprehensive logging
@@ -445,7 +487,19 @@
         -   Validated terminal registration endpoint
         -   Verified terminal token management capabilities
         -   Documented terminal registration process
+    -   Implemented POS Provider tracking system:
+        -   Added provider management to track terminal enrollment
+        -   Created dashboard for provider-based analytics
+        -   Implemented historical data tracking for terminals by provider
+        -   Added enrollment trend visualization
+        -   Integrated scheduled statistics updates
     -   Enhanced project architecture documentation:
         -   Updated transaction processing architecture docs
         -   Added terminal tracking specifications
         -   Created test verification methodology
+    -   Added three new priority items for the near-term roadmap:
+        -   Transaction API Implementation to address 404 errors seen in testing
+        -   Text Format Parsing Completion to fix parser facade errors
+        -   Transaction Processing Pipeline to complete the end-to-end flow
+    -   Identified database connection configuration issues to be resolved
+    -   Prioritized Laravel Horizon setup for robust queue processing

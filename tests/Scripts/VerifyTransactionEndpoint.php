@@ -21,23 +21,30 @@ class EndpointVerifier
     
     private function checkRouteDefinition()
     {
-        $routesPath = __DIR__ . '/../../routes/api.php';
+        // Check both main API routes and dedicated transaction routes
+        $routesPaths = [
+            __DIR__ . '/../../routes/api.php',
+            __DIR__ . '/../../routes/transaction.php',
+        ];
         
-        if (!file_exists($routesPath)) {
-            $this->addResult('Routes file', 'Not found', 'FAIL');
-            return;
+        $hasTransactionRoute = false;
+        
+        foreach ($routesPaths as $routesPath) {
+            if (file_exists($routesPath)) {
+                $routesContent = file_get_contents($routesPath);
+                
+                // Check for transaction route
+                if (preg_match('/Route::post\([\'"].*?\/transactions[\'"]/', $routesContent) || 
+                    preg_match('/->post\([\'"].*?\/transactions[\'"]/', $routesContent)) {
+                    $hasTransactionRoute = true;
+                    $this->addResult('Transaction route definition', 'Found in ' . basename($routesPath), 'PASS');
+                    break;
+                }
+            }
         }
         
-        $routesContent = file_get_contents($routesPath);
-        
-        // Check for transaction route
-        $hasTransactionRoute = preg_match('/Route::post\([\'"].*?\/transactions[\'"]/', $routesContent) || 
-                              preg_match('/->post\([\'"].*?\/transactions[\'"]/', $routesContent);
-        
-        if ($hasTransactionRoute) {
-            $this->addResult('Transaction route definition', 'Found', 'PASS');
-        } else {
-            $this->addResult('Transaction route definition', 'Not found', 'FAIL');
+        if (!$hasTransactionRoute) {
+            $this->addResult('Transaction route definition', 'Not found in expected locations', 'FAIL');
         }
     }
     
