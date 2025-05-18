@@ -61,6 +61,9 @@
       </button>
       <div class="collapse navbar-collapse" id="navbarNav">
         <ul class="navbar-nav ms-auto">
+          <li class="nav-item">
+            <a class="nav-link" href="{{ route('dashboard') }}">Dashboard</a>
+          </li>
           @if (Auth::check())
           <li class="nav-item">
             <span class="nav-link">Welcome, {{ Auth::user()->name }}</span>
@@ -94,8 +97,8 @@
           class="{{ request()->routeIs('terminal-tokens') ? 'active' : '' }}">Terminal Tokens</a>
         <a href="{{ route('dashboard.retry-history') }}"
           class="{{ request()->routeIs('dashboard.retry-history') ? 'active' : '' }}">Retry History</a>
-        <a href="{{ route('log-viewer') }}" class="{{ request()->routeIs('log-viewer') ? 'active' : '' }}">Log
-          Viewer</a>
+        <a href="{{ route('log-viewer') }}" 
+          class="{{ request()->routeIs('log-viewer', 'log-viewer.*') ? 'active' : '' }}">Log Viewer</a>
         <!-- Removed POS Providers link as it's now integrated into the dashboard -->
       </div>
 

@@ -89,6 +89,39 @@ This document provides technical guidelines for POS providers to integrate with 
 }
 ```
 
+## 5.5 Text Format Support
+
+For POS systems that cannot generate JSON, TSMS supports plain text format in the following styles:
+
+### Key: Value Format
+
+```plaintext
+tenant_id: C-T1005
+hardware_id: 7P589L2
+machine_number: 6
+transaction_id: 8a918a90-7cbd-4b44-adc0-bc3d31cee238
+store_name: ABC Store #102
+transaction_timestamp: 2025-03-26T13:45:00Z
+vatable_sales: 12000.0
+net_sales: 18137.0
+vat_exempt_sales: 6137.0
+promo_discount_amount: 100.0
+promo_status: WITH_APPROVAL
+discount_total: 50.0
+discount_details: Employee=20.00, Senior=30.00
+other_tax: 50.0
+management_service_charge: 8.5
+employee_service_charge: 4.0
+gross_sales: 12345.67
+vat_amount: 1500.0
+transaction_count: 1
+payload_checksum: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+validation_status: VALID
+error_code:
+```
+
+---
+
 ## 6. Error Handling & Response Codes
 
 | HTTP Code | Meaning                         |
@@ -151,7 +184,6 @@ POS systems may provide a **webhook endpoint** that TSMS will call with transact
 
 -   POS must respond with HTTP `200`.
 -   If not acknowledged, TSMS will retry the webhook up to 3 times.
--
 
 ### 9.2 Polling Endpoint (Alternative)
 
@@ -169,7 +201,6 @@ Until the refresh endpoint is deployed:
 
 -   Tokens will have an extended validity period (7–14 days).
 -   Token reissuance can be done manually via the TSMS admin panel.
--
 
 ## 11. Health Check Endpoint
 
@@ -178,3 +209,7 @@ To verify server availability, POS systems may use:
 -   GET /api/v1/healthcheck
 -   No authentication required
 -   Returns server uptime info
+
+```
+
+```

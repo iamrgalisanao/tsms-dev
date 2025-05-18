@@ -1,16 +1,15 @@
 <?php
 
-
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
-use Illuminate\Foundation\Auth\User as Authenticatable; // ⬅️ Use this instead of just Model
-use Illuminate\Notifications\Notifiable;
-use Tymon\JWTAuth\Contracts\JWTSubject;
+use Illuminate\Database\Eloquent\Model;
+use Illuminate\Contracts\Auth\Authenticatable;
+use Illuminate\Auth\Authenticatable as AuthenticatableTrait;
 
-class PosTerminal extends Authenticatable implements JWTSubject
+class PosTerminal extends Model implements Authenticatable
 {
-    use Notifiable, HasFactory;
+    use HasFactory, AuthenticatableTrait;
 
     protected $fillable = [
         'tenant_id',
@@ -19,39 +18,52 @@ class PosTerminal extends Authenticatable implements JWTSubject
         'registered_at',
         'enrolled_at',
         'status',
-        'machine_number',
-        'jwt_token', 
+        'is_sandbox',
+        'webhook_url',
+        'max_retries',
+        'retry_interval_sec',
+        'retry_enabled',
+        'jwt_token',
+        'expires_at',
+        'is_revoked'
     ];
-    
+
     protected $casts = [
         'registered_at' => 'datetime',
         'enrolled_at' => 'datetime',
+        'expires_at' => 'datetime',
+        'is_sandbox' => 'boolean',
+        'retry_enabled' => 'boolean',
+        'is_revoked' => 'boolean'
     ];
 
-    // JWT-required methods:
-    public function getJWTIdentifier()
-    {
-        return $this->getKey();
-    }
-
-    public function getJWTCustomClaims()
-    {
-        return [];
-    }
-
-    /**
-     * Get the tenant that owns the terminal
-     */
     public function tenant()
     {
         return $this->belongsTo(Tenant::class);
     }
     
-    /**
-     * Get the provider that owns the terminal
-     */
     public function provider()
     {
         return $this->belongsTo(PosProvider::class);
+    }
+    
+    public function transactions()
+    {
+        return $this->hasMany(Transaction::class);
+    }
+    
+    public function integrationLogs()
+    {
+        return $this->hasMany(IntegrationLog::class, 'terminal_id');
+    }
+    
+    public function getAuthIdentifierName()
+    {
+        return 'id';
+    }
+    
+    public function getAuthPassword()
+    {
+        return $this->jwt_token;
     }
 }

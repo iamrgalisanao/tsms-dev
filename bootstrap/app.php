@@ -21,9 +21,11 @@ return Application::configure(basePath: dirname(__DIR__))
             \Illuminate\View\Middleware\ShareErrorsFromSession::class,
             \Illuminate\Routing\Middleware\ThrottleRequests::class,
             \Illuminate\Routing\Middleware\SubstituteBindings::class,
-            
-            // Our custom middleware for API
-            \App\Http\Middleware\TransformTextFormat::class,
+        ]);
+
+        // Register middleware aliases
+        $middleware->alias([
+            'transform.text.format' => \App\Http\Middleware\TransformTextFormat::class
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {

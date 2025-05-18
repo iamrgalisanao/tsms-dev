@@ -9,22 +9,38 @@ use App\Http\Middleware\TransformTextFormat;
 class MiddlewareServiceProvider extends ServiceProvider
 {
     /**
-     * Register middleware with the application.
-     */
-    public function boot(): void
-    {
-        // Use dependency injection instead of Facade
-        $router = $this->app->make(Router::class);
-        
-        // Register middleware
-        $router->aliasMiddleware('transform.text', TransformTextFormat::class);
-    }
-    
-    /**
-     * Register any application services.
+     * Register services.
      */
     public function register(): void
     {
-        // Register services, but do not use Facades here
+        // Register the TransactionValidationService if needed
+        $this->app->singleton(\App\Services\TransactionValidationService::class);
+    }
+
+    /**
+     * Bootstrap services.
+     */
+    public function boot(): void
+    {
+        // Laravel 11 uses route aliasing instead of kernel registration
+        $router = $this->app->make(Router::class);
+        
+        // Register the route middleware alias
+        $router->aliasMiddleware('transform.text', TransformTextFormat::class);
+        
+        // Add middleware to the API group in a Laravel 11 compatible way
+        // (instead of using global middleware which is discouraged)
+        $router->middlewareGroup('api', [
+            // Keep existing API middleware
+            \Illuminate\Http\Middleware\HandleCors::class,
+            \Illuminate\Cookie\Middleware\EncryptCookies::class,
+            \Illuminate\Cookie\Middleware\AddQueuedCookiesToResponse::class,
+            \Illuminate\Session\Middleware\StartSession::class,
+            \Illuminate\View\Middleware\ShareErrorsFromSession::class,
+            \Illuminate\Routing\Middleware\SubstituteBindings::class,
+            
+            // Add the text transformer middleware
+            TransformTextFormat::class,
+        ]);
     }
 }

@@ -10,6 +10,7 @@ use App\Http\Controllers\TerminalTokenController;
 use App\Http\Controllers\RetryHistoryController;
 use App\Http\Controllers\LogViewerController;
 use App\Http\Controllers\ProvidersController;
+use App\Http\Controllers\PosProvidersController;
 
 // Home route redirects based on auth status
 Route::get('/', function () {
@@ -31,33 +32,44 @@ Route::middleware('guest')->group(function () {
 Route::middleware(['auth'])->group(function () {
     Route::post('/logout', [LoginController::class, 'logout'])->name('logout');
     
-    // Dashboard route now includes POS providers content
+    // Main Dashboard Route
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
     
-    // Terminal Tokens routes with proper regenerate route name
-    Route::get('/terminal-tokens', [TerminalTokenController::class, 'index'])->name('terminal-tokens');
-    Route::post('/terminal-tokens/{terminalId}/regenerate', [TerminalTokenController::class, 'regenerate'])->name('terminal-tokens.regenerate');
-    
-    // Circuit Breaker routes
-    Route::get('/circuit-breakers', [CircuitBreakerController::class, 'index'])->name('circuit-breakers');
-    Route::post('/circuit-breakers/{id}/reset', [CircuitBreakerController::class, 'reset'])->name('circuit-breakers.reset');
-    
-    // Retry History Routes
-    Route::get('/dashboard/retry-history', [RetryHistoryController::class, 'index'])->name('dashboard.retry-history');
-    Route::get('/retry-history/{id}', [RetryHistoryController::class, 'show'])->name('retry-history.show');
-    Route::post('/retry-history/{id}/retry', [RetryHistoryController::class, 'retry'])->name('retry-history.retry');
-    
-    // Log Viewer Routes - Fix the route names
+    // Dashboard Group Routes
+    Route::prefix('dashboard')->name('dashboard.')->group(function () {
+        Route::get('/providers', [ProvidersController::class, 'index'])->name('providers.index');
+        Route::get('/providers/{id}', [ProvidersController::class, 'show'])->name('providers.show');
+        Route::get('/retry-history', [RetryHistoryController::class, 'index'])->name('retry-history');
+    });
+
+    // Log Viewer Routes
     Route::get('/logs', [LogViewerController::class, 'index'])->name('log-viewer');
     Route::get('/logs/{id}', [LogViewerController::class, 'show'])->name('log-viewer.show');
-    Route::post('/logs/export', [LogViewerController::class, 'export'])->name('dashboard.log-viewer.export');
-    
-    // Fix the dashboard.log-viewer route
-    Route::get('/dashboard/log-viewer', [LogViewerController::class, 'index'])->name('dashboard.log-viewer');
-    
-    // Add transactions route that was missing (causing the 404 error)
+    Route::post('/logs/export', [LogViewerController::class, 'export'])->name('log-viewer.export');
+
+    // Transaction Routes - keep at root level
     Route::get('/transactions', [TransactionController::class, 'index'])->name('transactions');
-    
-    // POS Provider details page only (remove the index route)
-    Route::get('/providers/{id}', [ProvidersController::class, 'show'])->name('dashboard.providers.show');
+    Route::get('/transactions/{id}', [TransactionController::class, 'show'])->name('transactions.show');
+
+    // Other Routes - Keep at root level
+    Route::get('/circuit-breakers', [CircuitBreakerController::class, 'index'])->name('circuit-breakers');
+
+    // Terminal Token Routes
+    Route::prefix('terminal-tokens')->group(function () {
+        Route::get('/', [TerminalTokenController::class, 'index'])->name('terminal-tokens');
+        Route::post('/{terminalId}/regenerate', [TerminalTokenController::class, 'regenerate'])->name('terminal-tokens.regenerate');
+    });
+
+    // Provider Routes
+    Route::prefix('providers')->name('providers.')->group(function () {
+        Route::get('/', [PosProvidersController::class, 'index'])->name('index');
+        Route::get('/{provider}', [PosProvidersController::class, 'show'])->name('show');
+        Route::get('/stats', [PosProvidersController::class, 'statistics'])->name('stats');
+        Route::post('/stats/generate', [PosProvidersController::class, 'generateStats'])->name('stats.generate');
+    });
 });
+
+// Keep terminal test route at the bottom
+Route::get('/terminal-test', function () {
+    return view('app');
+})->middleware(['auth'])->name('terminal.test');

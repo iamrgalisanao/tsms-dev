@@ -42,12 +42,11 @@ return [
         ],
         'api' => [
             'driver' => 'token',
-            'provider' => 'users',
+            'provider' => 'terminals',
             'hash' => false,
         ],
-    
-        'pos_api' => [
-            'driver' => 'jwt',
+        'pos_api' => [ // Add this guard configuration
+            'driver' => 'jwt', 
             'provider' => 'pos_terminals',
         ],
     ],
@@ -72,17 +71,16 @@ return [
     'providers' => [
         'users' => [
             'driver' => 'eloquent',
-            'model' => env('AUTH_MODEL', App\Models\User::class),
+            'model' => App\Models\User::class,
         ],
-        'pos_terminals' => [
+        'terminals' => [
             'driver' => 'eloquent',
             'model' => App\Models\PosTerminal::class,
         ],
-
-        // 'users' => [
-        //     'driver' => 'database',
-        //     'table' => 'users',
-        // ],
+        'pos_terminals' => [ // Add this provider
+            'driver' => 'eloquent', 
+            'model' => App\Models\PosTerminal::class,
+        ],
     ],
 
     /*
@@ -107,7 +105,7 @@ return [
     'passwords' => [
         'users' => [
             'provider' => 'users',
-            'table' => env('AUTH_PASSWORD_RESET_TOKEN_TABLE', 'password_reset_tokens'),
+            'table' => 'password_reset_tokens',
             'expire' => 60,
             'throttle' => 60,
         ],
@@ -124,6 +122,6 @@ return [
     |
     */
 
-    'password_timeout' => env('AUTH_PASSWORD_TIMEOUT', 10800),
+    'password_timeout' => 10800,
 
 ];

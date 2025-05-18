@@ -37,7 +37,7 @@ class PosProvider extends Model
      */
     public function statistics()
     {
-        return $this->hasMany(ProviderStatistics::class, 'provider_id');
+        return $this->hasMany(ProviderStatistic::class, 'provider_id');
     }
 
     /**

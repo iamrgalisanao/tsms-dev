@@ -5,6 +5,9 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\API\V1\TransactionController;
 use App\Http\Controllers\API\V1\LogViewerController;
 use App\Http\Controllers\API\V1\RetryHistoryController;
+use App\Http\Controllers\API\V1\TestParserController;
+use App\Services\TransactionValidationService;
+use Illuminate\Support\Facades\Log;
 
 /*
 |--------------------------------------------------------------------------
@@ -17,17 +20,9 @@ use App\Http\Controllers\API\V1\RetryHistoryController;
 |
 */
 
-Route::middleware('auth:sanctum')->get('/user', function (Request $request) {
-    return $request->user();
-});
-
 // V1 API Routes
 Route::prefix('v1')->group(function () {
-    // Transactions API endpoint - TSMS Core API
-    Route::post('/transactions', [TransactionController::class, 'store'])
-        ->middleware(['auth:api', 'transform.text']);
-        
-    // Healthcheck endpoint (no authentication required)
+    // Public health check endpoint (no auth required)
     Route::get('/healthcheck', function () {
         return response()->json([
             'status' => 'ok',
@@ -37,9 +32,23 @@ Route::prefix('v1')->group(function () {
         ]);
     });
     
-    // Notifications endpoint for POS terminals
+    // For local/testing environment make the transactions endpoint public (no authentication)
+    if (app()->environment('local', 'testing')) {
+        // Transactions endpoint - no authentication for easier testing
+        Route::post('/transactions', [TransactionController::class, 'store'])
+            ->middleware(['transform.text']);
+    } else {
+        // Production environment uses JWT authentication
+        Route::post('/transactions', [TransactionController::class, 'store'])
+            ->middleware(['auth:api', 'transform.text']);
+    }
+    
+    // Notifications endpoint for POS systems - still authentication required
     Route::get('/notifications', [TransactionController::class, 'getNotifications'])
         ->middleware('auth:api');
+
+    // Parser test endpoint
+    Route::post('parser-test', [TestParserController::class, 'testParser']);
 });
 
 // Web API Routes for Internal Dashboard

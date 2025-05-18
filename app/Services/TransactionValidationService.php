@@ -2,9 +2,8 @@
 
 namespace App\Services;
 
-use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
-use Illuminate\Support\Facades\App;
+use Illuminate\Support\Facades\Log;
 
 class TransactionValidationService
 {
@@ -44,6 +43,12 @@ class TransactionValidationService
     
     /**
      * Parse text format data into structured array.
+     * 
+     * This method handles multiple text formats:
+     * - KEY: VALUE format
+     * - KEY=VALUE format
+     * - KEY VALUE format
+     * - Mixed formats
      *
      * @param string $content
      * @return array
@@ -51,75 +56,130 @@ class TransactionValidationService
     public function parseTextFormat(string $content)
     {
         try {
-            $lines = preg_split('/\r\n|\r|\n/', $content);
             $data = [];
+            
+            // Log the content for debugging
+            Log::info('Parsing text content', ['content_length' => strlen($content)]);
+            
+            // Split content into lines
+            $lines = preg_split('/\r\n|\r|\n/', $content);
             
             foreach ($lines as $line) {
                 $line = trim($line);
                 if (empty($line)) continue;
                 
-                // Try to detect format: KEY: VALUE
+                // Try KEY: VALUE format
                 if (preg_match('/^([^:]+):(.*)$/', $line, $matches)) {
                     $key = trim($matches[1]);
                     $value = trim($matches[2]);
                     $data[$key] = $value;
-                } 
-                // Try to detect format: KEY=VALUE
-                elseif (preg_match('/^([^=]+)=(.*)$/', $line, $matches)) {
+                    continue;
+                }
+                
+                // Try KEY=VALUE format
+                if (preg_match('/^([^=]+)=(.*)$/', $line, $matches)) {
                     $key = trim($matches[1]);
                     $value = trim($matches[2]);
                     $data[$key] = $value;
+                    continue;
                 }
-                // Try to detect format: KEY VALUE
-                elseif (preg_match('/^([^\s]+)\s+(.*)$/', $line, $matches)) {
+                
+                // Try KEY VALUE format
+                if (preg_match('/^([^\s]+)\s+(.*)$/', $line, $matches)) {
                     $key = trim($matches[1]);
                     $value = trim($matches[2]);
                     $data[$key] = $value;
+                    continue;
                 }
             }
             
-            // Normalize field names to match expected structure
-            $normalized = [];
-            $fieldMap = [
-                'TENANT_ID' => 'tenant_id',
-                'TRANSACTION_ID' => 'transaction_id',
-                'TRANSACTION_TIMESTAMP' => 'transaction_timestamp',
-                'GROSS_SALES' => 'gross_sales',
-                'NET_SALES' => 'net_sales',
-                'VATABLE_SALES' => 'vatable_sales',
-                'VAT_EXEMPT_SALES' => 'vat_exempt_sales',
-                'VAT_AMOUNT' => 'vat_amount',
-                'TRANSACTION_COUNT' => 'transaction_count',
-                'PAYLOAD_CHECKSUM' => 'payload_checksum',
-                'HARDWARE_ID' => 'hardware_id',
-                'MACHINE_NUMBER' => 'machine_number',
-                'STORE_NAME' => 'store_name',
-                'PROMO_DISCOUNT_AMOUNT' => 'promo_discount_amount',
-                'PROMO_STATUS' => 'promo_status',
-                'DISCOUNT_TOTAL' => 'discount_total',
-                'OTHER_TAX' => 'other_tax',
-                'MANAGEMENT_SERVICE_CHARGE' => 'management_service_charge',
-                'EMPLOYEE_SERVICE_CHARGE' => 'employee_service_charge',
-            ];
+            // Normalize field names
+            $normalized = $this->normalizeFieldNames($data);
             
-            foreach ($data as $key => $value) {
-                $normalizedKey = strtoupper($key);
-                if (isset($fieldMap[$normalizedKey])) {
-                    $normalized[$fieldMap[$normalizedKey]] = $value;
-                } else {
-                    // If no mapping, use the original key in lowercase
-                    $normalized[strtolower($key)] = $value;
-                }
-            }
+            // Log what was parsed
+            Log::info('Parsed text format', [
+                'original_fields' => array_keys($data),
+                'normalized_fields' => array_keys($normalized),
+                'field_count' => count($normalized)
+            ]);
             
             return $normalized;
         } catch (\Exception $e) {
-            Log::error('Error parsing text format', [
+            // Log any errors
+            Log::error('Text format parsing error', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);
             
+            // Return empty array on error
             return [];
         }
+    }
+    
+    /**
+     * Normalize field names to standard format
+     *
+     * @param array $data
+     * @return array
+     */
+    private function normalizeFieldNames(array $data)
+    {
+        $normalized = [];
+        $fieldMap = [
+            'TENANT_ID' => 'tenant_id',
+            'TENANTID' => 'tenant_id',
+            'TENANT-ID' => 'tenant_id',
+            
+            'TRANSACTION_ID' => 'transaction_id',
+            'TRANSACTIONID' => 'transaction_id',
+            'TX_ID' => 'transaction_id',
+            'TXID' => 'transaction_id',
+            
+            'TRANSACTION_TIMESTAMP' => 'transaction_timestamp',
+            'TX_TIMESTAMP' => 'transaction_timestamp',
+            'TX_TIME' => 'transaction_timestamp',
+            'DATETIME' => 'transaction_timestamp',
+            'DATE_TIME' => 'transaction_timestamp',
+            
+            'GROSS_SALES' => 'gross_sales',
+            'GROSSSALES' => 'gross_sales',
+            'GROSS' => 'gross_sales',
+            
+            'NET_SALES' => 'net_sales',
+            'NETSALES' => 'net_sales',
+            'NET' => 'net_sales',
+            
+            'VATABLE_SALES' => 'vatable_sales',
+            'VATABLESALES' => 'vatable_sales',
+            'VAT_SALES' => 'vatable_sales',
+            
+            'VAT_EXEMPT_SALES' => 'vat_exempt_sales',
+            'VATEXEMPTSALES' => 'vat_exempt_sales',
+            'EXEMPT_SALES' => 'vat_exempt_sales',
+            
+            'VAT_AMOUNT' => 'vat_amount',
+            'VATAMOUNT' => 'vat_amount',
+            'VAT' => 'vat_amount',
+            
+            'TRANSACTION_COUNT' => 'transaction_count',
+            'TX_COUNT' => 'transaction_count',
+            'TRANSACTIONCOUNT' => 'transaction_count',
+            
+            'PAYLOAD_CHECKSUM' => 'payload_checksum',
+            'CHECKSUM' => 'payload_checksum',
+            'HASH' => 'payload_checksum',
+        ];
+        
+        foreach ($data as $key => $value) {
+            $normalizedKey = strtoupper($key);
+            if (isset($fieldMap[$normalizedKey])) {
+                $normalized[$fieldMap[$normalizedKey]] = $value;
+            } else {
+                // If no mapping, just use the original key in lowercase
+                $normalized[strtolower($key)] = $value;
+            }
+        }
+        
+        return $normalized;
     }
 }

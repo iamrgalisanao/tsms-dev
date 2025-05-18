@@ -6,10 +6,22 @@ use App\Services\TransactionValidationService;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\App;
 
 class TransformTextFormat
 {
+    /**
+     * The transaction validation service instance.
+     */
+    protected $validationService;
+
+    /**
+     * Create a new middleware instance.
+     */
+    public function __construct(TransactionValidationService $validationService)
+    {
+        $this->validationService = $validationService;
+    }
+
     /**
      * Handle an incoming request.
      *
@@ -19,25 +31,40 @@ class TransformTextFormat
      */
     public function handle(Request $request, Closure $next)
     {
-        // Only process POST requests to the transactions endpoint
-        if ($request->isMethod('post') && str_contains($request->path(), 'transactions')) {
-            $contentType = $request->header('Content-Type');
-            
-            // Check if content is text-based (not JSON)
-            if ($contentType === 'text/plain' || 
-                $contentType === 'application/x-www-form-urlencoded' || 
-                !$request->isJson()) {
+        try {
+            // Update endpoint matching to include v1 prefix
+            if ($request->isMethod('post') && 
+                (str_contains($request->path(), 'transactions') || 
+                 str_contains($request->path(), 'v1/test-parser'))) {
                 
-                try {
+                Log::info('TransformTextFormat middleware processing request', [
+                    'path' => $request->path(),
+                    'method' => $request->method(),
+                    'content_type' => $request->header('Content-Type')
+                ]);
+                
+                $contentType = $request->header('Content-Type');
+                
+                // Log the content type for debugging
+                Log::info('Request content type', ['Content-Type' => $contentType]);
+                
+                // Check if content is text-based (not JSON)
+                if ($contentType === 'text/plain' || 
+                    $contentType === 'application/x-www-form-urlencoded' || 
+                    !$request->isJson()) {
+                    
                     // Get raw content
                     $content = $request->getContent();
                     
                     if (!empty($content)) {
-                        // Get the validation service from the container to avoid the facade issue
-                        $validationService = App::make(TransactionValidationService::class);
+                        // Log the raw content for debugging
+                        Log::info('Received text content', [
+                            'length' => strlen($content),
+                            'sample' => substr($content, 0, 100) // Log first 100 chars
+                        ]);
                         
-                        // Parse text format into structured data
-                        $data = $validationService->parseTextFormat($content);
+                        // Parse the text content
+                        $data = $this->validationService->parseTextFormat($content);
                         
                         if (!empty($data)) {
                             // Replace request input with parsed data
@@ -48,18 +75,25 @@ class TransformTextFormat
                                 '_data_format' => 'text'
                             ]);
                             
+                            // Log success
                             Log::info('Text format transformation successful', [
-                                'parsed_fields' => array_keys($data)
+                                'parsed_fields' => array_keys($data),
+                                'field_count' => count($data)
                             ]);
+                        } else {
+                            Log::warning('Text format parsing returned empty data');
                         }
+                    } else {
+                        Log::warning('Empty request content received');
                     }
-                } catch (\Exception $e) {
-                    Log::error('Text format parsing failed', [
-                        'error' => $e->getMessage(),
-                        'content' => substr($content ?? '', 0, 100) . '...'
-                    ]);
                 }
             }
+        } catch (\Exception $e) {
+            Log::error('TransformTextFormat middleware error', [
+                'error' => $e->getMessage(),
+                'path' => $request->path(),
+                'content_type' => $request->header('Content-Type')
+            ]);
         }
         
         return $next($request);
