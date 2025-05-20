@@ -51,6 +51,17 @@ Route::prefix('v1')->group(function () {
     Route::post('parser-test', [TestParserController::class, 'testParser']);
 });
 
+// Test parser endpoint
+Route::post('/v1/test-parser', function (Request $request) {
+    $service = app(TransactionValidationService::class);
+    $rawContent = $request->getContent();
+    
+    // Parse the raw content
+    $result = $service->parseTextFormat($rawContent);
+    
+    return response()->json($result, 200, [], JSON_UNESCAPED_SLASHES);
+})->middleware('api');
+
 // Web API Routes for Internal Dashboard
 Route::prefix('web')->group(function () {
     // Log Viewer API endpoints

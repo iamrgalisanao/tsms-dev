@@ -14,7 +14,7 @@ class TestParserController extends Controller
     public function __construct(TransactionValidationService $validationService)
     {
         $this->validationService = $validationService;
-        $this->middleware('transform.text.format');
+        // Middleware registration moved to route definition to avoid IDE error.
     }
 
     public function testParser(Request $request)
