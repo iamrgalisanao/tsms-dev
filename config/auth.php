@@ -40,13 +40,8 @@ return [
             'driver' => 'session',
             'provider' => 'users',
         ],
-        'api' => [
-            'driver' => 'token',
-            'provider' => 'terminals',
-            'hash' => false,
-        ],
-        'pos_api' => [ // Add this guard configuration
-            'driver' => 'jwt', 
+        'pos_api' => [
+            'driver' => 'jwt',
             'provider' => 'pos_terminals',
         ],
     ],
@@ -77,8 +72,8 @@ return [
             'driver' => 'eloquent',
             'model' => App\Models\PosTerminal::class,
         ],
-        'pos_terminals' => [ // Add this provider
-            'driver' => 'eloquent', 
+        'pos_terminals' => [
+            'driver' => 'eloquent',
             'model' => App\Models\PosTerminal::class,
         ],
     ],

@@ -3,12 +3,14 @@
 namespace Tests\Traits;
 
 use App\Models\User;
+use App\Models\PosTerminal;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Config;
 use Laravel\Sanctum\Sanctum;
 use Mockery;
 use Spatie\Permission\Models\Role;
+use Tymon\JWTAuth\Facades\JWTAuth;
 
 trait AuthTestHelpers
 {
@@ -34,7 +36,8 @@ trait AuthTestHelpers
         // Make sure roles are reset
         $this->resetRoles();
     }
-      /**
+    
+    /**
      * Mock the cookie service to prevent the Target class [cookie] not found error
      */
     protected function mockCookieService()
@@ -93,6 +96,32 @@ trait AuthTestHelpers
         Sanctum::actingAs($user);
         
         return $user;
+    }
+    
+    /**
+     * Set up a test terminal
+     */
+    protected function setupTestTerminal()
+    {
+        $terminal = PosTerminal::factory()->create([
+            'status' => 'active'
+        ]);
+        
+        return [
+            'terminal' => $terminal,
+            'token' => JWTAuth::fromUser($terminal)
+        ];
+    }
+
+    /**
+     * Use terminal token for requests
+     */
+    protected function withTerminalToken($token)
+    {
+        return $this->withHeaders([
+            'Authorization' => 'Bearer ' . $token,
+            'Accept' => 'application/json'
+        ]);
     }
     
     /**

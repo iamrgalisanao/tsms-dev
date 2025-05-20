@@ -6,20 +6,17 @@ use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
 {
-    /**
-     * Run the migrations.
-     */
-    public function up(): void
+    public function up()
     {
         Schema::table('pos_terminals', function (Blueprint $table) {
-            $table->text('jwt_token')->nullable()->after('status');
+            $table->string('machine_number')->nullable()->after('terminal_uid');
         });
     }
-    
-    public function down(): void
+
+    public function down()
     {
         Schema::table('pos_terminals', function (Blueprint $table) {
-            $table->dropColumn('jwt_token');
+            $table->dropColumn('machine_number');
         });
     }
 };

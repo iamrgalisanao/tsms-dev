@@ -2,6 +2,8 @@
 
 namespace App\Services;
 
+use App\Models\Transaction;
+use App\Models\PosTerminal;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Log;
 
@@ -15,8 +17,10 @@ class TransactionValidationService
      */
     public function validate(array $data)
     {
+        // Basic validation
         $validator = Validator::make($data, [
             'tenant_id' => 'required|string',
+            'terminal_id' => 'required|string',
             'transaction_id' => 'required|string',
             'transaction_timestamp' => 'required|date',
             'gross_sales' => 'required|numeric',
@@ -34,11 +38,32 @@ class TransactionValidationService
                 'errors' => $validator->errors()->toArray()
             ];
         }
+
+        // Check for duplicate transaction
+        if ($this->isDuplicate($data)) {
+            return [
+                'valid' => false,
+                'errors' => ['Transaction ID has already been processed']
+            ];
+        }
         
         return [
             'valid' => true,
             'data' => $validator->validated()
         ];
+    }
+
+    /**
+     * Check if the transaction is a duplicate.
+     *
+     * @param array $data
+     * @return bool
+     */
+    protected function isDuplicate(array $data): bool
+    {
+        return Transaction::where('tenant_id', $data['tenant_id'])
+            ->where('transaction_id', $data['transaction_id'])
+            ->exists();
     }
     
     /**

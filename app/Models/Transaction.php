@@ -44,6 +44,11 @@ class Transaction extends Model
         'employee_service_charge',
         'validation_status',
         'error_code',
+        'terminal_id',  // Make sure this is included
+        'job_status',
+        'job_attempts',
+        'last_error',
+        'completed_at'
     ];
     
     /**
@@ -59,7 +64,7 @@ class Transaction extends Model
         'net_sales' => 'decimal:2',
         'vatable_sales' => 'decimal:2',
         'vat_exempt_sales' => 'decimal:2',
-        'vat_amount' => 'decimal:2',
+        'vat_amount' => 'float',
         'promo_discount_amount' => 'decimal:2',
         'discount_total' => 'decimal:2',
         'other_tax' => 'decimal:2',
@@ -67,8 +72,16 @@ class Transaction extends Model
         'employee_service_charge' => 'decimal:2',
         'transaction_count' => 'integer',
         'discount_details' => 'array',
+        'completed_at' => 'datetime',
+        'job_attempts' => 'integer'
     ];
     
+    // Add job status constants
+    const JOB_STATUS_QUEUED = 'QUEUED';
+    const JOB_STATUS_PROCESSING = 'PROCESSING';
+    const JOB_STATUS_COMPLETED = 'COMPLETED';
+    const JOB_STATUS_FAILED = 'FAILED';
+
     /**
      * Get the terminal that owns the transaction.
      */

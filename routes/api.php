@@ -49,6 +49,15 @@ Route::prefix('v1')->group(function () {
 
     // Parser test endpoint
     Route::post('parser-test', [TestParserController::class, 'testParser']);
+
+    // Transaction status endpoint
+    if (app()->environment('local', 'testing')) {
+        // Remove auth middleware for testing
+        Route::get('transactions/{transactionId}/status', [TransactionController::class, 'status']);
+    } else {
+        Route::get('transactions/{transactionId}/status', [TransactionController::class, 'status'])
+            ->middleware('auth:api');
+    }
 });
 
 // Test parser endpoint

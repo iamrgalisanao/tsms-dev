@@ -19,7 +19,7 @@ return new class extends Migration
                 $table->foreignId('terminal_id')->nullable()->constrained('pos_terminals')->nullOnDelete();
                 $table->string('transaction_id')->unique();
                 $table->string('hardware_id')->nullable();
-                $table->integer('machine_number')->nullable();
+                $table->integer('machine_number')->nullable()->default(0);
                 $table->string('store_name')->nullable();
                 $table->timestamp('transaction_timestamp');
                 $table->decimal('gross_sales', 15, 2);
@@ -36,7 +36,7 @@ return new class extends Migration
                 $table->decimal('employee_service_charge', 15, 2)->nullable();
                 $table->integer('transaction_count');
                 $table->string('payload_checksum');
-                $table->string('validation_status')->default('pending');
+                $table->text('last_error')->nullable();
                 $table->string('processing_status')->nullable();
                 $table->string('error_code')->nullable();
                 $table->text('error_message')->nullable();
@@ -44,9 +44,16 @@ return new class extends Migration
                 $table->integer('retry_count')->default(0);
                 $table->timestamps();
                 
+                // Fix validation_status definition - add before indexes
+                $table->enum('validation_status', ['VALID', 'ERROR', 'PENDING'])->default('PENDING');
+                $table->enum('job_status', ['QUEUED', 'PROCESSING', 'COMPLETED', 'FAILED'])->nullable();
+                
                 // Indexes for better query performance
                 $table->index('transaction_timestamp');
                 $table->index('validation_status');
+                $table->integer('job_attempts')->default(0);
+                $table->text('last_error')->nullable();
+                $table->timestamp('completed_at')->nullable();
                 $table->index('processing_status');
             });
         }

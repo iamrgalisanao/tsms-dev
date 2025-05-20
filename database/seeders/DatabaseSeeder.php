@@ -2,6 +2,7 @@
 
 namespace Database\Seeders;
 
+use App\Models\TransactionLog;
 use App\Models\User;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
@@ -31,9 +32,11 @@ class DatabaseSeeder extends Seeder
             $this->call(TestDataSeeder::class);
         }
 
-        //  $this->call([
-        //     // ...other seeders...
-        //     TerminalTokenSeeder::class,
-        // ]);
+         $this->call([
+            // ...other seeders...
+            TransactionLogSeeder::class,
+            PosSampleDataSeeder::class,
+            CircuitBreakerSeeder::class,
+        ]);
     }
 }

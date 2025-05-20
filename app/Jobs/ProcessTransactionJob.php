@@ -10,6 +10,7 @@ use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
+use App\Jobs\JobProcessingService;
 
 class ProcessTransactionJob implements ShouldQueue
 {
@@ -50,15 +51,21 @@ class ProcessTransactionJob implements ShouldQueue
     public function handle()
     {
         try {
-            Log::info('Processing transaction', [
-                'transaction_id' => $this->transaction->transaction_id,
-                'tenant_id' => $this->transaction->tenant_id,
-                'attempt' => $this->attempts()
+            // Initialize job status
+            $this->transaction->update([
+                'job_status' => Transaction::JOB_STATUS_PROCESSING,
+                'job_attempts' => $this->attempts(),
+                'validation_status' => 'VALIDATING'
             ]);
-            
-            // Check circuit breaker status
-            $circuitBreaker = new CircuitBreaker('transaction_processing');
-            if (!$circuitBreaker->isAvailable()) {
+
+            Log::info('Started transaction processing', [
+                'transaction_id' => $this->transaction->transaction_id,
+                'attempt' => $this->attempts(),
+                'tenant_id' => $this->transaction->tenant_id
+            ]);
+
+            // Check circuit breaker
+            if (!$this->isCircuitBreakerAvailable()) {
                 Log::warning('Circuit breaker is open, delaying transaction processing', [
                     'transaction_id' => $this->transaction->transaction_id
                 ]);
@@ -67,44 +74,31 @@ class ProcessTransactionJob implements ShouldQueue
                 $this->release(30); // 30 seconds delay
                 return;
             }
-            
+
             // Process transaction logic here
-            // For now, we'll just simulate successful processing
-            $success = true;
-            
+            $success = $this->processTransaction();
+
             if ($success) {
-                // Update transaction status
-                $this->transaction->processing_status = 'completed';
-                $this->transaction->processed_at = now();
-                $this->transaction->save();
-                
+                // Mark as completed
+                $this->transaction->update([
+                    'job_status' => Transaction::JOB_STATUS_COMPLETED,
+                    'validation_status' => 'COMPLETED',
+                    'completed_at' => now()
+                ]);
+
                 Log::info('Transaction processed successfully', [
-                    'transaction_id' => $this->transaction->transaction_id
+                    'transaction_id' => $this->transaction->transaction_id,
+                    'processing_time' => now()->diffInMilliseconds($this->transaction->created_at)
                 ]);
             } else {
                 throw new \Exception('Transaction processing failed');
             }
         } catch (\Exception $e) {
-            Log::error('Error processing transaction', [
-                'transaction_id' => $this->transaction->transaction_id,
-                'error' => $e->getMessage(),
-                'attempt' => $this->attempts()
-            ]);
-            
-            // Update transaction status
-            $this->transaction->processing_status = 'failed';
-            $this->transaction->error_message = $e->getMessage();
-            $this->transaction->save();
-            
-            // Record the failure with the circuit breaker
-            $circuitBreaker = new CircuitBreaker('transaction_processing');
-            $circuitBreaker->recordFailure();
-            
-            // Throw the exception to trigger retry
+            $this->handleFailure($e);
             throw $e;
         }
     }
-    
+
     /**
      * Handle a job failure.
      *
@@ -129,5 +123,72 @@ class ProcessTransactionJob implements ShouldQueue
             RetryTransactionJob::dispatch($this->transaction->id)
                 ->delay(now()->addMinutes(5));
         }
+    }
+
+    /**
+     * Check if the circuit breaker is available.
+     *
+     * @return bool
+     */
+    private function isCircuitBreakerAvailable()
+    {
+        $circuitBreaker = new CircuitBreaker('transaction_processing');
+        return $circuitBreaker->isAvailable();
+    }
+
+    /**
+     * Handle transaction processing failure.
+     *
+     * @param \Exception $e
+     * @return void
+     */
+    private function handleFailure(\Exception $e)
+    {
+        Log::error('Error processing transaction', [
+            'transaction_id' => $this->transaction->transaction_id,
+            'error' => $e->getMessage(),
+            'attempt' => $this->attempts()
+        ]);
+
+        // Update transaction status
+        $this->transaction->update([
+            'job_status' => Transaction::JOB_STATUS_FAILED,
+            'error_message' => $e->getMessage()
+        ]);
+
+        // Record the failure with the circuit breaker
+        $circuitBreaker = new CircuitBreaker('transaction_processing');
+        $circuitBreaker->recordFailure();
+    }
+
+    /**
+     * Handle job failure.
+     *
+     * @param \Exception $e
+     * @return void
+     */
+    protected function handleJobFailure(\Exception $e)
+    {
+        Log::error('Transaction processing failed', [
+            'transaction_id' => $this->transaction->transaction_id,
+            'error' => $e->getMessage()
+        ]);
+
+        $this->transaction->update([
+            'job_status' => Transaction::JOB_STATUS_FAILED,
+            'last_error' => $e->getMessage(),
+            'job_attempts' => $this->attempts()
+        ]);
+    }
+
+    /**
+     * Process the transaction.
+     *
+     * @return bool
+     */
+    private function processTransaction()
+    {
+        $service = app(JobProcessingService::class); // Fix typo in class name
+        return $service->processTransaction($this->transaction);
     }
 }
