@@ -11,6 +11,7 @@ use App\Http\Controllers\RetryHistoryController;
 use App\Http\Controllers\LogViewerController;
 use App\Http\Controllers\ProvidersController;
 use App\Http\Controllers\PosProvidersController;
+use App\Http\Controllers\TransactionLogController;
 
 // Home route redirects based on auth status
 Route::get('/', function () {
@@ -50,6 +51,13 @@ Route::middleware(['auth'])->group(function () {
     // Transaction Routes - keep at root level
     Route::get('/transactions', [TransactionController::class, 'index'])->name('transactions');
     Route::get('/transactions/{id}', [TransactionController::class, 'show'])->name('transactions.show');
+
+    // Transaction Logs Routes
+    Route::prefix('transaction-logs')->group(function () {
+        Route::get('/', [TransactionLogController::class, 'index'])->name('transaction-logs.index');
+        Route::get('/{id}', [TransactionLogController::class, 'show'])->name('transaction-logs.show');
+        Route::post('/export', [TransactionLogController::class, 'export'])->name('transaction-logs.export');
+    });
 
     // Other Routes - Keep at root level
     Route::get('/circuit-breakers', [CircuitBreakerController::class, 'index'])->name('circuit-breakers');

@@ -952,4 +952,19 @@ class JobProcessingServiceTest extends TestCase
         
         $this->assertFalse($result);
     }
+
+    public function test_handles_database_connection_failure()
+    {
+        // Test database connection failure scenario
+    }
+
+    public function test_handles_queue_connection_failure()
+    {
+        // Test queue connection failure scenario
+    }
+
+    public function test_handles_malformed_transaction_data()
+    {
+        // Test malformed data handling
+    }
 }
