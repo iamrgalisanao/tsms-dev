@@ -18,26 +18,32 @@ class TransactionLogController extends Controller
 
     public function index(Request $request)
     {
-        Gate::authorize('view-transaction-logs');
-        
-        return view('transaction-logs.index', [
-            'logs' => $this->logService->getPaginatedLogs($request->all())
-        ]);
+        $logs = $this->logService->getPaginatedLogs(
+            $request->only(['status', 'date', 'terminal_id'])
+        );
+
+        if ($request->wantsJson()) {
+            return response()->json($logs);
+        }
+
+        return view('transactions.logs.index', compact('logs'));
     }
 
     public function show($id)
     {
-        Gate::authorize('view-transaction-logs');
-        
-        return view('transaction-logs.show', [
-            'log' => $this->logService->getLogDetail($id)
-        ]);
+        $log = $this->logService->getLogWithHistory($id);
+        return view('transactions.logs.show', compact('log'));
     }
 
     public function export(Request $request)
     {
         Gate::authorize('export-transaction-logs');
         
-        return $this->logService->exportLogs($request->all());
+        return $this->logService->export($request->only([
+            'validation_status',
+            'job_status',
+            'date_from',
+            'date_to'
+        ]));
     }
 }

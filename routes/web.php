@@ -48,15 +48,15 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/logs/{id}', [LogViewerController::class, 'show'])->name('log-viewer.show');
     Route::post('/logs/export', [LogViewerController::class, 'export'])->name('log-viewer.export');
 
-    // Transaction Routes - keep at root level
+    // Transaction Routes - Simplified structure
     Route::get('/transactions', [TransactionController::class, 'index'])->name('transactions');
     Route::get('/transactions/{id}', [TransactionController::class, 'show'])->name('transactions.show');
-
-    // Transaction Logs Routes
-    Route::prefix('transaction-logs')->group(function () {
-        Route::get('/', [TransactionLogController::class, 'index'])->name('transaction-logs.index');
-        Route::get('/{id}', [TransactionLogController::class, 'show'])->name('transaction-logs.show');
-        Route::post('/export', [TransactionLogController::class, 'export'])->name('transaction-logs.export');
+    
+    // Transaction logs as separate group
+    Route::prefix('transactions/logs')->name('transactions.logs.')->group(function () {
+        Route::get('/', [TransactionLogController::class, 'index'])->name('index');
+        Route::get('/{id}', [TransactionLogController::class, 'show'])->name('show');
+        Route::post('/export', [TransactionLogController::class, 'export'])->name('export');
     });
 
     // Other Routes - Keep at root level

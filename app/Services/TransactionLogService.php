@@ -5,6 +5,8 @@ namespace App\Services;
 use App\Models\Transaction;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Maatwebsite\Excel\Facades\Excel;
+use App\Exports\TransactionLogsExport;
 
 class TransactionLogService
 {
@@ -35,8 +37,24 @@ class TransactionLogService
         });
     }
 
+    public function getLogWithHistory($id)
+    {
+        return Cache::remember("transaction_log.{$id}", 300, function() use ($id) {
+            return Transaction::with([
+                'processingHistory' => function($query) {
+                    $query->orderBy('created_at', 'desc');
+                }
+            ])->findOrFail($id);
+        });
+    }
+
     public function exportLogs(array $filters)
     {
-        // Implementation for export functionality
+        $logs = $this->getPaginatedLogs($filters, false);
+        
+        return Excel::download(
+            new TransactionLogsExport($logs),
+            'transaction-logs-' . now()->format('Y-m-d') . '.xlsx'
+        );
     }
 }

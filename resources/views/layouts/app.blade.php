@@ -86,20 +86,18 @@
 
   <div class="container-fluid">
     <div class="row">
+
       <!-- Sidebar -->
       <div class="col-md-3 col-lg-2 sidebar">
-        <a href="{{ route('dashboard') }}" class="{{ request()->routeIs('dashboard') ? 'active' : '' }}">Dashboard</a>
-        <a href="{{ route('transactions') }}"
-          class="{{ request()->routeIs('transactions') ? 'active' : '' }}">Transactions</a>
-        <a href="{{ route('circuit-breakers') }}"
-          class="{{ request()->routeIs('circuit-breakers') ? 'active' : '' }}">Circuit Breakers</a>
-        <a href="{{ route('terminal-tokens') }}"
-          class="{{ request()->routeIs('terminal-tokens') ? 'active' : '' }}">Terminal Tokens</a>
-        <a href="{{ route('dashboard.retry-history') }}"
-          class="{{ request()->routeIs('dashboard.retry-history') ? 'active' : '' }}">Retry History</a>
-        <a href="{{ route('log-viewer') }}" 
-          class="{{ request()->routeIs('log-viewer', 'log-viewer.*') ? 'active' : '' }}">Log Viewer</a>
-        <!-- Removed POS Providers link as it's now integrated into the dashboard -->
+        @include('layouts.navigation')
+        <!-- <a href="{{ route('dashboard') }}">Dashboard</a>
+        <a href="{{ route('transactions') }}">Transactions</a> 
+        <a href="{{ route('circuit-breakers') }}">Circuit Breakers</a>
+        <a href="{{ route('terminal-tokens') }}">Terminal Tokens</a>
+        <a href="{{ route('dashboard.retry-history') }}">Retry History</a>
+        <a href="{{ route('log-viewer') }}">Log Viewer</a> -->
+        <!-- <a href="{{ route('providers.index') }}">POS Providers</a>
+        <a href="{{ route('terminal.test') }}">Terminal Testing</a> -->
       </div>
 
       <!-- Main Content -->

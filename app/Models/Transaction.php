@@ -73,7 +73,8 @@ class Transaction extends Model
         'transaction_count' => 'integer',
         'discount_details' => 'array',
         'completed_at' => 'datetime',
-        'job_attempts' => 'integer'
+        'job_attempts' => 'integer',
+        'promo_status' => 'string',
     ];
     
     // Add job status constants
@@ -83,18 +84,24 @@ class Transaction extends Model
     const JOB_STATUS_FAILED = 'FAILED';
 
     /**
-     * Get the terminal that owns the transaction.
+     * Promo status constants
      */
-    public function posTerminal()
+    const PROMO_STATUS_WITH_APPROVAL = 'WITH_APPROVAL';
+    const PROMO_STATUS_WITHOUT_APPROVAL = 'WITHOUT_APPROVAL';
+
+    /**
+     * Get the terminal that made this transaction.
+     */
+    public function terminal()
     {
         return $this->belongsTo(PosTerminal::class, 'terminal_id');
     }
-    
+
     /**
-     * Get the tenant that owns the transaction.
+     * Get the tenant that owns this transaction.
      */
     public function tenant()
     {
-        return $this->belongsTo(Tenant::class);
+        return $this->belongsTo(Tenant::class, 'tenant_id');
     }
 }

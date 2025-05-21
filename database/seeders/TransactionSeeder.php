@@ -34,7 +34,7 @@ class TransactionSeeder extends Seeder
             'net_sales' => 18137.00,
             'vat_exempt_sales' => 6137.00,
             'promo_discount_amount' => 100.00,
-            'promo_status' => 'WITH_APPROVAL',
+            'promo_status' => 'WITH_APPROVAL',  // Use single character or make it null
             'discount_total' => 50.00,
             'discount_details' => json_encode([
                 'Employee' => '20.00',

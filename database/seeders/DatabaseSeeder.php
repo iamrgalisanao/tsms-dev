@@ -2,6 +2,7 @@
 
 namespace Database\Seeders;
 
+use App\Models\Transaction;
 use App\Models\TransactionLog;
 use App\Models\User;
 use Illuminate\Database\Seeder;
@@ -37,6 +38,7 @@ class DatabaseSeeder extends Seeder
             TransactionLogSeeder::class,
             PosSampleDataSeeder::class,
             CircuitBreakerSeeder::class,
+            TransactionSeeder::class,
         ]);
     }
 }
