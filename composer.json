@@ -13,6 +13,7 @@
         "laravel/framework": "^11.0",
         "laravel/sanctum": "^4.0",
         "laravel/tinker": "^2.9",
+        "maatwebsite/excel": "^1.1",
         "predis/predis": "^3.0",
         "spatie/laravel-permission": "^6.17",
         "tymon/jwt-auth": "^2.2"

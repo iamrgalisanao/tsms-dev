@@ -10,11 +10,19 @@ class PosProviderService
 {
     public function getProviderMetrics(PosProvider $provider)
     {
+        $total_terminals = $provider->terminals()->count();
+        $active_terminals = $provider->terminals()->where('status', 'ACTIVE')->count();
+        
         return [
-            'total_terminals' => $provider->terminals()->count(),
-            'active_terminals' => $provider->terminals()->where('status', 'active')->count(),
+            'total_terminals' => $total_terminals,
+            'active_terminals' => $active_terminals,
             'success_rate' => $this->calculateSuccessRate($provider),
-            'last_24h_transactions' => $this->getLast24HTransactions($provider)
+            'last_24h_transactions' => $this->getLast24HTransactions($provider),
+            'terminalCount' => $total_terminals,  // Added for chart
+            'activeCount' => $active_terminals,   // Added for chart
+            'newEnrollments' => $provider->terminals()
+                ->whereDate('enrolled_at', '>=', now()->subDays(30))
+                ->count()
         ];
     }
 

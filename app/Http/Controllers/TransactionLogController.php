@@ -2,10 +2,13 @@
 
 namespace App\Http\Controllers;
 
+use App\Events\TransactionLogUpdated;
+use App\Exports\TransactionLogsExport;
 use App\Models\Transaction;
 use Illuminate\Http\Request;
 use App\Services\TransactionLogService;
 use Illuminate\Support\Facades\Gate;
+use Maatwebsite\Excel\Facades\Excel;
 
 class TransactionLogController extends Controller
 {
@@ -39,11 +42,19 @@ class TransactionLogController extends Controller
     {
         Gate::authorize('export-transaction-logs');
         
-        return $this->logService->export($request->only([
-            'validation_status',
-            'job_status',
-            'date_from',
-            'date_to'
-        ]));
+        $filename = 'transaction-logs-' . now()->format('Y-m-d') . '.xlsx';
+        return Excel::download(new TransactionLogsExport($request->all()), $filename);
+    }
+
+    public function getUpdates(Request $request)
+    {
+        $lastId = $request->input('last_id');
+        $updates = $this->logService->getUpdatesAfter($lastId);
+        
+        if ($request->wantsJson()) {
+            return response()->json($updates);
+        }
+        
+        return view('transactions.logs.partials.rows', compact('updates'));
     }
 }

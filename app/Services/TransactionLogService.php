@@ -39,22 +39,37 @@ class TransactionLogService
 
     public function getLogWithHistory($id)
     {
-        return Cache::remember("transaction_log.{$id}", 300, function() use ($id) {
+        return Cache::remember("transaction.log.{$id}", 300, function () use ($id) {
             return Transaction::with([
-                'processingHistory' => function($query) {
-                    $query->orderBy('created_at', 'desc');
-                }
+                'terminal',
+                'tenant',
+                'processingHistory' => fn($q) => $q->orderBy('created_at', 'desc')
             ])->findOrFail($id);
         });
     }
 
     public function exportLogs(array $filters)
     {
-        $logs = $this->getPaginatedLogs($filters, false);
-        
-        return Excel::download(
-            new TransactionLogsExport($logs),
-            'transaction-logs-' . now()->format('Y-m-d') . '.xlsx'
-        );
+        $query = Transaction::query()
+            ->with(['terminal', 'tenant'])
+            ->when($filters['status'] ?? null, function($q, $status) {
+                $q->where('validation_status', $status);
+            })
+            ->when($filters['date'] ?? null, function($q, $date) {
+                $q->whereDate('created_at', $date);
+            });
+
+        return Excel::download(new TransactionLogsExport($query), 'transaction-logs-' . now()->format('Y-m-d') . '.xlsx');
+    }
+
+    public function getUpdatesAfter($lastId)
+    {
+        return Cache::remember("updates.after.{$lastId}", 30, function() use ($lastId) {
+            return Transaction::where('id', '>', $lastId)
+                ->with(['terminal', 'tenant'])
+                ->latest()
+                ->limit(50)
+                ->get();
+        });
     }
 }

@@ -50,23 +50,23 @@
               </thead>
               <tbody>
                 @forelse($transactions as $transaction)
-                <tr>
+                <tr data-id="{{ $transaction->id }}">
                   <td class="ps-3">{{ $transaction->transaction_id }}</td>
                   <td>{{ $transaction->terminal->identifier ?? 'N/A' }}</td>
                   <td class="text-end">₱{{ number_format($transaction->gross_sales, 2) }}</td>
-                  <td class="text-center">
+                  <td class="text-center validation-status">
                     <span
                       class="badge bg-{{ $transaction->validation_status === 'VALID' ? 'success' : ($transaction->validation_status === 'ERROR' ? 'danger' : 'warning') }}">
                       {{ $transaction->validation_status }}
                     </span>
                   </td>
-                  <td class="text-center">
+                  <td class="text-center job-status">
                     <span
                       class="badge bg-{{ $transaction->job_status === 'COMPLETED' ? 'success' : ($transaction->job_status === 'FAILED' ? 'danger' : 'info') }}">
                       {{ $transaction->job_status }}
                     </span>
                   </td>
-                  <td class="text-center">{{ $transaction->job_attempts }}</td>
+                  <td class="text-center attempts">{{ $transaction->job_attempts }}</td>
                   <td>{{ $transaction->created_at->format('M d, Y h:i A') }}</td>
                   <td class="text-end pe-3">
                     <div class="d-flex gap-2 justify-content-end">
@@ -133,5 +133,32 @@ document.querySelectorAll('.retry-transaction').forEach(button => {
     }
   });
 });
+
+Echo.private('transactions')
+  .listen('TransactionStatusUpdated', (e) => {
+    const transaction = e.transaction;
+    const row = document.querySelector(`tr[data-id="${transaction.id}"]`);
+    if (row) {
+      // Update status badges and information
+      updateTransactionRow(row, transaction);
+    }
+  });
+
+function updateTransactionRow(row, transaction) {
+  // Update status badges and information
+  row.querySelector('.validation-status').innerHTML = getStatusBadge(transaction.validation_status);
+  row.querySelector('.job-status').innerHTML = getStatusBadge(transaction.job_status, 'job');
+  row.querySelector('.attempts').textContent = transaction.job_attempts;
+}
+
+function getStatusBadge(status, type = 'validation') {
+  let badgeClass = '';
+  if (type === 'validation') {
+    badgeClass = status === 'VALID' ? 'success' : (status === 'ERROR' ? 'danger' : 'warning');
+  } else if (type === 'job') {
+    badgeClass = status === 'COMPLETED' ? 'success' : (status === 'FAILED' ? 'danger' : 'info');
+  }
+  return `<span class="badge bg-${badgeClass}">${status}</span>`;
+}
 </script>
 @endpush

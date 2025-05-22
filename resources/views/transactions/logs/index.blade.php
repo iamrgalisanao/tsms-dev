@@ -4,15 +4,15 @@
 <div class="container-fluid">
   <div class="row mb-4">
     <div class="col">
-      <div class="d-flex justify-content-between align-items-center">
+      <div class="d-flex justify-content-between align-items-center mb-3">
         <h2>Transaction Logs</h2>
         <div>
-          <a href="{{ route('transactions') }}" class="btn btn-outline-secondary me-2">
-            <i class="fas fa-list"></i> Transactions
-          </a>
-          <button type="button" class="btn btn-primary" id="exportBtn">
-            <i class="fas fa-download"></i> Export
+          <button class="btn btn-primary me-2" id="refreshBtn">
+            <i class="fas fa-sync"></i> Refresh
           </button>
+          <a href="{{ route('transactions.logs.export') }}" class="btn btn-success">
+            <i class="fas fa-download"></i> Export
+          </a>
         </div>
       </div>
 
@@ -80,34 +80,51 @@
 
 @push('scripts')
 <script>
-// Preserve existing working code and add new functionality for logs
-document.addEventListener('DOMContentLoaded', function() {
-  // Initialize filters
-  const filters = {
-    validation_status: '',
-    job_status: '',
-    date: ''
+// Real-time updates
+window.Echo?.private('transactions')
+  .listen('TransactionStatusUpdated', (e) => {
+    const transaction = e.transaction;
+    updateTransactionRow(transaction);
+  });
+
+function updateTransactionRow(transaction) {
+  const row = document.querySelector(`tr[data-id="${transaction.id}"]`);
+  if (row) {
+    row.querySelector('.validation-status').innerHTML = getStatusBadge(transaction.validation_status);
+    row.querySelector('.job-status').innerHTML = getStatusBadge(transaction.job_status, 'job');
+    row.querySelector('.attempts').textContent = transaction.job_attempts;
+    row.querySelector('.completed-at').textContent = formatDate(transaction.completed_at);
+  }
+}
+
+function getStatusBadge(status, type = 'validation') {
+  const colors = {
+    'VALID': 'success',
+    'ERROR': 'danger',
+    'PENDING': 'warning',
+    'COMPLETED': 'success',
+    'FAILED': 'danger',
+    'QUEUED': 'info'
   };
+  return `<span class="badge bg-${colors[status] || 'secondary'}">${status}</span>`;
+}
 
-  // Real-time updates via Echo
-  window.Echo?.private('transactions')
-    .listen('TransactionStatusUpdated', (e) => {
-      updateLogRow(e.transaction);
-    });
+function formatDate(date) {
+  return date ? new Date(date).toLocaleString() : 'N/A';
+}
 
-  // Export functionality
-  document.getElementById('exportBtn')?.addEventListener('click', function() {
-    window.location.href = "{{ route('transactions.logs.export') }}?" + new URLSearchParams(filters);
-  });
+// Export functionality
+document.getElementById('exportBtn')?.addEventListener('click', function() {
+  window.location.href = "{{ route('transactions.logs.export') }}?" + new URLSearchParams(filters);
+});
 
-  // Filter functionality
-  document.getElementById('applyFilters')?.addEventListener('click', function() {
-    filters.validation_status = document.getElementById('validationFilter').value;
-    filters.job_status = document.getElementById('jobStatusFilter').value;
-    filters.date = document.getElementById('dateFilter').value;
+// Filter functionality
+document.getElementById('applyFilters')?.addEventListener('click', function() {
+  filters.validation_status = document.getElementById('validationFilter').value;
+  filters.job_status = document.getElementById('jobStatusFilter').value;
+  filters.date = document.getElementById('dateFilter').value;
 
-    refreshLogs();
-  });
+  refreshLogs();
 });
 </script>
 @endpush

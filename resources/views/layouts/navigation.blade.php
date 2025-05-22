@@ -6,7 +6,7 @@
     Providers
   </a> -->
   <li class="nav-item">
-    <a href="{{ route('transactions') }}" class="nav-link {{ request()->routeIs('transactions.*') ? 'active' : '' }}">
+    <a href="{{ route('transactions') }}" class="nav-link {{ request()->routeIs('transactions') ? 'active' : '' }}">
       <i class="nav-icon fas fa-exchange-alt"></i>
       <p>Transactions</p>
     </a>

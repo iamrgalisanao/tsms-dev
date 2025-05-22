@@ -33,6 +33,14 @@ class PosProvider extends Model
     }
 
     /**
+     * Get all active terminals belonging to this provider
+     */
+    public function activeTerminals()
+    {
+        return $this->terminals()->where('status', 'ACTIVE');
+    }
+
+    /**
      * Get all statistics for this provider
      */
     public function statistics()

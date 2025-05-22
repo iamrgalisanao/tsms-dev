@@ -13,48 +13,73 @@ class DashboardController extends Controller
 {
     public function index()
     {
-        // Get summary data for dashboard
-        $terminalCount = PosTerminal::count();
-        $activeTerminalCount = PosTerminal::where('status', 'active')->count();
-        $recentTransactionCount = Transaction::whereDate('created_at', '>=', Carbon::now()->subDays(7))->count();
-        $errorCount = IntegrationLog::where('severity', 'error')
-                                   ->whereDate('created_at', '>=', Carbon::now()->subDays(7))
-                                   ->count();
+        $metrics = [
+            'today_count' => $this->getTransactionMetrics(),
+            'success_rate' => $this->getSuccessRate(),
+            'avg_processing_time' => $this->getAvgProcessingTime(),
+            'error_rate' => $this->getErrorRate()
+        ];
 
-        // Get providers with terminal counts and load growth rate calculation
-        $providers = PosProvider::withCount(['terminals as total_terminals'])
-            ->withCount(['terminals as active_terminals' => function($query) {
-                $query->where('status', 'active');
-            }])
-            ->get()
-            ->each(function($provider) {
-                // Calculate growth rate (last 30 days)
-                $oldestDate = Carbon::now()->subDays(30);
-                $newTerminals = $provider->terminals()
-                    ->where('enrolled_at', '>=', $oldestDate)
-                    ->count();
-                
-                $growthRate = $provider->total_terminals > 0 
-                    ? ($newTerminals / $provider->total_terminals) * 100 
-                    : 0;
-                
-                $provider->growth_rate = round($growthRate, 1);
-            });
-        
-        // Get most recently enrolled terminals
+        // Add terminal metrics
+        $terminalCount = PosTerminal::count();
+        $activeTerminalCount = PosTerminal::where('status', 'ACTIVE')->count();
+        $recentTransactionCount = Transaction::where('created_at', '>=', now()->subDays(7))->count();
+        $errorCount = Transaction::where('validation_status', 'ERROR')
+            ->where('created_at', '>=', now()->subDays(7))
+            ->count();
+
+        // Add recent terminals
         $recentTerminals = PosTerminal::with(['provider', 'tenant'])
-            ->whereNotNull('enrolled_at')
-            ->latest('enrolled_at')
-            ->take(5)
+            ->orderBy('enrolled_at', 'desc')
+            ->take(10)
             ->get();
 
-        return view('dashboard', [
-            'terminalCount' => $terminalCount,
-            'activeTerminalCount' => $activeTerminalCount,
-            'recentTransactionCount' => $recentTransactionCount,
-            'errorCount' => $errorCount,
-            'providers' => $providers,
-            'recentTerminals' => $recentTerminals
-        ]);
+        $recentTransactions = Transaction::with(['terminal', 'tenant'])
+            ->latest()
+            ->take(10)
+            ->get();
+
+        $providers = PosProvider::withCount(['terminals', 'activeTerminals'])->get();
+
+        return view('dashboard', compact(
+            'metrics',
+            'terminalCount',
+            'activeTerminalCount',
+            'recentTransactionCount',
+            'errorCount',
+            'recentTransactions',
+            'recentTerminals',
+            'providers'
+        ));
+    }
+
+    protected function getTransactionMetrics()
+    {
+        return Transaction::whereDate('created_at', Carbon::today())->count();
+    }
+
+    protected function getSuccessRate()
+    {
+        $total = Transaction::count();
+        if ($total === 0) return 0;
+        
+        $success = Transaction::where('validation_status', 'VALID')->count();
+        return round(($success / $total) * 100, 2);
+    }
+
+    protected function getAvgProcessingTime()
+    {
+        return Transaction::whereNotNull('completed_at')
+            ->selectRaw('AVG(TIMESTAMPDIFF(SECOND, created_at, completed_at)) as avg_time')
+            ->value('avg_time') ?? 0;
+    }
+
+    protected function getErrorRate()
+    {
+        $total = Transaction::count();
+        if ($total === 0) return 0;
+        
+        $errors = Transaction::where('validation_status', 'ERROR')->count();
+        return round(($errors / $total) * 100, 2);
     }
 }

@@ -1,13 +1,55 @@
 @extends('layouts.app')
 
 @section('content')
-<div>
+<div class="container-fluid">
+  <div class="row mb-4">
+    <div class="col">
+      <h2>Dashboard</h2>
+    </div>
+  </div>
+
+  <!-- Metrics Cards -->
+  <div class="row g-3 mb-4">
+    <div class="col-md-3">
+      <div class="card">
+        <div class="card-body">
+          <h6 class="card-subtitle mb-2 text-muted">Today's Transactions</h6>
+          <h2 class="card-title mb-0">{{ $metrics['today_count'] ?? 0 }}</h2>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card">
+        <div class="card-body">
+          <h6 class="card-subtitle mb-2 text-muted">Success Rate</h6>
+          <h2 class="card-title mb-0">{{ $metrics['success_rate'] ?? 0 }}%</h2>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card">
+        <div class="card-body">
+          <h6 class="card-subtitle mb-2 text-muted">Avg. Processing Time</h6>
+          <h2 class="card-title mb-0">{{ $metrics['avg_processing_time'] ?? 0 }}s</h2>
+        </div>
+      </div>
+    </div>
+    <div class="col-md-3">
+      <div class="card">
+        <div class="card-body">
+          <h6 class="card-subtitle mb-2 text-muted">Error Rate</h6>
+          <h2 class="card-title mb-0">{{ $metrics['error_rate'] ?? 0 }}%</h2>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Summary Cards -->
   <div class="row mb-4">
     <div class="col-md-3">
       <div class="card">
         <div class="card-body text-center">
-          <h3 class="card-title">{{ $terminalCount }}</h3>
+          <h3 class="card-title">{{ $terminalCount ?? 0 }}</h3>
           <p class="card-text text-muted">Total Terminals</p>
         </div>
       </div>
@@ -80,6 +122,9 @@
     </div>
   </div>
 
+  <!-- Transaction Metrics -->
+  @include('transactions.partials.dashboard-metrics')
+
   <!-- Recent Terminal Enrollments -->
   <div class="card">
     <div class="card-header">
@@ -114,6 +159,19 @@
           </tbody>
         </table>
       </div>
+    </div>
+  </div>
+
+  <!-- Recent Transactions -->
+  <div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+      <h5 class="mb-0">Recent Transactions</h5>
+      <a href="{{ route('transactions') }}" class="btn btn-primary btn-sm">
+        View All
+      </a>
+    </div>
+    <div class="card-body">
+      @include('transactions.partials.transaction-table', ['transactions' => $recentTransactions])
     </div>
   </div>
 </div>
