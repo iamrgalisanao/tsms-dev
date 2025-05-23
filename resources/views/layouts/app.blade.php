@@ -1,117 +1,79 @@
 <!DOCTYPE html>
-<html lang="en">
-
+<html lang="{{ str_replace('_', '-', app()->getLocale()) }}">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="csrf-token" content="{{ csrf_token() }}">
-  <title>{{ config('app.name', 'TSMS') }}</title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="csrf-token" content="{{ csrf_token() }}">
+    <title>{{ config('app.name', 'TSMS') }}</title>
+    
+    <!-- Styles -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        .wrapper {
+            display: flex;
+            min-height: 100vh;
+        }
+        
+        .main-sidebar {
+            width: 250px;
+            background: #343a40;
+            padding-top: 1rem;
+            position: fixed;
+            top: 0;
+            left: 0;
+            bottom: 0;
+        }
+        
+        .brand {
+            color: #fff;
+            font-size: 1.5rem;
+            padding: 0 1rem 1rem;
+            border-bottom: 1px solid rgba(255,255,255,.1);
+            margin-bottom: 1rem;
+        }
+        
+        .main-content {
+            flex: 1;
+            margin-left: 250px;
+            padding: 1rem;
+        }
+        
+        .nav-link {
+            color: rgba(255,255,255,.75);
+            padding: .5rem 1rem;
+        }
+        
+        .nav-link:hover,
+        .nav-link.active {
+            color: #fff;
+            background: rgba(255,255,255,.1);
+        }
 
-  <!-- Bootstrap CSS -->
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/css/bootstrap.min.css" rel="stylesheet">
-
-  <!-- Custom CSS -->
-  <style>
-  body {
-    background-color: #f8f9fa;
-  }
-
-  .navbar {
-    margin-bottom: 20px;
-  }
-
-  .sidebar {
-    min-height: calc(100vh - 56px);
-    background-color: #343a40;
-    padding: 20px 0;
-  }
-
-  .sidebar a {
-    color: rgba(255, 255, 255, .75);
-    padding: 10px 20px;
-    display: block;
-  }
-
-  .sidebar a:hover {
-    color: #fff;
-    background-color: rgba(255, 255, 255, .1);
-    text-decoration: none;
-  }
-
-  .sidebar a.active {
-    color: #fff;
-    background-color: rgba(255, 255, 255, .2);
-  }
-
-  .main-content {
-    padding: 20px;
-  }
-  </style>
-
-  @yield('styles')
+        .nav-item {
+            margin-bottom: .25rem;
+        }
+    </style>
+    @yield('styles')
 </head>
-
 <body>
-  <!-- Navigation -->
-  <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
-    <div class="container-fluid">
-      <a class="navbar-brand" href="{{ route('dashboard') }}">TSMS Dashboard</a>
-      <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
-        <span class="navbar-toggler-icon"></span>
-      </button>
-      <div class="collapse navbar-collapse" id="navbarNav">
-        <ul class="navbar-nav ms-auto">
-          <li class="nav-item">
-            <a class="nav-link" href="{{ route('dashboard') }}">Dashboard</a>
-          </li>
-          @if (Auth::check())
-          <li class="nav-item">
-            <span class="nav-link">Welcome, {{ Auth::user()->name }}</span>
-          </li>
-          <li class="nav-item">
-            <form action="{{ route('logout') }}" method="POST" class="d-inline">
-              @csrf
-              <button type="submit" class="btn btn-link nav-link">Logout</button>
-            </form>
-          </li>
-          @else
-          <li class="nav-item">
-            <a href="{{ route('login') }}" class="nav-link">Login</a>
-          </li>
-          @endif
-        </ul>
-      </div>
+    <div class="wrapper">
+        <!-- Sidebar -->
+        <aside class="main-sidebar">
+            <div class="brand">TSMS</div>
+            @include('layouts.navigation')
+        </aside>
+
+        <div class="main-content">
+            <div class="container-fluid">
+                @yield('content')
+            </div>
+        </div>
     </div>
-  </nav>
 
-  <div class="container-fluid">
-    <div class="row">
-
-      <!-- Sidebar -->
-      <div class="col-md-3 col-lg-2 sidebar">
-        @include('layouts.navigation')
-        <!-- <a href="{{ route('dashboard') }}">Dashboard</a>
-        <a href="{{ route('transactions') }}">Transactions</a> 
-        <a href="{{ route('circuit-breakers') }}">Circuit Breakers</a>
-        <a href="{{ route('terminal-tokens') }}">Terminal Tokens</a>
-        <a href="{{ route('dashboard.retry-history') }}">Retry History</a>
-        <a href="{{ route('log-viewer') }}">Log Viewer</a> -->
-        <!-- <a href="{{ route('providers.index') }}">POS Providers</a>
-        <a href="{{ route('terminal.test') }}">Terminal Testing</a> -->
-      </div>
-
-      <!-- Main Content -->
-      <div class="col-md-9 col-lg-10 main-content">
-        @yield('content')
-      </div>
-    </div>
-  </div>
-
-  <!-- Bootstrap Bundle with Popper -->
-  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/js/bootstrap.bundle.min.js"></script>
-
-  <!-- Additional Scripts -->
-  @yield('scripts')
+    <!-- Scripts -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.2.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    @stack('scripts')
 </body>
-
 </html>

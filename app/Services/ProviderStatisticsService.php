@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\PosProvider;
 use App\Models\ProviderStatistic;
+use App\Models\PosTerminal;
 use Carbon\Carbon;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -61,55 +62,53 @@ class ProviderStatisticsService
 
     public function getChartData($providerId)
     {
-        $startDate = now()->subDays(30)->startOfDay();
-        $endDate = now()->endOfDay();
+        $startDate = now()->subDays(30);
+        $endDate = now();
 
-        // Get initial total terminals before start date
-        $initialTotal = DB::table('pos_terminals')
+        // Fetch all terminals data in one query
+        $terminals = DB::table('pos_terminals')
+            ->select('enrolled_at', 'status')
             ->where('provider_id', $providerId)
-            ->where('enrolled_at', '<', $startDate)
-            ->count();
-
-        // Get stats for each day in range
-        $data = DB::table('pos_terminals')
-            ->where('provider_id', $providerId)
-            ->whereBetween('enrolled_at', [$startDate, $endDate])
-            ->selectRaw('
-                DATE(enrolled_at) as date,
-                COUNT(*) as daily_enrollments,
-                SUM(CASE WHEN status = "active" THEN 1 ELSE 0 END) as active_count
-            ')
-            ->groupBy('date')
-            ->orderBy('date')
             ->get();
 
-        $chartData = [
-            'labels' => [],
-            'terminalCount' => [],
-            'activeCount' => [],
-            'newEnrollments' => []
-        ];
+        $dates = [];
+        $terminalCount = [];
+        $activeCount = [];
+        $newEnrollments = [];
 
-        $runningTotal = $initialTotal;
+        // Generate dates and counts
+        for ($date = clone $startDate; $date <= $endDate; $date->addDay()) {
+            $currentDate = $date->format('Y-m-d');
+            $dates[] = $currentDate;
 
-        // Fill in data for each day
-        $currentDate = $startDate->copy();
-        while ($currentDate <= $endDate) {
-            $dateStr = $currentDate->format('Y-m-d');
-            $dayData = $data->firstWhere('date', $dateStr);
-            
-            $dailyEnrollments = $dayData ? $dayData->daily_enrollments : 0;
-            $runningTotal += $dailyEnrollments;
+            // Calculate cumulative total up to this date
+            $totalCount = $terminals->filter(function ($terminal) use ($currentDate) {
+                return Carbon::parse($terminal->enrolled_at)->format('Y-m-d') <= $currentDate;
+            })->count();
 
-            $chartData['labels'][] = $currentDate->format('M d');
-            $chartData['terminalCount'][] = $runningTotal;
-            $chartData['activeCount'][] = $dayData ? $dayData->active_count : 0;
-            $chartData['newEnrollments'][] = $dailyEnrollments;
+            // Calculate active terminals
+            $activeTerminals = $terminals->filter(function ($terminal) use ($currentDate) {
+                return $terminal->status === 'active' && 
+                       Carbon::parse($terminal->enrolled_at)->format('Y-m-d') <= $currentDate;
+            })->count();
 
-            $currentDate->addDay();
+            // Calculate new enrollments on this date
+            $newEnrolled = $terminals->filter(function ($terminal) use ($currentDate) {
+                return Carbon::parse($terminal->enrolled_at)->format('Y-m-d') === $currentDate;
+            })->count();
+
+            $terminalCount[] = $totalCount;
+            $activeCount[] = $activeTerminals;
+            $newEnrollments[] = $newEnrolled;
         }
 
-        return $chartData;
+        \Log::info('Chart data generated', [
+            'provider_id' => $providerId,
+            'data_points' => count($dates),
+            'total_terminals' => array_sum($newEnrollments)
+        ]);
+
+        return compact('dates', 'terminalCount', 'activeCount', 'newEnrollments');
     }
 
     public function getAllProviderStats()

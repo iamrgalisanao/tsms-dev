@@ -1,5 +1,5 @@
 <div class="table-responsive">
-  <table class="table table-hover align-middle">
+  <table class="table table-hover align-middle mb-0">
     <thead class="table-light">
       <tr>
         <th class="ps-3">Transaction ID</th>
@@ -34,7 +34,7 @@
         <td>{{ $transaction->created_at->format('M d, Y h:i A') }}</td>
         <td class="text-end pe-3">
           <div class="d-flex gap-2 justify-content-end">
-            <a href="{{ route('transactions.show', $transaction->id) }}" class="btn btn-sm btn-primary">
+            <a href="{{ route('transactions.logs.show', $transaction->id) }}" class="btn btn-sm btn-primary">
               <i class="fas fa-eye"></i> View Details
             </a>
             @if($transaction->validation_status === 'ERROR')

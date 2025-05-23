@@ -42,39 +42,24 @@ class PosProvidersController extends Controller
 
     public function show(PosProvider $provider)
     {
-        $metrics = $this->providerService->getProviderMetrics($provider);
-        $terminalsByTenant = $provider->terminals()
-            ->join('tenants', 'pos_terminals.tenant_id', '=', 'tenants.id')
-            ->selectRaw('tenants.name, count(*) as total')
-            ->groupBy('tenants.id', 'tenants.name')
-            ->get();
+        try {
+            $metrics = $this->providerService->getProviderMetrics($provider);
+            $chartData = $this->statsService->getChartData($provider->id);
 
-        $terminalsByStatus = $provider->terminals()
-            ->selectRaw('status, count(*) as total')
-            ->groupBy('status')
-            ->get();
+            \Log::info('Provider show data', [
+                'provider_id' => $provider->id,
+                'has_chart_data' => !empty($chartData),
+                'metrics' => array_keys($metrics)
+            ]);
 
-        $latestTerminals = $provider->terminals()
-            ->with('tenant')
-            ->orderBy('enrolled_at', 'desc')
-            ->limit(10)
-            ->get();
-
-        $chartData = $this->statsService->getChartData($provider->id) ?? [
-            'labels' => [],
-            'terminalCount' => [],
-            'activeCount' => [],
-            'newEnrollments' => []
-        ];
-        
-        return view('providers.show', compact(
-            'provider',
-            'metrics',
-            'terminalsByTenant',
-            'terminalsByStatus',
-            'latestTerminals',
-            'chartData'
-        ));
+            return view('providers.show', compact('provider', 'metrics', 'chartData'));
+        } catch (\Exception $e) {
+            \Log::error('Error in provider show', [
+                'error' => $e->getMessage(),
+                'provider_id' => $provider->id
+            ]);
+            return redirect()->route('dashboard')->with('error', 'Error loading provider details');
+        }
     }
 
     /**

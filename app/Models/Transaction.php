@@ -104,4 +104,12 @@ class Transaction extends Model
     {
         return $this->belongsTo(Tenant::class, 'tenant_id');
     }
+
+    /**
+     * Get the processing history for this transaction.
+     */
+    public function processingHistory()
+    {
+        return $this->hasMany(TransactionHistory::class)->orderBy('created_at', 'desc');
+    }
 }

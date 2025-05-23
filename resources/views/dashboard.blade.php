@@ -58,8 +58,8 @@
     <div class="col-md-3">
       <div class="card">
         <div class="card-body text-center">
-          <h3 class="card-title">{{ $activeTerminalCount }}</h3>
-          <p class="card-text text-muted">Active Terminals</p>
+          <h3 class="card-title text-muted mb-2">Active Terminals</h3>
+          <p class="h2">{{ $metrics['active_terminals'] ?? 0 }}</p>
         </div>
       </div>
     </div>
@@ -125,6 +125,16 @@
   <!-- Transaction Metrics -->
   @include('transactions.partials.dashboard-metrics')
 
+  <!-- Terminal Enrollment History Chart -->
+  <div class="card mb-4">
+    <div class="card-header">
+      <h5 class="card-title mb-0">Terminal Enrollment History</h5>
+    </div>
+    <div class="card-body">
+      <canvas id="terminalEnrollmentChart" height="300"></canvas>
+    </div>
+  </div>
+
   <!-- Recent Terminal Enrollments -->
   <div class="card">
     <div class="card-header">
@@ -163,11 +173,11 @@
   </div>
 
   <!-- Recent Transactions -->
-  <div class="card">
+  <div class="card mt-4">
     <div class="card-header d-flex justify-content-between align-items-center">
       <h5 class="mb-0">Recent Transactions</h5>
-      <a href="{{ route('transactions') }}" class="btn btn-primary btn-sm">
-        View All
+      <a href="{{ route('transactions.index') }}" class="btn btn-primary btn-sm">
+        <i class="fas fa-list"></i> View All
       </a>
     </div>
     <div class="card-body">
@@ -176,3 +186,55 @@
   </div>
 </div>
 @endsection
+
+@push('scripts')
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+  const ctx = document.getElementById('terminalEnrollmentChart').getContext('2d');
+  const data = @json($enrollmentData ?? []);
+
+  if (ctx) {
+    new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: data.labels ?? [],
+        datasets: [{
+          label: 'Total Terminals',
+          data: data.totalTerminals ?? [],
+          borderColor: 'rgb(59, 130, 246)',
+          backgroundColor: 'rgba(59, 130, 246, 0.1)',
+          fill: true
+        }, {
+          label: 'Active Terminals',
+          data: data.activeTerminals ?? [],
+          borderColor: 'rgb(16, 185, 129)',
+          backgroundColor: 'rgba(16, 185, 129, 0.1)',
+          fill: true
+        }, {
+          label: 'New Enrollments',
+          data: data.newEnrollments ?? [],
+          type: 'bar',
+          backgroundColor: 'rgba(245, 158, 11, 0.5)',
+          borderColor: 'rgb(245, 158, 11)'
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: {
+            position: 'top'
+          }
+        },
+        scales: {
+          y: {
+            beginAtZero: true
+          }
+        }
+      }
+    });
+  }
+});
+</script>
+@endpush

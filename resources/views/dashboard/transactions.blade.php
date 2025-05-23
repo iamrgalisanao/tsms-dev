@@ -1,7 +1,7 @@
 @extends('layouts.app')
 
 @section('content')
-<div class="card">
+<div class="card mt-4">
   <div class="card-header">
     <h5>Transactions</h5>
   </div>

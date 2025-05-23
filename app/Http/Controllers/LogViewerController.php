@@ -80,14 +80,18 @@ class LogViewerController extends Controller
         ]);
     }
     
-    public function show(Request $request, $id)
+    public function show($id)
     {
-        $log = IntegrationLog::with(['posTerminal:id,terminal_uid', 'tenant:id,name', 'user:id,name,email'])
-            ->findOrFail($id);
-            
-        return view('dashboard.log-viewer-detail', [
-            'log' => $log
-        ]);
+        try {
+            $log = IntegrationLog::with(['user', 'tenant', 'posTerminal'])
+                ->findOrFail($id);
+
+            return view('dashboard.log-viewer-detail', compact('log'));
+        } catch (\Exception $e) {
+            return redirect()
+                ->route('log-viewer.index')
+                ->with('error', 'Log entry not found.');
+        }
     }
     
     public function export(Request $request)

@@ -165,52 +165,96 @@
 
 <!-- Log Detail Modal -->
 <div class="modal fade" id="logDetailModal" tabindex="-1" aria-labelledby="logDetailModalLabel" aria-hidden="true">
-  <div class="modal-dialog modal-lg">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title" id="logDetailModalLabel">Log Details</h5>
+  <div class="modal-dialog modal-lg modal-dialog-centered">
+    <div class="modal-content border-0 shadow">
+      <div class="modal-header border-bottom-0 bg-light">
+        <div>
+          <h5 class="modal-title fw-bold mb-1" id="logDetailModalLabel">Log Details</h5>
+          <p class="text-muted small mb-0" id="modal-time"></p>
+        </div>
         <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
       </div>
-      <div class="modal-body">
-        <div class="mb-3">
-          <label class="form-label fw-bold">Time:</label>
-          <p id="modal-time"></p>
-        </div>
-        <div class="mb-3">
-          <label class="form-label fw-bold">Type:</label>
-          <p id="modal-type"></p>
-        </div>
-        <div class="mb-3">
-          <label class="form-label fw-bold">Severity:</label>
-          <p id="modal-severity"></p>
-        </div>
-        <div class="mb-3">
-          <label class="form-label fw-bold">Terminal:</label>
-          <p id="modal-terminal"></p>
-        </div>
-        <div class="mb-3">
-          <label class="form-label fw-bold">Message:</label>
-          <p id="modal-message"></p>
-        </div>
-        <div class="mb-3">
-          <label class="form-label fw-bold">Context:</label>
-          <pre id="modal-context" class="bg-light p-3 rounded"></pre>
-        </div>
-        <div class="mb-3">
-          <label class="form-label fw-bold">Transaction ID:</label>
-          <p id="modal-transaction"></p>
-        </div>
-        <div class="mb-3">
-          <label class="form-label fw-bold">User:</label>
-          <p id="modal-user"></p>
+      <div class="modal-body px-4">
+        <div class="row g-4">
+          <!-- Status Card -->
+          <div class="col-12">
+            <div class="d-flex align-items-center p-3 bg-light rounded-3">
+              <div class="flex-grow-1">
+                <span class="badge rounded-pill" id="modal-severity-badge"></span>
+                <span class="ms-2 text-secondary" id="modal-type"></span>
+              </div>
+              <div class="text-end">
+                <span class="badge bg-secondary bg-opacity-10 text-secondary" id="modal-terminal"></span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Message Section -->
+          <div class="col-12">
+            <div class="border rounded-3 p-3">
+              <label class="form-label small text-muted mb-1">Message</label>
+              <p class="mb-0" id="modal-message"></p>
+            </div>
+          </div>
+
+          <!-- Context Section -->
+          <div class="col-12">
+            <div class="border rounded-3">
+              <div class="d-flex justify-content-between align-items-center p-3 border-bottom bg-light">
+                <label class="form-label small text-muted mb-0">Context Data</label>
+                <button class="btn btn-sm btn-outline-secondary" id="btn-copy-context">
+                  <i class="fas fa-copy"></i> Copy
+                </button>
+              </div>
+              <pre id="modal-context" class="p-3 mb-0" style="max-height: 300px; overflow-y: auto;"></pre>
+            </div>
+          </div>
+
+          <!-- Additional Info -->
+          <div class="col-md-6">
+            <div class="border rounded-3 p-3 h-100">
+              <label class="form-label small text-muted mb-1">Transaction ID</label>
+              <p class="mb-0 font-monospace" id="modal-transaction"></p>
+            </div>
+          </div>
+          <div class="col-md-6">
+            <div class="border rounded-3 p-3 h-100">
+              <label class="form-label small text-muted mb-1">User</label>
+              <p class="mb-0" id="modal-user"></p>
+            </div>
+          </div>
         </div>
       </div>
-      <div class="modal-footer">
-        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+      <div class="modal-footer border-top-0">
+        <button type="button" class="btn btn-link text-secondary" data-bs-dismiss="modal">Close</button>
       </div>
     </div>
   </div>
 </div>
+
+<style>
+.modal-content {
+  border-radius: 1rem;
+}
+
+.modal-header {
+  border-radius: 1rem 1rem 0 0;
+  padding: 1.5rem;
+}
+
+.modal-footer {
+  padding: 1.5rem;
+}
+
+#modal-context {
+  background: #f8fafc;
+  border-radius: 0 0 0.5rem 0.5rem;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', monospace;
+  font-size: 0.875rem;
+  line-height: 1.5;
+  color: #334155;
+}
+</style>
 
 <script>
 document.addEventListener('DOMContentLoaded', function() {
@@ -461,29 +505,58 @@ document.addEventListener('DOMContentLoaded', function() {
 
   // Show log detail modal
   function showLogDetail(log) {
-    document.getElementById('modal-time').textContent = formatDate(log.created_at);
-    document.getElementById('modal-type').textContent = log.log_type || 'N/A';
-    document.getElementById('modal-severity').textContent = log.severity ? log.severity.toUpperCase() : 'UNKNOWN';
-    document.getElementById('modal-terminal').textContent = log.posTerminal ? log.posTerminal.terminal_uid : 'N/A';
-    document.getElementById('modal-message').textContent = log.message || 'N/A';
-    document.getElementById('modal-transaction').textContent = log.transaction_id || 'N/A';
-
-    if (log.context) {
-      try {
-        const contextObj = typeof log.context === 'string' ? JSON.parse(log.context) : log.context;
-        document.getElementById('modal-context').textContent = JSON.stringify(contextObj, null, 2);
-      } catch (e) {
-        document.getElementById('modal-context').textContent = log.context;
-      }
-    } else {
-      document.getElementById('modal-context').textContent = 'No context data';
-    }
-
-    document.getElementById('modal-user').textContent = log.user ?
-      `${log.user.name} (${log.user.email})` : 'N/A';
-
-    // Show the modal
+    // Initialize modal if not already done
     const modal = new bootstrap.Modal(document.getElementById('logDetailModal'));
+
+    // Wait for modal to be shown before updating content
+    document.getElementById('logDetailModal').addEventListener('shown.bs.modal', function() {
+      // Update modal content
+      document.getElementById('modal-time').textContent = formatDate(log.created_at);
+      document.getElementById('modal-type').textContent = log.log_type || 'N/A';
+
+      // Update severity badge
+      const severityBadge = document.getElementById('modal-severity-badge');
+      const severityClass = getSeverityClass(log.severity);
+      severityBadge.className = `badge rounded-pill ${severityClass.replace('bg-', 'bg-opacity-10 text-')}`;
+      severityBadge.textContent = log.severity?.toUpperCase() || 'UNKNOWN';
+
+      // Update other fields
+      document.getElementById('modal-terminal').textContent = log.posTerminal ? log.posTerminal.terminal_uid :
+        'N/A';
+      document.getElementById('modal-message').textContent = log.message || 'N/A';
+      document.getElementById('modal-transaction').textContent = log.transaction_id || 'N/A';
+
+      // Handle context data
+      const contextElement = document.getElementById('modal-context');
+      if (log.context) {
+        try {
+          const contextObj = typeof log.context === 'string' ? JSON.parse(log.context) : log.context;
+          contextElement.textContent = JSON.stringify(contextObj, null, 2);
+        } catch (e) {
+          contextElement.textContent = log.context;
+        }
+      } else {
+        contextElement.textContent = 'No context data';
+      }
+
+      document.getElementById('modal-user').textContent = log.user ?
+        `${log.user.name} (${log.user.email})` : 'N/A';
+
+      // Add copy context functionality
+      const copyButton = document.getElementById('btn-copy-context');
+      copyButton.onclick = function() {
+        navigator.clipboard.writeText(contextElement.textContent).then(() => {
+          this.innerHTML = '<i class="fas fa-check"></i> Copied';
+          setTimeout(() => {
+            this.innerHTML = '<i class="fas fa-copy"></i> Copy';
+          }, 2000);
+        });
+      };
+    }, {
+      once: true
+    }); // Remove listener after first use
+
+    // Show modal
     modal.show();
   }
 

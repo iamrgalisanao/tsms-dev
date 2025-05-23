@@ -41,22 +41,31 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/providers', [ProvidersController::class, 'index'])->name('providers.index');
         Route::get('/providers/{id}', [ProvidersController::class, 'show'])->name('providers.show');
         Route::get('/retry-history', [RetryHistoryController::class, 'index'])->name('retry-history');
+        Route::get('/performance', [DashboardController::class, 'performance'])->name('performance');
+        Route::post('/performance/export', [DashboardController::class, 'exportPerformance'])->name('performance.export');
     });
 
     // Log Viewer Routes
-    Route::get('/logs', [LogViewerController::class, 'index'])->name('log-viewer');
-    Route::get('/logs/{id}', [LogViewerController::class, 'show'])->name('log-viewer.show');
-    Route::post('/logs/export', [LogViewerController::class, 'export'])->name('log-viewer.export');
+    Route::prefix('log-viewer')->name('log-viewer.')->group(function () {
+        Route::get('/', [LogViewerController::class, 'index'])->name('index');
+        Route::get('/show/{id}', [LogViewerController::class, 'show'])->name('show');
+        Route::post('/export', [LogViewerController::class, 'export'])->name('export');
+    });
 
-    // Transaction Routes - Simplified structure
-    Route::get('/transactions', [TransactionController::class, 'index'])->name('transactions');
-    Route::get('/transactions/{id}', [TransactionController::class, 'show'])->name('transactions.show');
-    
-    // Transaction logs as separate group
-    Route::prefix('transactions/logs')->name('transactions.logs.')->group(function () {
-        Route::get('/', [TransactionLogController::class, 'index'])->name('index');
-        Route::get('/{id}', [TransactionLogController::class, 'show'])->name('show');
-        Route::post('/export', [TransactionLogController::class, 'export'])->name('export');
+    // Transaction Routes - Keep logs before other transaction routes
+    Route::prefix('transactions')->name('transactions.')->group(function () {
+        Route::get('/', [TransactionController::class, 'index'])->name('index');
+        
+        // Transaction logs routes
+        Route::prefix('logs')->name('logs.')->group(function () {
+            Route::get('/', [TransactionLogController::class, 'index'])->name('index');
+            Route::get('/{id}', [TransactionLogController::class, 'show'])->name('show');
+            Route::post('/export', [TransactionLogController::class, 'export'])->name('export');
+            Route::get('/updates', [TransactionLogController::class, 'getUpdates'])->name('updates');
+        });
+
+        Route::get('/{id}', [TransactionController::class, 'show'])->name('show');
+        Route::post('/{id}/retry', [TransactionController::class, 'retry'])->name('retry');
     });
 
     // Other Routes - Keep at root level

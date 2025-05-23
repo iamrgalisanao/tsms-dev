@@ -44,7 +44,7 @@
     </div>
 
     <!-- Retry Analytics -->
-    <div class="card mb-4">
+    <div class="card mb-4 mt-4">
       <div class="card-header bg-light">
         <h6 class="m-0">Retry Analytics</h6>
       </div>

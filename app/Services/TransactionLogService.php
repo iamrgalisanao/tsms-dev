@@ -12,17 +12,29 @@ class TransactionLogService
 {
     public function getPaginatedLogs(array $filters = [])
     {
-        $query = Transaction::with(['tenant', 'terminal'])
-            ->select('transactions.*')
-            ->when(isset($filters['status']), function($q) use ($filters) {
-                $q->where('validation_status', $filters['status']);
-            })
-            ->when(isset($filters['date_from']), function($q) use ($filters) {
-                $q->where('created_at', '>=', $filters['date_from']);
-            })
-            ->latest();
+        return Cache::remember($this->getCacheKey($filters), 300, function() use ($filters) {
+            return Transaction::with(['terminal.provider', 'tenant'])
+                ->when($filters['date_from'] ?? null, fn($q, $date) => 
+                    $q->whereDate('created_at', '>=', $date))
+                ->when($filters['date_to'] ?? null, fn($q, $date) => 
+                    $q->whereDate('created_at', '<=', $date))
+                ->when($filters['amount_min'] ?? null, fn($q, $amount) => 
+                    $q->where('gross_sales', '>=', $amount))
+                ->when($filters['amount_max'] ?? null, fn($q, $amount) => 
+                    $q->where('gross_sales', '<=', $amount))
+                ->when($filters['provider_id'] ?? null, fn($q, $id) => 
+                    $q->whereHas('terminal', fn($q) => $q->where('provider_id', $id)))
+                ->when($filters['terminal_id'] ?? null, fn($q, $id) => 
+                    $q->where('terminal_id', $id))
+                ->latest()
+                ->paginate(15)
+                ->appends($filters);
+        });
+    }
 
-        return $query->paginate(50);
+    protected function getCacheKey($filters)
+    {
+        return 'transaction_logs:' . md5(serialize($filters));
     }
 
     public function getLogDetail($id)

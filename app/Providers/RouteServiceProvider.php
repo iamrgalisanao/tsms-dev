@@ -26,7 +26,9 @@ class RouteServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
-        $this->configureRateLimiting();
+        RateLimiter::for('api', function (Request $request) {
+            return Limit::perMinute(60)->by($request->user()?->id ?: $request->ip());
+        });
 
         $this->routes(function () {
             Route::middleware('api')
@@ -35,13 +37,6 @@ class RouteServiceProvider extends ServiceProvider
 
             Route::middleware('web')
                 ->group(base_path('routes/web.php'));
-
-            // Ensure transaction routes are properly loaded
-            if (file_exists(base_path('routes/transaction.php'))) {
-                Route::middleware(['api', 'transform.text'])
-                    ->prefix('api/v1')
-                    ->group(base_path('routes/transaction.php'));
-            }
         });
     }
 
@@ -52,10 +47,6 @@ class RouteServiceProvider extends ServiceProvider
      */
     protected function configureRateLimiting(): void
     {
-        RateLimiter::for('api', function (Request $request) {
-            return Limit::perMinute(60)->by($request->user()?->id ?: $request->ip());
-        });
-
         RateLimiter::for('transaction-api', function (Request $request) {
             return Limit::perMinute(60)->by($request->terminal_id ?? $request->ip());
         });

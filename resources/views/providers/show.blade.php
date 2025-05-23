@@ -92,62 +92,65 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-  const ctx = document.getElementById('enrollmentChart').getContext('2d');
-  const data = @json($chartData);
-
-  new Chart(ctx, {
-    type: 'line',
-    data: {
-      labels: data.labels,
-      datasets: [{
-          label: 'Total Terminals',
-          data: data.terminalCount,
-          borderColor: 'rgb(59, 130, 246)',
-          backgroundColor: 'rgba(59, 130, 246, 0.1)',
-          fill: true,
-          tension: 0.4
-        },
-        {
-          label: 'Active Terminals',
-          data: data.activeCount,
-          borderColor: 'rgb(16, 185, 129)',
-          backgroundColor: 'rgba(16, 185, 129, 0.1)',
-          fill: true,
-          tension: 0.4
-        },
-        {
-          label: 'New Enrollments',
-          data: data.newEnrollments,
-          borderColor: 'rgb(245, 158, 11)',
-          backgroundColor: 'rgba(245, 158, 11, 0.5)',
-          type: 'bar'
-        }
-      ]
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: {
-          display: true,
-          position: 'top'
-        }
-      },
-      scales: {
-        y: {
-          beginAtZero: true,
-          grid: {
-            drawBorder: false
-          }
-        },
-        x: {
-          grid: {
-            display: false
-          }
-        }
-      }
+    const canvas = document.getElementById('enrollmentChart');
+    if (!canvas) {
+        console.error('Canvas element not found');
+        return;
     }
-  });
+
+    const chartData = {!! json_encode($chartData) !!};
+    console.log('Chart Data:', chartData);
+
+    const chart = new Chart(canvas, {
+        type: 'line',
+        data: {
+            labels: chartData.dates || [],
+            datasets: [
+                {
+                    label: 'Total Terminals',
+                    data: chartData.terminalCount || [],
+                    borderColor: '#3b82f6',
+                    backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                    fill: true,
+                    order: 1
+                },
+                {
+                    label: 'Active Terminals',
+                    data: chartData.activeCount || [],
+                    borderColor: '#10b981',
+                    backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                    fill: true,
+                    order: 2
+                },
+                {
+                    label: 'New Enrollments',
+                    data: chartData.newEnrollments || [],
+                    type: 'bar',
+                    backgroundColor: 'rgba(245, 158, 11, 0.5)',
+                    borderColor: '#f59e0b',
+                    order: 3
+                }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: {
+                    display: true,
+                    position: 'top'
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    ticks: {
+                        precision: 0
+                    }
+                }
+            }
+        }
+    });
 });
 </script>
 @endsection
