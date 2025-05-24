@@ -51,4 +51,14 @@ class RouteServiceProvider extends ServiceProvider
             return Limit::perMinute(60)->by($request->terminal_id ?? $request->ip());
         });
     }
+
+    /**
+     * Configure the middleware for the application.
+     *
+     * @return void
+     */
+    public function configureMiddleware(): void
+    {
+        $this->router->aliasMiddleware('validate.transaction', \App\Http\Middleware\ValidateTransaction::class);
+    }
 }

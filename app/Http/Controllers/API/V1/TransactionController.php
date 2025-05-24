@@ -1,111 +1,123 @@
 <?php
 
-namespace App\Http\Controllers\API\V1;
+namespace App\Http\Controllers\Api\V1;
 
 use App\Http\Controllers\Controller;
-use App\Http\Requests\TransactionRequest;
 use App\Models\Transaction;
-use App\Services\TransactionProcessingService;
+use App\Models\PosTerminal;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use App\Jobs\ProcessTransactionJob;
 
 class TransactionController extends Controller
 {
-    protected $processingService;
-
-    public function __construct(TransactionProcessingService $processingService)
-    {
-        $this->processingService = $processingService;
-    }
-
-    /**
-     * Store a new transaction.
-     *
-     * @param  \App\Http\Requests\TransactionRequest  $request
-     * @return \Illuminate\Http\Response
-     */
-    public function store(TransactionRequest $request)
+    public function store(Request $request)
     {
         try {
-            $result = $this->processingService->processTransaction($request->validated());
+            DB::beginTransaction();
+
+            // Get terminal and tenant info
+            $terminal = PosTerminal::findOrFail($request->terminal_id);
             
-            if (!$result['success']) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Transaction processing failed',
-                    'errors' => $result['errors'] ?? ['System error occurred']
-                ], 422);
+            $transaction = Transaction::create([
+                'tenant_id' => $terminal->tenant_id,
+                'terminal_id' => $terminal->id,
+                'transaction_id' => $request->payload['transaction_id'],
+                'store_name' => $request->payload['store_name'],
+                'hardware_id' => $request->payload['hardware_id'],
+                'machine_number' => $request->payload['machine_number'],
+                'transaction_timestamp' => $request->payload['transaction_timestamp'],
+                'gross_sales' => $request->payload['gross_sales'],
+                'net_sales' => $request->payload['net_sales'],
+                'vatable_sales' => $request->payload['vatable_sales'],
+                'vat_amount' => $request->payload['vat_amount'],
+                'transaction_count' => $request->payload['transaction_count'] ?? 1,
+                'validation_status' => 'PENDING',
+                'job_status' => Transaction::JOB_STATUS_QUEUED,
+                'job_attempts' => 0
+            ]);
+
+            // Add system log entry
+            \App\Models\SystemLog::create([
+                'type' => 'transaction',
+                'severity' => 'info',
+                'terminal_uid' => $terminal->terminal_uid,
+                'transaction_id' => $transaction->transaction_id,
+                'message' => 'Transaction received and queued for processing',
+                'context' => json_encode([
+                    'terminal_id' => $terminal->id,
+                    'tenant_id' => $terminal->tenant_id,
+                    'amount' => $request->payload['gross_sales']
+                ])
+            ]);
+
+            // Dispatch job for processing
+            ProcessTransactionJob::dispatch($transaction)->onQueue('transactions');
+
+            DB::commit();
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Transaction queued for processing',
+                'data' => [
+                    'transaction_id' => $transaction->transaction_id
+                ]
+            ], 201);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            
+            // Log error to system_logs
+            try {
+                \App\Models\SystemLog::create([
+                    'type' => 'error',
+                    'severity' => 'error',
+                    'terminal_uid' => $request->terminal_id ? (PosTerminal::find($request->terminal_id)?->terminal_uid ?? 'unknown') : 'unknown',
+                    'transaction_id' => $request->payload['transaction_id'] ?? null,
+                    'message' => 'Transaction creation failed: ' . $e->getMessage(),
+                    'context' => json_encode([
+                        'error' => $e->getMessage(),
+                        'payload' => $request->all(),
+                        'trace' => $e->getTraceAsString()
+                    ])
+                ]);
+            } catch (\Exception $logError) {
+                Log::error('Failed to create system log', [
+                    'error' => $logError->getMessage(),
+                    'original_error' => $e->getMessage()
+                ]);
             }
 
             return response()->json([
-                'success' => true,
-                'data' => [
-                    'transaction_id' => $result['transaction_id'] ?? null,
-                    'validation_status' => 'PENDING',
-                    'job_status' => Transaction::JOB_STATUS_QUEUED
-                ]
-            ]);
-
-        } catch (\Exception $e) {
-            Log::error('Transaction processing error', [
-                'error' => $e->getMessage()
-            ]);
-            
-            return response()->json([
-                'success' => false,
-                'message' => 'Transaction processing failed',
-                'errors' => ['System error occurred']
-            ], 422);
+                'status' => 'error',
+                'message' => 'Failed to process transaction: ' . $e->getMessage(),
+                'timestamp' => now()->toISOString()
+            ], 500);
         }
     }
-    
-    /**
-     * Get notifications for a terminal.
-     *
-     * @param  \Illuminate\Http\Request  $request
-     * @return \Illuminate\Http\Response
-     */
-    public function getNotifications(Request $request)
-    {
-        $terminal = auth('api')->user();
-        
-        if (!$terminal && !app()->environment('local', 'testing')) {
-            return response()->json([
-                'error' => 'Unauthenticated terminal',
-                'message' => 'No valid terminal authentication found'
-            ], 401);
-        }
-        
-        // Simple implementation - will be enhanced in future
-        return response()->json([
-            'notifications' => [],
-            'timestamp' => now()->toIso8601String()
-        ]);
-    }
 
-    /**
-     * Get transaction status.
-     */
     public function status($id)
     {
-        try {
-            $transaction = Transaction::where('transaction_id', $id)->firstOrFail();
-
+        $transaction = Transaction::where('transaction_id', $id)->first();
+        
+        if (!$transaction) {
             return response()->json([
-                'success' => true,
-                'data' => [
-                    'transaction_id' => $transaction->transaction_id,
-                    'job_status' => $transaction->job_status,
-                    'validation_status' => $transaction->validation_status,
-                    'completed_at' => $transaction->completed_at,
-                    'attempts' => $transaction->job_attempts,
-                    'error' => $transaction->last_error
-                ]
-            ]);
-        } catch (\Exception $e) {
-            return response()->json([
-                'success' => false,
+                'status' => 'error',
                 'message' => 'Transaction not found'
             ], 404);
         }
+
+        return response()->json([
+            'status' => 'success',
+            'data' => [
+                'transaction_id' => $transaction->transaction_id,
+                'validation_status' => $transaction->validation_status,
+                'job_status' => $transaction->job_status,
+                'job_attempts' => $transaction->job_attempts,
+                'completed_at' => $transaction->completed_at,
+                'errors' => $transaction->error_message ? [$transaction->error_message] : []
+            ]
+        ]);
     }
 }

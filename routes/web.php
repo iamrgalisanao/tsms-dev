@@ -68,6 +68,17 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/{id}/retry', [TransactionController::class, 'retry'])->name('retry');
     });
 
+    // Add test transaction route
+    Route::get('/test-transaction', function () {
+        $terminals = \App\Models\PosTerminal::with('provider')
+            ->where('status', 'active')
+            ->orderBy('provider_id')
+            ->orderBy('terminal_uid')  // Changed from 'identifier' to 'terminal_uid'
+            ->get()
+            ->unique('id');
+        return view('transactions.test', compact('terminals'));
+    })->name('transactions.test');
+
     // Other Routes - Keep at root level
     Route::get('/circuit-breakers', [CircuitBreakerController::class, 'index'])->name('circuit-breakers');
 
@@ -84,6 +95,9 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/stats', [PosProvidersController::class, 'statistics'])->name('stats');
         Route::post('/stats/generate', [PosProvidersController::class, 'generateStats'])->name('stats.generate');
     });
+
+    Route::get('/dashboard/logs', [LogViewerController::class, 'index'])->name('logs.index');
+    Route::get('/dashboard/logs/{id}', [LogViewerController::class, 'show'])->name('logs.show');
 });
 
 // Keep terminal test route at the bottom

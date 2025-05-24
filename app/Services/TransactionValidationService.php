@@ -3,8 +3,6 @@
 namespace App\Services;
 
 use App\Models\Transaction;
-use App\Models\PosTerminal;
-use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Log;
 
 class TransactionValidationService
@@ -206,5 +204,96 @@ class TransactionValidationService
         }
         
         return $normalized;
+    }
+    
+    /**
+     * Validate transaction.
+     *
+     * @param Transaction $transaction
+     * @return array
+     */
+    public function validateTransaction(Transaction $transaction): array
+    {
+        $results = [];
+        
+        // Store validation
+        $results['store'] = $this->validateStore($transaction);
+        
+        // Amount validation
+        $results['amounts'] = $this->validateAmounts($transaction);
+        
+        // Discount validation
+        $results['discounts'] = $this->validateDiscounts($transaction);
+        
+        // Business rules
+        $results['business_rules'] = $this->validateBusinessRules($transaction);
+
+        return [
+            'is_valid' => !collect($results)->contains(false),
+            'details' => $results
+        ];
+    }
+
+    /**
+     * Validate store information.
+     *
+     * @param Transaction $transaction
+     * @return bool
+     */
+    protected function validateStore(Transaction $transaction): bool
+    {
+        // Implement store validation logic
+        return true;
+    }
+    
+    /**
+     * Validate transaction amounts.
+     *
+     * @param Transaction $transaction
+     * @return bool
+     */
+    protected function validateAmounts(Transaction $transaction): bool
+    {
+        // Implement amount validation logic
+        return true;
+    }
+    
+    /**
+     * Validate transaction discounts.
+     *
+     * @param Transaction $transaction
+     * @return bool
+     */
+    protected function validateDiscounts(Transaction $transaction): bool
+    {
+        // Implement discount validation logic
+        return true;
+    }
+    
+    /**
+     * Validate business rules.
+     *
+     * @param Transaction $transaction
+     * @return bool
+     */
+    protected function validateBusinessRules(Transaction $transaction): bool
+    {
+        // Implement business rule validation logic
+        return true;
+    }
+    
+    /**
+     * Validate basic transaction amounts.
+     *
+     * @param Transaction $transaction
+     * @return bool
+     */
+    protected function validateBasicAmounts(Transaction $transaction): bool
+    {
+        $grossSales = (float)$transaction->gross_sales;
+        $netSales = (float)$transaction->net_sales;
+        $vatAmount = (float)$transaction->vat_amount;
+        
+        return abs(($netSales + $vatAmount) - $grossSales) <= 0.01;
     }
 }

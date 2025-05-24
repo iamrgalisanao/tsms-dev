@@ -3,95 +3,42 @@
 namespace App\Services;
 
 use App\Models\Transaction;
-use App\Models\PosTerminal;
-use App\Jobs\ProcessTransactionJob;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
 class TransactionProcessingService
 {
-    protected $validationService;
-
-    public function __construct(TransactionValidationService $validationService)
+    public function processTransaction($data)
     {
-        $this->validationService = $validationService;
-    }
-
-    public function processTransaction(array $data)
-    {
+        DB::beginTransaction();
         try {
-            // Log incoming data for debugging
-            Log::info('Processing transaction request', ['data' => $data]);
+            Log::info('Processing transaction', ['data' => $data]);
 
-            // Validate transaction
-            $validationResult = $this->validationService->validate($data);
-            if (!$validationResult['valid']) {
-                return $this->errorResponse($validationResult['errors']);
+            $transaction = Transaction::create([
+                'transaction_id' => $data['transaction_id'],
+                'terminal_id' => $data['terminal_id'],
+                'gross_sales' => $data['gross_sales'],
+                'validation_status' => 'PENDING',
+                'job_status' => 'QUEUED',
+                'created_at' => now(),
+                'updated_at' => now()
+            ]);
+
+            if (!$transaction) {
+                throw new \Exception('Failed to create transaction record');
             }
 
-            // Find terminal and validate tenant
-            $terminal = PosTerminal::where('terminal_uid', $data['terminal_id'])
-                ->where('tenant_id', $data['tenant_id'])
-                ->firstOrFail();
+            DB::commit();
+            Log::info('Transaction created successfully', ['id' => $transaction->id]);
 
-            // Create transaction record
-            $transaction = Transaction::create([
-                'tenant_id' => $terminal->tenant_id, // Use terminal's tenant_id
-                'terminal_id' => $terminal->id,
-                'hardware_id' => $data['hardware_id'],
-                'transaction_id' => $data['transaction_id'],
-                'transaction_timestamp' => $data['transaction_timestamp'],
-                'transaction_date' => $data['transaction_date'] ?? now()->toDateString(),
-                'gross_sales' => $data['gross_sales'],
-                'net_sales' => $data['net_sales'],
-                'vatable_sales' => $data['vatable_sales'],
-                'vat_exempt_sales' => $data['vat_exempt_sales'],
-                'vat_amount' => $data['vat_amount'],
-                'transaction_count' => $data['transaction_count'],
-                'payload_checksum' => $data['payload_checksum'],
-                'machine_number' => $data['machine_number'],
-                'validation_status' => 'PENDING',
-                'status' => 'PENDING'
-            ]);
-
-            // Dispatch job after successful creation
-            ProcessTransactionJob::dispatch($transaction)->onQueue('transactions');
-
-            return [
-                'success' => true,
-                'data' => [
-                    'validation_status' => 'PENDING'
-                ]
-            ];
-
+            return $transaction;
         } catch (\Exception $e) {
-            Log::error('Transaction processing failed', [
+            DB::rollBack();
+            Log::error('Transaction processing error', [
                 'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
                 'data' => $data
             ]);
-
-            return [
-                'success' => false,
-                'message' => 'Transaction processing failed',
-                'errors' => ['System error occurred']
-            ];
+            throw $e;
         }
-    }
-
-    protected function successResponse($transaction)
-    {
-        return [
-            'success' => true,
-            'transaction_id' => $transaction->id,
-            'status' => 'pending'
-        ];
-    }
-
-    protected function errorResponse($errors)
-    {
-        return [
-            'success' => false,
-            'errors' => $errors
-        ];
     }
 }

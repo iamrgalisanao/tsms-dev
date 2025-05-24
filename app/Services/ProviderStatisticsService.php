@@ -62,53 +62,56 @@ class ProviderStatisticsService
 
     public function getChartData($providerId)
     {
-        $startDate = now()->subDays(30);
-        $endDate = now();
+        try {
+            $dates = [];
+            $terminalCounts = [];
+            $activeCounts = [];
+            $newEnrollments = [];
 
-        // Fetch all terminals data in one query
-        $terminals = DB::table('pos_terminals')
-            ->select('enrolled_at', 'status')
-            ->where('provider_id', $providerId)
-            ->get();
+            // Get the last 30 days
+            for ($i = 30; $i >= 0; $i--) {
+                $date = Carbon::now()->subDays($i)->format('Y-m-d');
+                $dates[] = $date;
 
-        $dates = [];
-        $terminalCount = [];
-        $activeCount = [];
-        $newEnrollments = [];
+                // Get total terminals up to this date
+                $terminalCounts[] = DB::table('pos_terminals')
+                    ->where('provider_id', $providerId)
+                    ->whereDate('created_at', '<=', $date)
+                    ->count();
 
-        // Generate dates and counts
-        for ($date = clone $startDate; $date <= $endDate; $date->addDay()) {
-            $currentDate = $date->format('Y-m-d');
-            $dates[] = $currentDate;
+                // Get active terminals for this date
+                $activeCounts[] = DB::table('pos_terminals')
+                    ->where('provider_id', $providerId)
+                    ->where('status', 'active')
+                    ->whereDate('created_at', '<=', $date)
+                    ->count();
 
-            // Calculate cumulative total up to this date
-            $totalCount = $terminals->filter(function ($terminal) use ($currentDate) {
-                return Carbon::parse($terminal->enrolled_at)->format('Y-m-d') <= $currentDate;
-            })->count();
+                // Get new enrollments for this specific date
+                $newEnrollments[] = DB::table('pos_terminals')
+                    ->where('provider_id', $providerId)
+                    ->whereDate('created_at', $date)
+                    ->count();
+            }
 
-            // Calculate active terminals
-            $activeTerminals = $terminals->filter(function ($terminal) use ($currentDate) {
-                return $terminal->status === 'active' && 
-                       Carbon::parse($terminal->enrolled_at)->format('Y-m-d') <= $currentDate;
-            })->count();
+            return [
+                'labels' => $dates,
+                'terminalCount' => $terminalCounts,
+                'activeCount' => $activeCounts,
+                'newEnrollments' => $newEnrollments
+            ];
+        } catch (\Exception $e) {
+            \Log::error('Error generating chart data', [
+                'error' => $e->getMessage(),
+                'provider_id' => $providerId
+            ]);
 
-            // Calculate new enrollments on this date
-            $newEnrolled = $terminals->filter(function ($terminal) use ($currentDate) {
-                return Carbon::parse($terminal->enrolled_at)->format('Y-m-d') === $currentDate;
-            })->count();
-
-            $terminalCount[] = $totalCount;
-            $activeCount[] = $activeTerminals;
-            $newEnrollments[] = $newEnrolled;
+            return [
+                'labels' => [],
+                'terminalCount' => [],
+                'activeCount' => [],
+                'newEnrollments' => []
+            ];
         }
-
-        \Log::info('Chart data generated', [
-            'provider_id' => $providerId,
-            'data_points' => count($dates),
-            'total_terminals' => array_sum($newEnrollments)
-        ]);
-
-        return compact('dates', 'terminalCount', 'activeCount', 'newEnrollments');
     }
 
     public function getAllProviderStats()

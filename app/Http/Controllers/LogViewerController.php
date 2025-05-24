@@ -2,9 +2,8 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\IntegrationLog;
-use App\Models\PosTerminal;
-use App\Models\User;
+use App\Models\SystemLog;
+use App\Models\Transaction;
 use App\Services\PdfExportService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -23,75 +22,64 @@ class LogViewerController extends Controller
     
     public function index(Request $request)
     {
-        // Get all POS terminals for the filter dropdown
-        $terminals = PosTerminal::select('id', 'terminal_uid')->get();
-        
-        // Get users for the filter dropdown (only for admins)
-        $users = [];
-        
-        // Check if the user is admin using a safer approach
-        $user = Auth::user();
-        $isAdmin = false;
-        
-        // Check if we're using Spatie Permission package
-        if (method_exists($user, 'hasRole')) {
-            $isAdmin = $user->hasRole('admin');
-        }
-        // Alternatively check if the user has admin in their roles relationship
-        else if (method_exists($user, 'roles') && $user->roles) {
-            $isAdmin = $user->roles->contains('name', 'admin');
-        }
-        // Fallback to checking a simple is_admin field if it exists
-        else if (isset($user->is_admin)) {
-            $isAdmin = (bool)$user->is_admin;
-        }
-        
-        if ($isAdmin) {
-            $users = User::select('id', 'name', 'email')->get();
-        }
-        
-        // Check if log_type column exists before offering log type filtering
-        $logTypes = ['all' => 'All Logs'];
-        
-        if (Schema::hasColumn('integration_logs', 'log_type')) {
-            $logTypes = array_merge($logTypes, [
-                'transaction' => 'Transaction Logs',
-                'auth' => 'Authentication Logs',
-                'error' => 'Error Logs',
-                'security' => 'Security Logs'
-            ]);
-        }
-        
-        // Check if columns needed for the log viewer exist
-        $schemaStatus = [
-            'has_log_type' => Schema::hasColumn('integration_logs', 'log_type'),
-            'has_severity' => Schema::hasColumn('integration_logs', 'severity'),
-            'has_user_id' => Schema::hasColumn('integration_logs', 'user_id'),
-            'has_message' => Schema::hasColumn('integration_logs', 'message'),
-            'has_context' => Schema::hasColumn('integration_logs', 'context'),
+        // Build query with eager loading
+        $query = SystemLog::with('terminal')
+            ->when($request->type, function($q) use ($request) {
+                $q->where('type', $request->type);
+            })
+            ->when($request->severity, function($q) use ($request) {
+                $q->where('severity', $request->severity);
+            })
+            ->when($request->search, function($q) use ($request) {
+                $q->where(function($sq) use ($request) {
+                    $sq->where('message', 'like', "%{$request->search}%")
+                       ->orWhere('transaction_id', 'like', "%{$request->search}%")
+                       ->orWhere('terminal_uid', 'like', "%{$request->search}%");
+                });
+            });
+
+        // Get stats first
+        $stats = [
+            'transactions' => SystemLog::where('type', 'transaction')->count(),
+            'errors' => SystemLog::where('severity', 'error')->count(),
+            'warnings' => SystemLog::where('severity', 'warning')->count(),
+            'info' => SystemLog::where('severity', 'info')->count(),
+            'latest_error' => SystemLog::where('severity', 'error')
+                ->latest()
+                ->first()?->created_at?->format('Y-m-d H:i:s'),
+            'logs_today' => SystemLog::whereDate('created_at', today())->count()
         ];
-        
-        return view('dashboard.log-viewer', [
-            'terminals' => $terminals,
-            'users' => $users,
-            'isAdmin' => $isAdmin,
-            'logTypes' => $logTypes,
-            'schemaStatus' => $schemaStatus
-        ]);
+
+        // Get paginated logs
+        $logs = $query->latest()->paginate(10);
+
+        return view('dashboard.system-logs', compact('logs', 'stats'));
+    }
+
+    protected function getTypeClass($type)
+    {
+        return match($type) {
+            'transaction' => 'info',
+            'system' => 'primary',
+            'auth' => 'warning',
+            default => 'secondary'
+        };
+    }
+
+    protected function getSeverityClass($severity)
+    {
+        return match($severity) {
+            'error' => 'danger',
+            'warning' => 'warning',
+            'info' => 'info',
+            default => 'secondary'
+        };
     }
     
     public function show($id)
     {
-        try {
-            $log = IntegrationLog::with(['user', 'tenant', 'posTerminal'])
-                ->findOrFail($id);
-
-            return view('dashboard.log-viewer-detail', compact('log'));
-        } catch (\Exception $e) {
-            return redirect()
-                ->route('log-viewer.index')
-                ->with('error', 'Log entry not found.');
-        }
+        $log = SystemLog::with(['terminal:id,terminal_uid'])->findOrFail($id);
+        return view('dashboard.log-detail', compact('log'));
     }
     
     public function export(Request $request)

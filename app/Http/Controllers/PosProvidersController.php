@@ -46,10 +46,15 @@ class PosProvidersController extends Controller
             $metrics = $this->providerService->getProviderMetrics($provider);
             $chartData = $this->statsService->getChartData($provider->id);
 
-            \Log::info('Provider show data', [
+            \Log::info('Provider chart data', [
                 'provider_id' => $provider->id,
-                'has_chart_data' => !empty($chartData),
-                'metrics' => array_keys($metrics)
+                'chart_data_keys' => array_keys($chartData),
+                'data_points' => [
+                    'labels' => count($chartData['labels'] ?? []),
+                    'terminal_count' => count($chartData['terminalCount'] ?? []),
+                    'active_count' => count($chartData['activeCount'] ?? []),
+                    'new_enrollments' => count($chartData['newEnrollments'] ?? [])
+                ]
             ]);
 
             return view('providers.show', compact('provider', 'metrics', 'chartData'));

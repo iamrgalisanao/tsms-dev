@@ -21,43 +21,15 @@ use Illuminate\Support\Facades\Log;
 */
 
 // V1 API Routes
-Route::prefix('v1')->group(function () {
-    // Public health check endpoint (no auth required)
-    Route::get('/healthcheck', function () {
-        return response()->json([
-            'status' => 'ok',
-            'timestamp' => now()->toIso8601String(),
-            'version' => config('app.version', '1.0.0'),
-            'environment' => config('app.env')
-        ]);
-    });
-    
-    // For local/testing environment make the transactions endpoint public (no authentication)
-    if (app()->environment('local', 'testing')) {
-        // Transactions endpoint - no authentication for easier testing
-        Route::post('/transactions', [TransactionController::class, 'store'])
-            ->middleware(['transform.text']);
-    } else {
-        // Production environment uses JWT authentication
-        Route::post('/transactions', [TransactionController::class, 'store'])
-            ->middleware(['auth:api', 'transform.text']);
-    }
-    
-    // Notifications endpoint for POS systems - still authentication required
-    Route::get('/notifications', [TransactionController::class, 'getNotifications'])
-        ->middleware('auth:api');
+Route::middleware('api')->group(function () {
+    Route::post('/transactions', [TransactionController::class, 'store']);
+    Route::get('/transactions/{id}/status', [TransactionController::class, 'status']);
+});
 
-    // Parser test endpoint
-    Route::post('parser-test', [TestParserController::class, 'testParser']);
-
-    // Transaction status endpoint
-    if (app()->environment('local', 'testing')) {
-        // Remove auth middleware for testing
-        Route::get('transactions/{transactionId}/status', [TransactionController::class, 'status']);
-    } else {
-        Route::get('transactions/{transactionId}/status', [TransactionController::class, 'status'])
-            ->middleware('auth:api');
-    }
+// Public transaction endpoints for testing
+Route::middleware('api')->group(function () {
+    Route::post('/transactions', [TransactionController::class, 'store']);
+    Route::get('/transactions/{id}/status', [TransactionController::class, 'status']);
 });
 
 // Test parser endpoint
