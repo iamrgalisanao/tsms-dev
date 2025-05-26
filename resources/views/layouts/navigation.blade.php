@@ -20,7 +20,7 @@
   </li>
 
   <li class="nav-item">
-    <a href="{{ route('log-viewer.index') }}" class="nav-link {{ Request::routeIs('log-viewer.*') ? 'active' : '' }}">
+    <a href="{{ route('logs.index') }}" class="nav-link {{ Request::routeIs('logs.*') ? 'active' : '' }}">
       <i class="nav-icon fas fa-history"></i> System Logs
     </a>
   </li>

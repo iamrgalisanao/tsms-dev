@@ -2,188 +2,155 @@
 
 @section('content')
 <div class="container-fluid py-4">
-  <div class="row mb-4">
-    <div class="col">
-      <div class="d-flex justify-content-between align-items-center mb-3">
-        <h2>Transaction Logs</h2>
-        <div>
-          <button class="btn btn-primary me-2" id="refreshBtn">
-            <i class="fas fa-sync"></i> Refresh
-          </button>
-          <a href="{{ route('transactions.logs.export') }}" class="btn btn-success">
-            <i class="fas fa-download"></i> Export
-          </a>
-        </div>
+  <div class="card">
+    <div class="card-header d-flex justify-content-between align-items-center">
+      <h5>Transaction Logs</h5>
+      <div class="d-flex gap-2">
+        <button class="btn btn-outline-primary" id="refreshBtn">
+          <i class="fas fa-sync me-1"></i>Refresh
+        </button>
+        <a href="{{ route('transactions.logs.export') }}" class="btn btn-outline-success">
+          <i class="fas fa-download me-1"></i>Export
+        </a>
       </div>
+    </div>
 
-      <!-- Advanced Filters Card -->
-      <div class="card shadow-sm mb-4">
-        <div class="card-header bg-white py-3">
-          <div class="d-flex justify-content-between align-items-center">
-            <h5 class="mb-0">Advanced Filters</h5>
-            <button type="button" class="btn btn-link p-0" data-bs-toggle="collapse" data-bs-target="#filterCollapse">
-              <i class="fas fa-filter"></i> Toggle Filters
+    <div class="card-body border-bottom">
+      <!-- Simple Search -->
+      <div class="row align-items-center">
+        <div class="col-md-6">
+          <div class="input-group">
+            <input type="text" class="form-control" id="searchTransaction" placeholder="Search by Transaction ID...">
+            <button class="btn btn-primary" onclick="applyFilters()">
+              <i class="fas fa-search me-1"></i>Search
             </button>
           </div>
         </div>
-        <div class="collapse show" id="filterCollapse">
-          <div class="card-body">
-            <form id="filterForm" class="row g-3">
-              <div class="col-md-3">
-                <label class="form-label">Date Range</label>
-                <div class="input-group">
-                  <input type="date" class="form-control" name="date_from" value="{{ request('date_from') }}">
-                  <span class="input-group-text">to</span>
-                  <input type="date" class="form-control" name="date_to" value="{{ request('date_to') }}">
-                </div>
-              </div>
-
-              <div class="col-md-3">
-                <label class="form-label">Amount Range</label>
-                <div class="input-group">
-                  <input type="number" class="form-control" name="amount_min" placeholder="Min"
-                    value="{{ request('amount_min') }}">
-                  <span class="input-group-text">to</span>
-                  <input type="number" class="form-control" name="amount_max" placeholder="Max"
-                    value="{{ request('amount_max') }}">
-                </div>
-              </div>
-
-              <div class="col-md-2">
-                <label class="form-label">Provider</label>
-                <select class="form-select" name="provider_id">
-                  <option value="">All Providers</option>
-                  @foreach($providers as $provider)
-                  <option value="{{ $provider->id }}" {{ request('provider_id') == $provider->id ? 'selected' : '' }}>
-                    {{ $provider->name }}
-                  </option>
-                  @endforeach
-                </select>
-              </div>
-
-              <div class="col-md-2">
-                <label class="form-label">Terminal</label>
-                <select class="form-select" name="terminal_id">
-                  <option value="">All Terminals</option>
-                  @foreach($terminals as $terminal)
-                  <option value="{{ $terminal->id }}" {{ request('terminal_id') == $terminal->id ? 'selected' : '' }}>
-                    {{ $terminal->identifier }}
-                  </option>
-                  @endforeach
-                </select>
-              </div>
-
-              <div class="col-md-2 align-self-end">
-                <button type="submit" class="btn btn-primary w-100">Apply Filters</button>
-              </div>
-            </form>
-          </div>
+        <div class="col-md-6 text-end">
+          <button class="btn btn-outline-secondary" type="button" data-bs-toggle="collapse"
+            data-bs-target="#advancedFilters">
+            <i class="fas fa-filter me-1"></i>Advanced Filters
+          </button>
         </div>
       </div>
 
-      <div class="card mt-3">
-        <div class="card-header">
+      <!-- Advanced Filters (Collapsed by default) -->
+      <div class="collapse mt-3" id="advancedFilters">
+        <div class="card card-body bg-light">
           <div class="row g-3">
-            <div class="col-md-2">
-              <select class="form-select form-select-sm" id="providerFilter" name="provider_id">
+            <div class="col-md-3">
+              <select class="form-select" id="providerFilter">
                 <option value="">All Providers</option>
                 @foreach($providers as $provider)
-                <option value="{{ $provider->id }}" {{ request('provider_id') == $provider->id ? 'selected' : '' }}>
-                  {{ $provider->name }}
-                </option>
+                <option value="{{ $provider->id }}">{{ $provider->name }}</option>
                 @endforeach
               </select>
             </div>
-            <div class="col-md-2">
-              <select class="form-select form-select-sm" id="terminalFilter" name="terminal_id">
+            <div class="col-md-3">
+              <select class="form-select" id="terminalFilter">
                 <option value="">All Terminals</option>
                 @foreach($terminals as $terminal)
-                <option value="{{ $terminal->id }}" {{ request('terminal_id') == $terminal->id ? 'selected' : '' }}>
-                  {{ $terminal->identifier }}
-                </option>
+                <option value="{{ $terminal->id }}">{{ $terminal->identifier }}</option>
                 @endforeach
-              </select>
-            </div>
-            <div class="col-md-2">
-              <input type="date" class="form-control form-control-sm" id="dateFrom" name="date_from"
-                value="{{ request('date_from') }}">
-            </div>
-            <div class="col-md-2">
-              <input type="date" class="form-control form-control-sm" id="dateTo" name="date_to"
-                value="{{ request('date_to') }}">
-            </div>
-            <div class="col-md-2">
-              <input type="number" class="form-control form-control-sm" id="amountMin" name="amount_min"
-                placeholder="Min Amount" value="{{ request('amount_min') }}">
-            </div>
-            <div class="col-md-2">
-              <input type="number" class="form-control form-control-sm" id="amountMax" name="amount_max"
-                placeholder="Max Amount" value="{{ request('amount_max') }}">
-            </div>
-          </div>
-        </div>
-        <div class="card-body">
-          <div class="row mb-3">
-            <div class="col-md-3">
-              <select class="form-select" id="validationFilter">
-                <option value="">All Validation Status</option>
-                <option value="VALID">Valid</option>
-                <option value="ERROR">Error</option>
-                <option value="PENDING">Pending</option>
-              </select>
-            </div>
-            <div class="col-md-3">
-              <select class="form-select" id="jobStatusFilter">
-                <option value="">All Job Status</option>
-                <option value="COMPLETED">Completed</option>
-                <option value="FAILED">Failed</option>
-                <option value="QUEUED">Queued</option>
               </select>
             </div>
             <div class="col-md-3">
               <input type="date" class="form-control" id="dateFilter">
             </div>
-            <div class="col-md-3">
-              <button type="button" class="btn btn-secondary w-100" id="applyFilters">
-                Apply Filters
-              </button>
+            <div class="col-md-3 text-end">
+              <button class="btn btn-primary" onclick="applyFilters()">Apply Filters</button>
+              <button class="btn btn-outline-secondary ms-2" onclick="resetFilters()">Reset</button>
             </div>
           </div>
+        </div>
+      </div>
+    </div>
 
-          <div class="table-responsive">
-            <table class="table table-hover">
-              <thead>
-                <tr>
-                  <th>Transaction ID</th>
-                  <th>Terminal</th>
-                  <th>Amount</th>
-                  <th>Validation Status</th>
-                  <th>Job Status</th>
-                  <th>Attempts</th>
-                  <th>Created At</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody id="logsTableBody">
-                @foreach($logs as $log)
-                @include('transactions.logs.partials.log-row', ['log' => $log])
-                @endforeach
-              </tbody>
-            </table>
-          </div>
+    <div class="card-body">
+      <div class="table-responsive">
+        <table class="table table-hover align-middle">
+          <thead>
+            <tr>
+              <th>Transaction ID</th>
+              <th>Terminal</th>
+              <th>Amount</th>
+              <th>Validation Status</th>
+              <th>Job Status</th>
+              <th>Attempts</th>
+              <th>Created At</th>
+              <th>Actions</th>
+            </tr>
+          </thead>
+          <tbody id="logsTableBody">
+            @foreach($logs as $log)
+            @include('transactions.logs.partials.log-row', ['log' => $log])
+            @endforeach
+          </tbody>
+        </table>
+      </div>
 
-          <div class="mt-4">
-            {{ $logs->links() }}
-          </div>
+      <div class="d-flex justify-content-between align-items-center mt-4">
+        <div class="text-muted">
+          Showing {{ $logs->firstItem() ?? 0 }} to {{ $logs->lastItem() ?? 0 }} of {{ $logs->total() ?? 0 }} entries
+        </div>
+        <div>
+          {{ $logs->links('vendor.pagination.bootstrap-5') }}
         </div>
       </div>
     </div>
   </div>
 </div>
-@endsection
 
 @push('scripts')
 <script>
+// Add search on enter key
+document.getElementById('searchTransaction')?.addEventListener('keyup', function(e) {
+  if (e.key === 'Enter') {
+    applyFilters();
+  }
+});
+
+function resetFilters() {
+  const searchInput = document.getElementById('searchTransaction');
+  if (searchInput) {
+    searchInput.value = '';
+    // Clear search highlight if any
+    document.querySelectorAll('.search-highlight').forEach(el => {
+      el.classList.remove('search-highlight');
+    });
+  }
+  document.getElementById('providerFilter').value = '';
+  document.getElementById('terminalFilter').value = '';
+  document.getElementById('dateFilter').value = '';
+  document.querySelector('#advancedFilters').classList.remove('show');
+  applyFilters();
+}
+
+function applyFilters() {
+  const searchQuery = document.getElementById('searchTransaction')?.value.trim();
+
+  // Build filters object
+  const filters = {
+    transaction_id: searchQuery, // Changed from 'search' to 'transaction_id'
+    provider_id: document.getElementById('providerFilter')?.value || '',
+    terminal_id: document.getElementById('terminalFilter')?.value || '',
+    date: document.getElementById('dateFilter')?.value || ''
+  };
+
+  // Remove empty filters
+  Object.keys(filters).forEach(key => {
+    if (!filters[key]) delete filters[key];
+  });
+
+  // Log search attempt
+  if (searchQuery) {
+    console.log('Searching for transaction:', searchQuery);
+  }
+
+  const params = new URLSearchParams(filters);
+  window.location.href = `${window.location.pathname}?${params}`;
+}
+
 // Real-time updates
 window.Echo?.private('transactions')
   .listen('TransactionStatusUpdated', (e) => {
@@ -237,20 +204,6 @@ document.querySelectorAll('.filter-control').forEach(control => {
   });
 });
 
-function applyFilters() {
-  const filters = {
-    provider_id: document.getElementById('providerFilter').value,
-    terminal_id: document.getElementById('terminalFilter').value,
-    date_from: document.getElementById('dateFrom').value,
-    date_to: document.getElementById('dateTo').value,
-    amount_min: document.getElementById('amountMin').value,
-    amount_max: document.getElementById('amountMax').value
-  };
-
-  const queryString = new URLSearchParams(filters).toString();
-  window.location.href = `${window.location.pathname}?${queryString}`;
-}
-
 // Add filter form handling
 document.addEventListener('DOMContentLoaded', function() {
   const filterForm = document.getElementById('filterForm');
@@ -263,3 +216,4 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 </script>
 @endpush
+@endsection

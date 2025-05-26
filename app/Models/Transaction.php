@@ -112,4 +112,71 @@ class Transaction extends Model
     {
         return $this->hasMany(TransactionHistory::class)->orderBy('created_at', 'desc');
     }
+    
+    /**
+     * Get the store for this transaction through the terminal.
+     */
+    public function store()
+    {
+        return $this->terminal->store();
+    }
+    
+    /**
+     * Check if this transaction occurred during store operating hours
+     * 
+     * @return bool
+     */
+    public function isWithinOperatingHours()
+    {
+        if (!$this->terminal || !$this->terminal->store) {
+            return false;
+        }
+        
+        return $this->terminal->store->isOpenAt($this->transaction_timestamp);
+    }
+    
+    /**
+     * Calculate and validate VAT amount
+     * 
+     * @return bool
+     */
+    public function validateVatAmount()
+    {
+        if ($this->tax_exempt) {
+            return $this->vat_amount === 0;
+        }
+        
+        if ($this->vatable_sales > 0) {
+            $expectedVat = round($this->vatable_sales * 0.12, 2);
+            $actualVat = round($this->vat_amount, 2);
+            
+            // Allow small rounding differences (within 0.02)
+            return abs($expectedVat - $actualVat) <= 0.02;
+        }
+        
+        return true;
+    }
+    
+    /**
+     * Check if this transaction is a duplicate of another one
+     * 
+     * @return bool
+     */
+    public function isDuplicate()
+    {
+        return Transaction::where('transaction_id', $this->transaction_id)
+            ->where('terminal_id', $this->terminal_id)
+            ->where('id', '!=', $this->id)
+            ->exists();
+    }
+    
+    /**
+     * Calculate expected net sales from gross sales and VAT
+     * 
+     * @return float
+     */
+    public function calculateExpectedNetSales()
+    {
+        return round($this->gross_sales - $this->vat_amount, 2);
+    }
 }

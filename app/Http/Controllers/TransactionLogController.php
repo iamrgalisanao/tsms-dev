@@ -36,7 +36,49 @@ class TransactionLogController extends Controller
             'amount_max'
         ]);
 
-        $logs = $this->logService->getPaginatedLogs($filters);
+        // Add transaction_id search handling
+        if ($request->filled('transaction_id')) {
+            $filters['transaction_id'] = trim($request->transaction_id);
+        }
+
+        $logs = Transaction::select([
+                'id',
+                'transaction_id',
+                'terminal_id',
+                'gross_sales as amount',
+                'validation_status',  // Make sure this field is selected
+                'job_status',
+                'job_attempts',
+                'created_at'
+            ])
+            ->with(['terminal:id,terminal_uid,provider_id']) // Changed identifier to terminal_uid
+            ->when(isset($filters['transaction_id']), function ($query) use ($filters) {
+                $search = str_replace('TX-', '', $filters['transaction_id']);
+                return $query->where('transaction_id', 'like', "%{$search}%");
+            })
+            ->when(isset($filters['status']), function ($query) use ($filters) {
+                return $query->where('job_status', $filters['status']);
+            })
+            ->when(isset($filters['date_from']), function ($query) use ($filters) {
+                return $query->where('created_at', '>=', $filters['date_from'] . ' 00:00:00');
+            })
+            ->when(isset($filters['date_to']), function ($query) use ($filters) {
+                return $query->where('created_at', '<=', $filters['date_to'] . ' 23:59:59');
+            })
+            ->when(isset($filters['terminal_id']), function ($query) use ($filters) {
+                return $query->where('terminal_id', $filters['terminal_id']);
+            })
+            ->when(isset($filters['provider_id']), function ($query) use ($filters) {
+                return $query->where('provider_id', $filters['provider_id']);
+            })
+            ->when(isset($filters['amount_min']), function ($query) use ($filters) {
+                return $query->where('amount', '>=', $filters['amount_min']);
+            })
+            ->when(isset($filters['amount_max']), function ($query) use ($filters) {
+                return $query->where('amount', '<=', $filters['amount_max']);
+            })
+            ->latest()
+            ->paginate(15);
 
         if ($request->wantsJson()) {
             return response()->json($logs);

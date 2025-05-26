@@ -38,7 +38,10 @@ class IntegrationLog extends Model
         'user_id',
         'severity',
         'message',
-        'context'
+        'context',
+        'endpoint',
+        'payload',
+        'metadata'
     ];
 
     /**
@@ -53,6 +56,9 @@ class IntegrationLog extends Model
         'retry_success' => 'boolean',
         'request_payload' => 'array',
         'response_payload' => 'array',
+        'metadata' => 'array',
+        'payload' => 'array',
+        'validation_results' => 'array',
     ];
     
     /**
@@ -102,5 +108,12 @@ class IntegrationLog extends Model
     public function user()
     {
         return $this->belongsTo(User::class);
+    }
+    
+    public function scopeFailedWebhooks($query)
+    {
+        return $query->where('type', 'WEBHOOK')
+            ->where('status', 'ERROR')
+            ->where('retry_count', '<', config('app.max_webhook_retries'));
     }
 }

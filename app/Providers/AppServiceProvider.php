@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\Schema;
 use Illuminate\Cache\Repository;
 use Illuminate\Cache\FileStore;
 use Illuminate\Filesystem\Filesystem;
+use Illuminate\Support\Facades\View;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -48,5 +49,10 @@ class AppServiceProvider extends ServiceProvider
                 return $app->make(\Illuminate\View\Factory::class);
             });
         }
+
+        // Make StatusHelper available to all views
+        View::share('StatusHelper', \App\Helpers\StatusHelper::class);
+        View::share('BadgeHelper', \App\Helpers\BadgeHelper::class);
+        View::share('LogHelper', \App\Helpers\LogHelper::class);
     }
 }

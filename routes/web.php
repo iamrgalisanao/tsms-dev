@@ -2,6 +2,7 @@
 
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\TransactionController;
@@ -12,6 +13,8 @@ use App\Http\Controllers\LogViewerController;
 use App\Http\Controllers\ProvidersController;
 use App\Http\Controllers\PosProvidersController;
 use App\Http\Controllers\TransactionLogController;
+use App\Http\Controllers\TestTransactionController;
+use App\Http\Controllers\SystemLogController;
 
 // Home route redirects based on auth status
 Route::get('/', function () {
@@ -45,11 +48,14 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/performance/export', [DashboardController::class, 'exportPerformance'])->name('performance.export');
     });
 
-    // Log Viewer Routes
-    Route::prefix('log-viewer')->name('log-viewer.')->group(function () {
+    // Centralized Log Viewer Routes
+    Route::prefix('log-viewer')->name('logs.')->group(function () {
         Route::get('/', [LogViewerController::class, 'index'])->name('index');
-        Route::get('/show/{id}', [LogViewerController::class, 'show'])->name('show');
-        Route::post('/export', [LogViewerController::class, 'export'])->name('export');
+        Route::get('/export/{format?}', [LogViewerController::class, 'export'])->name('export');
+        Route::get('/context/{id}', [LogViewerController::class, 'getContext'])->name('context');
+        Route::get('/filtered', [LogViewerController::class, 'getFilteredLogs'])->name('filtered');
+        Route::get('/audit', [LogViewerController::class, 'auditTrail'])->name('audit');
+        Route::get('/webhooks', [LogViewerController::class, 'webhookLogs'])->name('webhooks');
     });
 
     // Transaction Routes - Keep logs before other transaction routes
@@ -68,16 +74,12 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/{id}/retry', [TransactionController::class, 'retry'])->name('retry');
     });
 
-    // Add test transaction route
-    Route::get('/test-transaction', function () {
-        $terminals = \App\Models\PosTerminal::with('provider')
-            ->where('status', 'active')
-            ->orderBy('provider_id')
-            ->orderBy('terminal_uid')  // Changed from 'identifier' to 'terminal_uid'
-            ->get()
-            ->unique('id');
-        return view('transactions.test', compact('terminals'));
-    })->name('transactions.test');
+    // Test transaction routes
+    Route::get('/test-transaction', [TestTransactionController::class, 'index'])->name('transactions.test');
+    Route::post('/test-transaction/process', [TestTransactionController::class, 'process'])->name('transactions.test.process');
+
+    // Make sure there's a retry route for the show page to use
+    Route::post('/transactions/{id}/retry', [TestTransactionController::class, 'retry'])->name('transactions.retry');
 
     // Other Routes - Keep at root level
     Route::get('/circuit-breakers', [CircuitBreakerController::class, 'index'])->name('circuit-breakers');
@@ -96,11 +98,33 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/stats/generate', [PosProvidersController::class, 'generateStats'])->name('stats.generate');
     });
 
-    Route::get('/dashboard/logs', [LogViewerController::class, 'index'])->name('logs.index');
-    Route::get('/dashboard/logs/{id}', [LogViewerController::class, 'show'])->name('logs.show');
-});
+    // Direct database endpoint to diagnose retry history issues
+    Route::get('/retry-check', function() {
+        try {
+            // Simple DB query with minimal dependencies
+            $result = DB::select('SELECT COUNT(*) AS count FROM transactions WHERE job_attempts > 0');
+            $count = $result[0]->count;
+            
+            return response()->json([
+                'status' => 'success',
+                'retry_count' => $count,
+                'server_time' => date('Y-m-d H:i:s')
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => $e->getMessage()
+            ], 200); // Return 200 even on error to see the actual message
+        }
+    });
 
-// Keep terminal test route at the bottom
-Route::get('/terminal-test', function () {
-    return view('app');
-})->middleware(['auth'])->name('terminal.test');
+    // Very simple status endpoint with minimal code
+    Route::get('/system-status', function() {
+        return response()->json(['status' => 'online']);
+    });
+
+    // Keep terminal test route at the bottom
+    Route::get('/terminal-test', function () {
+        return view('app');
+    })->middleware(['auth'])->name('terminal.test');
+});

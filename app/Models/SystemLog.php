@@ -3,45 +3,46 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Factories\HasFactory;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class SystemLog extends Model
 {
+    use HasFactory;
+
     protected $fillable = [
         'type',
+        'log_type',
         'severity',
-        'terminal_uid',
         'transaction_id',
+        'terminal_uid',
         'message',
         'context'
     ];
 
     protected $casts = [
-        'context' => 'array',
-        'created_at' => 'datetime'
+        'context' => 'array'
     ];
+
+    // Relationships
+    public function transaction(): BelongsTo
+    {
+        return $this->belongsTo(Transaction::class);
+    }
 
     public function terminal()
     {
         return $this->belongsTo(PosTerminal::class, 'terminal_uid', 'terminal_uid');
     }
 
-    public function getTypeClassAttribute()
+    // Scopes
+    public function scopeError($query)
     {
-        return match($this->type) {
-            'transaction' => 'info',
-            'system' => 'primary',
-            'auth' => 'warning',
-            default => 'secondary'
-        };
+        return $query->where('severity', 'error');
     }
 
-    public function getSeverityClassAttribute()
+    public function scopeByType($query, $type)
     {
-        return match($this->severity) {
-            'error' => 'danger',
-            'warning' => 'warning',
-            'info' => 'info',
-            default => 'secondary'
-        };
+        return $query->where('type', $type);
     }
 }

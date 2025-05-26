@@ -26,7 +26,12 @@ class PosTerminal extends Model implements Authenticatable, JWTSubject
         'retry_enabled',
         'jwt_token',
         'expires_at',
-        'is_revoked'
+        'is_revoked',
+        'store_id',
+        'serial_number',
+        'model',
+        'created_at',
+        'updated_at'
     ];
 
     protected $casts = [
@@ -56,6 +61,11 @@ class PosTerminal extends Model implements Authenticatable, JWTSubject
     public function integrationLogs()
     {
         return $this->hasMany(IntegrationLog::class, 'terminal_id');
+    }
+    
+    public function store()
+    {
+        return $this->belongsTo(Store::class);
     }
     
     public function getAuthIdentifierName()
