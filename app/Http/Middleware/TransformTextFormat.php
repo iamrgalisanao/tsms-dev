@@ -88,6 +88,22 @@ class TransformTextFormat
                     }
                 }
             }
+
+            if ($request->header('Content-Type') === 'text/plain') {
+                $content = $request->getContent();
+                
+                // Transform Key: Value format
+                if (strpos($content, ':') !== false) {
+                    $data = $this->parseKeyValueFormat($content);
+                }
+                // Transform Key=Value format
+                else if (strpos($content, '=') !== false) {
+                    $data = $this->parseKeyEqualFormat($content);
+                }
+                
+                $request->merge($data);
+                $request->headers->set('Content-Type', 'application/json');
+            }
         } catch (\Exception $e) {
             Log::error('TransformTextFormat middleware error', [
                 'error' => $e->getMessage(),
@@ -97,5 +113,31 @@ class TransformTextFormat
         }
         
         return $next($request);
+    }
+
+    private function parseKeyValueFormat(string $content): array
+    {
+        $lines = explode("\n", trim($content));
+        $data = [];
+
+        foreach ($lines as $line) {
+            list($key, $value) = explode(':', $line, 2);
+            $data[trim($key)] = trim($value);
+        }
+
+        return $data;
+    }
+
+    private function parseKeyEqualFormat(string $content): array
+    {
+        $lines = explode("\n", trim($content));
+        $data = [];
+
+        foreach ($lines as $line) {
+            list($key, $value) = explode('=', $line, 2);
+            $data[trim($key)] = trim($value);
+        }
+
+        return $data;
     }
 }

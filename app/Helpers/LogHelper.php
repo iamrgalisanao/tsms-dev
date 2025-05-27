@@ -4,18 +4,30 @@ namespace App\Helpers;
 
 class LogHelper
 {
-    public static function getLogTypeClass(string $type): string
+    public static function getLogTypeClass(?string $type): string 
     {
         return match (strtolower($type)) {
+            'system' => 'primary',
             'error' => 'danger',
             'warning' => 'warning',
-            'success' => 'success',
             'info' => 'info',
-            'system' => 'primary',
-            'audit' => 'secondary',
+            'auth' => 'secondary',
+            'transaction' => 'success',
             'webhook' => 'info',
-            'transaction' => 'primary',
-            'debug' => 'secondary',
+            default => 'secondary'
+        };
+    }
+
+    public static function getActionTypeClass(?string $type): string 
+    {
+        return match (strtolower($type)) {
+            'create' => 'success',
+            'update' => 'info',
+            'delete' => 'danger',
+            'auth' => 'warning',
+            'auth.login' => 'success',
+            'auth.logout' => 'secondary',
+            'auth.failed' => 'danger',
             default => 'secondary'
         };
     }

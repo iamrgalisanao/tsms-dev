@@ -9,22 +9,17 @@ class WebhookLog extends Model
 {
     protected $fillable = [
         'terminal_id',
-        'transaction_id',
+        'endpoint',
         'status',
-        'http_code',
-        'response_body',
+        'request_payload',
+        'response_payload',
         'error_message',
-        'retry_count',
-        'max_retries',
-        'sent_at',
-        'last_attempt_at',
-        'next_retry_at',
+        'response_time'
     ];
 
     protected $casts = [
-        'sent_at' => 'datetime',
-        'last_attempt_at' => 'datetime',
-        'next_retry_at' => 'datetime',
+        'request_payload' => 'array',
+        'response_payload' => 'array'
     ];
 
     /**
@@ -32,6 +27,6 @@ class WebhookLog extends Model
      */
     public function terminal(): BelongsTo
     {
-        return $this->belongsTo(PosTerminal::class, 'terminal_id');
+        return $this->belongsTo(PosTerminal::class);
     }
-} 
+}

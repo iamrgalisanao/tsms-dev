@@ -15,6 +15,7 @@ use App\Http\Controllers\PosProvidersController;
 use App\Http\Controllers\TransactionLogController;
 use App\Http\Controllers\TestTransactionController;
 use App\Http\Controllers\SystemLogController;
+use App\Http\Controllers\LogController;
 
 // Home route redirects based on auth status
 Route::get('/', function () {
@@ -127,4 +128,7 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/terminal-test', function () {
         return view('app');
     })->middleware(['auth'])->name('terminal.test');
+
+    // Log Routes
+    Route::get('/logs', [LogController::class, 'index'])->name('logs.index');
 });

@@ -10,6 +10,7 @@ return new class extends Migration
     {
         Schema::create('system_logs', function (Blueprint $table) {
             $table->id();
+            $table->foreignId('user_id')->nullable()->constrained()->nullOnDelete(); // Add this line
             $table->string('type');                    // Keep for backward compatibility
             $table->string('log_type');               // Add this for retry history
             $table->string('severity')->nullable();

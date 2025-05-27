@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\AuditLog;
 use App\Models\SystemLog;
 use App\Services\SystemLogExportService;
 use App\Services\SystemLogService;
@@ -23,26 +24,33 @@ class SystemLogController extends Controller
 
     public function index(Request $request)
     {
-        $logs = SystemLog::with(['terminal', 'user', 'webhook'])
-            ->when($request->filled('search'), function($q) use ($request) {
-                $q->where('transaction_id', 'like', "%{$request->search}%");
-            })
-            ->when($request->filled('type'), function($q) use ($request) {
-                $q->where('type', $request->type);
-            })
-            ->when($request->filled('severity'), function($q) use ($request) {
-                $q->where('severity', $request->severity);
-            })
-            ->when($request->filled('user_id'), function($q) use ($request) {
-                $q->where('user_id', $request->user_id);
-            })
-            ->when($request->filled('action'), function($q) use ($request) {
-                $q->where('action', $request->action);
-            })
-            ->latest()
-            ->paginate(15);
+        $query = AuditLog::query()
+            ->where(function($q) {
+                $q->where('log_type', 'system')
+                  ->orWhere('action', 'auth.login_failed');
+            });
 
-        $stats = $this->logService->getEnhancedStats();
+        // Add filters
+        if ($request->filled('type')) {
+            $query->where('log_type', $request->type);
+        }
+
+        if ($request->filled('severity')) {
+            $query->where('severity', $request->severity);
+        }
+
+        $logs = $query->latest()
+            ->paginate(15)
+            ->withQueryString();
+
+        $stats = [
+            'system' => AuditLog::where('log_type', 'system')->count(),
+            'errors' => AuditLog::where('severity', 'error')
+                ->orWhere('action', 'auth.login_failed')
+                ->count(),
+            'success' => AuditLog::where('severity', 'info')->count(),
+            'pending' => AuditLog::where('severity', 'pending')->count(),
+        ];
 
         return view('dashboard.system-logs', compact('logs', 'stats'));
     }

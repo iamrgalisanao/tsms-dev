@@ -17,7 +17,8 @@ class SystemLog extends Model
         'transaction_id',
         'terminal_uid',
         'message',
-        'context'
+        'context',
+        'user_id'  // Add this to fillable
     ];
 
     protected $casts = [
@@ -33,6 +34,11 @@ class SystemLog extends Model
     public function terminal()
     {
         return $this->belongsTo(PosTerminal::class, 'terminal_uid', 'terminal_uid');
+    }
+
+    public function user(): BelongsTo
+    {
+        return $this->belongsTo(User::class);
     }
 
     // Scopes
