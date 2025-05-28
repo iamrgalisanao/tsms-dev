@@ -285,3 +285,13 @@ Route::get('/v1/transactions/{id}/details', function($id) {
         ], 500);
     }
 });
+
+// Add this route to check if a transaction ID exists
+Route::get('v1/transaction-id-exists', function (Illuminate\Http\Request $request) {
+    $id = $request->query('id');
+    $exists = \App\Models\Transaction::where('transaction_id', $id)->exists();
+    return response()->json([
+        'exists' => $exists,
+        'transaction_id' => $id
+    ]);
+});

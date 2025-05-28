@@ -58,6 +58,30 @@ class TestTransactionController extends Controller
             // Create transaction ID if not provided
             $transactionId = $request->transaction_id ?? 'TEST-' . now()->format('Ymd-His') . '-' . rand(1000, 9999);
             
+            // Check for duplicate transaction ID before creating
+            $existingTransaction = Transaction::where('transaction_id', $transactionId)
+                ->exists();
+            
+            if ($existingTransaction) {
+                // If this is an AJAX request (like from bulk generation)
+                if ($request->wantsJson() || $request->ajax() || $request->hasHeader('X-Requested-With')) {
+                    DB::commit();
+                    return response()->json([
+                        'status' => 'error',
+                        'message' => "Transaction ID already exists. Please use a different ID.",
+                        'data' => [
+                            'transaction_id' => $transactionId,
+                            'duplicate' => true
+                        ]
+                    ], 422);
+                }
+                
+                // For regular form submission
+                DB::commit();
+                return back()->with('error', "Transaction ID '{$transactionId}' already exists. Please use a different ID or leave blank to auto-generate.")
+                    ->withInput();
+            }
+            
             // Create transaction
             $transaction = Transaction::create([
                 'tenant_id' => $terminal->tenant_id,
@@ -79,6 +103,18 @@ class TestTransactionController extends Controller
             
             DB::commit();
             
+            // Return JSON response for AJAX requests
+            if ($request->wantsJson() || $request->ajax() || $request->hasHeader('X-Requested-With')) {
+                return response()->json([
+                    'status' => 'success',
+                    'message' => "Test transaction {$transactionId} has been created and queued for processing.",
+                    'data' => [
+                        'transaction_id' => $transaction->transaction_id,
+                        'id' => $transaction->id
+                    ]
+                ]);
+            }
+            
             return back()->with('success', "Test transaction {$transactionId} has been created and queued for processing.");
             
         } catch (\Exception $e) {
@@ -87,6 +123,14 @@ class TestTransactionController extends Controller
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);
+            
+            // Return JSON response for AJAX requests
+            if ($request->wantsJson() || $request->ajax() || $request->hasHeader('X-Requested-With')) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Failed to create test transaction: ' . $e->getMessage()
+                ], 422);
+            }
             
             return back()->with('error', 'Failed to create test transaction: ' . $e->getMessage())->withInput();
         }

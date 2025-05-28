@@ -34,15 +34,14 @@ class TransactionValidationService
     public function validate($data): array
     {
         try {
-            if (is_array($data)) {
-                return $this->validateSubmission($data);
+            // Parse payload before validation
+            $parsedData = $this->detectAndParsePayload($data);
+            
+            if ($parsedData instanceof Transaction) {
+                return $this->validateTransaction($parsedData);
             }
             
-            if ($data instanceof Transaction) {
-                return $this->validateTransaction($data);
-            }
-            
-            throw new InvalidArgumentException('Invalid input type');
+            return $this->validateSubmission($parsedData);
             
         } catch (\Exception $e) {
             Log::error('Validation error', [
@@ -55,6 +54,101 @@ class TransactionValidationService
                 'errors' => [$e->getMessage()]
             ];
         }
+    }
+
+    /**
+     * Detect and parse payload format
+     */
+    private function detectAndParsePayload($data)
+    {
+        // If already an array, assume JSON format
+        if (is_array($data)) {
+            return $this->normalizeFieldNames($data);
+        }
+
+        // If string, detect format
+        if (is_string($data)) {
+            // Try parsing as JSON first
+            $jsonData = json_decode($data, true);
+            if (json_last_error() === JSON_ERROR_NONE) {
+                return $this->normalizeFieldNames($jsonData);
+            }
+
+            // Check for line-numbered format (starts with line numbers 01, 02 etc)
+            if (preg_match('/^\d{2}\s+/', trim($data))) {
+                return $this->parseLineNumberedFormat($data);
+            }
+
+            // Default to existing text format parser
+            return $this->parseTextFormat($data);
+        }
+
+        throw new \InvalidArgumentException('Unsupported payload format');
+    }
+
+    /**
+     * Parse line-numbered format
+     */
+    private function parseLineNumberedFormat(string $content): array
+    {
+        $lines = preg_split('/\r\n|\r|\n/', $content);
+        $data = [];
+        
+        foreach ($lines as $line) {
+            // Match pattern: "01 Tenant Code    01C-D1016      C-D1016"
+            if (preg_match('/^(\d{2})\s+([^0-9]+?)\s+(\S+)\s+(\S+)?$/', trim($line), $matches)) {
+                $lineNum = $matches[1];
+                $value = !empty($matches[4]) ? $matches[4] : $matches[3]; // Use last column as value
+                $data[$lineNum] = $value;
+            }
+        }
+        
+        return $this->normalizeLineNumberedFields($data);
+    }
+
+    /**
+     * Normalize line-numbered fields to standard format
+     */
+    private function normalizeLineNumberedFields(array $data): array
+    {
+        $fieldMap = [
+            '01' => 'tenant_code',
+            '02' => 'machine_number',
+            '03' => 'transaction_date',
+            '04' => 'old_grand_total',
+            '05' => 'new_grand_total',
+            '06' => 'gross_sales',
+            '07' => 'vatable_sales',
+            '08' => 'senior_discount',
+            '09' => 'pwd_discount',
+            '10' => 'vip_discount',
+            '11' => 'vat_amount',
+            '12' => 'service_charge',
+            '13' => 'net_sales',
+            '14' => 'cash_tender',
+            '15' => 'credit_card_tender',
+            '16' => 'other_tender',
+            '17' => 'void_amount',
+            '18' => 'transaction_count',
+            '19' => 'zread_number',
+            '20' => 'transaction_count',
+            '21' => 'sales_type',
+            '22' => 'net_amount'
+        ];
+
+        $normalized = [];
+        foreach ($data as $lineNum => $value) {
+            if (isset($fieldMap[$lineNum])) {
+                // Convert numeric strings to proper types
+                if (is_numeric($value)) {
+                    $value = strpos($value, '.') !== false ? 
+                        (float)$value : (int)$value;
+                }
+                $normalized[$fieldMap[$lineNum]] = $value;
+            }
+        }
+
+        return $normalized;
     }
 
     protected function validateSubmission(array $data)
