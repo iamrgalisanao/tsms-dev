@@ -3,7 +3,6 @@
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
-use Illuminate\Support\Facades\DB;
 
 class CreateStoresTable extends Migration
 {
@@ -14,39 +13,9 @@ class CreateStoresTable extends Migration
      */
     public function up()
     {
-        // Check if the stores table already exists
-        if (Schema::hasTable('stores')) {
-            // Table already exists, so we'll just add the store_id to pos_terminals if needed
-            if (!Schema::hasColumn('pos_terminals', 'store_id')) {
-                Schema::table('pos_terminals', function (Blueprint $table) {
-                    $table->foreignId('store_id')->nullable()->after('tenant_id')->constrained();
-                });
-            }
-            return;
-        }
-
-        // Check if tenant_id is a string by querying the schema information directly
-        $tenantIdIsString = false;
-        try {
-            $tenantIdType = DB::select("SHOW COLUMNS FROM tenants WHERE Field = 'id'")[0]->Type;
-            $tenantIdIsString = strpos(strtolower($tenantIdType), 'char') !== false || 
-                               strpos(strtolower($tenantIdType), 'varchar') !== false ||
-                               strpos(strtolower($tenantIdType), 'text') !== false;
-        } catch (\Exception $e) {
-            // Default to bigint if we can't determine the type
-            $tenantIdIsString = false;
-        }
-        
-        Schema::create('stores', function (Blueprint $table) use ($tenantIdIsString) {
+        Schema::create('stores', function (Blueprint $table) {
             $table->id();
-            
-            // Match the tenant_id type with the tenants table id type
-            if ($tenantIdIsString) {
-                $table->string('tenant_id');
-            } else {
-                $table->unsignedBigInteger('tenant_id');
-            }
-            
+            $table->foreignId('tenant_id')->constrained()->onDelete('cascade');
             $table->string('name');
             $table->string('address')->nullable();
             $table->string('city')->nullable();
@@ -63,18 +32,12 @@ class CreateStoresTable extends Migration
             $table->timestamps();
         });
         
-        // Add foreign key separately to ensure it's created correctly
-        Schema::table('stores', function (Blueprint $table) {
-            $table->foreign('tenant_id')
-                  ->references('id')
-                  ->on('tenants')
-                  ->onDelete('cascade');
-        });
-        
-        // Add store_id to pos_terminals table
-        Schema::table('pos_terminals', function (Blueprint $table) {
-            $table->foreignId('store_id')->nullable()->after('tenant_id')->constrained();
-        });
+        // Add store_id to pos_terminals table if needed
+        if (Schema::hasTable('pos_terminals') && !Schema::hasColumn('pos_terminals', 'store_id')) {
+            Schema::table('pos_terminals', function (Blueprint $table) {
+                $table->foreignId('store_id')->nullable()->after('tenant_id')->constrained();
+            });
+        }
     }
 
     /**
