@@ -52,23 +52,8 @@ return new class extends Migration
                 $table->index('transaction_timestamp');
                 $table->index('validation_status');
                 $table->integer('job_attempts')->default(0);
-                $table->text('last_error')->nullable();
                 $table->timestamp('completed_at')->nullable();
                 $table->index('processing_status');
-                
-                // Add specific discount fields to match report
-                $table->decimal('senior_discount', 15, 2)->nullable()->after('vat_amount');
-                $table->decimal('pwd_discount', 15, 2)->nullable();
-                $table->decimal('vip_discount', 15, 2)->nullable();
-                $table->decimal('employee_discount', 15, 2)->nullable();
-                $table->decimal('promo_with_approval', 15, 2)->nullable();
-                $table->decimal('promo_without_approval', 15, 2)->nullable();
-                
-                // Add service charge distribution fields
-                $table->decimal('service_charge_distributed', 15, 2)->nullable();
-                $table->decimal('service_charge_retained', 15, 2)->nullable();
-                
-                // No hourly_sales field - this will be calculated in reports
             });
         }
     }
