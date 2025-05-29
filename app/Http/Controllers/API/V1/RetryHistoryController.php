@@ -188,6 +188,46 @@ class RetryHistoryController extends Controller
         }
     }
 
+    public function retry($id)
+    {
+        try {
+            $transaction = Transaction::findOrFail($id);
+
+            // Reset transaction status for retry
+            $transaction->update([
+                'job_status' => 'QUEUED',
+                'validation_status' => 'PENDING',
+                'last_error' => null,
+                'job_attempts' => 0,
+                'completed_at' => null
+            ]);
+
+            // Dispatch new job
+            ProcessTransactionJob::dispatch($transaction)
+                ->onQueue('default');
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Transaction queued for retry',
+                'data' => [
+                    'transaction_id' => $transaction->id,
+                    'job_status' => 'QUEUED'
+                ]
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Retry failed', [
+                'transaction_id' => $id,
+                'error' => $e->getMessage()
+            ]);
+
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to retry transaction: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
     public function export(Request $request)
     {
         try {
@@ -422,6 +462,28 @@ class RetryHistoryController extends Controller
                 'status' => 'error',
                 'message' => 'Failed to create emergency data: ' . $e->getMessage()
             ], 500);
+        }
+    }
+
+    public function status($id)
+    {
+        try {
+            $transaction = Transaction::findOrFail($id);
+            
+            return response()->json([
+                'status' => 'success',
+                'data' => [
+                    'job_status' => $transaction->job_status,
+                    'validation_status' => $transaction->validation_status,
+                    'last_error' => $transaction->last_error,
+                    'updated_at' => $transaction->updated_at
+                ]
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to get transaction status'
+            ], 404);
         }
     }
 }

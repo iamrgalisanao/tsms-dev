@@ -124,8 +124,8 @@
                     value="{{ old('transaction_id') }}" placeholder="Leave blank to auto-generate">
                   <button type="button" class="btn btn-outline-secondary"
                     onclick="generateTransactionId()">Generate</button>
-                  <button type="button" class="btn btn-outline-info"
-                    onclick="checkTransactionIdExists()"><i class="fas fa-check"></i> Check ID</button>
+                  <button type="button" class="btn btn-outline-info" onclick="checkTransactionIdExists()"><i
+                      class="fas fa-check"></i> Check ID</button>
                 </div>
                 <small class="form-text text-muted">Format: TEST-YYYYMMDD-RANDOM or custom format</small>
                 <div id="transaction-id-feedback" class="invalid-feedback"></div>
@@ -187,6 +187,9 @@
                 <label for="transaction_count" class="form-label">Transaction Count</label>
                 <input type="number" name="transaction_count" id="transaction_count" class="form-control" min="1"
                   value="{{ old('transaction_count', '1') }}" required>
+                <small class="form-text text-muted">
+                  This will create the specified number of transactions (e.g., 3 will create 3 transactions).
+                </small>
               </div>
 
               <div class="col-md-4">
@@ -473,19 +476,19 @@ function checkTransactionIdExists() {
   const transactionId = document.getElementById('transaction_id').value.trim();
   const feedbackElement = document.getElementById('transaction-id-feedback');
   const inputElement = document.getElementById('transaction_id');
-  
+
   if (!transactionId) {
     feedbackElement.textContent = 'Please enter a transaction ID first';
     feedbackElement.style.display = 'block';
     inputElement.classList.add('is-invalid');
     return;
   }
-  
+
   // Show checking indicator
   inputElement.classList.remove('is-invalid', 'is-valid');
   feedbackElement.textContent = 'Checking...';
   feedbackElement.style.display = 'block';
-  
+
   fetch(`/api/v1/transaction-id-exists?id=${encodeURIComponent(transactionId)}`)
     .then(response => response.json())
     .then(data => {
@@ -499,7 +502,7 @@ function checkTransactionIdExists() {
         feedbackElement.textContent = 'Transaction ID is available.';
         feedbackElement.className = 'valid-feedback';
         feedbackElement.style.display = 'block';
-        
+
         // Hide the feedback after 3 seconds
         setTimeout(() => {
           feedbackElement.style.display = 'none';
@@ -875,12 +878,12 @@ function startBulkGeneration() {
       .then(data => {
         // Handle both new transactions and already existing ones as successes
         completed++;
-        
+
         // Add note if it was a duplicate
         if (data.data && data.data.already_exists) {
           console.log(`Transaction ${data.data.transaction_id} already exists, counted as success`);
         }
-        
+
         updateProgress();
 
         if (index < count - 1) {

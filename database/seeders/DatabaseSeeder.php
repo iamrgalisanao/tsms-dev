@@ -39,6 +39,8 @@ class DatabaseSeeder extends Seeder
             PosSampleDataSeeder::class,
             CircuitBreakerSeeder::class,
             TransactionSeeder::class,
+            StoreHoursSeeder::class,
+            StoreSeeder::class,
         ]);
     }
 }

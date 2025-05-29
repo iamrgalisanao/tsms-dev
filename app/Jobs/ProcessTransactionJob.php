@@ -10,6 +10,8 @@ use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Arr;
+use Exception;
 
 class ProcessTransactionJob implements ShouldQueue
 {
@@ -33,149 +35,135 @@ class ProcessTransactionJob implements ShouldQueue
      *
      * @return void
      */
-    public function handle(TransactionValidationService $validationService)
+     public function handle(TransactionValidationService $validationService)
     {
-        Log::info('Processing transaction', [
+        Log::debug('Starting transaction processing', [
             'transaction_id' => $this->transaction->id,
-            'attempt' => $this->attempts()
+            'attempt' => $this->attempts(),
+            'transaction_data' => $this->transaction->toArray()
         ]);
 
         try {
-            // Update transaction status to processing
+            $this->transaction->refresh();
+            
+            // Set initial status
             $this->transaction->update([
                 'job_status' => 'PROCESSING',
+                'validation_status' => 'PENDING',
+                'job_attempts' => $this->attempts()
             ]);
 
-            // Validate the transaction
+            // Run validation
             $validationResult = $validationService->validateTransaction($this->transaction);
 
             if (!$validationResult['valid']) {
-                // Format error messages into a readable string for better logging/display
-                $errorMessages = is_array($validationResult['errors']) ? 
-                    implode('; ', $this->flattenErrorArray($validationResult['errors'])) : 
-                    $validationResult['errors'];
+                $errors = is_array($validationResult['errors']) 
+                    ? $validationResult['errors'] 
+                    : [$validationResult['errors']];
 
-                // Record validation errors
+                $errorMessages = implode('; ', $this->flattenErrorArray($errors));
+
                 $this->transaction->update([
-                    'job_status' => 'FAILED',
-                    'validation_status' => 'INVALID',
-                    'last_error' => $errorMessages,
-                    'job_attempts' => $this->transaction->job_attempts + 1
+                    'validation_status' => 'ERROR',
+                    'validation_message' => $errorMessages,
+                    'job_status' => 'FAILED'
                 ]);
 
-                Log::error('Transaction validation failed', [
-                    'transaction_id' => $this->transaction->id,
-                    'errors' => $validationResult['errors']
-                ]);
-
-                // If we've reached max attempts or errors are not recoverable, mark as permanently failed
-                if ($this->attempts() >= $this->maxAttempts || $this->hasNonRecoverableErrors($validationResult['errors'])) {
-                    $this->transaction->update([
-                        'job_status' => 'FAILED',
-                        'validation_status' => 'INVALID'
-                    ]);
-
-                    // Trigger event for permanent failure if needed
-                    try {
-                        event(new \App\Events\TransactionPermanentlyFailed($this->transaction));
-                    } catch (\Exception $eventError) {
-                        Log::error('Failed to fire TransactionPermanentlyFailed event', [
-                            'error' => $eventError->getMessage(),
-                            'transaction_id' => $this->transaction->id
-                        ]);
-                    }
-
-                    return;
-                }
-
-                // Otherwise, throw exception to trigger retry
-                throw new \Exception('Validation failed: ' . $errorMessages);
+                throw new Exception("Validation failed: " . $errorMessages);
             }
 
-            // If validation passes, mark as completed
+            // Only mark as COMPLETED if validation passed
             $this->transaction->update([
-                'job_status' => 'COMPLETED',
-                'validation_status' => 'VALID',
-                'last_error' => null,
-                'completed_at' => now()
+                'validation_status' => 'VALID',  // Changed from SUCCESS to VALID
+                'validation_message' => 'Validated successfully',
+                'job_status' => 'COMPLETED'
             ]);
 
-            Log::info('Transaction processed successfully', [
-                'transaction_id' => $this->transaction->id
-            ]);
-
-        } catch (\Exception $e) {
-            // Update failure count and error message
-            $this->transaction->update([
-                'job_status' => 'FAILED',
-                'last_error' => $e->getMessage(),
-                'job_attempts' => $this->transaction->job_attempts + 1
-            ]);
-
-            Log::error('Transaction processing error', [
-                'transaction_id' => $this->transaction->id,
-                'error' => $e->getMessage(),
-                'attempt' => $this->attempts()
-            ]);
-
-            // Rethrow to trigger retry
-            throw $e;
+        } catch (\Throwable $e) {
+            $this->handleError($e);
+            throw $e; 
         }
     }
 
-    /**
-     * Flatten potentially nested error arrays into a simple array of strings
-     *
-     * @param array $errors
-     * @return array
-     */
-    protected function flattenErrorArray($errors)
+      protected function flattenErrorArray($errors)
     {
         $result = [];
-        
+
         foreach ($errors as $key => $value) {
             if (is_array($value)) {
-                // If it's an array of errors, add each one
-                foreach ($value as $nestedValue) {
-                    if (is_string($nestedValue)) {
-                        $result[] = $nestedValue;
+                foreach ($value as $nested) {
+                    if (is_string($nested)) {
+                        $result[] = $nested;
+                    } elseif (is_array($nested)) {
+                        $result = array_merge($result, $this->flattenErrorArray($nested));
+                    } else {
+                        $result[] = "Unknown nested error format at $key";
                     }
                 }
+            } elseif (is_string($value)) {
+                $result[] = $value;
             } else {
-                // If it's a simple key-value pair, add the value
-                $result[] = is_string($value) ? $value : "Error in {$key}";
+                $result[] = "Unknown error format at $key";
             }
         }
-        
+
         return $result;
     }
 
-    /**
-     * Determine if validation errors are non-recoverable
-     *
-     * @param array $errors
-     * @return bool
-     */
-    protected function hasNonRecoverableErrors(array $errors)
+    protected function handleValidationFailure(array $validationResult): void
     {
-        $nonRecoverablePatterns = [
-            'duplicate',
-            'invalid promo code',
-            'outside of store operating hours',
-            'tax exempt',
-            'terminal is not active',
-            'transaction would exceed daily limit'
-        ];
+        $errorMessages = is_array($validationResult['errors']) ? 
+            implode('; ', Arr::flatten((array)$validationResult['errors'])) : 
+            $validationResult['errors'];
 
-        foreach ($errors as $error) {
-            foreach ($nonRecoverablePatterns as $pattern) {
-                if (stripos($error, $pattern) !== false) {
-                    return true;
-                }
-            }
+        $this->transaction->update([
+            'job_status' => 'FAILED',
+            'validation_status' => 'INVALID',
+            'validation_details' => json_encode($validationResult['errors']),
+            'last_error' => $errorMessages,
+            'completed_at' => now(),
+            'job_attempts' => $this->attempts()
+        ]);
+
+        if ($this->attempts() >= $this->maxAttempts) {
+            Log::error('Max attempts reached', [
+                'transaction_id' => $this->transaction->id,
+                'errors' => $validationResult['errors']
+            ]);
+            return;
         }
 
-        return false;
+        $this->release(30); // Retry after 30 seconds
+    }
+
+    protected function handleSuccess(): void
+    {
+        $this->transaction->update([
+            'job_status' => 'COMPLETED',
+            'validation_status' => 'VALID',
+            'last_error' => null,
+            'completed_at' => now()
+        ]);
+
+        Log::info('Transaction processed successfully', [
+            'transaction_id' => $this->transaction->id
+        ]);
+    }
+
+    protected function handleError(\Throwable $e): void
+    {
+        Log::error('Transaction processing failed', [
+            'transaction_id' => $this->transaction->id,
+            'error' => $e->getMessage(),
+            'trace' => $e->getTraceAsString()
+        ]);
+
+        $this->transaction->update([
+            'job_status' => 'FAILED',
+            'validation_status' => 'ERROR',
+            'last_error' => $e->getMessage(),
+            'completed_at' => now()
+        ]);
     }
 
     /**
@@ -184,17 +172,8 @@ class ProcessTransactionJob implements ShouldQueue
      * @param \Exception $exception
      * @return void
      */
-    public function failed(\Exception $exception)
+    public function failed(\Throwable $exception): void 
     {
-        Log::error('Transaction job failed', [
-            'transaction_id' => $this->transaction->id,
-            'error' => $exception->getMessage(),
-            'trace' => $exception->getTraceAsString()
-        ]);
-
-        $this->transaction->update([
-            'job_status' => 'FAILED',
-            'last_error' => $exception->getMessage()
-        ]);
+        $this->handleError($exception);
     }
 }

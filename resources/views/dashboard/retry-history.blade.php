@@ -80,7 +80,7 @@
             <tr>
               <th style="min-width: 180px">Transaction ID</th>
               <th style="min-width: 120px">Terminal</th>
-              <th class="text-center" style="width: 100px">Attempts</th>
+              <th class="text-center" style="width: 100px"># Retry</th>
               <th style="min-width: 120px">Job Status</th>
               <th>Error Details</th>
               <th style="width: 160px">Updated</th>
@@ -317,54 +317,126 @@ function formatTableRows(formattedRetries) {
 
 // Define the retry function that was being called but wasn't declared
 function retryTransaction(id) {
-  if (!id) return;
-
-  const errorDiv = document.getElementById('errorMessage');
-  errorDiv.classList.add('d-none');
+  if (!id) {
+    showError('Invalid transaction ID');
+    return;
+  }
 
   const row = document.querySelector(`tr[data-transaction-id="${id}"]`);
-  if (row) {
-    const previousError = row.querySelector('td:nth-child(5)').textContent;
-    const currentAttempts = parseInt(row.querySelector('td:nth-child(3)').textContent) || 0;
-
-    // Keep current attempts count, just update status and error
-    row.querySelector('td:nth-child(4)').innerHTML =
-      `<span class="badge ${getStatusClass('PENDING')}">PENDING</span>`;
-    row.querySelector('td:nth-child(5)').textContent =
-      `Previous Error: ${previousError}`; // Keep error history
-    row.classList.add('table-warning');
+  if (!row) {
+    showError('Transaction row not found');
+    return;
   }
+
+  // Disable retry button and show loading state
+  const retryButton = row.querySelector('button');
+  retryButton.disabled = true;
+  retryButton.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Retrying...';
+
+  // Update status to processing
+  updateRowStatus(row, 'PROCESSING', 'Initiating retry...');
 
   fetch(`/api/v1/retry-history/${id}/retry`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
-        'X-Requested-With': 'XMLHttpRequest',
-        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || ''
+        'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '',
+        'X-Requested-With': 'XMLHttpRequest'
       }
     })
-    .then(response => response.json())
+    .then(async response => {
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.message || `HTTP error! status: ${response.status}`);
+      }
+
+      return data;
+    })
     .then(data => {
       if (data.status === 'success') {
-        if (row) {
-          const attempts = parseInt(row.querySelector('td:nth-child(3)').textContent) + 1;
-          row.querySelector('td:nth-child(3)').textContent = attempts;
-          row.querySelector('td:nth-child(5)').textContent = 'Retry initiated';
-          row.querySelector('td:nth-child(6)').textContent = new Date().toLocaleString('en-US');
+        updateRowStatus(row, 'QUEUED', 'Retry initiated');
+        showSuccess('Retry initiated successfully');
 
-          // Remove highlight after animation
-          setTimeout(() => row.classList.remove('table-warning'), 2000);
-        }
+        // Poll for status updates
+        const pollInterval = setInterval(() => {
+          checkTransactionStatus(id, pollInterval);
+        }, 2000);
+
+        // Stop polling after 30 seconds
+        setTimeout(() => clearInterval(pollInterval), 30000);
       } else {
         throw new Error(data.message || 'Retry failed');
       }
     })
     .catch(error => {
-      console.error('Error retrying transaction:', error);
-      errorDiv.textContent = error.message;
-      errorDiv.classList.remove('d-none');
+      console.error('Retry failed:', error);
+      updateRowStatus(row, 'FAILED', error.message);
+      showError(`Retry failed: ${error.message}`);
+    })
+    .finally(() => {
+      retryButton.disabled = false;
+      retryButton.innerHTML = '<i class="fas fa-redo-alt me-1"></i>Retry';
     });
+}
+
+function updateRowStatus(row, status, message) {
+  row.querySelector('td:nth-child(4)').innerHTML =
+    `<span class="badge ${getStatusClass(status)}">${status}</span>`;
+  row.querySelector('td:nth-child(5)').textContent = message || '';
+  row.querySelector('td:nth-child(6)').textContent = new Date().toLocaleString('en-US');
+}
+
+function checkTransactionStatus(id, pollInterval = null) {
+  fetch(`/api/v1/retry-history/${id}/status`)
+    .then(response => {
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+      return response.json();
+    })
+    .then(data => {
+      if (data.status === 'success') {
+        const row = document.querySelector(`tr[data-transaction-id="${id}"]`);
+        if (row) {
+          updateRowStatus(
+            row,
+            data.data.job_status,
+            data.data.last_error || 'Processing...'
+          );
+
+          // If completed or failed, stop polling
+          if (['COMPLETED', 'FAILED'].includes(data.data.job_status) && pollInterval) {
+            clearInterval(pollInterval);
+          }
+        }
+      }
+    })
+    .catch(error => {
+      console.error('Status check failed:', error);
+      if (pollInterval) {
+        clearInterval(pollInterval);
+      }
+    });
+}
+
+function showError(message) {
+  const errorDiv = document.getElementById('errorMessage');
+  errorDiv.textContent = message;
+  errorDiv.classList.remove('d-none');
+  setTimeout(() => errorDiv.classList.add('d-none'), 5000);
+}
+
+function showSuccess(message) {
+  const successDiv = document.createElement('div');
+  successDiv.className = 'alert alert-success alert-dismissible fade show';
+  successDiv.innerHTML = `
+        ${message}
+        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+    `;
+  document.querySelector('.card-body').prepend(successDiv);
+  setTimeout(() => successDiv.remove(), 5000);
 }
 
 // Modified emergency data function that returns a promise

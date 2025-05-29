@@ -318,42 +318,36 @@ class TransactionValidationService
      * @param Transaction $transaction
      * @return array
      */
-    public function validateTransaction(Transaction $transaction)
+   public function validateTransaction(Transaction $transaction)
     {
         Log::info('Starting transaction validation', ['transaction_id' => $transaction->id]);
         $errors = [];
 
-        // Store and operating hours validation
         $storeErrors = $this->validateStore($transaction);
         if (!empty($storeErrors)) {
             $errors = array_merge($errors, $storeErrors);
         }
 
-        // Terminal validation
         $terminalErrors = $this->validateTerminal($transaction);
         if (!empty($terminalErrors)) {
             $errors = array_merge($errors, $terminalErrors);
         }
 
-        // Amount validations
         $amountErrors = $this->validateAmounts($transaction);
         if (!empty($amountErrors)) {
             $errors = array_merge($errors, $amountErrors);
         }
 
-        // Discount validations
         $discountErrors = $this->validateDiscounts($transaction);
         if (!empty($discountErrors)) {
             $errors = array_merge($errors, $discountErrors);
         }
 
-        // Transaction integrity
         $integrityErrors = $this->validateTransactionIntegrity($transaction);
         if (!empty($integrityErrors)) {
             $errors = array_merge($errors, $integrityErrors);
         }
 
-        // Business rules
         $businessRuleErrors = $this->validateBusinessRules($transaction);
         if (!empty($businessRuleErrors)) {
             $errors = array_merge($errors, $businessRuleErrors);
@@ -376,6 +370,7 @@ class TransactionValidationService
             'errors' => $errors
         ];
     }
+
 
     /**
      * Internal implementation of text format parsing
@@ -441,33 +436,51 @@ class TransactionValidationService
      * @param Transaction $transaction
      * @return array
      */
-    protected function validateStore(Transaction $transaction)
+   protected function validateStore(Transaction $transaction)
     {
         $errors = [];
+
         // Get terminal to find associated store
         $terminal = PosTerminal::find($transaction->terminal_id);
         if (!$terminal) {
             return ['Terminal not found'];
         }
+
         // Find store
         $store = $terminal->store;
         if (!$store) {
             return ['Store not found for this terminal'];
         }
-        // Validate operating hours
+
+        // Parse operating hours safely (handle if it's stored as JSON)
+        $rawOperatingHours = is_string($store->operating_hours)
+            ? json_decode($store->operating_hours, true)
+            : $store->operating_hours;
+
+        if (json_last_error() !== JSON_ERROR_NONE || !is_array($rawOperatingHours)) {
+            return ['Invalid or corrupt operating hours format'];
+        }
+
+        // Validate transaction time within store hours
         $transactionTime = Carbon::parse($transaction->transaction_timestamp);
-        $dayOfWeek = strtolower($transactionTime->format('l'));
-        // Get operating hours for that day
-        $operatingHours = $store->operating_hours[$dayOfWeek] ?? null;
-        if (!$operatingHours) {
+        $dayOfWeek = strtolower($transactionTime->format('l')); // e.g., 'thursday'
+
+        $operatingHours = $rawOperatingHours[$dayOfWeek] ?? null;
+        if (!$operatingHours || !isset($operatingHours['open'], $operatingHours['close'])) {
             $errors[] = 'Store operating hours not defined for ' . ucfirst($dayOfWeek);
         } else {
-            $openTime = Carbon::parse($operatingHours['open']);
-            $closeTime = Carbon::parse($operatingHours['close']);
-            if ($transactionTime->lt($openTime) || $transactionTime->gt($closeTime)) {
-                $errors[] = 'Transaction occurred outside of store operating hours';
+            try {
+                $openTime = Carbon::parse($operatingHours['open']);
+                $closeTime = Carbon::parse($operatingHours['close']);
+
+                if ($transactionTime->lt($openTime) || $transactionTime->gt($closeTime)) {
+                    $errors[] = 'Transaction occurred outside of store operating hours';
+                }
+            } catch (\Exception $e) {
+                $errors[] = 'Invalid time format in store operating hours for ' . ucfirst($dayOfWeek);
             }
         }
+
         return $errors;
     }
     /**
@@ -756,5 +769,111 @@ class TransactionValidationService
             }
         }
         return $errors;
+    }
+
+    /**
+     * Validate transaction discounts
+     *
+     * @param Transaction $transaction
+     * @return array
+     */
+    protected function validateDiscounts(Transaction $transaction): array 
+    {
+        $errors = [];
+
+        $discountFields = [
+            'senior_discount',
+            'pwd_discount', 
+            'vip_discount',
+            'employee_discount',
+            'promo_with_approval',
+            'promo_without_approval'
+        ];
+
+        $totalIndividualDiscounts = 0;
+        foreach ($discountFields as $field) {
+            if (!empty($transaction->$field)) {
+                $totalIndividualDiscounts += (float)$transaction->$field;
+            }
+        }
+
+        if (!empty($transaction->discount_total) && $totalIndividualDiscounts > 0) {
+            if (abs((float)$transaction->discount_total - $totalIndividualDiscounts) > 0.01) {
+                $errors[] = "Total discount amount ({$transaction->discount_total}) does not match sum of individual discounts ({$totalIndividualDiscounts})";
+            }
+        }
+
+        if (!empty($transaction->discount_details)) {
+            try {
+                $details = json_decode($transaction->discount_details, true, 512, JSON_THROW_ON_ERROR);
+                if (!is_array($details)) {
+                    $errors[] = "Discount details must be a valid JSON array";
+                }
+            } catch (\JsonException $e) {
+                $errors[] = "Invalid discount details format: " . $e->getMessage();
+            }
+        }
+
+        if (!empty($transaction->promo_code)) {
+            if (empty($transaction->promo_discount_amount)) {
+                $errors[] = "Promo discount amount is required when promo code is present";
+            }
+            if (empty($transaction->promo_status)) {
+                $errors[] = "Promo status is required when promo code is present";
+            }
+        }
+
+        return $errors;
+    }
+
+
+
+    protected function validateOperatingHours($transaction)
+    {
+        $store = Store::find($transaction->store_id);
+        if (!$store) {
+            return ['valid' => false, 'errors' => ['store' => 'Store not found']];
+        }
+
+        // Get transaction datetime
+        $transactionTime = Carbon::parse($transaction->transaction_timestamp);
+        $dayOfWeek = strtolower($transactionTime->format('l')); // gets day name in lowercase
+
+        // Parse the JSON string into array
+        $operatingHours = json_decode($store->operating_hours, true);
+
+        // Debug logging
+        Log::debug('Operating Hours Check', [
+            'store_id' => $store->id,
+            'raw_hours' => $store->operating_hours,
+            'parsed_hours' => $operatingHours,
+            'day' => $dayOfWeek,
+            'transaction_time' => $transactionTime->format('H:i')
+        ]);
+
+        if (!isset($operatingHours[$dayOfWeek])) {
+            return ['valid' => false, 'errors' => ['operating_hours' => "Store operating hours not defined for " . ucfirst($dayOfWeek)]];
+        }
+
+        $dayHours = $operatingHours[$dayOfWeek];
+        $openTime = Carbon::parse($dayHours['open']);
+        $closeTime = Carbon::parse($dayHours['close']);
+        $checkTime = Carbon::parse($transactionTime->format('H:i'));
+
+        if ($checkTime->between($openTime, $closeTime)) {
+            return ['valid' => true];
+        }
+
+        return [
+            'valid' => false, 
+            'errors' => [
+                'operating_hours' => sprintf(
+                    "Transaction time %s is outside operating hours (%s - %s)", 
+                    $checkTime->format('H:i'),
+                    $openTime->format('H:i'),
+                    $closeTime->format('H:i')
+                )
+            ]
+        ];
     }
 }

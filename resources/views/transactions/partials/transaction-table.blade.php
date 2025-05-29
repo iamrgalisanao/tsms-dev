@@ -8,8 +8,9 @@
         <th class="text-center">Validation</th>
         <th class="text-center">Status</th>
         <th class="text-center">Attempts</th>
-        <th>Created At</th>
-        <th class="text-end pe-3">Actions</th>
+        <th class="text-center">Transaction Count</th>
+        <th class="text-center">Created At</th>
+        <!-- <th class="text-end pe-3">Actions</th> -->
       </tr>
     </thead>
     <tbody>
@@ -19,9 +20,12 @@
         <td>{{ $transaction->terminal->identifier ?? 'N/A' }}</td>
         <td class="text-end">₱{{ number_format($transaction->gross_sales, 2) }}</td>
         <td class="text-center">
-          <span
-            class="badge bg-{{ $transaction->validation_status === 'VALID' ? 'success' : ($transaction->validation_status === 'ERROR' ? 'danger' : 'warning') }}">
-            {{ $transaction->validation_status }}
+          <span class="badge bg-{{
+            $transaction->validation_status === 'VALID' ? 'success' :
+            ($transaction->validation_status === 'ERROR' ? 'danger' :
+            ($transaction->validation_status === null || $transaction->validation_status === '' || $transaction->validation_status === 'PENDING' ? 'warning' : 'secondary'))
+          }}">
+            {{ $transaction->validation_status ?: 'PENDING' }}
           </span>
         </td>
         <td class="text-center">
@@ -31,8 +35,9 @@
           </span>
         </td>
         <td class="text-center">{{ $transaction->job_attempts }}</td>
-        <td>{{ $transaction->created_at->format('M d, Y h:i A') }}</td>
-        <td class="text-end pe-3">
+        <td class="text-center">{{ $transaction->transaction_count }}</td>
+        <td class="text-center">{{ $transaction->created_at->format('M d, Y h:i A') }}</td>
+        <!-- <td class=" text-end pe-3">
           <div class="d-flex gap-2 justify-content-end">
             <a href="{{ route('transactions.logs.show', $transaction->id) }}" class="btn btn-sm btn-primary">
               <i class="fas fa-eye"></i> View Details
@@ -43,7 +48,7 @@
             </button>
             @endif
           </div>
-        </td>
+        </td> -->
       </tr>
       @empty
       <tr>
@@ -55,7 +60,12 @@
 </div>
 
 @if(isset($transactions) && method_exists($transactions, 'hasPages') && $transactions->hasPages())
-<div class="d-flex justify-content-end mt-3">
-  {{ $transactions->links() }}
+<div class="d-flex justify-content-between align-items-center border-top pt-3 px-3">
+  <div class="text-muted small">
+    Showing {{ $transactions->firstItem() }} to {{ $transactions->lastItem() }} of {{ $transactions->total() }} entries
+  </div>
+  <nav>
+    {{ $transactions->links('pagination::bootstrap-5')->withQueryString() }}
+  </nav>
 </div>
 @endif

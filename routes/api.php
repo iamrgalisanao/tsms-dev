@@ -162,8 +162,10 @@ Route::middleware(['api'])->prefix('v1')->group(function () {
     
     // Now regular routes with parameters
     Route::get('/retry-history', [RetryHistoryController::class, 'index']);
-    Route::post('/retry-history/{id}/retry', [RetryHistoryController::class, 'retrigger']);
+    Route::post('/retry-history/{id}/retry', [RetryHistoryController::class, 'retry'])
+        ->name('retry-history.retry');
     Route::get('/retry-history/{id}', [RetryHistoryController::class, 'show']);
+    Route::get('/retry-history/{id}/status', [RetryHistoryController::class, 'status']);
 });
 
 // API endpoint for recent test transactions
