@@ -7,6 +7,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
+use App\Jobs\BulkGenerateTransactionsJob;
 
 class TransactionController extends Controller
 {
@@ -67,6 +68,41 @@ class TransactionController extends Controller
                 'error' => $e->getMessage()
             ]);
             throw $e;
+        }
+    }
+
+    /**
+     * Handle bulk transaction generation.
+     */
+    public function bulkGenerate(Request $request)
+    {
+        try {
+            $validated = $request->validate([
+                'count' => 'required|integer|min:1',
+                'terminal_id' => 'required|exists:terminals,id',
+                // Add other validation rules as needed
+            ]);
+
+            BulkGenerateTransactionsJob::dispatch(
+                $validated['count'], 
+                $request->except('count')
+            );
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Bulk generation queued successfully'
+            ]);
+
+        } catch (\Throwable $e) {
+            Log::error('Bulk generation failed', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Failed to queue bulk generation'
+            ], 500);
         }
     }
 }

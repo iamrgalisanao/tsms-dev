@@ -49,8 +49,8 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/performance/export', [DashboardController::class, 'exportPerformance'])->name('performance.export');
     });
 
-    // Centralized Log Viewer Routes
-    Route::prefix('log-viewer')->name('logs.')->group(function () {
+    // Centralized Log Viewer Routes - renamed from logs to log-viewer
+    Route::prefix('log-viewer')->name('log-viewer.')->group(function () {
         Route::get('/', [LogViewerController::class, 'index'])->name('index');
         Route::get('/export/{format?}', [LogViewerController::class, 'export'])->name('export');
         Route::get('/context/{id}', [LogViewerController::class, 'getContext'])->name('context');
@@ -59,8 +59,17 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/webhooks', [LogViewerController::class, 'webhookLogs'])->name('webhooks');
     });
 
+    // Keep test transaction routes before other transaction routes
+    // Test Transaction Routes
+    Route::get('/test-transaction', [TestTransactionController::class, 'index'])->name('test-transaction.index');
+    Route::post('/test-transaction/process', [TestTransactionController::class, 'process'])->name('test-transaction.process');
+
     // Transaction Routes - Keep logs before other transaction routes
     Route::prefix('transactions')->name('transactions.')->group(function () {
+        // Place specific routes first
+        Route::get('/test', [TestTransactionController::class, 'index'])->name('test');
+        Route::post('/test/process', [TestTransactionController::class, 'process'])->name('test.process');
+        
         Route::get('/', [TransactionController::class, 'index'])->name('index');
         
         // Transaction logs routes
@@ -75,12 +84,11 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/{id}/retry', [TransactionController::class, 'retry'])->name('retry');
     });
 
-    // Test transaction routes
-    Route::get('/test-transaction', [TestTransactionController::class, 'index'])->name('transactions.test');
-    Route::post('/test-transaction/process', [TestTransactionController::class, 'process'])->name('transactions.test.process');
-
-    // Make sure there's a retry route for the show page to use
-    Route::post('/transactions/{id}/retry', [TestTransactionController::class, 'retry'])->name('transactions.retry');
+    // Bulk generate and retry routes
+    Route::prefix('transactions')->group(function () {
+        Route::post('/bulk-generate', [TransactionController::class, 'bulkGenerate'])->name('transactions.bulk-generate');
+        Route::post('/retry/{transaction}', [TransactionController::class, 'retryTransaction'])->name('transactions.retry.process');
+    });
 
     // Other Routes - Keep at root level
     Route::get('/circuit-breakers', [CircuitBreakerController::class, 'index'])->name('circuit-breakers');
@@ -129,6 +137,6 @@ Route::middleware(['auth'])->group(function () {
         return view('app');
     })->middleware(['auth'])->name('terminal.test');
 
-    // Log Routes
-    Route::get('/logs', [LogController::class, 'index'])->name('logs.index');
+    // System Logs Route - renamed from logs to system-logs
+    Route::get('/system-logs', [LogController::class, 'index'])->name('system-logs.index');
 });

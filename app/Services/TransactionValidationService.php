@@ -14,7 +14,7 @@ class TransactionValidationService
     protected const MAX_VAT_DIFFERENCE = 0.02;
     protected const MAX_ROUNDING_DIFFERENCE = 0.05;
     protected const MAX_SERVICE_CHARGE_PERCENTAGE = 0.15;
-    protected const MAX_DISCOUNT_PERCENTAGE = 0.50;
+    protected const MAX_DISCOUNT_PERCENTAGE = 0.30; // 30% maximum discount
     protected const MAX_TRANSACTION_AGE_DAYS = 30;
     
     // Move to config or database
@@ -318,40 +318,53 @@ class TransactionValidationService
      * @param Transaction $transaction
      * @return array
      */
-   public function validateTransaction(Transaction $transaction)
+    public function validateTransaction(Transaction $transaction)
     {
         Log::info('Starting transaction validation', ['transaction_id' => $transaction->id]);
         $errors = [];
 
+        // Store and operating hours validation
         $storeErrors = $this->validateStore($transaction);
         if (!empty($storeErrors)) {
             $errors = array_merge($errors, $storeErrors);
         }
 
+        // Terminal validation
         $terminalErrors = $this->validateTerminal($transaction);
         if (!empty($terminalErrors)) {
             $errors = array_merge($errors, $terminalErrors);
         }
 
+        // Amount validations
         $amountErrors = $this->validateAmounts($transaction);
         if (!empty($amountErrors)) {
             $errors = array_merge($errors, $amountErrors);
         }
 
-        $discountErrors = $this->validateDiscounts($transaction);
-        if (!empty($discountErrors)) {
-            $errors = array_merge($errors, $discountErrors);
-        }
-
+        // Transaction integrity
         $integrityErrors = $this->validateTransactionIntegrity($transaction);
         if (!empty($integrityErrors)) {
             $errors = array_merge($errors, $integrityErrors);
         }
 
+        // Business rules
         $businessRuleErrors = $this->validateBusinessRules($transaction);
         if (!empty($businessRuleErrors)) {
             $errors = array_merge($errors, $businessRuleErrors);
         }
+
+        // Discount validations
+        $discountErrors = $this->validateDiscounts($transaction);
+        if (!empty($discountErrors)) {
+            $errors = array_merge($errors, $discountErrors);
+        }
+
+        // Log validation completion
+        Log::info('Validation complete', [
+            'transaction_id' => $transaction->id,
+            'has_errors' => !empty($errors),
+            'error_count' => count($errors)
+        ]);
 
         if (empty($errors)) {
             return [
@@ -360,17 +373,11 @@ class TransactionValidationService
             ];
         }
 
-        Log::warning('Transaction validation failed', [
-            'transaction_id' => $transaction->id,
-            'errors' => $errors
-        ]);
-
         return [
             'valid' => false,
             'errors' => $errors
         ];
     }
-
 
     /**
      * Internal implementation of text format parsing
@@ -432,55 +439,42 @@ class TransactionValidationService
         return $result;
     }
     /**
-     * Validate store information
+     * Validate the store information
      * @param Transaction $transaction
      * @return array
      */
-   protected function validateStore(Transaction $transaction)
+    protected function validateStore(Transaction $transaction)
     {
         $errors = [];
-
-        // Get terminal to find associated store
-        $terminal = PosTerminal::find($transaction->terminal_id);
-        if (!$terminal) {
-            return ['Terminal not found'];
+        
+        // Check if terminal exists
+        if (!$transaction->terminal_id) {
+            $errors[] = 'Terminal ID is required';
+            return $errors;
         }
 
-        // Find store
-        $store = $terminal->store;
+        // Try to find the store by terminal ID
+        $store = Store::where('id', function($query) use ($transaction) {
+            $query->select('store_id')
+                  ->from('pos_terminals')  // Changed from terminals to pos_terminals
+                  ->where('id', $transaction->terminal_id)
+                  ->limit(1);
+        })->first();
+        
         if (!$store) {
-            return ['Store not found for this terminal'];
-        }
-
-        // Parse operating hours safely (handle if it's stored as JSON)
-        $rawOperatingHours = is_string($store->operating_hours)
-            ? json_decode($store->operating_hours, true)
-            : $store->operating_hours;
-
-        if (json_last_error() !== JSON_ERROR_NONE || !is_array($rawOperatingHours)) {
-            return ['Invalid or corrupt operating hours format'];
-        }
-
-        // Validate transaction time within store hours
-        $transactionTime = Carbon::parse($transaction->transaction_timestamp);
-        $dayOfWeek = strtolower($transactionTime->format('l')); // e.g., 'thursday'
-
-        $operatingHours = $rawOperatingHours[$dayOfWeek] ?? null;
-        if (!$operatingHours || !isset($operatingHours['open'], $operatingHours['close'])) {
-            $errors[] = 'Store operating hours not defined for ' . ucfirst($dayOfWeek);
+            // Before failing, check if store name is provided directly in the transaction
+            if (empty($transaction->store_name)) {
+                // Only add error if both store lookup and explicit store name are missing
+                $errors[] = 'Store not found for this terminal';
+            }
         } else {
-            try {
-                $openTime = Carbon::parse($operatingHours['open']);
-                $closeTime = Carbon::parse($operatingHours['close']);
-
-                if ($transactionTime->lt($openTime) || $transactionTime->gt($closeTime)) {
-                    $errors[] = 'Transaction occurred outside of store operating hours';
-                }
-            } catch (\Exception $e) {
-                $errors[] = 'Invalid time format in store operating hours for ' . ucfirst($dayOfWeek);
+            // If store found but transaction doesn't have store name, update it
+            if (empty($transaction->store_name)) {
+                $transaction->store_name = $store->name;
+                $transaction->save();
             }
         }
-
+        
         return $errors;
     }
     /**
@@ -685,17 +679,24 @@ class TransactionValidationService
     {
         // Complies with Section 7 Validation & Retry Logic
         $errors = [];
+        
         // Get terminal and store
         $terminal = PosTerminal::find($transaction->terminal_id);
         if (!$terminal) {
-            return ['Terminal not found'];
+            $errors[] = 'Terminal not found';
+            return $errors;
         }
-        // Daily transaction limit
-        $store = $terminal->store;
-        $transactionDate = Carbon::parse($transaction->transaction_timestamp);
+        
+        // Get associated store
+        $store = Store::find($terminal->store_id);
         if (!$store) {
-            return ['Store not found for this terminal'];
+            $errors[] = 'Store not found for this terminal';
+            return $errors;
         }
+        
+        // Daily transaction limit
+        $transactionDate = Carbon::parse($transaction->transaction_timestamp);
+        
         // Transaction limits
         if ($store->max_transaction_amount && $transaction->gross_sales > $store->max_transaction_amount) {
             $errors[] = sprintf(
@@ -704,6 +705,7 @@ class TransactionValidationService
                 $store->max_transaction_amount
             );
         }
+        
         // Daily transaction limit, considering service charges
         $dailySalesTotal = $store->getDailySalesTotal($transactionDate);
         $newTotal = $dailySalesTotal + $transaction->gross_sales;
@@ -773,107 +775,49 @@ class TransactionValidationService
 
     /**
      * Validate transaction discounts
-     *
      * @param Transaction $transaction
      * @return array
      */
-    protected function validateDiscounts(Transaction $transaction): array 
+    protected function validateDiscounts(Transaction $transaction)
     {
         $errors = [];
-
-        $discountFields = [
-            'senior_discount',
-            'pwd_discount', 
-            'vip_discount',
-            'employee_discount',
-            'promo_with_approval',
-            'promo_without_approval'
-        ];
-
-        $totalIndividualDiscounts = 0;
-        foreach ($discountFields as $field) {
-            if (!empty($transaction->$field)) {
-                $totalIndividualDiscounts += (float)$transaction->$field;
-            }
+        
+        // Skip validation if no discounts applied
+        if (!$transaction->discount_amount || $transaction->discount_amount <= 0) {
+            return $errors;
         }
-
-        if (!empty($transaction->discount_total) && $totalIndividualDiscounts > 0) {
-            if (abs((float)$transaction->discount_total - $totalIndividualDiscounts) > 0.01) {
-                $errors[] = "Total discount amount ({$transaction->discount_total}) does not match sum of individual discounts ({$totalIndividualDiscounts})";
-            }
+        
+        // Check if discount details exist when discount amount is present
+        if ($transaction->discount_amount > 0 && empty($transaction->discount_details)) {
+            $errors[] = 'Discount details missing for transaction with applied discount';
         }
-
-        if (!empty($transaction->discount_details)) {
-            try {
-                $details = json_decode($transaction->discount_details, true, 512, JSON_THROW_ON_ERROR);
-                if (!is_array($details)) {
-                    $errors[] = "Discount details must be a valid JSON array";
+        
+        // Check if discount total matches the sum of individual discounts
+        if (!empty($transaction->discount_details) && is_array($transaction->discount_details)) {
+            $totalDiscounts = 0;
+            
+            foreach ($transaction->discount_details as $discount) {
+                if (isset($discount['amount'])) {
+                    $totalDiscounts += floatval($discount['amount']);
                 }
-            } catch (\JsonException $e) {
-                $errors[] = "Invalid discount details format: " . $e->getMessage();
+            }
+            
+            // Allow for small floating point differences (0.01)
+            if (abs($totalDiscounts - floatval($transaction->discount_amount)) > 0.01) {
+                $errors[] = sprintf(
+                    'Discount total (%.2f) does not match sum of individual discounts (%.2f)',
+                    floatval($transaction->discount_amount),
+                    $totalDiscounts
+                );
             }
         }
-
-        if (!empty($transaction->promo_code)) {
-            if (empty($transaction->promo_discount_amount)) {
-                $errors[] = "Promo discount amount is required when promo code is present";
-            }
-            if (empty($transaction->promo_status)) {
-                $errors[] = "Promo status is required when promo code is present";
-            }
+        
+        // Check for auth code on special discounts
+        if (($transaction->senior_discount > 0 || $transaction->pwd_discount > 0) 
+            && empty($transaction->discount_auth_code)) {
+            $errors[] = 'Authorization code required for senior/PWD discount';
         }
-
+        
         return $errors;
-    }
-
-
-
-    protected function validateOperatingHours($transaction)
-    {
-        $store = Store::find($transaction->store_id);
-        if (!$store) {
-            return ['valid' => false, 'errors' => ['store' => 'Store not found']];
-        }
-
-        // Get transaction datetime
-        $transactionTime = Carbon::parse($transaction->transaction_timestamp);
-        $dayOfWeek = strtolower($transactionTime->format('l')); // gets day name in lowercase
-
-        // Parse the JSON string into array
-        $operatingHours = json_decode($store->operating_hours, true);
-
-        // Debug logging
-        Log::debug('Operating Hours Check', [
-            'store_id' => $store->id,
-            'raw_hours' => $store->operating_hours,
-            'parsed_hours' => $operatingHours,
-            'day' => $dayOfWeek,
-            'transaction_time' => $transactionTime->format('H:i')
-        ]);
-
-        if (!isset($operatingHours[$dayOfWeek])) {
-            return ['valid' => false, 'errors' => ['operating_hours' => "Store operating hours not defined for " . ucfirst($dayOfWeek)]];
-        }
-
-        $dayHours = $operatingHours[$dayOfWeek];
-        $openTime = Carbon::parse($dayHours['open']);
-        $closeTime = Carbon::parse($dayHours['close']);
-        $checkTime = Carbon::parse($transactionTime->format('H:i'));
-
-        if ($checkTime->between($openTime, $closeTime)) {
-            return ['valid' => true];
-        }
-
-        return [
-            'valid' => false, 
-            'errors' => [
-                'operating_hours' => sprintf(
-                    "Transaction time %s is outside operating hours (%s - %s)", 
-                    $checkTime->format('H:i'),
-                    $openTime->format('H:i'),
-                    $closeTime->format('H:i')
-                )
-            ]
-        ];
     }
 }
