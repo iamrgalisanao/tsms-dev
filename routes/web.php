@@ -139,4 +139,7 @@ Route::middleware(['auth'])->group(function () {
 
     // System Logs Route - renamed from logs to system-logs
     Route::get('/system-logs', [LogController::class, 'index'])->name('system-logs.index');
+
+    // Logs export route
+    Route::get('/logs/export/{format}', [App\Http\Controllers\LogExportController::class, 'export'])->name('logs.export');
 });
