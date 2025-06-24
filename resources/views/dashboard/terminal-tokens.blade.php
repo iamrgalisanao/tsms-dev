@@ -1,6 +1,139 @@
-@extends('layouts.app')
+@extends('layouts.master')
+@section('title', 'Terminal Tokens')
+@section('content')
+
+@push('styles')
+<!-- DataTables -->
+<link rel="stylesheet" href="{{ asset('plugins/datatables-bs4/css/dataTables.bootstrap4.min.css') }}">
+<link rel="stylesheet" href="{{ asset('plugins/datatables-responsive/css/responsive.bootstrap4.min.css') }}">
+<link rel="stylesheet" href="{{ asset('plugins/datatables-buttons/css/buttons.bootstrap4.min.css') }}">
+<link rel="stylesheet" href="{{ asset('plugins/toastr/toastr.min.css') }}">
+
+@endpush
 
 @section('content')
+
+
+  <div class="card">
+    <div class="card-header bg-primary">
+        <h3 class="card-title text-white">List of Tokens</h3>
+    </div>
+    <div class="card-body">
+        <table id="example3" class="table table-bordered table-striped">
+            <thead>
+                <tr>
+                  <th>Terminal ID</th>
+                  <th>Tenant</th>
+                  <th>Created</th>
+                  <th>Expires At</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody>
+                @forelse($terminals as $terminal)
+                  <tr>
+                    <td>{{ $terminal->terminal_uid }}</td>
+                    <td>{{ $terminal->tenant->name ?? 'Unknown' }}</td>
+                    <td>{{ $terminal->created_at->format('Y-m-d H:i') }}</td>
+                    <td>
+                      @if($terminal->expires_at)
+                        {{ $terminal->expires_at->format('Y-m-d H:i') }}
+                      @else
+                        Never
+                      @endif
+                    </td>
+                    <td>
+                      @if($terminal->is_revoked)
+                        <span class="badge bg-danger">Revoked</span>
+                      @elseif($terminal->expires_at && $terminal->expires_at->isPast())
+                        <span class="badge bg-warning">Expired</span>
+                      @else
+                        <span class="badge bg-success">Active</span>
+                      @endif
+                    </td>
+                    <td>
+                      <form method="POST" action="{{ route('terminal-tokens.regenerate', $terminal->id) }}" class="d-inline">
+                        @csrf
+                        <button type="submit" class="btn btn-sm btn-primary">Regenerate JWT</button>
+                      </form>
+                    </td>
+                  </tr>
+                  @empty
+                  {{-- <tr>
+                    <td colspan="6" class="text-center">No terminals found</td>
+                  </tr> --}}
+                @endforelse
+            </tbody>
+        </table>
+    </div>
+</div>
+
+
+@endsection
+
+@push('scripts')
+<!-- DataTables & Plugins -->
+<script src="{{ asset('plugins/datatables/jquery.dataTables.min.js') }}"></script>
+<script src="{{ asset('plugins/datatables-bs4/js/dataTables.bootstrap4.min.js') }}"></script>
+<script src="{{ asset('plugins/datatables-responsive/js/dataTables.responsive.min.js') }}"></script>
+<script src="{{ asset('plugins/datatables-responsive/js/responsive.bootstrap4.min.js') }}"></script>
+<script src="{{ asset('plugins/datatables-buttons/js/dataTables.buttons.min.js') }}"></script>
+<script src="{{ asset('plugins/datatables-buttons/js/buttons.bootstrap4.min.js') }}"></script>
+<script src="{{ asset('plugins/jszip/jszip.min.js') }}"></script>
+<script src="{{ asset('plugins/pdfmake/pdfmake.min.js') }}"></script>
+<script src="{{ asset('plugins/pdfmake/vfs_fonts.js') }}"></script>
+<script src="{{ asset('plugins/datatables-buttons/js/buttons.html5.min.js') }}"></script>
+<script src="{{ asset('plugins/datatables-buttons/js/buttons.print.min.js') }}"></script>
+<script src="{{ asset('plugins/datatables-buttons/js/buttons.colVis.min.js') }}"></script>
+<script src="{{ asset('plugins/toastr/toastr.min.js') }}"></script>
+
+<script>
+$(function () {
+    $("#example3").DataTable({
+        "responsive": true, 
+        "lengthChange": false, 
+        "autoWidth": false,
+        "ordering": true,
+        "info": true,
+        "paging": true,
+        "searching": true,
+        "language": {
+            "emptyTable": "No transaction logs available",
+            "zeroRecords": "No matching records found",
+            "info": "Showing _START_ to _END_ of _TOTAL_ entries",
+            "infoEmpty": "Showing 0 to 0 of 0 entries",
+            "infoFiltered": "(filtered from _MAX_ total entries)",
+            "search": "Search:",
+            "paginate": {
+                "first": "First",
+                "last": "Last",
+                "next": "Next",
+                "previous": "Previous"
+            }
+        },
+        "buttons": [
+            { extend: "csv",   text: "CSV",   className: "btn btn-danger" },
+              { extend: "excel", text: "Excel", className: "btn btn-danger" },
+              { extend: "pdf",   text: "PDF",   className: "btn btn-danger" },
+              // { extend: "print", text: "Print", className: "btn btn-sm btn-danger" },
+              { extend: "colvis",text: "Cols",  className: "btn btn-lg btn-danger" }
+        ]
+    }).buttons().container().appendTo('#example3_wrapper .col-md-6:eq(0)');
+
+    // Toastr notifications
+    @if(session('success'))
+        toastr.success("{{ session('success') }}");
+    @endif
+
+    @if(session('error'))
+        toastr.error("{{ session('error') }}");
+    @endif
+});
+</script>
+
+@endpush
+
 <div class="card">
   <div class="card-header">
     <h5>Terminal Tokens</h5>

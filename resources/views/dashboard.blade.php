@@ -1,87 +1,64 @@
-@extends('layouts.app')
+@extends('layouts.master')
+
+@section('title', 'Dashboard')
 
 @section('content')
-<div class="container-fluid">
-  <div class="row mb-4">
-    <div class="col">
-      <h2>Dashboard</h2>
-    </div>
-  </div>
-
-  <!-- Metrics Cards -->
-  <div class="row g-3 mb-4">
-    <div class="col-md-3">
-      <div class="card">
-        <div class="card-body">
-          <h6 class="card-subtitle mb-2 text-muted">Today's Transactions</h6>
-          <h2 class="card-title mb-0">{{ $metrics['today_count'] ?? 0 }}</h2>
-        </div>
-      </div>
-    </div>
-    <div class="col-md-3">
-      <div class="card">
-        <div class="card-body">
-          <h6 class="card-subtitle mb-2 text-muted">Success Rate</h6>
-          <h2 class="card-title mb-0">{{ $metrics['success_rate'] ?? 0 }}%</h2>
-        </div>
-      </div>
-    </div>
-    <div class="col-md-3">
-      <div class="card">
-        <div class="card-body">
-          <h6 class="card-subtitle mb-2 text-muted">Avg. Processing Time</h6>
-          <h2 class="card-title mb-0">{{ $metrics['avg_processing_time'] ?? 0 }}s</h2>
-        </div>
-      </div>
-    </div>
-    <div class="col-md-3">
-      <div class="card">
-        <div class="card-body">
-          <h6 class="card-subtitle mb-2 text-muted">Error Rate</h6>
-          <h2 class="card-title mb-0">{{ $metrics['error_rate'] ?? 0 }}%</h2>
-        </div>
-      </div>
-    </div>
-  </div>
 
   <!-- Summary Cards -->
   <div class="row mb-4">
-    <div class="col-md-3">
-      <div class="card">
-        <div class="card-body text-center">
-          <h3 class="card-title">{{ $terminalCount ?? 0 }}</h3>
-          <p class="card-text text-muted">Total Terminals</p>
+    <div class="col-md-3 col-sm-6 col-12">
+      <div class="info-box">
+        <span class="info-box-icon bg-danger">
+          <i class="far fa-bookmark"></i>
+        </span>
+        <div class="info-box-content">
+          <span class="info-box-text">Total Transactions (7d)</span>
+          <span class="info-box-number">{{ $metrics['total_transactions'] ?? 0 }}</span>
         </div>
       </div>
     </div>
 
-    <div class="col-md-3">
-      <div class="card">
-        <div class="card-body text-center">
-          <h3 class="card-title text-muted mb-2">Active Terminals</h3>
-          <p class="h2">{{ $metrics['active_terminals'] ?? 0 }}</p>
+    <div class="col-md-3 col-sm-6 col-12">
+      <div class="info-box">
+        <span class="info-box-icon bg-danger">
+          <i class="fa fa-desktop"></i>
+        </span>
+        <div class="info-box-content">
+          <span class="info-box-text">Total Terminals</span>
+          <span class="info-box-number">{{ $terminalCount ?? 0 }}</span>
         </div>
       </div>
     </div>
 
-    <div class="col-md-3">
-      <div class="card">
-        <div class="card-body text-center">
-          <h3 class="card-title">{{ $recentTransactionCount }}</h3>
-          <p class="card-text text-muted">Transactions (7d)</p>
+     <div class="col-md-3 col-sm-6 col-12">
+      <div class="info-box">
+        <span class="info-box-icon bg-danger">
+          <i class="fas fa-money-bill"></i>
+        </span>
+        <div class="info-box-content">
+          <span class="info-box-text">Transactions</span>
+          <span class="info-box-number">{{ $recentTransactionCount }}</span>
         </div>
       </div>
     </div>
 
-    <div class="col-md-3">
-      <div class="card">
-        <div class="card-body text-center">
-          <h3 class="card-title">{{ $errorCount }}</h3>
-          <p class="card-text text-muted">Errors (7d)</p>
+   
+    
+   
+
+    <div class="col-md-3 col-sm-6 col-12">
+      <div class="info-box">
+        <span class="info-box-icon bg-danger">
+          <i class="fas fa-sad-tear"></i>
+        </span>
+        <div class="info-box-content">
+          <span class="info-box-text">Errors</span>
+          <span class="info-box-number">{{ $errorCount }}</span>
         </div>
       </div>
     </div>
-  </div>
+
+  </div> 
 
   <!-- POS Providers Section -->
   <div class="card mb-4">
@@ -123,20 +100,20 @@
   </div>
 
   <!-- Transaction Metrics -->
-  @include('transactions.partials.dashboard-metrics')
+  {{-- @include('transactions.partials.dashboard-metrics') --}}
 
   <!-- Terminal Enrollment History Chart -->
-  <div class="card mb-4">
+  {{-- <div class="card mb-4">
     <div class="card-header">
       <h5 class="card-title mb-0">Terminal Enrollment History</h5>
     </div>
     <div class="card-body">
       <canvas id="terminalEnrollmentChart" height="300"></canvas>
     </div>
-  </div>
+  </div> --}}
 
   <!-- Recent Terminal Enrollments -->
-  <div class="card">
+  {{-- <div class="card">
     <div class="card-header">
       <h5 class="card-title mb-0">Recent Terminal Enrollments</h5>
     </div>
@@ -170,7 +147,7 @@
         </table>
       </div>
     </div>
-  </div>
+  </div> --}}
 
   <!-- Recent Transactions -->
   <div class="card mt-4">
@@ -184,7 +161,7 @@
       @include('transactions.partials.transaction-table', ['transactions' => $recentTransactions])
     </div>
   </div>
-</div>
+
 @endsection
 
 @push('scripts')

@@ -423,6 +423,105 @@
     -   [ ] Delivery status tracking
     -   [ ] Rate limiting and throttling controls
 
+## 🔮 FUTURE ENHANCEMENT
+
+### POS Terminal Registration System
+
+-   [ ] API Design & Documentation
+
+    -   [ ] Endpoint implementation: POST /api/v1/terminals/register
+    -   [ ] Payload schema design (tenant_code, terminal_uid, provider_jwt, metadata)
+    -   [ ] Response schema implementation (terminal_id, jwt_token, enrolled_at)
+    -   [ ] Error codes standardization (400, 401, 409, 500)
+    -   [ ] API documentation and developer guide
+
+-   [ ] Terminal Import UI
+
+    -   [ ] File upload form with schema validation
+    -   [ ] Preview grid with validation status
+    -   [ ] Error indication for invalid entries
+    -   [ ] Batch token generation
+    -   [ ] Commit functionality with validation
+
+-   [ ] Provider Onboarding Path
+
+    -   [ ] Tier 1 Provider Resources (Tech-Savvy)
+        -   [ ] API key management system
+        -   [ ] JWT handshake documentation
+        -   [ ] Postman collection development
+        -   [ ] Sample script creation
+    -   [ ] Tier 2 Provider Resources (Less Technical)
+        -   [ ] JSON/CSV template design
+        -   [ ] Step-by-step import guide
+        -   [ ] Support system for transition assistance
+
+-   [ ] Security Implementation
+
+    -   [ ] API security middleware
+    -   [ ] Provider JWT verification (pos_providers.public_key)
+    -   [ ] Provider accreditation status checks
+    -   [ ] Rate limiting implementation
+    -   [ ] API call logging
+    -   [ ] Role-based access for import UI (PROVIDER_ADMIN, TMS_SUPERADMIN)
+    -   [ ] Schema and tenant integrity validation
+    -   [ ] Audit logging for imports
+
+-   [ ] Monitoring & Optimization
+    -   [ ] Enrollment method tracking (API vs. manual)
+    -   [ ] Import system retirement planning
+    -   [ ] Alert system for failed validations
+    -   [ ] Usage analytics dashboard
+    -   [ ] Performance optimization
+
+### Event-Driven Architecture Implementation
+
+-   [ ] Schema Registry System
+
+    -   [ ] Centralized schema management
+    -   [ ] Schema caching mechanism
+    -   [ ] Performance optimization
+    -   [ ] SDK development for schema handling
+    -   [ ] Schema version control
+
+-   [ ] Event Gateway Enhancement
+
+    -   [ ] External producer authentication
+    -   [ ] Internal producer routing
+    -   [ ] Gateway security improvements
+    -   [ ] Rate limiting implementation
+    -   [ ] Authorization management
+
+-   [ ] Event Processing Module
+
+    -   [ ] Event validation service
+    -   [ ] Schema contract verification
+    -   [ ] Event queue management
+    -   [ ] Processing pipeline optimization
+    -   [ ] Real-time event tracking
+
+-   [ ] Event Storage System
+
+    -   [ ] Temporary event store
+    -   [ ] Queue unavailability handling
+    -   [ ] Event persistence management
+    -   [ ] Storage optimization strategies
+    -   [ ] Data recovery mechanisms
+
+-   [ ] Consumer Management
+
+    -   [ ] Multiple consumer support
+    -   [ ] Consumer-specific queues
+    -   [ ] Load balancing implementation
+    -   [ ] Consumer health monitoring
+    -   [ ] Scaling capabilities
+
+-   [ ] Producer Infrastructure
+    -   [ ] External producer management
+    -   [ ] Internal producer framework
+    -   [ ] Producer authentication
+    -   [ ] Event submission validation
+    -   [ ] Producer monitoring tools
+
 ## 📅 Last Updated
 
 -   Date: 2025-05-30

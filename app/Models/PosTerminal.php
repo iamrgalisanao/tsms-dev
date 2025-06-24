@@ -16,8 +16,13 @@ class PosTerminal extends Model implements Authenticatable, JWTSubject
         'tenant_id',
         'provider_id',
         'terminal_uid',
-        'registered_at',
-        'enrolled_at',
+        'machine_number',
+        'pos_type',
+        'supports_guest_count',
+        'ip_whitelist',
+        'device_fingerprint',
+        'integration_type',
+        'auth_type',
         'status',
         'is_sandbox',
         'webhook_url',
@@ -25,74 +30,68 @@ class PosTerminal extends Model implements Authenticatable, JWTSubject
         'retry_interval_sec',
         'retry_enabled',
         'jwt_token',
-        'expires_at',
-        'is_revoked',
-        'store_id',
-        'serial_number',
-        'model',
+        'registered_at',
+        'enrolled_at',
         'created_at',
-        'updated_at'
+        'updated_at',
+        'expires_at',
+        'is_revoked'
     ];
 
     protected $casts = [
-        'registered_at' => 'datetime',
-        'enrolled_at' => 'datetime',
-        'expires_at' => 'datetime',
+        'supports_guest_count' => 'boolean',
         'is_sandbox' => 'boolean',
         'retry_enabled' => 'boolean',
-        'is_revoked' => 'boolean'
+        'is_revoked' => 'boolean',
+        'registered_at' => 'datetime',
+        'enrolled_at' => 'datetime',
+        'created_at' => 'datetime',
+        'updated_at' => 'datetime',
+        'expires_at' => 'datetime',
+        'max_retries' => 'integer',
+        'retry_interval_sec' => 'integer',
     ];
 
     public function tenant()
     {
         return $this->belongsTo(Tenant::class);
     }
-    
+
     public function provider()
     {
         return $this->belongsTo(PosProvider::class);
     }
-    
+
     public function transactions()
     {
         return $this->hasMany(Transaction::class);
     }
-    
+
     public function integrationLogs()
     {
         return $this->hasMany(IntegrationLog::class, 'terminal_id');
     }
-    
+
     public function store()
     {
         return $this->belongsTo(Store::class);
     }
-    
+
     public function getAuthIdentifierName()
     {
         return 'id';
     }
-    
+
     public function getAuthPassword()
     {
         return $this->jwt_token;
     }
 
-    /**
-     * Get the identifier that will be stored in the subject claim of the JWT.
-     *
-     * @return mixed
-     */
     public function getJWTIdentifier()
     {
         return $this->getKey();
     }
 
-    /**
-     * Return a key value array, containing any custom claims to be added to the JWT.
-     *
-     * @return array
-     */
     public function getJWTCustomClaims()
     {
         return [

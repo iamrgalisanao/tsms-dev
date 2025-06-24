@@ -12,6 +12,7 @@ class RetryHistoryController extends Controller
 {
     public function index(Request $request)
     {
+        // dd(""hi");
         // Get all POS terminals for the filter dropdown
         $terminals = PosTerminal::select('id', 'terminal_uid')->get();
         

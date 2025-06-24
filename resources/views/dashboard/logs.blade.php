@@ -1,71 +1,71 @@
-@extends('layouts.app')
+@extends('layouts.master')
+@section('title', 'System Logs')
+
+@push('styles')
+<!-- DataTables -->
+<link rel="stylesheet" href="{{ asset('plugins/datatables-bs4/css/dataTables.bootstrap4.min.css') }}">
+<link rel="stylesheet" href="{{ asset('plugins/datatables-responsive/css/responsive.bootstrap4.min.css') }}">
+<link rel="stylesheet" href="{{ asset('plugins/datatables-buttons/css/buttons.bootstrap4.min.css') }}">
+<link rel="stylesheet" href="{{ asset('plugins/toastr/toastr.min.css') }}">
+
+@endpush
 
 @section('content')
+
 <div class="container-fluid py-4">
   <!-- Stats Cards Row -->
   <div class="row g-4 mb-4">
-    <div class="col-sm-6 col-xl-3">
-      <div class="card h-100 border-0 shadow-sm hover-lift">
-        <div class="card-body">
-          <div class="d-flex align-items-center">
-            <div class="flex-shrink-0 rounded-3 p-3 bg-primary bg-opacity-10">
-              <i class="fas fa-history fa-2x text-primary"></i>
-            </div>
-            <div class="flex-grow-1 ms-3">
-              <h3 class="mb-1">{{ number_format($stats['total'] ?? 0) }}</h3>
-              <div class="text-muted small">Total Events</div>
-            </div>
-          </div>
+     
+    <div class="col-md-3 col-sm-6 col-12">
+      <div class="info-box">
+        <span class="info-box-icon bg-danger">
+          <i class="fas fa-flag"></i>
+        </span>
+        <div class="info-box-content">
+          <span class="info-box-text">Total Events</span>
+          <span class="info-box-number">{{ number_format($stats['total'] ?? 0) }}</span>
         </div>
       </div>
     </div>
-    <div class="col-sm-6 col-xl-3">
-      <div class="card h-100 border-0 shadow-sm hover-lift">
-        <div class="card-body">
-          <div class="d-flex align-items-center">
-            <div class="flex-shrink-0 rounded-3 p-3 bg-warning bg-opacity-10">
-              <i class="fas fa-user-shield fa-2x text-warning"></i>
-            </div>
-            <div class="flex-grow-1 ms-3">
-              <h3 class="mb-1">{{ number_format($stats['auth'] ?? 0) }}</h3>
-              <div class="text-muted small">Auth Events</div>
-            </div>
-          </div>
+
+    <div class="col-md-3 col-sm-6 col-12">
+      <div class="info-box">
+        <span class="info-box-icon bg-danger">
+          <i class="fas fa-key"></i>
+        </span>
+        <div class="info-box-content">
+          <span class="info-box-text">Auth Events</span>
+          <span class="info-box-number">{{ number_format($stats['auth'] ?? 0) }}</span>
         </div>
       </div>
     </div>
-    <div class="col-sm-6 col-xl-3">
-      <div class="card h-100 border-0 shadow-sm hover-lift">
-        <div class="card-body">
-          <div class="d-flex align-items-center">
-            <div class="flex-shrink-0 rounded-3 p-3 bg-info bg-opacity-10">
-              <i class="fas fa-edit fa-2x text-info"></i>
-            </div>
-            <div class="flex-grow-1 ms-3">
-              <h3 class="mb-1">{{ number_format($stats['changes'] ?? 0) }}</h3>
-              <div class="text-muted small">Changes</div>
-            </div>
-          </div>
+    <div class="col-md-3 col-sm-6 col-12">
+      <div class="info-box">
+        <span class="info-box-icon bg-danger">
+          <i class="fas fa-clock"></i>
+        </span>
+        <div class="info-box-content">
+          <span class="info-box-text">Changes</span>
+          <span class="info-box-number">{{ number_format($stats['changes'] ?? 0) }}</span>
         </div>
       </div>
     </div>
-    <div class="col-sm-6 col-xl-3">
-      <div class="card h-100 border-0 shadow-sm hover-lift">
-        <div class="card-body">
-          <div class="d-flex align-items-center">
-            <div class="flex-shrink-0 rounded-3 p-3 bg-danger bg-opacity-10">
-              <i class="fas fa-exclamation-circle fa-2x text-danger"></i>
-            </div>
-            <div class="flex-grow-1 ms-3">
-              <h3 class="mb-1">{{ number_format($stats['error_logs'] ?? 0) }}</h3>
-              <div class="text-muted small">Errors</div>
-            </div>
-          </div>
+    <div class="col-md-3 col-sm-6 col-12">
+      <div class="info-box">
+        <span class="info-box-icon bg-danger">
+          <i class="fas fa-thumbs-down"></i>
+        </span>
+        <div class="info-box-content">
+          <span class="info-box-text">Error Logs</span>
+          <span class="info-box-number">{{ number_format($stats['error_logs'] ?? 0) }}</span>
         </div>
       </div>
     </div>
+  </div>
+
+    
     <!-- Add Webhook Stats Card -->
-    <div class="col-sm-6 col-xl-3">
+    {{-- <div class="col-sm-6 col-xl-3">
       <div class="card h-100 border-0 shadow-sm hover-lift">
         <div class="card-body">
           <div class="d-flex align-items-center">
@@ -80,7 +80,7 @@
         </div>
       </div>
     </div>
-  </div>
+  </div> --}}
 
   <!-- Main Content Card -->
   <div class="card border-0 shadow-sm">
@@ -89,21 +89,21 @@
         <ul class="nav nav-pills" role="tablist">
           <li class="nav-item">
             <a class="nav-link active" data-bs-toggle="tab" href="#audit">
-              <i class="fas fa-history me-2"></i>Audit Trail
+              <i class="fas fa-history me-2"></i> Audit Trail
             </a>
           </li>
           <li class="nav-item">
             <a class="nav-link" data-bs-toggle="tab" href="#system">
-              <i class="fas fa-cogs me-2"></i>System Logs
+              <i class="fas fa-cogs me-2"></i> System Logs
             </a>
           </li>
           <li class="nav-item">
             <a class="nav-link" data-bs-toggle="tab" href="#webhook">
-              <i class="fas fa-exchange-alt me-2"></i>Webhook Logs
+              <i class="fas fa-exchange-alt me-2"></i> Webhook Logs
             </a>
           </li>
         </ul>
-        <div class="d-flex gap-3">
+        {{-- <div class="d-flex gap-3">
           <div class="dropdown">
             <button class="btn btn-outline-primary rounded-pill dropdown-toggle" data-bs-toggle="dropdown">
               <i class="fas fa-download me-2"></i>Export
@@ -117,13 +117,13 @@
             <input class="form-check-input me-2" type="checkbox" id="liveUpdate" checked>
             <label class="form-check-label ">Live Updates</label>
           </div>
-        </div>
+        </div> --}}
       </div>
     </div>
 
     <div class="card-body p-4">
       <!-- Search and Filters -->
-      <div class="row g-3 mb-4">
+      {{-- <div class="row g-3 mb-4">
         <div class="col-md-6">
           <div class="input-group">
             <span class="input-group-text bg-white border-end-0">
@@ -137,10 +137,10 @@
             <i class="fas fa-filter me-2"></i>Advanced Filters
           </button>
         </div>
-      </div>
+      </div> --}}
 
       <!-- Advanced Filters -->
-      <div class="collapse mb-4" id="advancedFilters">
+      {{-- <div class="collapse mb-4" id="advancedFilters">
         <div class="card card-body bg-light">
           <div class="row g-3">
             <div class="col-md-3">
@@ -181,7 +181,7 @@
             </div>
           </div>
         </div>
-      </div>
+      </div> --}}
 
       <!-- Tab Content -->
       <div class="tab-content">
@@ -198,9 +198,11 @@
     </div>
   </div>
 </div>
-
+@endsection
 @push('scripts')
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 <script>
+   
 function applyFilters() {
   const filters = {
     search: document.getElementById('searchLogs').value,
@@ -215,104 +217,8 @@ function applyFilters() {
   window.location.href = `${window.location.pathname}?${params.toString()}`;
 }
 </script>
+
+
 @endpush
 
-@push('styles')
-<style>
-.hover-lift {
-  transition: transform 0.2s ease;
-}
 
-.hover-lift:hover {
-  transform: translateY(-5px);
-}
-
-/* Nav Pills Container */
-.nav-pills {
-  display: flex;
-  gap: 0.5rem;
-}
-
-.nav-pills .nav-item .nav-link {
-  color: #212529 !important;
-  /* Dark text by default */
-  background: #f8f9fa;
-  padding: 0.75rem 1.25rem;
-  font-weight: 500;
-  border-radius: 0.5rem;
-  border: 1px solid #dee2e6;
-  transition: all 0.2s ease;
-}
-
-.nav-pills .nav-item .nav-link:hover {
-  color: #0d6efd !important;
-  background: #e9ecef;
-  border-color: #0d6efd;
-  transform: translateY(-1px);
-}
-
-.nav-pills .nav-item .nav-link.active {
-  color: #ffffff !important;
-  background: #0d6efd !important;
-  border-color: #0d6efd;
-  box-shadow: 0 2px 4px rgba(13, 110, 253, 0.25);
-}
-
-.nav-pills .nav-item .nav-link i {
-  opacity: 0.8;
-  margin-right: 0.5rem;
-  font-size: 1rem;
-  vertical-align: middle;
-  transition: all 0.2s ease;
-}
-
-.nav-pills .nav-item .nav-link:hover i,
-.nav-pills .nav-item .nav-link.active i {
-  opacity: 1;
-  transform: scale(1.1);
-}
-
-.badge {
-  font-weight: 500;
-  letter-spacing: 0.3px;
-}
-
-/* Pagination Styles */
-.pagination {
-  margin: 0;
-  gap: 0.25rem;
-}
-
-.pagination .page-item .page-link {
-  border: none;
-  padding: 0.5rem 0.75rem;
-  border-radius: 0.5rem;
-  color: #6c757d;
-  background: none;
-  transition: all 0.2s;
-}
-
-.pagination .page-item .page-link:hover {
-  background-color: #f8f9fa;
-  color: #0d6efd;
-}
-
-.pagination .page-item.active .page-link {
-  background-color: #0d6efd;
-  color: white;
-  box-shadow: 0 2px 4px rgba(13, 110, 253, 0.2);
-}
-
-.pagination .page-item.disabled .page-link {
-  background: none;
-  color: #adb5bd;
-}
-
-/* Results Counter */
-.pagination-info {
-  color: #6c757d;
-  font-size: 0.875rem;
-}
-</style>
-@endpush
-@endsection

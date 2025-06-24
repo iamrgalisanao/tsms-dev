@@ -1,148 +1,26 @@
 <?php
-
+// database/migrations/xxxx_xx_xx_create_pos_providers_table.php
 use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
-use Illuminate\Support\Facades\DB;
 
 return new class extends Migration
 {
-    /**
-     * Run the migrations.
-     */
-    public function up(): void
+    public function up()
     {
-        // First, create the pos_providers table if it doesn't exist
-        if (!Schema::hasTable('pos_providers')) {
-            Schema::create('pos_providers', function (Blueprint $table) {
-                $table->id();
-                $table->string('name');
-                $table->string('code')->unique();
-                $table->string('api_key')->nullable();
-                $table->text('description')->nullable();
-                $table->string('contact_email')->nullable();
-                $table->string('contact_phone')->nullable();
-                $table->string('status')->default('active');
-                $table->timestamps();
-            });
-        }
-        
-        // Add columns to pos_terminals table
-        if (Schema::hasTable('pos_terminals')) {
-            // Check if the columns already exist before adding them
-            if (!Schema::hasColumn('pos_terminals', 'provider_id')) {
-                Schema::table('pos_terminals', function (Blueprint $table) {
-                    $table->foreignId('provider_id')->nullable()->after('tenant_id');
-                });
-            }
-            
-            if (!Schema::hasColumn('pos_terminals', 'enrolled_at')) {
-                Schema::table('pos_terminals', function (Blueprint $table) {
-                    $table->timestamp('enrolled_at')->nullable()->after('registered_at');
-                });
-            }
-            
-            // Add foreign key constraint - use raw query to check for existing constraint
-            if (!$this->hasConstraint('pos_terminals', 'pos_terminals_provider_id_foreign')) {
-                Schema::table('pos_terminals', function (Blueprint $table) {
-                    $table->foreign('provider_id')->references('id')->on('pos_providers')->nullOnDelete();
-                });
-            }
-        }
-        
-        // Only create provider_statistics if it doesn't already exist
-        if (!Schema::hasTable('provider_statistics')) {
-            Schema::create('provider_statistics', function (Blueprint $table) {
-                $table->id();
-                $table->unsignedBigInteger('provider_id');
-                $table->date('date');
-                $table->integer('terminal_count')->default(0);
-                $table->integer('active_terminal_count')->default(0);
-                $table->integer('inactive_terminal_count')->default(0);
-                $table->integer('new_enrollments')->default(0);
-                $table->timestamps();
-                
-                $table->unique(['provider_id', 'date']);
-                
-                // Define the foreign key with on delete cascade
-                $table->foreign('provider_id')
-                      ->references('id')
-                      ->on('pos_providers')
-                      ->onDelete('cascade');
-            });
-        }
+        Schema::create('pos_providers', function (Blueprint $table) {
+            $table->id();
+            $table->string('company_name', 100);
+            $table->string('email', 255);
+            $table->string('contact_person', 100);
+            $table->string('contact_number', 20);
+            $table->enum('status', ['active', 'inactive'])->default('active');
+            $table->timestamps();
+        });
     }
 
-    /**
-     * Reverse the migrations.
-     */
-    public function down(): void
+    public function down()
     {
-        // Down migrations should be idempotent, so we check existence before dropping
-        
-        // Only drop provider_statistics if we actually created it in this migration
-        if (Schema::hasTable('provider_statistics')) {
-            Schema::dropIfExists('provider_statistics');
-        }
-        
-        // Remove the foreign key constraint if it exists
-        if (Schema::hasTable('pos_terminals') && $this->hasConstraint('pos_terminals', 'pos_terminals_provider_id_foreign')) {
-            Schema::table('pos_terminals', function (Blueprint $table) {
-                $table->dropForeign(['provider_id']);
-            });
-        }
-        
-        // Drop columns if they exist
-        if (Schema::hasTable('pos_terminals')) {
-            if (Schema::hasColumn('pos_terminals', 'provider_id') || 
-                Schema::hasColumn('pos_terminals', 'enrolled_at')) {
-                
-                Schema::table('pos_terminals', function (Blueprint $table) {
-                    if (Schema::hasColumn('pos_terminals', 'provider_id')) {
-                        $table->dropColumn('provider_id');
-                    }
-                    
-                    if (Schema::hasColumn('pos_terminals', 'enrolled_at')) {
-                        $table->dropColumn('enrolled_at');
-                    }
-                });
-            }
-        }
-        
-        // Finally drop the pos_providers table
         Schema::dropIfExists('pos_providers');
-    }
-    
-    /**
-     * Check if a constraint exists using raw SQL, compatible with Laravel 11
-     * 
-     * @param string $table The table name
-     * @param string $constraintName The constraint name
-     * @return bool Whether the constraint exists
-     */
-    private function hasConstraint($table, $constraintName)
-    {
-        try {
-            $database = DB::connection()->getDatabaseName();
-            
-            // For MySQL
-            if (DB::connection()->getDriverName() === 'mysql') {
-                $constraints = DB::select("
-                    SELECT CONSTRAINT_NAME 
-                    FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS 
-                    WHERE TABLE_SCHEMA = ? 
-                    AND TABLE_NAME = ? 
-                    AND CONSTRAINT_NAME = ?
-                ", [$database, $table, $constraintName]);
-                
-                return count($constraints) > 0;
-            }
-            
-            // Default behavior (less reliable)
-            return false;
-        } catch (\Exception $e) {
-            // If we encounter an error, assume constraint doesn't exist to be safe
-            return false;
-        }
     }
 };

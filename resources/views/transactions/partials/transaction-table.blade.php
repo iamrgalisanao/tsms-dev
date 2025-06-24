@@ -3,7 +3,7 @@
     <thead class="table-light">
       <tr>
         <th class="ps-3">Transaction ID</th>
-        <th>Terminal</th>
+        <th>Terminals</th>
         <th class="text-end">Amount</th>
         <th class="text-center">Validation</th>
         <th class="text-center">Status</th>

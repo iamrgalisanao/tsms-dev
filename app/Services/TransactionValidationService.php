@@ -5,113 +5,217 @@ namespace App\Services;
 use App\Models\Transaction;
 use App\Models\PosTerminal;
 use App\Models\Store;
-use Illuminate\Support\Facades\{Log, Validator};
 use Carbon\Carbon;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Validator;
 use InvalidArgumentException;
 
 class TransactionValidationService
 {
+    //
+    // ────────────────────────────────────────────────────────────────────────────────
+    //    C O N S T A N T S   &   P R O P E R T I E S
+    // ────────────────────────────────────────────────────────────────────────────────
+    //
+
+    /**
+     * Maximum allowable difference (in absolute value) between computed VAT and reported VAT.
+     */
     protected const MAX_VAT_DIFFERENCE = 0.02;
+
+    /**
+     * Maximum allowable difference (in absolute value) when reconciling net amounts (rounding).
+     */
     protected const MAX_ROUNDING_DIFFERENCE = 0.05;
+
+    /**
+     * Service charges (service_charge + management_service_charge) cannot exceed 15% of gross_sales.
+     */
     protected const MAX_SERVICE_CHARGE_PERCENTAGE = 0.15;
-    protected const MAX_DISCOUNT_PERCENTAGE = 0.30; // 30% maximum discount
+
+    /**
+     * Discount amount cannot exceed 30% of gross_sales.
+     * (Note: the original business‐rule message incorrectly said “50%.” We have corrected this to match the constant.)
+     */
+    protected const MAX_DISCOUNT_PERCENTAGE = 0.30;
+
+    /**
+     * Transactions older than 30 days are invalid.
+     */
     protected const MAX_TRANSACTION_AGE_DAYS = 30;
-    
-    // Move to config or database
+
+    /**
+     * These are example promo codes. In a real system, you might move these into config/transaction.php or a database.
+     */
     protected array $validPromoCodes = [
         'SUMMER2023',
         'HOLIDAY25',
         'LOYAL10',
-        'WELCOME15'
+        'WELCOME15',
     ];
 
+    //
+    // ────────────────────────────────────────────────────────────────────────────────
+    //    P U B L I C   M E T H O D S
+    // ────────────────────────────────────────────────────────────────────────────────
+    //
+
     /**
-     * Validate transaction data.
+     * Entry point for validating “whatever” comes in:
+     *  - If $data is already a Transaction model, we run validateTransaction(...)
+     *  - If it is an array (e.g. JSON decoded or normalized text), we run validateSubmission(...)
+     *  - If it is a string, we try to detect JSON → line‐numbered → “free‐form text” formats,
+     *    normalize field names, and then validateSubmission(...)
      *
-     * @param array|Transaction $data
-     * @return array
+     * @param  array|string|Transaction  $data
+     * @return array   ['valid' => bool, 'errors' => array, 'data' => array|null]
      */
     public function validate($data): array
     {
         try {
-            // Parse payload before validation
-            $parsedData = $this->detectAndParsePayload($data);
-            
-            if ($parsedData instanceof Transaction) {
-                return $this->validateTransaction($parsedData);
+            // ─────────────────────────────────────────────────────────────────────────
+            // 1) DETECT FORMAT & NORMALIZE
+            // ─────────────────────────────────────────────────────────────────────────
+            $parsed = $this->detectAndParsePayload($data);
+
+            // → If we ended up with a Transaction instance, validate it directly.
+            if ($parsed instanceof Transaction) {
+                return $this->validateTransaction($parsed);
             }
-            
-            return $this->validateSubmission($parsedData);
-            
-        } catch (\Exception $e) {
-            Log::error('Validation error', [
+
+            // → Otherwise, we have an array of “submission fields.” Validate those.
+            return $this->validateSubmission($parsed);
+        }
+        catch (\Exception $e) {
+            // Any “unexpected” exception is logged and returned as a validation error.
+            Log::error('Validation error in TransactionValidationService', [
                 'message' => $e->getMessage(),
-                'data' => $data
+                'trace'   => $e->getTraceAsString(),
             ]);
-            
+
             return [
-                'valid' => false,
-                'errors' => [$e->getMessage()]
+                'valid'  => false,
+                'errors' => [$e->getMessage()],
+                'data'   => null,
             ];
         }
     }
 
+    //
+    // ────────────────────────────────────────────────────────────────────────────────
+    //    P R I V A T E   H E L P E R   M E T H O D S
+    // ────────────────────────────────────────────────────────────────────────────────
+    //
+
     /**
-     * Detect and parse payload format
+     * Inspect “$data.” If it’s already a Transaction model, just return it.
+     * If it’s an array, assume it came from JSON or normalized text and simply return it.
+     * If it’s a string, try JSON decode first; if that fails, try line‐numbered; otherwise fall back to free‐form parseTextFormat().
+     *
+     * @param  array|string|Transaction  $data
+     * @return array|Transaction
+     *
+     * @throws InvalidArgumentException  if $data is not array|string|Transaction
      */
     private function detectAndParsePayload($data)
     {
-        // If already an array, assume JSON format
+        // ---- Already a Transaction model? Return it immediately.
+        if ($data instanceof Transaction) {
+            return $data;
+        }
+
+        // ---- If it's already an array, assume it’s JSON‐decoded or normalized text.
         if (is_array($data)) {
             return $this->normalizeFieldNames($data);
         }
 
-        // If string, detect format
+        // ---- If it’s a raw string, attempt to decode.
         if (is_string($data)) {
-            // Try parsing as JSON first
-            $jsonData = json_decode($data, true);
-            if (json_last_error() === JSON_ERROR_NONE) {
-                return $this->normalizeFieldNames($jsonData);
+            $trimmed = trim($data);
+
+            // 1) Try JSON decode.
+            if (strlen($trimmed) > 0 && ($trimmed[0] === '{' || $trimmed[0] === '[')) {
+                $decoded = json_decode($trimmed, true);
+                if (json_last_error() === JSON_ERROR_NONE) {
+                    return $this->normalizeFieldNames($decoded);
+                }
+                // If JSON parsing fails, fall through.
             }
 
-            // Check for line-numbered format (starts with line numbers 01, 02 etc)
-            if (preg_match('/^\d{2}\s+/', trim($data))) {
-                return $this->parseLineNumberedFormat($data);
+            // 2) Check for “line‐numbered” format: lines that begin with “01 ”, “02 ”, etc.
+            if (preg_match('/^\d{2}\s+/', $trimmed)) {
+                return $this->parseLineNumberedFormat($trimmed);
             }
 
-            // Default to existing text format parser
-            return $this->parseTextFormat($data);
+            // 3) Else, assume “free‐form text” and run parseTextFormat().
+            return $this->parseTextFormat($trimmed);
         }
 
-        throw new \InvalidArgumentException('Unsupported payload format');
+        throw new InvalidArgumentException('Unsupported payload format: ' . gettype($data));
     }
 
+    // ────────────────────────────────────────────────────────────────────────────────
+    //    L I N E ‐ N U M B E R E D  →  A R R A Y
+    // ────────────────────────────────────────────────────────────────────────────────
+
     /**
-     * Parse line-numbered format
+     * Take a block of text in which each line is prefixed by a line‐number (01, 02, …),
+     * extract the “value” column from each line, and return a numeric‐keyed array
+     * (lineNumber => value). Then pass that array to normalizeLineNumberedFields().
+     *
+     * Example line: “01 Tenant Code    01C-D1016    C-D1016”
+     * We capture “01” as $matches[1], then “Tenant Code” as $matches[2], then “01C-D1016” as $matches[3],
+     * and “C-D1016” (the final column) as $matches[4]. We pick $matches[4] if present, else $matches[3].
+     *
+     * @param  string  $content
+     * @return array
      */
     private function parseLineNumberedFormat(string $content): array
     {
         $lines = preg_split('/\r\n|\r|\n/', $content);
-        $data = [];
-        
+        $raw   = [];
+
         foreach ($lines as $line) {
-            // Match pattern: "01 Tenant Code    01C-D1016      C-D1016"
-            if (preg_match('/^(\d{2})\s+([^0-9]+?)\s+(\S+)\s+(\S+)?$/', trim($line), $matches)) {
+            $line = trim($line);
+            if ($line === '') {
+                continue;
+            }
+
+            // Regex breakdown:
+            //   ^(\d{2})         → capture exactly two digits (line number)
+            //   \s+              → at least one space
+            //   ([^\d]+?)        → the “description” portion (non‐digits, minimal)
+            //   \s+(\S+)         → at least one space + then a “text‐file value” chunk (no whitespace inside)
+            //   \s+(\S+)?$       → optionally a final “Value” column (no whitespace inside)
+            if (
+                preg_match(
+                    '/^(\d{2})\s+([^\d]+?)\s+(\S+)\s+(\S+)?$/',
+                    $line,
+                    $matches
+                )
+            ) {
                 $lineNum = $matches[1];
-                $value = !empty($matches[4]) ? $matches[4] : $matches[3]; // Use last column as value
-                $data[$lineNum] = $value;
+                $value   = (!empty($matches[4])) ? $matches[4] : $matches[3];
+                $raw[$lineNum] = $value;
             }
         }
-        
-        return $this->normalizeLineNumberedFields($data);
+
+        return $this->normalizeLineNumberedFields($raw);
     }
 
     /**
-     * Normalize line-numbered fields to standard format
+     * Map each two‐digit line number (01, 02, 03, …) to a proper field name.
+     * Also convert numeric strings into int/float as needed.
+     *
+     * Note: We fixed a bug where “18” was originally mapped to transaction_count instead of cover_count.
+     *
+     * @param  array  $raw  (e.g. ['01' => 'C-D1016', '02' => '02002', …])
+     * @return array  (e.g. ['tenant_code' => 'C-D1016', 'machine_number' => 2002, …])
      */
-    private function normalizeLineNumberedFields(array $data): array
+    private function normalizeLineNumberedFields(array $raw): array
     {
         $fieldMap = [
+            //   Line → normalized field key
             '01' => 'tenant_code',
             '02' => 'machine_number',
             '03' => 'transaction_date',
@@ -129,65 +233,235 @@ class TransactionValidationService
             '15' => 'credit_card_tender',
             '16' => 'other_tender',
             '17' => 'void_amount',
-            '18' => 'transaction_count',
+            '18' => 'cover_count',        // ← Fixed: was incorrectly “transaction_count” in original
             '19' => 'zread_number',
-            '20' => 'transaction_count',
+            '20' => 'transaction_count',  // ← “20” is the real transaction count
             '21' => 'sales_type',
-            '22' => 'net_amount'
+            '22' => 'net_amount',
         ];
 
         $normalized = [];
-        foreach ($data as $lineNum => $value) {
-            if (isset($fieldMap[$lineNum])) {
-                // Convert numeric strings to proper types
-                if (is_numeric($value)) {
-                    $value = strpos($value, '.') !== false ? 
-                        (float)$value : (int)$value;
-                }
-                $normalized[$fieldMap[$lineNum]] = $value;
+
+        foreach ($raw as $lineNum => $value) {
+            if (! isset($fieldMap[$lineNum])) {
+                continue;
+            }
+
+            // Convert numeric strings to int/float
+            if (is_numeric($value)) {
+                $value = (strpos($value, '.') !== false)
+                    ? (float) $value
+                    : (int)   $value;
+            }
+
+            $normalized[$fieldMap[$lineNum]] = $value;
+        }
+
+        return $normalized;
+    }
+
+    // ────────────────────────────────────────────────────────────────────────────────
+    //    “F R E E ‐ F O R M   T E X T”   →   A R R A Y
+    // ────────────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Parse a block of text that may contain lines in one of these formats:
+     *   - KEY: VALUE
+     *   - KEY=VALUE
+     *   - KEY VALUE
+     *
+     * Returns a normalized array of fieldName => value (via normalizeFieldNames()).
+     *
+     * @param  string  $content
+     * @return array
+     */
+    private function parseTextFormat(string $content): array
+    {
+        $lines = preg_split('/\r\n|\r|\n/', $content);
+        $raw   = [];
+
+        Log::info('Parsing free‐form text format (length=' . strlen($content) . ')');
+
+        foreach ($lines as $line) {
+            $line = trim($line);
+            if ($line === '') {
+                continue;
+            }
+
+            // 1) KEY: VALUE
+            if (preg_match('/^([^:]+):\s*(.+)$/', $line, $m1)) {
+                $raw[ $m1[1] ] = $m1[2];
+                continue;
+            }
+
+            // 2) KEY=VALUE
+            if (preg_match('/^([^=]+)=\s*(.+)$/', $line, $m2)) {
+                $raw[ $m2[1] ] = $m2[2];
+                continue;
+            }
+
+            // 3) KEY VALUE (split on first whitespace)
+            if (preg_match('/^(\S+)\s+(.+)$/', $line, $m3)) {
+                $raw[ $m3[1] ] = $m3[2];
+                continue;
+            }
+
+            // If no pattern matches, skip this line.
+        }
+
+        $normalized = $this->normalizeFieldNames($raw);
+
+        Log::info('Parsed text format: '
+            . count($raw) . ' raw fields → '
+            . count($normalized) . ' normalized fields'
+        );
+
+        return $normalized;
+    }
+
+    /**
+     * Take an arbitrary array of key=>value (where keys might be
+     * various forms of “TENANT_ID”, “TenantId”, “tx_id”, etc.), and
+     * map each recognized key into a known “snake_case” form. If a key
+     * is unrecognized, we simply lowercase() it and keep it.
+     *
+     * @param  array  $data
+     * @return array
+     */
+    private function normalizeFieldNames(array $data): array
+    {
+        $fieldMap = [
+            // * Transaction‐ID‐style keys
+            'TENANT_ID'              => 'tenant_id',
+            'TENANTID'               => 'tenant_id',
+            'TENANT-ID'              => 'tenant_id',
+
+            'TRANSACTION_ID'         => 'transaction_id',
+            'TRANSACTIONID'          => 'transaction_id',
+            'TX_ID'                  => 'transaction_id',
+            'TXID'                   => 'transaction_id',
+
+            'TRANSACTION_TIMESTAMP'  => 'transaction_timestamp',
+            'TX_TIMESTAMP'           => 'transaction_timestamp',
+            'TX_TIME'                => 'transaction_timestamp',
+            'DATETIME'               => 'transaction_timestamp',
+            'DATE_TIME'              => 'transaction_timestamp',
+
+            // * Amount‐style keys
+            'GROSS_SALES'            => 'gross_sales',
+            'GROSSSALES'             => 'gross_sales',
+            'GROSS'                  => 'gross_sales',
+
+            'NET_SALES'              => 'net_sales',
+            'NETSALES'               => 'net_sales',
+
+            'VATABLE_SALES'          => 'vatable_sales',
+            'VATABLESALES'           => 'vatable_sales',
+            'VAT_SALES'              => 'vatable_sales',
+
+            'VAT_EXEMPT_SALES'       => 'vat_exempt_sales',
+            'VATEXEMPTSALES'         => 'vat_exempt_sales',
+            'EXEMPT_SALES'           => 'vat_exempt_sales',
+
+            'VAT_AMOUNT'             => 'vat_amount',
+            'VATAMOUNT'              => 'vat_amount',
+            'VAT'                    => 'vat_amount',
+
+            'TRANSACTION_COUNT'      => 'transaction_count',
+            'TX_COUNT'               => 'transaction_count',
+            'TRANSACTIONCOUNT'       => 'transaction_count',
+
+            'PAYLOAD_CHECKSUM'       => 'payload_checksum',
+            'CHECKSUM'               => 'payload_checksum',
+            'HASH'                   => 'payload_checksum',
+        ];
+
+        $normalized = [];
+
+        foreach ($data as $key => $value) {
+            $upper = strtoupper($key);
+            if (isset($fieldMap[$upper])) {
+                $normalized[ $fieldMap[$upper] ] = $value;
+            }
+            else {
+                // If we don’t explicitly recognize the key, we lowercase() it and keep it verbatim.
+                $normalized[ strtolower($key) ] = $value;
             }
         }
 
         return $normalized;
     }
 
-    protected function validateSubmission(array $data)
+    // ────────────────────────────────────────────────────────────────────────────────
+    //    “A R R A Y   →  B U S I N E S S   L O G I C   V A L I D A T I O N”
+    // ────────────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Validate fields that come from a “submission” (i.e. an array or JSON‐decoded). Typical
+     * required fields:
+     *   - tenant_id          (string)
+     *   - terminal_id        (string)
+     *   - transaction_id     (string)
+     *   - transaction_timestamp (date)
+     *   - gross_sales        (numeric)
+     *   - net_sales          (numeric)
+     *   - vatable_sales      (numeric)
+     *   - vat_exempt_sales   (numeric)
+     *   - vat_amount         (numeric)
+     *   - transaction_count  (integer)
+     *   - payload_checksum   (string)
+     *
+     * After Laravel’s Validator, we check for duplicates (tenant_id + transaction_id).
+     *
+     * @param  array  $data
+     * @return array   ['valid' => bool, 'errors' => array, 'data' => null|array]
+     */
+    protected function validateSubmission(array $data): array
     {
-        // Basic validation
         $validator = Validator::make($data, [
-            'tenant_id' => 'required|string',
-            'terminal_id' => 'required|string',
-            'transaction_id' => 'required|string',
+            'tenant_id'             => 'required|string',
+            'terminal_id'           => 'required|string',
+            'transaction_id'        => 'required|string',
             'transaction_timestamp' => 'required|date',
-            'gross_sales' => 'required|numeric',
-            'net_sales' => 'required|numeric',
-            'vatable_sales' => 'required|numeric',
-            'vat_exempt_sales' => 'required|numeric',
-            'vat_amount' => 'required|numeric',
-            'transaction_count' => 'required|integer',
-            'payload_checksum' => 'required|string',
+            'gross_sales'           => 'required|numeric|min:0',
+            'net_sales'             => 'required|numeric|min:0',
+            'vatable_sales'         => 'required|numeric|min:0',
+            'vat_exempt_sales'      => 'required|numeric|min:0',
+            'vat_amount'            => 'required|numeric|min:0',
+            'transaction_count'     => 'required|integer|min:0',
+            'payload_checksum'      => 'required|string',
         ]);
+
         if ($validator->fails()) {
             return [
-                'valid' => false,
-                'errors' => $validator->errors()->toArray()
+                'valid'  => false,
+                'errors' => $validator->errors()->toArray(),
+                'data'   => null,
             ];
         }
-        // Check for duplicate transaction
-        if ($this->isDuplicate($data)) {
+
+        $validated = $validator->validated();
+
+        // Check for duplicate (tenant_id, transaction_id) in DB
+        if ($this->isDuplicate($validated)) {
             return [
-                'valid' => false,
-                'errors' => ['Transaction ID has already been processed']
+                'valid'  => false,
+                'errors' => ['Transaction ID has already been processed'],
+                'data'   => null,
             ];
         }
+
         return [
-            'valid' => true,
-            'data' => $validator->validated()
+            'valid'  => true,
+            'errors' => [],
+            'data'   => $validated,
         ];
     }
+
     /**
-     * Check if the transaction is a duplicate.
-     * @param array $data
+     * Returns true if (tenant_id, transaction_id) already exists.
+     *
+     * @param  array  $data
      * @return bool
      */
     protected function isDuplicate(array $data): bool
@@ -196,628 +470,543 @@ class TransactionValidationService
             ->where('transaction_id', $data['transaction_id'])
             ->exists();
     }
+
     /**
-     * Parse text format data into structured array.
-     * This method handles multiple text formats:
-     * - KEY: VALUE format
-     * - KEY=VALUE formatt
-     * - KEY VALUE format
-     * - Mixed formats
-     * @param string $content
-     * @return array
+     * Validate a fully‐hydrated Transaction model. We gather errors from:
+     *  - store & operating hours rules
+     *  - terminal status
+     *  - amount calculations (gross/net/vat/service/rounding)
+     *  - transaction integrity (duplicate, sequence gaps, date of transaction)
+     *  - high-level business rules (daily limits, store settings, tax exemptions, etc)
+     *  - discount‐specific rules (senior/pwd auth code, sum of individual discounts)
+     *
+     * @param  Transaction  $transaction
+     * @return array   ['valid' => bool, 'errors' => array]
      */
-    public function parseTextFormat(string $content): array
+    public function validateTransaction(Transaction $transaction): array
     {
-        try {
-            $lines = preg_split('/\r\n|\r|\n/', $content);
-            $data = [];
-            
-            Log::info('Parsing text content', ['content_length' => strlen($content)]);
-            
-            foreach ($lines as $line) {
-                $line = trim($line);
-                if (empty($line)) continue;
-                
-                // Try KEY: VALUE format
-                if (preg_match('/^([^:]+):(.*)$/', $line, $matches)) {
-                    $key = trim($matches[1]);
-                    $value = trim($matches[2]);
-                    $data[$key] = $value;
-                    continue;
-                }
-                
-                // Try KEY=VALUE format
-                if (preg_match('/^([^=]+)=(.*)$/', $line, $matches)) {
-                    $key = trim($matches[1]);
-                    $value = trim($matches[2]);
-                    $data[$key] = $value;
-                    continue;
-                }
-                
-                // Try KEY VALUE format
-                if (preg_match('/^([^\s]+)\s+(.*)$/', $line, $matches)) {
-                    $key = trim($matches[1]);
-                    $value = trim($matches[2]);
-                    $data[$key] = $value;
-                    continue;
-                }
-            }
-            
-            $normalized = $this->normalizeFieldNames($data);
-            
-            Log::info('Parsed text format', [
-                'original_fields' => array_keys($data),
-                'normalized_fields' => array_keys($normalized),
-                'field_count' => count($normalized)
-            ]);
-            
-            return $normalized;
-        } catch (\Exception $e) {
-            Log::error('Text format parsing error', [
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
-            ]);
-            return [];
-        }
-    }
-    /**
-     * Normalize field names to standard format
-     * @param array $data
-     * @return array
-     */
-    private function normalizeFieldNames(array $data)
-    {
-        $normalized = [];
-        $fieldMap = [
-            'TENANT_ID' => 'tenant_id',
-            'TENANTID' => 'tenant_id',
-            'TENANT-ID' => 'tenant_id',
-            'TRANSACTION_ID' => 'transaction_id',
-            'TRANSACTIONID' => 'transaction_id',
-            'TX_ID' => 'transaction_id',
-            'TXID' => 'transaction_id',
-            'TRANSACTION_TIMESTAMP' => 'transaction_timestamp',
-            'TX_TIMESTAMP' => 'transaction_timestamp',
-            'TX_TIME' => 'transaction_timestamp',
-            'DATETIME' => 'transaction_timestamp',
-            'DATE_TIME' => 'transaction_timestamp',
-            'GROSS_SALES' => 'gross_sales',
-            'GROSSSALES' => 'gross_sales',
-            'GROSS' => 'gross_sales',
-            'NET_SALES' => 'net_sales',
-            'NETSALES' => 'net_sales',
-            'VATABLE_SALES' => 'vatable_sales',
-            'VATABLESALES' => 'vatable_sales',
-            'VAT_SALES' => 'vatable_sales',
-            'VAT_EXEMPT_SALES' => 'vat_exempt_sales',
-            'VATEXEMPTSALES' => 'vat_exempt_sales',
-            'EXEMPT_SALES' => 'vat_exempt_sales',
-            'VAT_AMOUNT' => 'vat_amount',
-            'VATAMOUNT' => 'vat_amount',
-            'VAT' => 'vat_amount',
-            'TRANSACTION_COUNT' => 'transaction_count',
-            'TX_COUNT' => 'transaction_count',
-            'TRANSACTIONCOUNT' => 'transaction_count',
-            'PAYLOAD_CHECKSUM' => 'payload_checksum',
-            'CHECKSUM' => 'payload_checksum',
-            'HASH' => 'payload_checksum',
-        ];
-        foreach ($data as $key => $value) {
-            $normalizedKey = strtoupper($key);
-            if (isset($fieldMap[$normalizedKey])) {
-                $normalized[$fieldMap[$normalizedKey]] = $value;
-            } else {
-                // If no mapping, just use the original key in lowercase
-                $normalized[strtolower($key)] = $value;
-            }
-        }
-        return $normalized;
-    }
-    /**
-     * Validate transaction.
-     * @param Transaction $transaction
-     * @return array
-     */
-    public function validateTransaction(Transaction $transaction)
-    {
-        Log::info('Starting transaction validation', ['transaction_id' => $transaction->id]);
+        Log::info('Starting transaction validation', [
+            'transaction_id' => $transaction->id,
+        ]);
+
         $errors = [];
 
-        // Store and operating hours validation
+        // 1) Store rules (does terminal → store exist? is store_name provided or inferred?)
         $storeErrors = $this->validateStore($transaction);
-        if (!empty($storeErrors)) {
+        if (! empty($storeErrors)) {
             $errors = array_merge($errors, $storeErrors);
         }
 
-        // Terminal validation
+        // 2) Terminal rules (does terminal exist? is it active?)
         $terminalErrors = $this->validateTerminal($transaction);
-        if (!empty($terminalErrors)) {
+        if (! empty($terminalErrors)) {
             $errors = array_merge($errors, $terminalErrors);
         }
 
-        // Amount validations
+        // 3) Amount checks (gross/net/vat/service/rounding)
         $amountErrors = $this->validateAmounts($transaction);
-        if (!empty($amountErrors)) {
+        if (! empty($amountErrors)) {
             $errors = array_merge($errors, $amountErrors);
         }
 
-        // Transaction integrity
+        // 4) Transaction integrity (duplicate ID, sequence number, date bounds)
         $integrityErrors = $this->validateTransactionIntegrity($transaction);
-        if (!empty($integrityErrors)) {
+        if (! empty($integrityErrors)) {
             $errors = array_merge($errors, $integrityErrors);
         }
 
-        // Business rules
-        $businessRuleErrors = $this->validateBusinessRules($transaction);
-        if (!empty($businessRuleErrors)) {
-            $errors = array_merge($errors, $businessRuleErrors);
+        // 5) High‐level business rules (store limits, daily totals, tax exemptions, etc.)
+        $businessErrors = $this->validateBusinessRules($transaction);
+        if (! empty($businessErrors)) {
+            $errors = array_merge($errors, $businessErrors);
         }
 
-        // Discount validations
+        // 6) Discount‐specific checks (sum of individual discounts, auth codes, etc.)
         $discountErrors = $this->validateDiscounts($transaction);
-        if (!empty($discountErrors)) {
+        if (! empty($discountErrors)) {
             $errors = array_merge($errors, $discountErrors);
         }
 
-        // Log validation completion
         Log::info('Validation complete', [
             'transaction_id' => $transaction->id,
-            'has_errors' => !empty($errors),
-            'error_count' => count($errors)
+            'has_errors'     => ! empty($errors),
+            'error_count'    => count($errors),
         ]);
 
-        if (empty($errors)) {
-            return [
-                'valid' => true,
-                'errors' => [],
-            ];
-        }
-
         return [
-            'valid' => false,
-            'errors' => $errors
+            'valid'  => empty($errors),
+            'errors' => $errors,
         ];
     }
 
+    // ────────────────────────────────────────────────────────────────────────────────
+    //    “V A L I D A T E   S T O R E   &   O P E R A T I N G   H O U R S”
+    // ────────────────────────────────────────────────────────────────────────────────
+
     /**
-     * Internal implementation of text format parsing
-     * @param string $content
-     * @return array
+     * Ensure that the Transaction has a valid terminal_id → store. If the store doesn’t
+     * exist, produce an error. Otherwise, autofill transaction->store_name if missing.
+     *
+     * @param  Transaction  $transaction
+     * @return array  List of error messages (empty if none)
      */
-    private function parseTextFormatInternal($content)
-    {
-        $result = [
-            'status' => 'error',
-            'message' => 'Failed to parse content',
-            'data' => null,
-        ];
-        try {
-            $lines = explode("\n", $content);
-            $data = [];
-            foreach ($lines as $line) {
-                $line = trim($line);
-                if (empty($line)) {
-                    continue;
-                }
-                // Try KEY: VALUE format
-                if (preg_match('/^([^:]+):(.+)$/', $line, $matches)) {
-                    $key = trim($matches[1]);
-                    $value = trim($matches[2]);
-                    $data[$key] = $value;
-                    continue;
-                }
-                // Try KEY=VALUE format
-                if (preg_match('/^([^=]+)=(.+)$/', $line, $matches)) {
-                    $key = trim($matches[1]);
-                    $value = trim($matches[2]);
-                    $data[$key] = $value;
-                    continue;
-                }
-                // Try KEY VALUE format
-                if (preg_match('/^(\w+)\s+(.+)$/', $line, $matches)) {
-                    $key = trim($matches[1]);
-                    $value = trim($matches[2]);
-                    $data[$key] = $value;
-                    continue;
-                }
-            }
-            // Convert numeric values
-            foreach ($data as $key => $value) {
-                if (is_numeric($value)) {
-                    $data[$key] = strpos($value, '.') !== false ? 
-                                   (float)$value : (int)$value;
-                }
-            }
-            $result = [
-                'status' => 'success',
-                'message' => 'Content parsed successfully',
-                'data' => $data,
-            ];
-        } catch (\Exception $e) {
-            $result['message'] = 'Failed to parse content: ' . $e->getMessage();
-        }
-        return $result;
-    }
-    /**
-     * Validate the store information
-     * @param Transaction $transaction
-     * @return array
-     */
-    protected function validateStore(Transaction $transaction)
+    protected function validateStore(Transaction $transaction): array
     {
         $errors = [];
-        
-        // Check if terminal exists
-        if (!$transaction->terminal_id) {
-            $errors[] = 'Terminal ID is required';
+
+        // Must have a terminal_id
+        if (! $transaction->terminal_id) {
+            $errors[] = 'Terminal ID is required.';
             return $errors;
         }
 
-        // Try to find the store by terminal ID
-        $store = Store::where('id', function($query) use ($transaction) {
-            $query->select('store_id')
-                  ->from('pos_terminals')  // Changed from terminals to pos_terminals
-                  ->where('id', $transaction->terminal_id)
-                  ->limit(1);
-        })->first();
-        
-        if (!$store) {
-            // Before failing, check if store name is provided directly in the transaction
+        // Fetch terminal, then get store via relationship if defined. Otherwise, fallback to a join.
+        $terminal = PosTerminal::find($transaction->terminal_id);
+        if (! $terminal) {
+            $errors[] = 'Terminal not found.';
+            return $errors;
+        }
+
+        /** @var Store|null $store */
+        $store = Store::find($terminal->store_id);
+        if (! $store) {
+            // If store isn’t found, only add an error if transaction->store_name is also empty
             if (empty($transaction->store_name)) {
-                // Only add error if both store lookup and explicit store name are missing
-                $errors[] = 'Store not found for this terminal';
+                $errors[] = 'Store not found for this terminal.';
             }
         } else {
-            // If store found but transaction doesn't have store name, update it
+            // If store exists and we have no store_name in the transaction, write it & save
             if (empty($transaction->store_name)) {
                 $transaction->store_name = $store->name;
                 $transaction->save();
             }
         }
-        
+
         return $errors;
     }
+
+    // ────────────────────────────────────────────────────────────────────────────────
+    //    “V A L I D A T E   T E R M I N A L”
+    // ────────────────────────────────────────────────────────────────────────────────
+
     /**
-     * Validate terminal information
-     * @param Transaction $transaction
-     * @return array
+     * Ensure that the terminal_id on the transaction refers to an active PosTerminal.
+     *
+     * @param  Transaction  $transaction
+     * @return array   List of error messages (empty if none)
      */
-    protected function validateTerminal(Transaction $transaction)
+    protected function validateTerminal(Transaction $transaction): array
     {
         $errors = [];
+
         $terminal = PosTerminal::find($transaction->terminal_id);
-        if (!$terminal) {
-            return ['Terminal not found'];
+        if (! $terminal) {
+            $errors[] = 'Terminal not found.';
+            return $errors;
         }
+
         if ($terminal->status !== 'active') {
-            $errors[] = 'Terminal is not active. Current status: ' . $terminal->status;
+            $errors[] = 'Terminal is not active (current status: ' . $terminal->status . ').';
         }
+
         return $errors;
     }
+
+    // ────────────────────────────────────────────────────────────────────────────────
+    //    “V A L I D A T E   A M O U N T S”
+    // ────────────────────────────────────────────────────────────────────────────────
+
     /**
-     * Validate transaction amounts
-     * @param Transaction $transaction
-     * @return array
+     * High‐level checks on all monetary fields:
+     *  - gross_sales & net_sales must be positive
+     *  - vatable_sales must be ≥ 0
+     *  - If not tax‐exempt, ensure that vat_amount ≈ 12% of vatable_sales (± MAX_VAT_DIFFERENCE)
+     *  - Enforce service‐charge ≤ 15% of gross_sales
+     *  - Check that net_sales actually equals (gross_sales – vat_amount + adjustments) within rounding tolerance
+     *
+     * @param  Transaction  $transaction
+     * @return array   List of error messages (empty if none)
      */
-    private function validateAmounts(Transaction $transaction): array 
+    private function validateAmounts(Transaction $transaction): array
     {
         $errors = [];
 
-        // Basic amount validations
+        // 1) Basic positivity checks
         if ($transaction->gross_sales <= 0) {
-            $errors[] = 'Gross sales amount must be positive';
+            $errors[] = 'Gross sales amount must be positive.';
         }
-
         if ($transaction->net_sales <= 0) {
-            $errors[] = 'Net sales amount must be positive';
+            $errors[] = 'Net sales amount must be positive.';
         }
-
         if ($transaction->vatable_sales < 0) {
-            $errors[] = 'Vatable sales cannot be negative';
+            $errors[] = 'Vatable sales cannot be negative.';
         }
 
-        // VAT calculations
-        if (!$transaction->tax_exempt && $transaction->vatable_sales > 0) {
+        // 2) VAT check (only if not tax_exempt and vatable_sales > 0)
+        if (empty($transaction->tax_exempt) && $transaction->vatable_sales > 0) {
             $expectedVat = round($transaction->vatable_sales * 0.12, 2);
-            $actualVat = round($transaction->vat_amount, 2);
-            
+            $actualVat   = round($transaction->vat_amount, 2);
+
             if (abs($expectedVat - $actualVat) > self::MAX_VAT_DIFFERENCE) {
                 $errors[] = sprintf(
-                    'VAT amount %.2f does not match expected 12%% (%.2f)',
+                    'VAT amount %.2f does not match expected 12%% of vatable sales (%.2f).',
                     $actualVat,
                     $expectedVat
                 );
             }
         }
 
-        // Service charge validation
+        // 3) Service‐charge percentage check
         $this->validateServiceCharges($transaction, $errors);
 
-        // Amount reconciliation 
+        // 4) Net‐amount reconciliation (gross − vat + adjustments ?= net)
         $this->validateAmountReconciliation($transaction, $errors);
 
         return $errors;
     }
 
+    /**
+     * Ensure (service_charge + management_service_charge) ≤ 15% of gross_sales.
+     * Any violation is appended to $errors.
+     *
+     * @param  Transaction  $transaction
+     * @param  array       &$errors
+     * @return void
+     */
     private function validateServiceCharges(Transaction $transaction, array &$errors): void
     {
-        $totalCharges = ($transaction->service_charge ?? 0) + 
-                       ($transaction->management_service_charge ?? 0);
+        $serviceChargeTotal = 0.0;
+        $serviceChargeTotal += $transaction->service_charge ?? 0.0;
+        $serviceChargeTotal += $transaction->management_service_charge ?? 0.0;
 
-        if ($totalCharges > $transaction->gross_sales * self::MAX_SERVICE_CHARGE_PERCENTAGE) {
+        if ($serviceChargeTotal > $transaction->gross_sales * self::MAX_SERVICE_CHARGE_PERCENTAGE) {
             $errors[] = sprintf(
-                'Service charges (%.2f) exceed maximum allowed percentage (%.0f%%)',
-                $totalCharges,
+                'Service charges (%.2f) exceed maximum allowed percentage (%.0f%% of gross sales).',
+                $serviceChargeTotal,
                 self::MAX_SERVICE_CHARGE_PERCENTAGE * 100
             );
         }
     }
 
+    /**
+     * We expect:
+     *    expectedNet = gross_sales – vat_amount + adjustments
+     * where adjustments = (service_charge + management_service_charge – discounts).
+     * If |expectedNet – net_sales| > MAX_ROUNDING_DIFFERENCE, add an error.
+     *
+     * @param  Transaction  $transaction
+     * @param  array       &$errors
+     * @return void
+     */
     private function validateAmountReconciliation(Transaction $transaction, array &$errors): void
     {
-        $expectedNet = $transaction->gross_sales - $transaction->vat_amount;
-        $expectedNet += $this->calculateAdjustments($transaction);
+        $expectedNet = $transaction->gross_sales
+                     - $transaction->vat_amount
+                     + $this->calculateAdjustments($transaction);
 
         if (abs($expectedNet - $transaction->net_sales) > self::MAX_ROUNDING_DIFFERENCE) {
-            $errors[] = 'Net sales amount does not reconcile with calculations';
+            $errors[] = 'Net sales amount does not reconcile with calculations (possible rounding error).';
         }
     }
 
+    /**
+     * Sum up all “positive” charges and subtract any discounts:
+     *    adjustments = service_charge + management_service_charge − (discount_amount + discount_total).
+     *
+     * @param  Transaction  $transaction
+     * @return float
+     */
     private function calculateAdjustments(Transaction $transaction): float
     {
-        $adjustments = 0;
-        
-        // Add service charges
-        $adjustments += $transaction->service_charge ?? 0;
-        $adjustments += $transaction->management_service_charge ?? 0;
-        
-        // Subtract discounts
-        $adjustments -= $transaction->discount_amount ?? 0;
-        $adjustments -= $transaction->discount_total ?? 0;
-        
+        $adjustments = 0.0;
+
+        $adjustments += $transaction->service_charge ?? 0.0;
+        $adjustments += $transaction->management_service_charge ?? 0.0;
+
+        $adjustments -= $transaction->discount_amount ?? 0.0;
+        $adjustments -= $transaction->discount_total ?? 0.0;
+
         return $adjustments;
     }
+
+    // ────────────────────────────────────────────────────────────────────────────────
+    //    “V A L I D A T E   T R A N S A C T I O N   I N T E G R I T Y”
+    // ────────────────────────────────────────────────────────────────────────────────
+
     /**
-     * Validate transaction integrity
-     * @param Transaction $transaction
-     * @return array
+     * 1) No duplicate (ignore current ID if updating).  
+     * 2) If there’s a sequence_number, ensure it’s at most 1 past the last sequence; or if lower, flag as out‐of‐order.  
+     * 3) Transaction timestamp must be ≤ “now,” and ≥ “now – 30 days.”  
+     * 4) Ensure transaction_id matches one of the “allowed” patterns.
+     *
+     * @param  Transaction  $transaction
+     * @return array   List of errors (empty if none)
      */
-    protected function validateTransactionIntegrity(Transaction $transaction)
+    protected function validateTransactionIntegrity(Transaction $transaction): array
     {
         $errors = [];
-        // Enhanced transaction sequence validation
-        // Check for duplicate transactions
-        $duplicate = Transaction::where('transaction_id', $transaction->transaction_id)
-            ->where('terminal_id', $transaction->terminal_id)
+
+        // 1) Check for duplicate (same tenant & transaction ID, different record ID)
+        $duplicate = Transaction::where('tenant_id', $transaction->tenant_id)
+            ->where('transaction_id', $transaction->transaction_id)
             ->where('id', '!=', $transaction->id)
             ->first();
+
         if ($duplicate) {
             $errors[] = sprintf(
-                'Duplicate transaction detected (ID: %s, created at %s)',
+                'Duplicate transaction detected (record ID: %s, created at: %s).',
                 $duplicate->id,
                 $duplicate->created_at->format('Y-m-d H:i:s')
             );
         }
-        // Enhanced transaction sequence validation
+
+        // 2) Sequence‐number checks (if property exists and is not null)
         if (property_exists($transaction, 'sequence_number') && $transaction->sequence_number !== null) {
             $lastTransaction = Transaction::where('terminal_id', $transaction->terminal_id)
                 ->where('id', '!=', $transaction->id)
                 ->whereNotNull('sequence_number')
                 ->orderBy('sequence_number', 'desc')
                 ->first();
+
             if ($lastTransaction) {
                 $expectedSequence = $lastTransaction->sequence_number + 1;
-                if ($transaction->sequence_number > $expectedSequence) {
-                    $gap = $transaction->sequence_number - $expectedSequence;
-                    // Gap of 1 or 2 is likely just missed transactions, but larger gaps are suspicious
+                $currentSequence  = $transaction->sequence_number;
+
+                if ($currentSequence > $expectedSequence) {
+                    $gap = $currentSequence - $expectedSequence;
                     if ($gap > 2) {
                         $errors[] = sprintf(
-                            'Sequence gap detected: expected %d but received %d (gap of %d transactions)',
+                            'Sequence gap detected: expected %d but received %d (gap of %d transactions).',
                             $expectedSequence,
-                            $transaction->sequence_number,
+                            $currentSequence,
                             $gap
                         );
                     }
-                } elseif ($transaction->sequence_number < $expectedSequence) {
-                    // Out of order transactions are always a problem
+                }
+                elseif ($currentSequence < $expectedSequence) {
                     $errors[] = sprintf(
-                        'Out of sequence transaction: expected %d or higher but received %d',
+                        'Out‐of‐sequence transaction: expected %d or higher but received %d.',
                         $expectedSequence,
-                        $transaction->sequence_number
+                        $currentSequence
                     );
                 }
             }
         }
-        // Transaction should not be too old (e.g., more than 30 days)
+
+        // 3) Timestamp must be within the last 30 days and not in the future
         $now = Carbon::now();
-        $transactionTime = Carbon::parse($transaction->transaction_timestamp);
-        if ($transactionTime->lt($now->copy()->subDays(30))) {
+        $txTime = Carbon::parse($transaction->transaction_timestamp);
+
+        if ($txTime->lt($now->copy()->subDays(self::MAX_TRANSACTION_AGE_DAYS))) {
             $errors[] = sprintf(
-                'Transaction is too old (%s). Transactions older than 30 days are not allowed.',
-                $transactionTime->format('Y-m-d H:i:s')
+                'Transaction is too old (%s). Transactions older than %d days are not allowed.',
+                $txTime->format('Y-m-d H:i:s'),
+                self::MAX_TRANSACTION_AGE_DAYS
             );
         }
-        // Transaction should not be in the future
-        if ($transactionTime->gt($now)) {
+        if ($txTime->gt($now)) {
             $errors[] = sprintf(
-                'Transaction timestamp (%s) cannot be in the future (current time: %s)',
-                $transactionTime->format('Y-m-d H:i:s'),
+                'Transaction timestamp (%s) cannot be in the future (current time: %s).',
+                $txTime->format('Y-m-d H:i:s'),
                 $now->format('Y-m-d H:i:s')
             );
         }
-        // Transaction ID format validation (optional)
+
+        // 4) Validate transaction_id format against a set of regex patterns
         if (property_exists($transaction, 'transaction_id')) {
-            // Common POS system patterns
-            $validPatterns = [
-                '/^[A-Za-z0-9]{6,32}$/', // Basic alphanumeric
-                '/^TX\-[A-Za-z0-9-]{4,}$/i', // TX-format
-                '/^[A-Z0-9]{2,4}\-\d{6,10}$/', // PREFIX-NUMBERS format
-                '/^\d{4}\-\d{2}\-\d{2}\-\d{4,}$/' // DATE-NUMBER format
+            $patterns = [
+                '/^[A-Za-z0-9]{6,32}$/',     // Alphanumeric, length 6–32
+                '/^TX\-[A-Za-z0-9-]{4,}$/i', // “TX‐” prefix pattern
+                '/^[A-Z0-9]{2,4}\-\d{6,10}$/',// PREFIX‐NUMBERS (e.g. “ABCD-123456”)
+                '/^\d{4}\-\d{2}\-\d{2}\-\d{4,}$/' // DATE-NUMBER format: “YYYY-MM-DD-####”
             ];
-            $isValidFormat = false;
-            foreach ($validPatterns as $pattern) {
+            $validFormat = false;
+
+            foreach ($patterns as $pattern) {
                 if (preg_match($pattern, $transaction->transaction_id)) {
-                    $isValidFormat = true;
+                    $validFormat = true;
                     break;
                 }
             }
-            if (!$isValidFormat) {
+
+            if (! $validFormat) {
                 $errors[] = sprintf(
                     'Transaction ID format is not recognized: %s',
                     $transaction->transaction_id
                 );
             }
         }
+
         return $errors;
     }
+
+    // ────────────────────────────────────────────────────────────────────────────────
+    //    “V A L I D A T E   B U S I N E S S   R U L E S”
+    // ────────────────────────────────────────────────────────────────────────────────
+
     /**
-     * Validate business rules
-     * @param Transaction $transaction
-     * @return array
+     * These are higher‐level, store‐specific business constraints:
+     *  - Does store allow service_charge?
+     *  - Is gross_sales ≤ store->max_transaction_amount?
+     *  - Does adding this transaction exceed the store’s daily sales limit?
+     *  - If tax_exempt, then vat_amount must be 0 and tax_exempt_id must exist
+     *  - If not tax_exempt but store is tax_exempt, that’s a special error
+     *  - Discounts must be ≤ 30% of gross
+     *
+     * @param  Transaction  $transaction
+     * @return array   List of errors (empty if none)
      */
-    protected function validateBusinessRules(Transaction $transaction)
+    protected function validateBusinessRules(Transaction $transaction): array
     {
-        // Complies with Section 7 Validation & Retry Logic
         $errors = [];
-        
-        // Get terminal and store
+
+        // 1) Terminal → store
         $terminal = PosTerminal::find($transaction->terminal_id);
-        if (!$terminal) {
-            $errors[] = 'Terminal not found';
+        if (! $terminal) {
+            $errors[] = 'Terminal not found for business‐rules validation.';
             return $errors;
         }
-        
-        // Get associated store
+
         $store = Store::find($terminal->store_id);
-        if (!$store) {
-            $errors[] = 'Store not found for this terminal';
+        if (! $store) {
+            $errors[] = 'Store not found for this terminal.';
             return $errors;
         }
-        
-        // Daily transaction limit
-        $transactionDate = Carbon::parse($transaction->transaction_timestamp);
-        
-        // Transaction limits
-        if ($store->max_transaction_amount && $transaction->gross_sales > $store->max_transaction_amount) {
+
+        // 2) Single‐transaction amount limit
+        if ($store->max_transaction_amount !== null
+            && $transaction->gross_sales > $store->max_transaction_amount
+        ) {
             $errors[] = sprintf(
-                'Transaction exceeds maximum allowed amount for this store: %.2f (limit: %.2f)',
+                'Transaction (%.2f) exceeds maximum allowed for this store (%.2f).',
                 $transaction->gross_sales,
                 $store->max_transaction_amount
             );
         }
-        
-        // Daily transaction limit, considering service charges
-        $dailySalesTotal = $store->getDailySalesTotal($transactionDate);
-        $newTotal = $dailySalesTotal + $transaction->gross_sales;
-        if ($store->max_daily_sales && $newTotal > $store->max_daily_sales) {
+
+        // 3) Daily transaction total limit
+        $transactionDate = Carbon::parse($transaction->transaction_timestamp);
+        $dailyTotal = $store->getDailySalesTotal($transactionDate);
+        $newTotal   = $dailyTotal + $transaction->gross_sales;
+
+        if ($store->max_daily_sales !== null && $newTotal > $store->max_daily_sales) {
             $errors[] = sprintf(
-                'Transaction would exceed daily limit for this store: %.2f + %.2f = %.2f (limit: %.2f)',
-                $dailySalesTotal,
+                'Transaction would exceed daily sales limit for this store (%.2f + %.2f = %.2f > %.2f).',
+                $dailyTotal,
                 $transaction->gross_sales,
                 $newTotal,
                 $store->max_daily_sales
             );
         }
-        // Service charge rules
-        $serviceCharge = null;
+
+        // 4) Service‐charge must be allowed by store
+        $serviceChargeUsed = null;
         if (property_exists($transaction, 'service_charge') && $transaction->service_charge > 0) {
-            $serviceCharge = $transaction->service_charge;
-        } elseif (property_exists($transaction, 'management_service_charge') && $transaction->management_service_charge > 0) {
-            $serviceCharge = $transaction->management_service_charge;
+            $serviceChargeUsed = $transaction->service_charge;
         }
-        if ($serviceCharge) {
-            if (!$store->allows_service_charge) {
-                $errors[] = sprintf(
-                    'This store does not allow service charges (found: %.2f)',
-                    $serviceCharge
-                );
-            }
+        elseif (property_exists($transaction, 'management_service_charge')
+            && $transaction->management_service_charge > 0
+        ) {
+            $serviceChargeUsed = $transaction->management_service_charge;
         }
-        // Tax exemption validation
-        $isTaxExempt = false;
-        $hasTaxExemptId = false;
-        if (property_exists($transaction, 'tax_exempt') && $transaction->tax_exempt) {
-            $isTaxExempt = true;
+
+        if ($serviceChargeUsed !== null && ! $store->allows_service_charge) {
+            $errors[] = sprintf(
+                'This store does not allow service charges (found %.2f).',
+                $serviceChargeUsed
+            );
         }
-        if (property_exists($transaction, 'tax_exempt_id') && !empty($transaction->tax_exempt_id)) {
-            $hasTaxExemptId = true;
-        }
+
+        // 5) Tax‐exemption logic:
+        $isTaxExempt    = property_exists($transaction, 'tax_exempt') && $transaction->tax_exempt;
+        $hasTaxExemptId = property_exists($transaction, 'tax_exempt_id') && ! empty($transaction->tax_exempt_id);
+
         if ($isTaxExempt) {
+            // If tax_exempt, vat_amount must be 0, and a tax_exempt_id must be provided
             if ($transaction->vat_amount != 0) {
                 $errors[] = sprintf(
-                    'Tax exempt transactions should have 0 VAT amount (found: %.2f)',
+                    'Tax‐exempt transactions should have 0 VAT (found %.2f).',
                     $transaction->vat_amount
                 );
             }
-            if (!$hasTaxExemptId) {
-                $errors[] = 'Tax exemption requires a valid exemption ID';
-            }
-        } else {
-            if ($store->tax_exempt && $transaction->vat_amount > 0) {
-                $errors[] = 'Non-tax-exempt transactions in tax exempt stores should be flagged';
+            if (! $hasTaxExemptId) {
+                $errors[] = 'Tax‐exempt transactions require a valid exemption ID.';
             }
         }
-        // Discount validations
+        else {
+            // If the store itself is tax_exempt but this transaction is not flagged as exempt,
+            // that is a special situation.
+            if ($store->tax_exempt && $transaction->vat_amount > 0) {
+                $errors[] = 'Non‐exempt transactions in a tax‐exempt store must be flagged.';
+            }
+        }
+
+        // 6) Discount amount cannot exceed 30% of gross
         if (property_exists($transaction, 'discount_amount') && $transaction->discount_amount > 0) {
-            $discountAmount = $transaction->discount_amount;
-            // Discount should not exceed 50% of gross_sales as a business rule
             $maxDiscount = $transaction->gross_sales * self::MAX_DISCOUNT_PERCENTAGE;
-            if ($discountAmount > $maxDiscount) {
+            if ($transaction->discount_amount > $maxDiscount) {
                 $errors[] = sprintf(
-                    'Discount amount (%.2f) exceeds maximum allowed threshold (50%% of gross sales: %.2f)',
-                    $discountAmount,
+                    'Discount amount (%.2f) exceeds maximum allowed (%.0f%% of gross sales: %.2f).',
+                    $transaction->discount_amount,
+                    self::MAX_DISCOUNT_PERCENTAGE * 100,
                     $maxDiscount
                 );
             }
         }
+
         return $errors;
     }
 
+    // ────────────────────────────────────────────────────────────────────────────────
+    //    “D I S C O U N T – S P E C I F I C   V A L I D A T I O N”
+    // ────────────────────────────────────────────────────────────────────────────────
+
     /**
-     * Validate transaction discounts
-     * @param Transaction $transaction
-     * @return array
+     * 1) If discount_amount > 0, ensure discount_details array is present.
+     * 2) Sum discount_details[].amount and compare (±0.01) to discount_amount.
+     * 3) If senior_discount or pwd_discount is used, discount_auth_code must be provided.
+     *
+     * @param  Transaction  $transaction
+     * @return array  List of errors (empty if none)
      */
-    protected function validateDiscounts(Transaction $transaction)
+    protected function validateDiscounts(Transaction $transaction): array
     {
         $errors = [];
-        
-        // Skip validation if no discounts applied
-        if (!$transaction->discount_amount || $transaction->discount_amount <= 0) {
-            return $errors;
-        }
-        
-        // Check if discount details exist when discount amount is present
-        if ($transaction->discount_amount > 0 && empty($transaction->discount_details)) {
-            $errors[] = 'Discount details missing for transaction with applied discount';
-        }
-        
-        // Check if discount total matches the sum of individual discounts
-        if (!empty($transaction->discount_details) && is_array($transaction->discount_details)) {
-            $totalDiscounts = 0;
-            
-            foreach ($transaction->discount_details as $discount) {
-                if (isset($discount['amount'])) {
-                    $totalDiscounts += floatval($discount['amount']);
+
+        // 1) If discount_amount > 0, discount_details must exist (and be an array).
+        if ($transaction->discount_amount > 0) {
+            if (empty($transaction->discount_details) || ! is_array($transaction->discount_details)) {
+                $errors[] = 'Discount details missing for a transaction with a discount amount.';
+            } else {
+                // 2) Sum up individual discounts
+                $sum = 0.0;
+                foreach ($transaction->discount_details as $d) {
+                    if (isset($d['amount'])) {
+                        $sum += floatval($d['amount']);
+                    }
+                }
+                if (abs($sum - floatval($transaction->discount_amount)) > 0.01) {
+                    $errors[] = sprintf(
+                        'Sum of individual discounts (%.2f) does not match total discount_amount (%.2f).',
+                        $sum,
+                        floatval($transaction->discount_amount)
+                    );
                 }
             }
-            
-            // Allow for small floating point differences (0.01)
-            if (abs($totalDiscounts - floatval($transaction->discount_amount)) > 0.01) {
-                $errors[] = sprintf(
-                    'Discount total (%.2f) does not match sum of individual discounts (%.2f)',
-                    floatval($transaction->discount_amount),
-                    $totalDiscounts
-                );
+        }
+
+        // 3) If senior_discount > 0 or pwd_discount > 0, we must have discount_auth_code
+        if (
+            (property_exists($transaction, 'senior_discount')
+             && $transaction->senior_discount > 0)
+            || (property_exists($transaction, 'pwd_discount')
+             && $transaction->pwd_discount > 0)
+        ) {
+            if (empty($transaction->discount_auth_code)) {
+                $errors[] = 'Authorization code is required for senior/PWD discount.';
             }
         }
-        
-        // Check for auth code on special discounts
-        if (($transaction->senior_discount > 0 || $transaction->pwd_discount > 0) 
-            && empty($transaction->discount_auth_code)) {
-            $errors[] = 'Authorization code required for senior/PWD discount';
-        }
-        
+
         return $errors;
     }
 }

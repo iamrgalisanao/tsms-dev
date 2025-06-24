@@ -25,12 +25,12 @@
     </a>
   </li>
 
-  <li class="nav-item">
+  {{-- <li class="nav-item">
     <a href="{{ route('circuit-breakers') }}"
       class="nav-link {{ Request::routeIs('circuit-breakers') ? 'active' : '' }}">
       <i class="nav-icon fas fa-shield-alt"></i> Circuit Breakers
     </a>
-  </li>
+  </li> --}}
 
   <li class="nav-item">
     <a href="{{ route('terminal-tokens') }}"

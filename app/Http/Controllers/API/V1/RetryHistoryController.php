@@ -15,7 +15,9 @@ class RetryHistoryController extends Controller
 {
     public function index(Request $request)
     {
+        dd("hi");
         try {
+            
             Log::info('Fetching retry history with params', [
                 'request_params' => $request->all()
             ]);
