@@ -15,10 +15,10 @@
 
 @section('content')
 
-{{-- @php
+@php
 use App\Helpers\LogHelper;
 use App\Helpers\BadgeHelper;
-@endphp --}}
+@endphp
 
 <div class="card">
     <div class="card-header bg-primary">
