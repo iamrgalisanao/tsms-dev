@@ -48,7 +48,8 @@ use App\Helpers\FormatHelper;
                     <td class="text-center">{!! BadgeHelper::getValidationStatusBadge($log->validation_status) !!}</td>
                     <td class="text-center">{!! BadgeHelper::getJobStatusBadge($log->job_status, 'job') !!}</td>
                     <td class="text-center">{{ $log->job_attempts }}</td>
-                    <td class="text-center">{{ FormatHelper::formatDate($log->completed_at) }}</td>
+                    {{-- <td class="text-center">{{ FormatHelper::formatDate($log->completed_at) }}</td> --}}
+                    <td class="text-center">{{ \Carbon\Carbon::parse($log->completed_at)->format('Y-m-d H:i:s') }}</td>
                     <td class="text-center">{{ formatDate($log->completed_at) }}</td>
                 </tr>
                 @empty
