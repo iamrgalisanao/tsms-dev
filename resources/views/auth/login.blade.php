@@ -183,12 +183,18 @@
             </div>
             @enderror
           </div>
-          <div class="d-flex justify-content-between align-items-center mb-3">
+          {{-- <div class="d-flex justify-content-between align-items-center mb-3">
             <div class="form-check keep-logged">
               <input type="checkbox" class="form-check-input" id="remember_me" name="remember">
               <label class="form-check-label" for="remember_me">Keep me logged in</label>
             </div>
             <a href="#" class="forgot-link">Forgot password?</a>
+          </div> --}}
+          <div class="d-flex justify-content-between align-items-center">
+            <p>Demo Account:</p>
+            <p class="text-muted">admin@example.com<strong>
+              </strong> | password123</p> 
+            
           </div>
           <button type="submit" class="btn btn-primary">Sign in</button>
         </form>
