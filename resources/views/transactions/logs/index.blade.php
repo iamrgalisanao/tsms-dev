@@ -11,6 +11,12 @@
 
 @endpush
 
+@php
+use App\Helpers\LogHelper;
+use App\Helpers\BadgeHelper;
+@endphp
+
+
 @section('content')
   
 

@@ -113,7 +113,7 @@
       font-size: 0.95rem;
     }
     .right-panel-logo {
-      max-width: 180px;
+      max-width: 280px;
       margin-bottom: 2rem;
       background: rgba(255,255,255,1);
       border-radius: 8px;
