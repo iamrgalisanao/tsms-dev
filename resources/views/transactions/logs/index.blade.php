@@ -15,10 +15,10 @@
 
 @section('content')
 
-@php
+{{-- @php
 use App\Helpers\LogHelper;
 use App\Helpers\BadgeHelper;
-@endphp
+@endphp --}}
 
 <div class="card">
     <div class="card-header bg-primary">
@@ -44,8 +44,8 @@ use App\Helpers\BadgeHelper;
                     <td>{{ $log->transaction_id }}</td>
                     <td>{{ $log->terminal->identifier ?? 'N/A' }}</td>
                     <td class="text-end">₱{{ number_format($log->gross_sales, 2) }}</td>
-                    <td class="text-center">{!! getStatusBadge($log->validation_status) !!}</td>
-                    <td class="text-center">{!! getStatusBadge($log->job_status, 'job') !!}</td>
+                    <td class="text-center">{!! BadgeHelper::getStatusBadge($log->validation_status) !!}</td>
+                    <td class="text-center">{!! BadgeHelper::getStatusBadge($log->job_status, 'job') !!}</td>
                     <td class="text-center">{{ $log->job_attempts }}</td>
                     <td class="text-center">{{ $log->transaction_count }}</td>
                     <td class="text-center">{{ formatDate($log->completed_at) }}</td>
