@@ -11,14 +11,14 @@
 
 @endpush
 
+
+
+@section('content')
+
 @php
 use App\Helpers\LogHelper;
 use App\Helpers\BadgeHelper;
 @endphp
-
-
-@section('content')
-  
 
 <div class="card">
     <div class="card-header bg-primary">
