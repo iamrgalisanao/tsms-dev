@@ -32,8 +32,12 @@ class RegisterTerminalController extends Controller
         
         $validated = $request->validate([
             'tenant_code'   => 'required|string|exists:tenants,code',
-            'terminal_uid'  => 'required|string|unique:pos_terminals,terminal_uid',
+            'serial_number'  => 'required|string|unique:pos_terminals,serial_number',
             'provider_code' => 'required|string|exists:pos_providers,code',
+            'pos_type_id' => 'nullable|exists:pos_types,id',
+            'integration_type_id' => 'nullable|exists:integration_types,id',
+            'auth_type_id' => 'nullable|exists:auth_types,id',
+            'status_id' => 'required|exists:terminal_statuses,id',
         ]);
 
         /**
@@ -58,16 +62,19 @@ class RegisterTerminalController extends Controller
         $terminal = PosTerminal::create([
             'tenant_id'     => $tenant->id,
             'provider_id'   => $provider->id,
-            'terminal_uid'  => $validated['terminal_uid'],
+            'serial_number' => $validated['serial_number'],
+            'pos_type_id'   => $validated['pos_type_id'] ?? null,
+            'integration_type_id' => $validated['integration_type_id'] ?? null,
+            'auth_type_id'  => $validated['auth_type_id'] ?? null,
+            'status_id'     => $validated['status_id'],
             'registered_at' => now(),
             'enrolled_at'   => now(),
-            'status'        => 'active',
         ]);
 
         // Step 4: Request JWT token from external auth service
         try {
             $response = Http::post(config('services.auth.endpoint'), [
-                'terminal_uid' => $terminal->terminal_uid,
+                'terminal_uid' => $terminal->serial_number,
                 'secret_key'   => config('services.auth.secret_key'),
             ]);
 

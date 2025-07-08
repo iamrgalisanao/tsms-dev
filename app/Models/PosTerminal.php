@@ -14,42 +14,29 @@ class PosTerminal extends Model implements Authenticatable, JWTSubject
 
     protected $fillable = [
         'tenant_id',
-        'provider_id',
-        'terminal_uid',
+        'serial_number',
         'machine_number',
-        'pos_type',
         'supports_guest_count',
-        'ip_whitelist',
-        'device_fingerprint',
-        'integration_type',
-        'auth_type',
-        'status',
-        'is_sandbox',
-        'webhook_url',
-        'max_retries',
-        'retry_interval_sec',
-        'retry_enabled',
-        'jwt_token',
+        'pos_type_id',
+        'integration_type_id',
+        'auth_type_id',
+        'status_id',
         'registered_at',
-        'enrolled_at',
-        'created_at',
-        'updated_at',
+        'last_seen_at',
+        'heartbeat_threshold',
         'expires_at',
-        'is_revoked'
+        'callback_url',
+        'notification_preferences',
+        'notifications_enabled',
     ];
 
     protected $casts = [
         'supports_guest_count' => 'boolean',
-        'is_sandbox' => 'boolean',
-        'retry_enabled' => 'boolean',
-        'is_revoked' => 'boolean',
-        'registered_at' => 'datetime',
-        'enrolled_at' => 'datetime',
+        'notifications_enabled' => 'boolean',
+        'notification_preferences' => 'array',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
         'expires_at' => 'datetime',
-        'max_retries' => 'integer',
-        'retry_interval_sec' => 'integer',
     ];
 
     public function tenant()
@@ -75,6 +62,31 @@ class PosTerminal extends Model implements Authenticatable, JWTSubject
     public function store()
     {
         return $this->belongsTo(Store::class);
+    }
+
+    public function posType()
+    {
+        return $this->belongsTo(PosType::class, 'pos_type_id');
+    }
+
+    public function integrationType()
+    {
+        return $this->belongsTo(IntegrationType::class, 'integration_type_id');
+    }
+
+    public function authType()
+    {
+        return $this->belongsTo(AuthType::class, 'auth_type_id');
+    }
+
+    public function status()
+    {
+        return $this->belongsTo(TerminalStatus::class, 'status_id');
+    }
+
+    public function config()
+    {
+        return $this->hasOne(TerminalConfig::class, 'terminal_id');
     }
 
     public function getAuthIdentifierName()

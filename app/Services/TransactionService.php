@@ -12,8 +12,8 @@ class TransactionService
     {
         // Exclude any system-computed fields from the payload for checksum
         $checksumInput = collect($payload)
-            ->except(['payload_checksum', 'validation_status', 'error_code'])
-            ->sortKeys() // Ensure consistent order
+            ->except(['payload_checksum'])
+            ->sortKeys()
             ->toJson();
 
         // Compute SHA-256 hash
@@ -22,7 +22,25 @@ class TransactionService
         // Log the computed checksum for debugging
         Log::info('Computed payload_checksum:', ['checksum' => $payload['payload_checksum']]);
 
-        return Transaction::create($payload);
+        // Only allow new schema fields
+        $transaction = Transaction::create([
+            'customer_code' => $payload['customer_code'],
+            'terminal_id' => $payload['terminal_id'],
+            'transaction_id' => $payload['transaction_id'],
+            'trade_name' => $payload['trade_name'] ?? null,
+            'hardware_id' => $payload['hardware_id'],
+            'machine_number' => $payload['machine_number'] ?? null,
+            'transaction_timestamp' => $payload['transaction_timestamp'],
+            'base_amount' => $payload['base_amount'],
+            'payload_checksum' => $payload['payload_checksum'],
+            'created_at' => $payload['created_at'] ?? now(),
+            'updated_at' => $payload['updated_at'] ?? now(),
+        ]);
+
+        // Optionally: handle adjustments, taxes, jobs, validations here if present in payload
+        // ...
+
+        return $transaction;
     }
 
     protected function logTransactionHistory($transaction, $status, $message = null)

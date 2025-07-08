@@ -18,8 +18,8 @@
      
     <div class="col-md-3 col-sm-6 col-12">
       <div class="info-box">
-        <span class="info-box-icon bg-danger">
-          <i class="fas fa-flag"></i>
+        <span class="info-box-icon bg-info">
+          <i class="fas fa-list-alt"></i>
         </span>
         <div class="info-box-content">
           <span class="info-box-text">Total Events</span>
@@ -30,7 +30,7 @@
 
     <div class="col-md-3 col-sm-6 col-12">
       <div class="info-box">
-        <span class="info-box-icon bg-danger">
+        <span class="info-box-icon bg-success">
           <i class="fas fa-key"></i>
         </span>
         <div class="info-box-content">
@@ -39,10 +39,11 @@
         </div>
       </div>
     </div>
+    
     <div class="col-md-3 col-sm-6 col-12">
       <div class="info-box">
-        <span class="info-box-icon bg-danger">
-          <i class="fas fa-clock"></i>
+        <span class="info-box-icon bg-warning">
+          <i class="fas fa-edit"></i>
         </span>
         <div class="info-box-content">
           <span class="info-box-text">Changes</span>
@@ -50,14 +51,66 @@
         </div>
       </div>
     </div>
+    
     <div class="col-md-3 col-sm-6 col-12">
       <div class="info-box">
         <span class="info-box-icon bg-danger">
-          <i class="fas fa-thumbs-down"></i>
+          <i class="fas fa-exclamation-triangle"></i>
         </span>
         <div class="info-box-content">
           <span class="info-box-text">Error Logs</span>
           <span class="info-box-number">{{ number_format($stats['error_logs'] ?? 0) }}</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Additional Auth Stats Row -->
+  <div class="row g-4 mb-4">
+    <div class="col-md-3 col-sm-6 col-12">
+      <div class="info-box">
+        <span class="info-box-icon bg-primary">
+          <i class="fas fa-sign-in-alt"></i>
+        </span>
+        <div class="info-box-content">
+          <span class="info-box-text">Successful Logins</span>
+          <span class="info-box-number">{{ number_format($stats['login_success'] ?? 0) }}</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-md-3 col-sm-6 col-12">
+      <div class="info-box">
+        <span class="info-box-icon bg-danger">
+          <i class="fas fa-times-circle"></i>
+        </span>
+        <div class="info-box-content">
+          <span class="info-box-text">Failed Logins</span>
+          <span class="info-box-number">{{ number_format($stats['login_failed'] ?? 0) }}</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-md-3 col-sm-6 col-12">
+      <div class="info-box">
+        <span class="info-box-icon bg-info">
+          <i class="fas fa-server"></i>
+        </span>
+        <div class="info-box-content">
+          <span class="info-box-text">System Logs</span>
+          <span class="info-box-number">{{ number_format($stats['system'] ?? 0) }}</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-md-3 col-sm-6 col-12">
+      <div class="info-box">
+        <span class="info-box-icon bg-warning">
+          <i class="fas fa-exchange-alt"></i>
+        </span>
+        <div class="info-box-content">
+          <span class="info-box-text">Webhook Events</span>
+          <span class="info-box-number">{{ number_format($stats['webhook_total'] ?? 0) }}</span>
         </div>
       </div>
     </div>

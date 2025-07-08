@@ -57,6 +57,22 @@ class RetryTransactionJob implements ShouldQueue
             return;
         }
 
+        // Find the transaction using new normalized schema if available
+        // Optionally, update TransactionJob status for retry attempts
+        $transactionJob = null;
+        if (class_exists('App\\Models\\TransactionJob')) {
+            $transactionJob = \App\Models\TransactionJob::where('transaction_id', $this->transactionId)
+                ->where('terminal_id', $this->terminalId)
+                ->latest('created_at')->first();
+            if ($transactionJob) {
+                $transactionJob->update([
+                    'status' => 'RETRYING',
+                    'attempt_number' => $this->attempt,
+                    'started_at' => now(),
+                ]);
+            }
+        }
+
         // Find the transaction
         $log = IntegrationLog::where('transaction_id', $this->transactionId)
             ->where('terminal_id', $this->terminalId)
@@ -114,6 +130,12 @@ class RetryTransactionJob implements ShouldQueue
             
             if ($success) {
                 $log->status = 'SUCCESS';
+                if ($transactionJob) {
+                    $transactionJob->update([
+                        'status' => 'COMPLETED',
+                        'completed_at' => now(),
+                    ]);
+                }
                 $circuitBreaker->recordSuccess();
                 Log::info('Transaction retry successful', [
                     'transaction_id' => $this->transactionId,
@@ -121,6 +143,13 @@ class RetryTransactionJob implements ShouldQueue
                 ]);
             } else {
                 $log->retry_reason = $response->body() ?? 'Unknown error';
+                if ($transactionJob) {
+                    $transactionJob->update([
+                        'status' => 'FAILED',
+                        'completed_at' => now(),
+                        'error_message' => $log->retry_reason,
+                    ]);
+                }
                 $circuitBreaker->recordFailure();
                 
                 // Schedule another retry if we haven't hit the max attempts
@@ -155,8 +184,14 @@ class RetryTransactionJob implements ShouldQueue
                 'error' => $e->getMessage(),
                 'attempt' => $this->attempt
             ]);
-            
             $circuitBreaker->recordFailure();
+            if ($transactionJob) {
+                $transactionJob->update([
+                    'status' => 'FAILED',
+                    'completed_at' => now(),
+                    'error_message' => $e->getMessage(),
+                ]);
+            }
             
             // Update the log with failure information
             $log->retry_count = $this->attempt;

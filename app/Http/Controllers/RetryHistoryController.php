@@ -14,7 +14,7 @@ class RetryHistoryController extends Controller
     {
         // dd(""hi");
         // Get all POS terminals for the filter dropdown
-        $terminals = PosTerminal::select('id', 'terminal_uid')->get();
+        $terminals = PosTerminal::select('id', 'serial_number')->get();
         
         return view('dashboard.retry-history', [
             'terminals' => $terminals
@@ -23,7 +23,7 @@ class RetryHistoryController extends Controller
     
     public function show(Request $request, $id)
     {
-        $log = IntegrationLog::with(['posTerminal:id,terminal_uid', 'tenant:id,name'])
+        $log = IntegrationLog::with(['posTerminal:id,serial_number', 'tenant:id,name'])
             ->findOrFail($id);
             
         return view('dashboard.retry-history-detail', [
@@ -37,7 +37,7 @@ class RetryHistoryController extends Controller
         
         try {
             // Queue the transaction for retry
-            dispatch(new RetryTransactionJob($log->transaction_id, $log->terminal_uid));
+            dispatch(new RetryTransactionJob($log->transaction_id, $log->serial_number));
             
             // Log the manual retry
             $log->increment('retry_count');

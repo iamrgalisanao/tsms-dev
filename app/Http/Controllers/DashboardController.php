@@ -8,26 +8,33 @@ use App\Models\Transaction;
 use App\Models\IntegrationLog;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
+use App\Models\TransactionJob;
 
 class DashboardController extends Controller
 {
+    protected $dashboardService;
+
+    public function __construct(\App\Services\DashboardService $dashboardService)
+    {
+        $this->dashboardService = $dashboardService;
+    }
+
     public function index()
     {
         $metrics = $this->getMetrics();
-        $enrollmentData = $this->getEnrollmentData();
-        $providers = $this->getProviderStats();
-        $recentTerminals = $this->getRecentTerminals();
+        // $enrollmentData = $this->getEnrollmentData();
+        // $providers = $this->getProviderStats();
+        // $recentTerminals = $this->getRecentTerminals();
         $recentTransactions = $this->getRecentTransactions();
         $recentTransactionCount = Transaction::where('created_at', '>=', now()->subDays(7))->count();
-        $errorCount = Transaction::where('created_at', '>=', now()->subDays(7))
-            ->where('validation_status', 'ERROR')
+        // Use TransactionJob for error count in normalized schema
+        $errorCount = \App\Models\TransactionJob::where('created_at', '>=', now()->subDays(7))
+            ->where('job_status', 'FAILED')
             ->count();
 
         return view('dashboard', compact(
             'metrics',
-            'enrollmentData',
-            'providers',
-            'recentTerminals',
+            // 'providers',
             'recentTransactions',
             'recentTransactionCount',
             'errorCount'
@@ -61,10 +68,26 @@ class DashboardController extends Controller
         }
     }
 
+    // protected function getMetrics()
+    // {
+    //     $activeTerminalCount = PosTerminal::where('status', 'active')->count();
+    //     return [
+    //         'today_count' => $this->getTransactionMetrics(),
+    //         'success_rate' => $this->getSuccessRate(),
+    //         'avg_processing_time' => $this->getAvgProcessingTime(),
+    //         'error_rate' => $this->getErrorRate(),
+    //         'active_terminals' => $activeTerminalCount
+    //     ];
+    // }
+
     protected function getMetrics()
     {
-        $activeTerminalCount = PosTerminal::where('status', 'active')->count();
-        
+        // Get the ID for the 'active' status from the lookup table
+        $activeStatusId = \App\Models\TerminalStatus::where('name', 'active')->value('id');
+        $activeTerminalCount = $activeStatusId
+            ? PosTerminal::where('status_id', $activeStatusId)->count()
+            : 0;
+
         return [
             'today_count' => $this->getTransactionMetrics(),
             'success_rate' => $this->getSuccessRate(),
@@ -74,34 +97,34 @@ class DashboardController extends Controller
         ];
     }
 
-    protected function getEnrollmentData()
-    {
-        $dates = collect(range(30, 0))->map(function($days) {
-            return now()->subDays($days)->format('Y-m-d');
-        });
+    // protected function getEnrollmentData()
+    // {
+    //     $dates = collect(range(30, 0))->map(function($days) {
+    //         return now()->subDays($days)->format('Y-m-d');
+    //     });
 
-        $enrollments = PosTerminal::selectRaw('DATE(enrolled_at) as date, COUNT(*) as count')
-            ->whereDate('enrolled_at', '>=', now()->subDays(30))
-            ->groupBy('date')
-            ->pluck('count', 'date')
-            ->toArray();
+    //     $enrollments = PosTerminal::selectRaw('DATE(enrolled_at) as date, COUNT(*) as count')
+    //         ->whereDate('enrolled_at', '>=', now()->subDays(30))
+    //         ->groupBy('date')
+    //         ->pluck('count', 'date')
+    //         ->toArray();
 
-        $activeTerminals = PosTerminal::selectRaw('DATE(enrolled_at) as date, COUNT(*) as count')
-            ->where('status', 'active')
-            ->whereDate('enrolled_at', '>=', now()->subDays(30))
-            ->groupBy('date')
-            ->pluck('count', 'date')
-            ->toArray();
+    //     $activeTerminals = PosTerminal::selectRaw('DATE(enrolled_at) as date, COUNT(*) as count')
+    //         ->where('status', 'active')
+    //         ->whereDate('enrolled_at', '>=', now()->subDays(30))
+    //         ->groupBy('date')
+    //         ->pluck('count', 'date')
+    //         ->toArray();
 
-        return [
-            'labels' => $dates->values(),
-            'totalTerminals' => $dates->map(fn($date) => array_sum(
-                array_filter($enrollments, fn($k) => $k <= $date, ARRAY_FILTER_USE_KEY)
-            )),
-            'activeTerminals' => $dates->map(fn($date) => $activeTerminals[$date] ?? 0),
-            'newEnrollments' => $dates->map(fn($date) => $enrollments[$date] ?? 0)
-        ];
-    }
+    //     return [
+    //         'labels' => $dates->values(),
+    //         'totalTerminals' => $dates->map(fn($date) => array_sum(
+    //             array_filter($enrollments, fn($k) => $k <= $date, ARRAY_FILTER_USE_KEY)
+    //         )),
+    //         'activeTerminals' => $dates->map(fn($date) => $activeTerminals[$date] ?? 0),
+    //         'newEnrollments' => $dates->map(fn($date) => $enrollments[$date] ?? 0)
+    //     ];
+    // }
 
     protected function getProviderStats()
     {
@@ -133,14 +156,16 @@ class DashboardController extends Controller
     {
         $total = Transaction::count();
         if ($total === 0) return 0;
-        
-        $success = Transaction::where('validation_status', 'VALID')->count();
+        // Use TransactionJob for success count in normalized schema
+        $success = \App\Models\TransactionJob::where('job_status', 'COMPLETED')->count();
         return round(($success / $total) * 100, 2);
     }
 
     protected function getAvgProcessingTime()
     {
-        return Transaction::whereNotNull('completed_at')
+        // Use TransactionJob for normalized schema
+        return TransactionJob::whereNotNull('completed_at')
+            ->where('job_status', 'COMPLETED')
             ->selectRaw('AVG(TIMESTAMPDIFF(SECOND, created_at, completed_at)) as avg_time')
             ->value('avg_time') ?? 0;
     }
@@ -149,8 +174,8 @@ class DashboardController extends Controller
     {
         $total = Transaction::count();
         if ($total === 0) return 0;
-        
-        $errors = Transaction::where('validation_status', 'ERROR')->count();
+        // Use TransactionJob for error count in normalized schema
+        $errors = \App\Models\TransactionJob::where('job_status', 'FAILED')->count();
         return round(($errors / $total) * 100, 2);
     }
 }

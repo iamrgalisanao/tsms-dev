@@ -22,10 +22,10 @@ class TransactionValidationTest extends TestCase
 
     public function test_validates_valid_transaction()
     {
-        $terminal = PosTerminal::factory()->create(['status' => 'active']);
+        $terminal = PosTerminal::factory()->create(['status_id' => 1]);
         
         $data = [
-            'terminal_id' => $terminal->terminal_uid,
+            'terminal_id' => $terminal->id,
             'amount' => 100.00,
             'transaction_date' => Carbon::now()->setHour(14)->toDateTimeString()
         ];
@@ -36,10 +36,10 @@ class TransactionValidationTest extends TestCase
 
     public function test_validates_operating_hours()
     {
-        $terminal = PosTerminal::factory()->create(['status' => 'active']);
+        $terminal = PosTerminal::factory()->create(['status_id' => 1]);
         
         $data = [
-            'terminal_id' => $terminal->terminal_uid,
+            'terminal_id' => $terminal->id,
             'amount' => 100.00,
             'transaction_date' => Carbon::now()->setHour(23)->toDateTimeString()
         ];

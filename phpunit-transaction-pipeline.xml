@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="https://schema.phpunit.de/10.1/phpunit.xsd"
+         bootstrap="vendor/autoload.php"
+         colors="true">
+    <testsuites>
+        <testsuite name="Transaction Pipeline Tests">
+            <directory>tests/Feature/TransactionPipeline</directory>
+        </testsuite>
+        <testsuite name="Transaction Ingestion">
+            <file>tests/Feature/TransactionPipeline/TransactionIngestionTest.php</file>
+        </testsuite>
+        <testsuite name="Transaction Queue Processing">
+            <file>tests/Feature/TransactionPipeline/TransactionQueueProcessingTest.php</file>
+        </testsuite>
+        <testsuite name="Transaction Validation">
+            <file>tests/Feature/TransactionPipeline/TransactionValidationTest.php</file>
+        </testsuite>
+        <testsuite name="Transaction End-to-End">
+            <file>tests/Feature/TransactionPipeline/TransactionEndToEndTest.php</file>
+        </testsuite>
+        <testsuite name="Transaction Performance">
+            <file>tests/Feature/TransactionPipeline/TransactionPerformanceTest.php</file>
+        </testsuite>
+    </testsuites>
+    <source>
+        <include>
+            <directory suffix=".php">app</directory>
+        </include>
+        <exclude>
+            <directory>app/Console</directory>
+            <directory>app/Exceptions</directory>
+            <directory>app/Http/Middleware</directory>
+            <file>app/Providers/RouteServiceProvider.php</file>
+        </exclude>
+    </source>
+    <coverage>
+        <report>
+            <html outputDirectory="storage/coverage-html"/>
+            <text outputFile="storage/coverage.txt"/>
+            <clover outputFile="storage/coverage.xml"/>
+        </report>
+    </coverage>
+    <logging>
+        <junit outputFile="storage/test-results.xml"/>
+        <testdoxHtml outputFile="storage/test-results.html"/>
+        <testdoxText outputFile="storage/test-results.txt"/>
+    </logging>
+</phpunit>

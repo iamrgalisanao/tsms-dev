@@ -11,9 +11,15 @@ class Tenant extends Model
     use HasFactory;
 
     protected $fillable = [
-        'name',
-        'code',
+        'company_id',
+        'trade_name',
+        'location_type',
+        'location',
+        'unit_no',
+        'floor_area',
         'status',
+        'category',
+        'zone',
     ];
 
     public function posTerminals()
@@ -24,5 +30,10 @@ class Tenant extends Model
     public function circuitBreakers()
     {
         return $this->hasMany(CircuitBreaker::class);
+    }
+
+    public function company()
+    {
+        return $this->belongsTo(Company::class);
     }
 }

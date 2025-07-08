@@ -13,6 +13,7 @@ use App\Helpers\BadgeHelper;
                   <th>Time</th>
                   <th>Type</th>
                   <th>Severity</th>
+                  <th>User</th>
                   <th>Terminal</th>
                   <th>Message</th>
                   <th>Transaction</th>
@@ -25,7 +26,23 @@ use App\Helpers\BadgeHelper;
                 <td class="text-nowrap">{{ $log->created_at->format('Y-m-d H:i:s') }}</td>
                 <td>
                   <span class="badge bg-{{ LogHelper::getLogTypeClass($log->log_type) }}">
-                    {{ ucfirst($log->log_type) }}
+                    @if($log->type === 'security' && isset($log->context['auth_event']))
+                      @switch($log->context['auth_event'])
+                        @case('login')
+                          <i class="fas fa-sign-in-alt me-1"></i>Login
+                          @break
+                        @case('logout')
+                          <i class="fas fa-sign-out-alt me-1"></i>Logout
+                          @break
+                        @case('login_failed')
+                          <i class="fas fa-exclamation-triangle me-1"></i>Failed Login
+                          @break
+                        @default
+                          <i class="fas fa-shield-alt me-1"></i>Security
+                      @endswitch
+                    @else
+                      {{ ucfirst($log->type) }}
+                    @endif
                   </span>
                 </td>
                 <td>
@@ -33,9 +50,13 @@ use App\Helpers\BadgeHelper;
                     {{ strtoupper($log->severity) }}
                   </span>
                 </td>
+                <td class="text-nowrap">{{ $log->user?->name ?? 'System' }}</td>
                 <td class="text-nowrap">{{ $log->terminal_uid ?? 'N/A' }}</td>
                 <td class="text-wrap" style="max-width: 300px;">
                   <small class="text-muted">{{ $log->message }}</small>
+                  @if($log->type === 'security' && isset($log->context['ip_address']))
+                    <br><small class="text-info">IP: {{ $log->context['ip_address'] }}</small>
+                  @endif
                 </td>
                 <td class="text-nowrap">
                   @if($log->transaction_id)

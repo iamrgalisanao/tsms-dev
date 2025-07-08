@@ -45,19 +45,24 @@ class TransactionLogController extends Controller
                 'id',
                 'transaction_id',
                 'terminal_id',
-                'gross_sales as amount',
-                'validation_status',  // Make sure this field is selected
-                'job_status',
-                'job_attempts',
+                // Use new normalized field for amount
+                'base_amount as amount',
+                // Remove legacy fields, use new relationships if needed
+                // 'validation_status',  // Remove if not in new schema
+                // 'job_status',
+                // 'job_attempts',
                 'created_at'
             ])
-            ->with(['terminal:id,terminal_uid,provider_id']) // Changed identifier to terminal_uid
+            ->with(['terminal:id,terminal_uid,provider_id'])
             ->when(isset($filters['transaction_id']), function ($query) use ($filters) {
                 $search = str_replace('TX-', '', $filters['transaction_id']);
                 return $query->where('transaction_id', 'like', "%{$search}%");
             })
             ->when(isset($filters['status']), function ($query) use ($filters) {
-                return $query->where('job_status', $filters['status']);
+                // Use jobs relationship for status if needed
+                return $query->whereHas('jobs', function($q) use ($filters) {
+                    $q->where('status', $filters['status']);
+                });
             })
             ->when(isset($filters['date_from']), function ($query) use ($filters) {
                 return $query->where('created_at', '>=', $filters['date_from'] . ' 00:00:00');
@@ -84,17 +89,24 @@ class TransactionLogController extends Controller
             return response()->json($logs);
         }
 
-        $providers = PosProvider::all();
+        // $providers = PosProvider::all();
         $terminals = PosTerminal::all();
 
-        return view('transactions.logs.index', compact('logs', 'providers', 'terminals', 'filters'));
+        // return view('transactions.logs.index', compact('logs', 'providers', 'terminals', 'filters'));
+         return view('transactions.logs.index', compact('logs', 'terminals', 'filters'));
     }
 
     public function show($id)
     {
         try {
-            $transaction = Transaction::with(['terminal.provider', 'tenant', 'processingHistory'])
-                ->findOrFail($id);
+            $transaction = Transaction::with([
+                'terminal.provider',
+                'processingHistory',
+                'adjustments',
+                'taxes',
+                'jobs',
+                'validations'
+            ])->findOrFail($id);
 
             if (!$transaction) {
                 return redirect()

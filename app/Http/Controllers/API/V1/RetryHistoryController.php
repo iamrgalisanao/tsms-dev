@@ -80,7 +80,7 @@ class RetryHistoryController extends Controller
                 $formattedRetries[] = [
                     'id' => $item->id,
                     'transaction_id' => $item->transaction_id ?? 'N/A',
-                    'terminal_uid' => 'TERM-' . $item->terminal_id,
+                    'serial_number' => 'TERM-' . $item->terminal_id,
                     'job_attempts' => (int) ($item->retry_count ?? 0),
                     'job_status' => $item->job_status ?? 'UNKNOWN',
                     'validation_status' => $item->validation_status ?? 'PENDING',

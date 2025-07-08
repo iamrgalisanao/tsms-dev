@@ -7,6 +7,7 @@ use App\Models\TransactionLog;
 use App\Models\User;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
+use Spatie\Permission\Models\Role;
 
 class DatabaseSeeder extends Seeder
 {
@@ -15,32 +16,48 @@ class DatabaseSeeder extends Seeder
      */
     public function run(): void
     {
+        // Ensure the admin role exists
+        $adminRole = Role::firstOrCreate([
+            'name' => 'admin',
+            'guard_name' => 'web',
+        ], [
+            'description' => 'System Administrator',
+            'display_name' => 'Administrator',
+            'is_system' => true,
+        ]);
+
         // Always create admin user
-        User::updateOrCreate(
+        $adminUser = User::updateOrCreate(
             ['email' => 'admin@example.com'],
             [
                 'name' => 'Admin User',
                 'email' => 'admin@example.com',
                 'password' => Hash::make('password123'),
-                'role' => 'admin',
                 'is_active' => 1,
-                'tenant_id' => 1,
             ]
         );
+
+        // Assign the admin role using Spatie
+        if (!$adminUser->hasRole('admin')) {
+            $adminUser->assignRole('admin');
+        }
 
         // In test environment, seed test data
         if (app()->environment('testing')) {
             $this->call(TestDataSeeder::class);
         }
 
-         $this->call([
+        $this->call([
             // ...other seeders...
-            TransactionLogSeeder::class,
-            PosSampleDataSeeder::class,
-            CircuitBreakerSeeder::class,
-            TransactionSeeder::class,
-            StoreHoursSeeder::class,
-            StoreSeeder::class,
+            // JobStatusSeeder::class,
+            // ValidationStatusSeeder::class,
+            // TransactionLogSeeder::class,
+            // PosSampleDataSeeder::class,
+            // CircuitBreakerSeeder::class,
+            // TransactionSeeder::class,
+            // StoreHoursSeeder::class,
+            // StoreSeeder::class,
+            // TransactionSchemaTestSeeder::class, // Add new test seeder for normalized schema
         ]);
     }
 }

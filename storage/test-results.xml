@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites>
+  <testsuite name="C:\xampp\htdocs\PITX\TSMS\tsms-dev\phpunit-transaction-pipeline.xml" tests="11" assertions="37" errors="0" failures="0" skipped="1" time="6.058427">
+    <testsuite name="Transaction Ingestion" tests="11" assertions="37" errors="0" failures="0" skipped="1" time="6.058427">
+      <testsuite name="Tests\Feature\TransactionPipeline\TransactionIngestionTest" file="C:\xampp\htdocs\PITX\TSMS\tsms-dev\tests\Feature\TransactionPipeline\TransactionIngestionTest.php" tests="11" assertions="37" errors="0" failures="0" skipped="1" time="6.058427">
+        <testcase name="can_receive_single_transaction_successfully" file="C:\xampp\htdocs\PITX\TSMS\tsms-dev\tests\Feature\TransactionPipeline\TransactionIngestionTest.php" line="59" class="Tests\Feature\TransactionPipeline\TransactionIngestionTest" classname="Tests.Feature.TransactionPipeline.TransactionIngestionTest" assertions="8" time="5.550580"/>
+        <testcase name="can_receive_batch_transactions_successfully" file="C:\xampp\htdocs\PITX\TSMS\tsms-dev\tests\Feature\TransactionPipeline\TransactionIngestionTest.php" line="104" class="Tests\Feature\TransactionPipeline\TransactionIngestionTest" classname="Tests.Feature.TransactionPipeline.TransactionIngestionTest" assertions="9" time="0.063415"/>
+        <testcase name="rejects_invalid_authentication" file="C:\xampp\htdocs\PITX\TSMS\tsms-dev\tests\Feature\TransactionPipeline\TransactionIngestionTest.php" line="156" class="Tests\Feature\TransactionPipeline\TransactionIngestionTest" classname="Tests.Feature.TransactionPipeline.TransactionIngestionTest" assertions="1" time="0.054509"/>
+        <testcase name="validates_required_fields" file="C:\xampp\htdocs\PITX\TSMS\tsms-dev\tests\Feature\TransactionPipeline\TransactionIngestionTest.php" line="174" class="Tests\Feature\TransactionPipeline\TransactionIngestionTest" classname="Tests.Feature.TransactionPipeline.TransactionIngestionTest" assertions="5" time="0.037711"/>
+        <testcase name="validates_amount_format" file="C:\xampp\htdocs\PITX\TSMS\tsms-dev\tests\Feature\TransactionPipeline\TransactionIngestionTest.php" line="195" class="Tests\Feature\TransactionPipeline\TransactionIngestionTest" classname="Tests.Feature.TransactionPipeline.TransactionIngestionTest" assertions="3" time="0.035761"/>
+        <testcase name="prevents_duplicate_transaction_ids" file="C:\xampp\htdocs\PITX\TSMS\tsms-dev\tests\Feature\TransactionPipeline\TransactionIngestionTest.php" line="214" class="Tests\Feature\TransactionPipeline\TransactionIngestionTest" classname="Tests.Feature.TransactionPipeline.TransactionIngestionTest" assertions="3" time="0.038745"/>
+        <testcase name="logs_transaction_ingestion_events" file="C:\xampp\htdocs\PITX\TSMS\tsms-dev\tests\Feature\TransactionPipeline\TransactionIngestionTest.php" line="242" class="Tests\Feature\TransactionPipeline\TransactionIngestionTest" classname="Tests.Feature.TransactionPipeline.TransactionIngestionTest" assertions="1" time="0.036339"/>
+        <testcase name="handles_malformed_json" file="C:\xampp\htdocs\PITX\TSMS\tsms-dev\tests\Feature\TransactionPipeline\TransactionIngestionTest.php" line="276" class="Tests\Feature\TransactionPipeline\TransactionIngestionTest" classname="Tests.Feature.TransactionPipeline.TransactionIngestionTest" assertions="1" time="0.055466"/>
+        <testcase name="enforces_rate_limiting" file="C:\xampp\htdocs\PITX\TSMS\tsms-dev\tests\Feature\TransactionPipeline\TransactionIngestionTest.php" line="288" class="Tests\Feature\TransactionPipeline\TransactionIngestionTest" classname="Tests.Feature.TransactionPipeline.TransactionIngestionTest" assertions="0" time="0.074579">
+          <skipped/>
+        </testcase>
+        <testcase name="validates_timestamp_format" file="C:\xampp\htdocs\PITX\TSMS\tsms-dev\tests\Feature\TransactionPipeline\TransactionIngestionTest.php" line="314" class="Tests\Feature\TransactionPipeline\TransactionIngestionTest" classname="Tests.Feature.TransactionPipeline.TransactionIngestionTest" assertions="3" time="0.037009"/>
+        <testcase name="validates_terminal_belongs_to_customer" file="C:\xampp\htdocs\PITX\TSMS\tsms-dev\tests\Feature\TransactionPipeline\TransactionIngestionTest.php" line="334" class="Tests\Feature\TransactionPipeline\TransactionIngestionTest" classname="Tests.Feature.TransactionPipeline.TransactionIngestionTest" assertions="3" time="0.074313"/>
+      </testsuite>
+    </testsuite>
+  </testsuite>
+</testsuites>

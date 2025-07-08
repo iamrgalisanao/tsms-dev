@@ -25,9 +25,9 @@ class TransactionProcessingTest extends TestCase
 
         // Create or get existing tenant
         $this->tenant = Tenant::firstOrCreate(
-            ['code' => 'SAMPLE001'],
+            ['customer_code' => 'SAMPLE001'],
             [
-                'name' => 'Sample Tenant',
+                'trade_name' => 'Sample Tenant',
                 'status' => 'active'
             ]
         );
@@ -35,8 +35,7 @@ class TransactionProcessingTest extends TestCase
         // Create test terminal with required fields
         $this->terminal = PosTerminal::factory()->create([
             'tenant_id' => $this->tenant->id,
-            'status' => 'active',
-            'terminal_uid' => 'TEST-' . time()
+            'status_id' => 1
         ]);
         
         // Authenticate using JWT
@@ -54,23 +53,15 @@ class TransactionProcessingTest extends TestCase
     public function test_transaction_submission_and_queuing()
     {
         $data = [
-            'tenant_id' => strval($this->tenant->id), // Explicitly cast to string
-            'terminal_id' => $this->terminal->terminal_uid,
+            'customer_code' => $this->tenant->customer_code,
+            'terminal_id' => $this->terminal->id,
             'hardware_id' => 'HW-001',
             'transaction_id' => 'TXN-' . time(),
             'transaction_timestamp' => now()->toDateTimeString(),
             'transaction_date' => now()->toDateString(),
-            'amount' => 1000.00,
+            'base_amount' => 1000.00,
             'type' => 'PAYMENT',
-            'gross_sales' => 1000.00,
-            'net_sales' => 950.00,
-            'vatable_sales' => 850.00,
-            'vat_exempt_sales' => 100.00,
-            'vat_amount' => 102.00,
-            'transaction_count' => 1,
             'payload_checksum' => md5('test-payload'),
-            'status' => 'PENDING',
-            'validation_status' => 'PENDING',
             'machine_number' => 1
         ];
 

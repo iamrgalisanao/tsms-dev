@@ -25,30 +25,16 @@ class Transaction extends Model
         'tenant_id',
         'terminal_id', 
         'transaction_id',
-        'store_name',
         'hardware_id',
-        'machine_number',
         'transaction_timestamp',
-        'gross_sales',
-        'net_sales',
-        'vatable_sales',
-        'vat_exempt_sales',
-        'vat_amount',
-        'promo_discount_amount',
-        'promo_status',
-        'discount_total',
-        'discount_details',
-        'other_tax',
-        'management_service_charge',
-        'employee_service_charge',
-        'transaction_count',
+        'base_amount',
+        'customer_code',
         'payload_checksum',
         'validation_status',
-        'error_code',
-        'job_status',
-        'last_error',
-        'job_attempts',
-        'completed_at'
+        'submission_uuid',
+        'submission_timestamp',
+        'created_at',
+        'updated_at',
     ];
 
     /**
@@ -58,23 +44,10 @@ class Transaction extends Model
      */
     protected $casts = [
         'transaction_timestamp' => 'datetime',
-        'gross_sales' => 'decimal:2',
-        'net_sales' => 'decimal:2',
-        'vatable_sales' => 'decimal:2',
-        'vat_exempt_sales' => 'decimal:2',
-        'vat_amount' => 'decimal:2',
-        'promo_discount_amount' => 'decimal:2',
-        'discount_total' => 'decimal:2',
-        'discount_details' => 'json',
-        'other_tax' => 'decimal:2',
-        'management_service_charge' => 'decimal:2', 
-        'employee_service_charge' => 'decimal:2',
-        'transaction_count' => 'integer',
-        'job_attempts' => 'integer',
-        'completed_at' => 'datetime',
+        'submission_timestamp' => 'datetime',
+        'base_amount' => 'decimal:2',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
-        'validation_details' => 'array',
     ];
     
     // Add job status constants
@@ -114,25 +87,16 @@ class Transaction extends Model
     }
     
     /**
-     * Get the store for this transaction through the terminal.
-     */
-    public function store()
-    {
-        return $this->terminal->store();
-    }
-    
-    /**
      * Check if this transaction occurred during store operating hours
      * 
      * @return bool
      */
     public function isWithinOperatingHours()
     {
-        if (!$this->terminal || !$this->terminal->store) {
-            return false;
-        }
-        
-        return $this->terminal->store->isOpenAt($this->transaction_timestamp);
+        // If trade_name is used instead of store, you may need to implement logic
+        // based on trade_name and a business hours lookup, or always return true/false.
+        // For now, we return true as a placeholder.
+        return true;
     }
     
     /**
@@ -145,15 +109,12 @@ class Transaction extends Model
         if ($this->tax_exempt) {
             return $this->vat_amount === 0;
         }
-        
         if ($this->vatable_sales > 0) {
             $expectedVat = round($this->vatable_sales * 0.12, 2);
             $actualVat = round($this->vat_amount, 2);
-            
             // Allow small rounding differences (within 0.02)
             return abs($expectedVat - $actualVat) <= 0.02;
         }
-        
         return true;
     }
     
@@ -178,5 +139,25 @@ class Transaction extends Model
     public function calculateExpectedNetSales()
     {
         return round($this->gross_sales - $this->vat_amount, 2);
+    }
+
+    public function adjustments()
+    {
+        return $this->hasMany(TransactionAdjustment::class, 'transaction_id', 'transaction_id');
+    }
+
+    public function taxes()
+    {
+        return $this->hasMany(TransactionTax::class, 'transaction_id', 'transaction_id');
+    }
+
+    public function jobs()
+    {
+        return $this->hasMany(TransactionJob::class, 'transaction_id', 'transaction_id');
+    }
+
+    public function validations()
+    {
+        return $this->hasMany(TransactionValidation::class, 'transaction_id', 'transaction_id');
     }
 }

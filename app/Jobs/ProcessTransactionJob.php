@@ -45,12 +45,18 @@ class ProcessTransactionJob implements ShouldQueue
 
         try {
             $this->transaction->refresh();
-            
-            // Set initial status
-            $this->transaction->update([
-                'job_status' => 'PROCESSING',
-                'validation_status' => 'PENDING',
-                'job_attempts' => $this->attempts()
+
+            // Create or update TransactionJob record for this attempt
+            $job = $this->transaction->jobs()->create([
+                'status' => 'PROCESSING',
+                'attempt_number' => $this->attempts(),
+                'started_at' => now(),
+            ]);
+
+            // Create TransactionValidation record
+            $validation = $this->transaction->validations()->create([
+                'status' => 'PENDING',
+                'started_at' => now(),
             ]);
 
             // Run validation
@@ -60,23 +66,29 @@ class ProcessTransactionJob implements ShouldQueue
                 $errors = is_array($validationResult['errors']) 
                     ? $validationResult['errors'] 
                     : [$validationResult['errors']];
-
                 $errorMessages = implode('; ', $this->flattenErrorArray($errors));
 
-                $this->transaction->update([
-                    'validation_status' => 'ERROR',
-                    'validation_message' => $errorMessages,
-                    'job_status' => 'FAILED'
+                $validation->update([
+                    'status' => 'ERROR',
+                    'details' => $errorMessages,
+                    'completed_at' => now(),
                 ]);
-
+                $job->update([
+                    'status' => 'FAILED',
+                    'completed_at' => now(),
+                ]);
                 throw new Exception("Validation failed: " . $errorMessages);
             }
 
-            // Only mark as COMPLETED if validation passed
-            $this->transaction->update([
-                'validation_status' => 'VALID',  // Changed from SUCCESS to VALID
-                'validation_message' => 'Validated successfully',
-                'job_status' => 'COMPLETED'
+            // Mark as COMPLETED if validation passed
+            $validation->update([
+                'status' => 'VALID',
+                'details' => 'Validated successfully',
+                'completed_at' => now(),
+            ]);
+            $job->update([
+                'status' => 'COMPLETED',
+                'completed_at' => now(),
             ]);
 
         } catch (\Throwable $e) {
@@ -157,13 +169,23 @@ class ProcessTransactionJob implements ShouldQueue
             'error' => $e->getMessage(),
             'trace' => $e->getTraceAsString()
         ]);
-
-        $this->transaction->update([
-            'job_status' => 'FAILED',
-            'validation_status' => 'ERROR',
-            'last_error' => $e->getMessage(),
-            'completed_at' => now()
-        ]);
+        // Update the latest job and validation as failed
+        $job = $this->transaction->jobs()->latest()->first();
+        if ($job) {
+            $job->update([
+                'status' => 'FAILED',
+                'completed_at' => now(),
+                'error_message' => $e->getMessage(),
+            ]);
+        }
+        $validation = $this->transaction->validations()->latest()->first();
+        if ($validation) {
+            $validation->update([
+                'status' => 'ERROR',
+                'details' => $e->getMessage(),
+                'completed_at' => now(),
+            ]);
+        }
     }
 
     /**

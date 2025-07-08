@@ -31,4 +31,24 @@ class LogHelper
             default => 'secondary'
         };
     }
+
+    public static function getAuthEventIcon(?string $type): string 
+    {
+        return match (strtolower($type)) {
+            'login' => 'fas fa-sign-in-alt',
+            'logout' => 'fas fa-sign-out-alt',
+            'login_failed' => 'fas fa-exclamation-triangle',
+            default => 'fas fa-question-circle'
+        };
+    }
+
+    public static function getAuthEventClass(?string $type): string 
+    {
+        return match (strtolower($type)) {
+            'login' => 'success',
+            'logout' => 'info',
+            'login_failed' => 'danger',
+            default => 'secondary'
+        };
+    }
 }

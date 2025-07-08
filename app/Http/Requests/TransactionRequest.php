@@ -15,22 +15,14 @@ class TransactionRequest extends FormRequest
     public function rules()
     {
         return [
-            'tenant_id' => 'required',  // Remove string validation
-            'terminal_id' => 'required|string',
+            'customer_code' => 'required|string|exists:customers,code',
+            'terminal_id' => 'required|integer|exists:pos_terminals,id',
             'hardware_id' => 'required|string',
             'transaction_id' => 'required|string',
             'transaction_timestamp' => 'required|date',
-            'transaction_date' => 'required|date',
-            'amount' => 'required|numeric|min:0',
-            'type' => 'required|string',
-            'gross_sales' => 'required|numeric|min:0',
-            'net_sales' => 'required|numeric|min:0',
-            'vatable_sales' => 'required|numeric|min:0',
-            'vat_exempt_sales' => 'required|numeric|min:0',
-            'vat_amount' => 'required|numeric|min:0',
-            'transaction_count' => 'required|integer|min:1',
+            'base_amount' => 'required|numeric|min:0',
             'payload_checksum' => 'required|string',
-            'machine_number' => 'required|integer'
+            'machine_number' => 'nullable|integer',
         ];
     }
 

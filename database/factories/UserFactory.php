@@ -21,7 +21,7 @@ class UserFactory extends Factory
             'email_verified_at' => now(),
             'password' => static::$password ??= Hash::make('password'),
             'remember_token' => Str::random(10),
-            'tenant_id' => 1, // Default tenant ID
+            'is_active' => true,
         ];
     }
 

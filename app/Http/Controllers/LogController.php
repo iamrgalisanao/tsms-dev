@@ -26,7 +26,7 @@ class LogController extends Controller
                 return $query->whereDate('created_at', '<=', $request->date_to);
             })
             ->when($request->filled('terminal'), function($query) use ($request) {
-                return $query->where('terminal_uid', $request->terminal);
+                return $query->where('serial_number', $request->terminal);
             })
             ->latest()
             ->paginate(15, ['*'], 'system_page');
@@ -69,6 +69,11 @@ class LogController extends Controller
             'errors' => SystemLog::where('severity', 'error')->count(),
             'success' => SystemLog::where('severity', 'info')->count(),
             'pending' => SystemLog::where('severity', 'pending')->count(),
+            'auth_events' => SystemLog::where('type', 'security')->count(),
+            'login_success' => SystemLog::where('type', 'security')
+                                     ->where('context->auth_event', 'login')->count(),
+            'login_failed' => SystemLog::where('type', 'security')
+                                     ->where('context->auth_event', 'login_failed')->count(),
             'total' => AuditLog::count(),
             'auth' => AuditLog::where('action_type', 'AUTH')->count(),
             'changes' => AuditLog::whereNotNull('old_values')->count(),
@@ -80,7 +85,7 @@ class LogController extends Controller
         ];
 
         // Get terminals for filter dropdown
-        $terminals = PosTerminal::select('id', 'terminal_uid')->get();
+        $terminals = PosTerminal::select('id', 'serial_number')->get();
 
         return view('dashboard.logs', compact('systemLogs', 'auditLogs', 'webhookLogs', 'stats', 'terminals'));
     }

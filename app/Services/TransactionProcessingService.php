@@ -16,13 +16,22 @@ class TransactionProcessingService
 
             $transaction = Transaction::create([
                 'transaction_id' => $data['transaction_id'],
+                'customer_code' => $data['customer_code'],
                 'terminal_id' => $data['terminal_id'],
-                'gross_sales' => $data['gross_sales'],
+                'trade_name' => $data['trade_name'] ?? null,
+                'hardware_id' => $data['hardware_id'],
+                'machine_number' => $data['machine_number'] ?? null,
+                'transaction_timestamp' => $data['transaction_timestamp'],
+                'base_amount' => $data['base_amount'],
+                'payload_checksum' => $data['payload_checksum'],
                 'validation_status' => 'PENDING',
                 'job_status' => 'QUEUED',
                 'created_at' => now(),
                 'updated_at' => now()
             ]);
+
+            // Optionally: handle adjustments, taxes, jobs, validations here if present in $data
+            // ...
 
             if (!$transaction) {
                 throw new \Exception('Failed to create transaction record');

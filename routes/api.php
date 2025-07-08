@@ -21,13 +21,15 @@ use Illuminate\Support\Facades\Log;
 |
 */
 
-// V1 API Routes
-Route::middleware('api')->group(function () {
+// V1 API Routes with proper prefix
+Route::prefix('v1')->middleware(['rate.limit'])->group(function () {
     Route::post('/transactions', [TransactionController::class, 'store']);
+    Route::post('/transactions/batch', [TransactionController::class, 'batchStore']);
+    Route::post('/transactions/official', [TransactionController::class, 'storeOfficial']); // New official format endpoint
     Route::get('/transactions/{id}/status', [TransactionController::class, 'status']);
 });
 
-// Public transaction endpoints for testing
+// Public transaction endpoints for testing (legacy)
 Route::middleware('api')->group(function () {
     Route::post('/transactions', [TransactionController::class, 'store']);
     Route::get('/transactions/{id}/status', [TransactionController::class, 'status']);

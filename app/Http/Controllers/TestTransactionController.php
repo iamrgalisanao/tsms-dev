@@ -82,17 +82,17 @@ class TestTransactionController extends Controller
                     ->withInput();
             }
             
-            // Create transaction
+            // Create transaction (use new normalized schema)
             $transaction = Transaction::create([
-                'tenant_id' => $terminal->tenant_id,
+                'customer_code' => $terminal->customer_code ?? null,
                 'terminal_id' => $terminal->id,
                 'transaction_id' => $transactionId,
+                'trade_name' => $request->trade_name ?? null,
+                'hardware_id' => $request->hardware_id ?? null,
+                'machine_number' => $request->machine_number ?? null,
                 'transaction_timestamp' => $request->transaction_timestamp ?? now(),
-                'gross_sales' => $request->gross_sales,
-                'net_sales' => $request->net_sales,
-                'vatable_sales' => $request->vatable_sales,
-                'vat_amount' => $request->vat_amount,
-                'transaction_count' => $request->transaction_count,
+                'base_amount' => $request->base_amount ?? $request->gross_sales, // fallback for test UI
+                'payload_checksum' => $request->payload_checksum ?? null,
                 'validation_status' => 'PENDING',
                 'job_status' => Transaction::JOB_STATUS_QUEUED,
                 'job_attempts' => 0

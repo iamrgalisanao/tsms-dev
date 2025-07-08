@@ -34,22 +34,17 @@ class TransactionStatusTest extends TestCase
 
     public function test_can_retrieve_transaction_status()
     {
-        // Create a test transaction
+        // Create a test transaction using normalized schema fields
         $transaction = Transaction::create([
             'tenant_id' => $this->tenant->id,
             'terminal_id' => $this->terminal->id,
             'transaction_id' => 'TXN-' . time(),
             'hardware_id' => 'HW-001',
             'transaction_timestamp' => now(),
-            'gross_sales' => 1000.00,
-            'net_sales' => 950.00,
-            'vatable_sales' => 850.00,
-            'vat_exempt_sales' => 100.00,
-            'vat_amount' => 102.00,
-            'transaction_count' => 1,
-            'machine_number' => 1,
-            'validation_status' => 'PENDING',
-            'payload_checksum' => md5('test')
+            'base_amount' => 1000.00,
+            'customer_code' => 'CUST-001',
+            'payload_checksum' => md5('test'),
+            // Add any other normalized fields required by your schema
         ]);
 
         $response = $this->withHeaders([
@@ -62,7 +57,8 @@ class TransactionStatusTest extends TestCase
                 'success' => true,
                 'data' => [
                     'transaction_id' => $transaction->transaction_id,
-                    'validation_status' => 'PENDING'
+                    // If validation status is now in a related table, fetch accordingly
+                    'validation_status' => $transaction->validation_status ?? 'PENDING'
                 ]
             ]);
     }

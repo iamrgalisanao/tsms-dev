@@ -61,7 +61,7 @@
   </div> 
 
   <!-- POS Providers Section -->
-  <div class="card mb-4">
+  {{-- <div class="card mb-4">
     <div class="card-header d-flex justify-content-between align-items-center">
       <h5 class="card-title mb-0">POS Providers</h5>
     </div>
@@ -97,7 +97,7 @@
         @endforeach
       </div>
     </div>
-  </div>
+  </div> --}}
 
   <!-- Transaction Metrics -->
   {{-- @include('transactions.partials.dashboard-metrics') --}}

@@ -1,0 +1,13 @@
+Transaction Ingestion (Tests\Feature\TransactionPipeline\TransactionIngestion)
+ [x] Can receive single transaction successfully
+ [x] Can receive batch transactions successfully
+ [x] Rejects invalid authentication
+ [x] Validates required fields
+ [x] Validates amount format
+ [x] Prevents duplicate transaction ids
+ [x] Logs transaction ingestion events
+ [x] Handles malformed json
+ [ ] Enforces rate limiting
+ [x] Validates timestamp format
+ [x] Validates terminal belongs to customer
+
