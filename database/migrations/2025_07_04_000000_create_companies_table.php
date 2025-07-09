@@ -9,7 +9,7 @@ return new class extends Migration {
             $table->bigIncrements('id');
             $table->string('customer_code', 50)->unique();
             $table->string('company_name');
-            $table->string('tin', 20)->unique();
+            $table->string('tin', 20);
             $table->timestamps();
         });
     }

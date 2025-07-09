@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\PosProvider;
+use App\Models\Tenant;
 use App\Models\PosTerminal;
 use App\Models\Transaction;
 use App\Models\IntegrationLog;
@@ -22,6 +23,7 @@ class DashboardController extends Controller
     public function index()
     {
         $metrics = $this->getMetrics();
+        $tenants= Tenant::count();
         // $enrollmentData = $this->getEnrollmentData();
         // $providers = $this->getProviderStats();
         // $recentTerminals = $this->getRecentTerminals();
@@ -34,6 +36,7 @@ class DashboardController extends Controller
 
         return view('dashboard', compact(
             'metrics',
+            'tenants',
             // 'providers',
             'recentTransactions',
             'recentTransactionCount',

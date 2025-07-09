@@ -12,8 +12,8 @@
           <i class="far fa-bookmark"></i>
         </span>
         <div class="info-box-content">
-          <span class="info-box-text">Total Transactions (7d)</span>
-          <span class="info-box-number">{{ $metrics['total_transactions'] ?? 0 }}</span>
+          <span class="info-box-text">Total Tenants</span>
+          <span class="info-box-number">{{ $tenants ?? 0 }}</span>
         </div>
       </div>
     </div>
