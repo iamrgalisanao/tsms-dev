@@ -7,6 +7,7 @@ use App\Http\Controllers\API\V1\TransactionController;
 use App\Http\Controllers\API\V1\LogViewerController;
 use App\Http\Controllers\API\V1\RetryHistoryController;
 use App\Http\Controllers\API\V1\TestParserController;
+use App\Http\Controllers\Api\TerminalAuthController;
 use App\Services\TransactionValidationService;
 use Illuminate\Support\Facades\Log;
 
@@ -21,7 +22,41 @@ use Illuminate\Support\Facades\Log;
 |
 */
 
-// V1 API Routes with proper prefix
+// Health check endpoint (public)
+Route::get('/v1/health', function () {
+    return response()->json([
+        'status' => 'ok',
+        'timestamp' => now()->toISOString(),
+        'version' => '1.0.0'
+    ]);
+});
+
+// Terminal authentication (public - no middleware)
+Route::prefix('v1/auth')->group(function () {
+    Route::post('/terminal', [TerminalAuthController::class, 'authenticate']);
+});
+
+// V1 API Routes with Sanctum authentication
+Route::prefix('v1')->middleware(['auth:sanctum'])->group(function () {
+    // Terminal management endpoints
+    Route::post('/auth/refresh', [TerminalAuthController::class, 'refresh']);
+    Route::get('/auth/me', [TerminalAuthController::class, 'me']);
+    Route::post('/heartbeat', [TerminalAuthController::class, 'heartbeat'])
+        ->middleware('abilities:heartbeat:send');
+    
+    // Transaction endpoints with token abilities
+    Route::middleware('abilities:transaction:create')->group(function () {
+        Route::post('/transactions', [TransactionController::class, 'store']);
+        Route::post('/transactions/batch', [TransactionController::class, 'batchStore']);
+        Route::post('/transactions/official', [TransactionController::class, 'storeOfficial']);
+    });
+    
+    Route::middleware('abilities:transaction:read')->group(function () {
+        Route::get('/transactions/{id}/status', [TransactionController::class, 'status']);
+    });
+});
+
+// Legacy V1 API Routes with rate limiting (for backward compatibility)
 Route::prefix('v1')->middleware(['rate.limit'])->group(function () {
     Route::post('/transactions', [TransactionController::class, 'store']);
     Route::post('/transactions/batch', [TransactionController::class, 'batchStore']);
