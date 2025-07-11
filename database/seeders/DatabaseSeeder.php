@@ -48,7 +48,16 @@ class DatabaseSeeder extends Seeder
         }
 
         $this->call([
-            // ...other seeders...
+            // Core data - run these first
+            CompanySeeder::class,           // Import companies from CSV
+            TenantSeeder::class,           // Import tenants from CSV (depends on companies)
+            
+            // Schema-specific seeders
+            TransactionSchemaTestSeeder::class, // Job statuses, validation statuses, etc.
+            
+            // Optional test data seeders (uncomment as needed)
+            // RetryTransactionSeeder::class, // Create retry test data
+            // TestDataSeeder::class,
             // JobStatusSeeder::class,
             // ValidationStatusSeeder::class,
             // TransactionLogSeeder::class,
@@ -57,7 +66,6 @@ class DatabaseSeeder extends Seeder
             // TransactionSeeder::class,
             // StoreHoursSeeder::class,
             // StoreSeeder::class,
-            // TransactionSchemaTestSeeder::class, // Add new test seeder for normalized schema
         ]);
     }
 }

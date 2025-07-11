@@ -62,13 +62,11 @@ class RetryTransactionJob implements ShouldQueue
         $transactionJob = null;
         if (class_exists('App\\Models\\TransactionJob')) {
             $transactionJob = \App\Models\TransactionJob::where('transaction_id', $this->transactionId)
-                ->where('terminal_id', $this->terminalId)
-                ->latest('created_at')->first();
+                ->first();
             if ($transactionJob) {
                 $transactionJob->update([
-                    'status' => 'RETRYING',
-                    'attempt_number' => $this->attempt,
-                    'started_at' => now(),
+                    'job_status' => 'RETRYING',
+                    'attempts' => $this->attempt,
                 ]);
             }
         }
@@ -115,7 +113,7 @@ class RetryTransactionJob implements ShouldQueue
             $response = Http::timeout(30)
                 ->post(config('services.payment_gateway.url') . '/process', [
                     'transaction_id' => $this->transactionId,
-                    'terminal_uid' => $terminal->terminal_uid, // Use the terminal_uid field from PosTerminal
+                    'terminal_id' => $terminal->serial_number, // Use the serial_number field from PosTerminal
                     'retry_attempt' => $this->attempt
                 ]);
             
@@ -132,7 +130,7 @@ class RetryTransactionJob implements ShouldQueue
                 $log->status = 'SUCCESS';
                 if ($transactionJob) {
                     $transactionJob->update([
-                        'status' => 'COMPLETED',
+                        'job_status' => 'COMPLETED',
                         'completed_at' => now(),
                     ]);
                 }
@@ -145,9 +143,9 @@ class RetryTransactionJob implements ShouldQueue
                 $log->retry_reason = $response->body() ?? 'Unknown error';
                 if ($transactionJob) {
                     $transactionJob->update([
-                        'status' => 'FAILED',
+                        'job_status' => 'PERMANENTLY_FAILED',
                         'completed_at' => now(),
-                        'error_message' => $log->retry_reason,
+                        'last_error' => $log->retry_reason,
                     ]);
                 }
                 $circuitBreaker->recordFailure();
@@ -187,9 +185,9 @@ class RetryTransactionJob implements ShouldQueue
             $circuitBreaker->recordFailure();
             if ($transactionJob) {
                 $transactionJob->update([
-                    'status' => 'FAILED',
+                    'job_status' => 'PERMANENTLY_FAILED',
                     'completed_at' => now(),
-                    'error_message' => $e->getMessage(),
+                    'last_error' => $e->getMessage(),
                 ]);
             }
             

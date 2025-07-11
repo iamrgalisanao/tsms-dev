@@ -10,7 +10,7 @@ class TenantSeeder extends Seeder
 {
     public function run(): void
     {
-        $csvPath = 'g:\PITX\document\reports\sample\tenants_quoted_with_timestamps.csv';
+        $csvPath = '/Users/teamsolo/Downloads/tenants_quoted_with_timestamps.csv';
         
         if (!file_exists($csvPath)) {
             Log::warning("CSV file not found at: {$csvPath}. Falling back to default tenants.");
@@ -23,6 +23,16 @@ class TenantSeeder extends Seeder
 
     private function importFromCsv(string $csvPath): void
     {
+        // Get the first company to use as default for all tenants
+        // In a real scenario, you'd need proper company-tenant mapping
+        $defaultCompany = \App\Models\Company::first();
+        if (!$defaultCompany) {
+            $this->command->error("No companies found. Please run CompanySeeder first.");
+            return;
+        }
+
+        $this->command->info("Using company '{$defaultCompany->company_name}' (ID: {$defaultCompany->id}) for all tenants");
+
         $handle = fopen($csvPath, 'r');
         
         if ($handle === false) {
@@ -40,7 +50,7 @@ class TenantSeeder extends Seeder
             try {
                 // Map CSV columns to tenant attributes
                 $tenantData = [
-                    'company_id' => trim($data[0] ?? ''),
+                    'company_id' => $defaultCompany->id, // Use actual company ID instead of CSV value
                     'trade_name' => trim($data[1] ?? ''),
                     'location_type' => !empty(trim($data[2] ?? '')) ? trim($data[2]) : null,
                     'location' => !empty(trim($data[3] ?? '')) ? trim($data[3]) : null,
@@ -51,23 +61,24 @@ class TenantSeeder extends Seeder
                     'zone' => !empty(trim($data[8] ?? '')) ? trim($data[8]) : null,
                     'created_at' => (!empty(trim($data[9] ?? '')) && trim($data[9]) !== 'null') ? trim($data[9]) : now(),
                     'updated_at' => (!empty(trim($data[10] ?? '')) && trim($data[10]) !== 'null') ? trim($data[10]) : now(),
+                    'deleted_at' => null, // Add deleted_at field with null value
                 ];
 
                 // Validate required fields
-                if (empty($tenantData['company_id']) || empty($tenantData['trade_name']) || trim($tenantData['trade_name']) === '') {
-                    Log::warning("Skipping tenant row due to missing required fields", [
-                        'company_id' => $tenantData['company_id'],
-                        'trade_name' => $tenantData['trade_name']
+                if (empty($tenantData['trade_name']) || trim($tenantData['trade_name']) === '') {
+                    Log::warning("Skipping tenant row due to missing trade_name", [
+                        'trade_name' => $tenantData['trade_name'],
+                        'row_data' => $data
                     ]);
                     $skipCount++;
                     continue;
                 }
 
-                // Check if tenant already exists to make seeder idempotent
-                $existingTenant = Tenant::where('company_id', $tenantData['company_id'])->first();
+                // Check if tenant already exists by trade_name to make seeder idempotent
+                $existingTenant = Tenant::where('trade_name', $tenantData['trade_name'])->first();
                 
                 if ($existingTenant) {
-                    Log::info("Tenant with company_id {$tenantData['company_id']} already exists, skipping.");
+                    Log::info("Tenant '{$tenantData['trade_name']}' already exists, skipping.");
                     $skipCount++;
                     continue;
                 }
@@ -97,9 +108,16 @@ class TenantSeeder extends Seeder
 
     private function createDefaultTenants(): void
     {
+        // Get the first company to use as default
+        $defaultCompany = \App\Models\Company::first();
+        if (!$defaultCompany) {
+            $this->command->error("No companies found for default tenants. Please run CompanySeeder first.");
+            return;
+        }
+
         $defaultTenants = [
             [
-                'company_id' => 'DEMO001',
+                'company_id' => $defaultCompany->id,
                 'trade_name' => 'Demo Company',
                 'location_type' => 'Store',
                 'location' => 'Ground Floor',
@@ -110,9 +128,10 @@ class TenantSeeder extends Seeder
                 'zone' => 'Zone A',
                 'created_at' => now(),
                 'updated_at' => now(),
+                'deleted_at' => null,
             ],
             [
-                'company_id' => 'TEST001',
+                'company_id' => $defaultCompany->id,
                 'trade_name' => 'Test Company',
                 'location_type' => 'Kiosk',
                 'location' => 'Second Floor',
@@ -123,11 +142,12 @@ class TenantSeeder extends Seeder
                 'zone' => 'Zone B',
                 'created_at' => now(),
                 'updated_at' => now(),
+                'deleted_at' => null,
             ],
         ];
 
         foreach ($defaultTenants as $tenant) {
-            $existingTenant = Tenant::where('company_id', $tenant['company_id'])->first();
+            $existingTenant = Tenant::where('trade_name', $tenant['trade_name'])->first();
             if (!$existingTenant) {
                 Tenant::create($tenant);
             }

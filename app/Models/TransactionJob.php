@@ -11,7 +11,7 @@ class TransactionJob extends Model
     protected $table = 'transaction_jobs';
     protected $fillable = [
         'transaction_id',
-        'job_status_code',
+        'job_status',
         'last_error',
         'attempts',
         'retry_count',

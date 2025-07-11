@@ -15,39 +15,33 @@ class RetryHistoryController extends Controller
 {
     public function index(Request $request)
     {
-        dd("hi");
         try {
             
             Log::info('Fetching retry history with params', [
                 'request_params' => $request->all()
             ]);
             
-            // Fix: Modify query to not force QUEUED status
-            $query = DB::table('transactions')
-                ->where(function($q) {
-                    $q->where('job_attempts', '>', 0)
-                      ->orWhereNotNull('retry_count')  // Changed to check for any retry count
-                      ->when(request('status') === 'QUEUED', function($q) {
-                          $q->orWhere('job_status', 'QUEUED');
-                      });
-                });
+            // Use correct schema with transaction_jobs join
+            $query = DB::table('transactions as t')
+                ->join('transaction_jobs as tj', 't.transaction_id', '=', 'tj.transaction_id')
+                ->where('tj.retry_count', '>', 0); // Only get transactions that have retry attempts
                 
             // Apply filters if provided
             if ($request->has('status') && !empty($request->status)) {
-                $query->where('job_status', $request->status);
+                $query->where('tj.job_status', $request->status);
             }
                 
             if ($request->has('date') && !empty($request->date)) {
                 $date = $request->date;
-                $query->whereDate('created_at', $date);
+                $query->whereDate('t.created_at', $date);
             }
                 
             if ($request->has('search') && !empty($request->search)) {
                 $search = $request->search;
                 $query->where(function($q) use ($search) {
-                    $q->where('transaction_id', 'like', "%{$search}%")
-                      ->orWhere('terminal_id', 'like', "%{$search}%")
-                      ->orWhere('last_error', 'like', "%{$search}%");
+                    $q->where('t.transaction_id', 'like', "%{$search}%")
+                      ->orWhere('t.terminal_id', 'like', "%{$search}%")
+                      ->orWhere('tj.last_error', 'like', "%{$search}%");
                 });
             }
             
@@ -59,14 +53,14 @@ class RetryHistoryController extends Controller
             $page = $request->page ?? 1;
             
             $retries = $query->select([
-                    'id', 
-                    'transaction_id', 
-                    'terminal_id', 
-                    'retry_count',
-                    'job_status',
-                    'validation_status', // Add validation_status
-                    'last_error', 
-                    'updated_at'
+                    't.id', 
+                    't.transaction_id', 
+                    't.terminal_id', 
+                    'tj.retry_count',
+                    'tj.job_status',
+                    't.validation_status',
+                    'tj.last_error', 
+                    'tj.updated_at'
                 ])
                 ->orderBy('updated_at', 'desc')
                 ->skip(($page - 1) * $perPage)
