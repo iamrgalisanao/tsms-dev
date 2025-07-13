@@ -160,7 +160,7 @@ return [
             // Notification and callback supervisor
             'notification-supervisor' => [
                 'connection' => env('QUEUE_CONNECTION', 'redis'),
-                'queue' => ['notifications', 'webhooks', 'emails'],
+                'queue' => ['notifications', 'webhooks', 'emails', 'webapp-forwarding'],
                 'balance' => 'auto',
                 'maxProcesses' => 15,        // Medium concurrency for notifications
                 'maxTime' => 0,
@@ -224,7 +224,7 @@ return [
 
             'notification-supervisor' => [
                 'connection' => env('QUEUE_CONNECTION', 'redis'),
-                'queue' => ['notifications', 'webhooks', 'emails'],
+                'queue' => ['notifications', 'webhooks', 'emails', 'webapp-forwarding'],
                 'balance' => 'auto',
                 'maxProcesses' => 8,
                 'maxTime' => 0,

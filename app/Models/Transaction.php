@@ -160,4 +160,36 @@ class Transaction extends Model
     {
         return $this->hasMany(TransactionValidation::class, 'transaction_id', 'transaction_id');
     }
+
+    /**
+     * Get the webapp forwarding record for this transaction
+     */
+    public function webappForward()
+    {
+        return $this->hasOne(\App\Models\WebappTransactionForward::class);
+    }
+
+    /**
+     * Check if this transaction has been forwarded to webapp
+     */
+    public function isForwardedToWebapp(): bool
+    {
+        return $this->webappForward && $this->webappForward->status === \App\Models\WebappTransactionForward::STATUS_COMPLETED;
+    }
+
+    /**
+     * Check if this transaction is pending webapp forwarding
+     */
+    public function isPendingWebappForward(): bool
+    {
+        return !$this->webappForward || $this->webappForward->status === \App\Models\WebappTransactionForward::STATUS_PENDING;
+    }
+
+    /**
+     * Check if this transaction is eligible for webapp forwarding
+     */
+    public function isEligibleForWebappForward(): bool
+    {
+        return $this->validation_status === 'VALID' && $this->isPendingWebappForward();
+    }
 }

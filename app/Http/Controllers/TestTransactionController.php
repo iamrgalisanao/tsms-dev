@@ -21,9 +21,8 @@ class TestTransactionController extends Controller
     public function index()
     {
         $terminals = PosTerminal::with('tenant')
-            ->where('status', 'active')
             ->orderBy('tenant_id')
-            ->orderBy('terminal_uid')
+            ->orderBy('serial_number')
             ->get()
             ->unique('id');
         

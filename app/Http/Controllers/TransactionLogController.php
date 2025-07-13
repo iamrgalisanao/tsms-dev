@@ -31,7 +31,6 @@ class TransactionLogController extends Controller
             'date_from',
             'date_to',
             'terminal_id',
-            'provider_id',
             'amount_min',
             'amount_max'
         ]);
@@ -45,24 +44,17 @@ class TransactionLogController extends Controller
                 'id',
                 'transaction_id',
                 'terminal_id',
-                // Use new normalized field for amount
                 'base_amount as amount',
-                // Remove legacy fields, use new relationships if needed
-                // 'validation_status',  // Remove if not in new schema
-                // 'job_status',
-                // 'job_attempts',
+                'validation_status',
                 'created_at'
             ])
-            ->with(['terminal:id,terminal_uid,provider_id'])
+            ->with(['terminal:id,serial_number,tenant_id'])
             ->when(isset($filters['transaction_id']), function ($query) use ($filters) {
                 $search = str_replace('TX-', '', $filters['transaction_id']);
                 return $query->where('transaction_id', 'like', "%{$search}%");
             })
             ->when(isset($filters['status']), function ($query) use ($filters) {
-                // Use jobs relationship for status if needed
-                return $query->whereHas('jobs', function($q) use ($filters) {
-                    $q->where('status', $filters['status']);
-                });
+                return $query->where('validation_status', $filters['status']);
             })
             ->when(isset($filters['date_from']), function ($query) use ($filters) {
                 return $query->where('created_at', '>=', $filters['date_from'] . ' 00:00:00');
@@ -73,14 +65,11 @@ class TransactionLogController extends Controller
             ->when(isset($filters['terminal_id']), function ($query) use ($filters) {
                 return $query->where('terminal_id', $filters['terminal_id']);
             })
-            ->when(isset($filters['provider_id']), function ($query) use ($filters) {
-                return $query->where('provider_id', $filters['provider_id']);
-            })
             ->when(isset($filters['amount_min']), function ($query) use ($filters) {
-                return $query->where('amount', '>=', $filters['amount_min']);
+                return $query->where('base_amount', '>=', $filters['amount_min']);
             })
             ->when(isset($filters['amount_max']), function ($query) use ($filters) {
-                return $query->where('amount', '<=', $filters['amount_max']);
+                return $query->where('base_amount', '<=', $filters['amount_max']);
             })
             ->latest()
             ->paginate(15);
@@ -100,12 +89,11 @@ class TransactionLogController extends Controller
     {
         try {
             $transaction = Transaction::with([
-                'terminal.provider',
+                'terminal',
+                'tenant',
                 'processingHistory',
                 'adjustments',
-                'taxes',
-                'jobs',
-                'validations'
+                'taxes'
             ])->findOrFail($id);
 
             if (!$transaction) {

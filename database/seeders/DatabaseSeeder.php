@@ -53,7 +53,7 @@ class DatabaseSeeder extends Seeder
             TenantSeeder::class,           // Import tenants from CSV (depends on companies)
             
             // Schema-specific seeders
-            TransactionSchemaTestSeeder::class, // Job statuses, validation statuses, etc.
+            //TransactionSchemaTestSeeder::class, // Job statuses, validation statuses, etc.
             
             // Optional test data seeders (uncomment as needed)
             // RetryTransactionSeeder::class, // Create retry test data

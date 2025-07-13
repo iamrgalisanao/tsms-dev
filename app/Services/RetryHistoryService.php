@@ -41,13 +41,13 @@ class RetryHistoryService
         ];
         
         // Get real terminals if available, or create fake ones
-        $terminals = PosTerminal::select('id', 'terminal_uid')->get();
+        $terminals = PosTerminal::select('id', 'serial_number as terminal_uid')->get();
         if ($terminals->isEmpty()) {
             $terminalIds = [1, 2, 3];
             $terminalUids = ['TERM-001', 'TERM-002', 'TERM-003'];
         } else {
             $terminalIds = $terminals->pluck('id')->toArray();
-            $terminalUids = $terminals->pluck('terminal_uid')->toArray();
+            $terminalUids = $terminals->pluck('serial_number')->toArray();
         }
         
         for ($i = 1; $i <= 10; $i++) {

@@ -35,7 +35,7 @@ class TransactionController extends Controller
      */
     public function show($id)
     {
-        $transaction = Transaction::with(['posTerminal:id,terminal_uid', 'tenant:id,name'])
+        $transaction = Transaction::with(['terminal:id,serial_number', 'tenant:id,name'])
                                  ->findOrFail($id);
         
         return view('dashboard.transaction-detail', [

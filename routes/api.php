@@ -213,11 +213,9 @@ Route::get('/v1/recent-test-transactions', function() {
             ->select(
                 'transactions.id',
                 'transactions.transaction_id',
-                'pos_terminals.terminal_uid',
-                'transactions.gross_sales',
-                'transactions.job_status',
+                'pos_terminals.serial_number as terminal_uid',
+                'transactions.base_amount as gross_sales',
                 'transactions.validation_status',
-                'transactions.last_error',
                 'transactions.created_at'
             )
             ->where(function($query) {

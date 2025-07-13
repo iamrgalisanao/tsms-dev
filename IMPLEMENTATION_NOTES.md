@@ -8,6 +8,1522 @@ Successfully implemented and tested a comprehensive transaction ingestion system
 
 ---
 
+## 🚨 HIGH PRIORITY: WebApp Transaction Forwarding Service
+
+**STATUS**: ⚠️ **NOT YET IMPLEMENTED** - Marked as next implementation priority
+
+### Overview
+TSMS needs to forward **validated transactions in bulk every 5 minutes** to a web application. Transactions are already saved in the TSMS `transactions` table and need to be marked as forwarded after successful submission.
+
+**🔒 CRITICAL: Non-Interference with POS Operations**
+- ✅ **Read-Only Operations**: WebApp forwarding only READS from transactions table
+- ✅ **Separate Process**: Runs independently from POS transaction ingestion
+- ✅ **No Blocking**: Uses separate queue and won't affect POS response times
+- ✅ **Minimal Database Impact**: Single column addition with indexed queries
+- ✅ **Isolated Execution**: Scheduled job runs separately from transaction processing
+
+**Key Requirements**:
+- ✅ **Bulk Submission**: Send multiple transactions per API call (every 5 minutes)
+- ✅ **Simple Marking**: Add `webapp_forwarded_at` column to transactions table
+- ✅ **Retry Logic**: Simple exponential backoff for failed submissions
+- ✅ **Circuit Breaker**: Basic failure threshold to prevent cascading issues
+- ✅ **Scheduled Processing**: Laravel scheduler runs every 5 minutes
+- ✅ **POS-Safe Design**: Zero impact on existing POS transaction flow
+
+### Non-Interference Guarantees
+
+#### 1. **Database Operations Safety**
+```sql
+-- WebApp forwarding ONLY performs these safe operations:
+
+-- READ: Find unforwarded validated transactions (non-blocking)
+SELECT id, transaction_id, terminal_id, tenant_id, base_amount, validation_status, processed_at
+FROM transactions 
+WHERE validation_status = 'VALID' 
+  AND webapp_forwarded_at IS NULL 
+ORDER BY processed_at ASC 
+LIMIT 50;
+
+-- UPDATE: Mark transactions as forwarded (after successful API call)
+UPDATE transactions 
+SET webapp_forwarded_at = '2025-07-12 14:30:00' 
+WHERE id IN (1, 2, 3, 4, 5);
+
+-- NO DELETE, INSERT, or modification of core transaction data
+-- NO interference with validation_status or any POS-related fields
+```
+
+#### 2. **Process Isolation**
+```
+POS → TSMS Flow (UNCHANGED):
+┌─────────────────────────────────────────────┐
+│ POS Terminal                                │
+│  ↓ POST /api/v1/transactions               │
+│ TransactionController::store()              │
+│  ↓ Creates Transaction record               │
+│ ProcessTransactionJob (validation)          │
+│  ↓ Updates validation_status               │
+│ Transaction marked as VALID/INVALID         │
+│  ↓ POS receives response                   │
+│ POS Terminal (transaction complete)         │
+└─────────────────────────────────────────────┘
+
+WebApp Forwarding (NEW, SEPARATE):
+┌─────────────────────────────────────────────┐
+│ Laravel Scheduler (every 5 minutes)        │
+│  ↓ ForwardTransactionsToWebApp command     │
+│ WebAppForwardingService reads VALID txns   │
+│  ↓ HTTP POST to WebApp API                 │
+│ Mark transactions as webapp_forwarded_at    │
+│  ↓ Log results and continue                │
+│ WebApp receives bulk transaction data       │
+└─────────────────────────────────────────────┘
+```
+
+#### 3. **Queue Separation**
+```php
+// POS transactions use default queue
+ProcessTransactionJob::dispatch($transaction); // Default queue
+
+// WebApp forwarding uses separate queue (if needed)
+ForwardTransactionsToWebApp::class; // Scheduled command, not queued
+
+// No queue conflicts or resource competition
+```
+
+#### 4. **Performance Impact: Minimal**
+```
+Database Impact:
+- Single column addition: webapp_forwarded_at TIMESTAMP NULL
+- Single index addition: KEY idx_webapp_forwarded (webapp_forwarded_at)
+- Query impact: <1ms additional overhead on SELECT queries
+- No JOIN operations or complex queries
+
+Memory Impact:
+- Batch size: 50 transactions per execution
+- Memory usage: ~5MB per batch processing
+- Execution time: ~10-30 seconds every 5 minutes
+- No persistent memory usage
+
+Network Impact:
+- Single HTTP request every 5 minutes
+- Outbound only (no impact on inbound POS traffic)
+- Independent timeout handling (30 seconds max)
+```
+
+### Simplified Implementation Plan
+
+#### 1. Database Schema: Non-Intrusive Addition
+
+**Migration Strategy**: Add single nullable column with minimal impact on existing operations.
+
+```sql
+-- Migration: add_webapp_forwarding_to_transactions_table.php
+-- SAFE: Non-blocking migration with nullable column
+ALTER TABLE transactions ADD COLUMN webapp_forwarded_at TIMESTAMP NULL;
+ALTER TABLE transactions ADD INDEX idx_webapp_forwarded (webapp_forwarded_at);
+
+-- Query Performance Impact Analysis:
+-- BEFORE: SELECT * FROM transactions WHERE validation_status = 'VALID'
+-- AFTER:  SELECT * FROM transactions WHERE validation_status = 'VALID' 
+--         (Same performance - webapp_forwarded_at not included in POS queries)
+
+-- New WebApp-specific query (isolated from POS operations):
+SELECT id, transaction_id, terminal_id, tenant_id, base_amount, validation_status, processed_at
+FROM transactions 
+WHERE validation_status = 'VALID' 
+  AND webapp_forwarded_at IS NULL 
+ORDER BY processed_at ASC 
+LIMIT 50;
+```
+
+**Safety Guarantees**:
+- ✅ **Nullable Column**: Won't affect existing INSERT operations from POS
+- ✅ **Indexed Access**: Optimized queries won't slow down main table operations  
+- ✅ **No Schema Changes**: Existing POS code completely unaffected
+- ✅ **Backward Compatible**: Can be added/removed without downtime
+
+**Field Purpose**:
+- `webapp_forwarded_at`: Timestamp when transaction was successfully forwarded to web app
+- `NULL` = Not yet forwarded (default for all existing and new transactions)
+- `NOT NULL` = Successfully forwarded with exact timestamp
+
+**Model Update** (Non-Breaking):
+```php
+// app/Models/Transaction.php - ADD to existing fillable array
+protected $fillable = [
+    // ...existing fields unchanged...
+    'tenant_id', 'terminal_id', 'transaction_id', 'hardware_id',
+    'transaction_timestamp', 'base_amount', 'customer_code',
+    'payload_checksum', 'validation_status', 'submission_uuid',
+    'submission_timestamp', 'created_at', 'updated_at',
+    
+    // NEW: WebApp forwarding field (POS operations ignore this)
+    'webapp_forwarded_at',
+];
+
+protected $casts = [
+    // ...existing casts unchanged...
+    'transaction_timestamp' => 'datetime',
+    'submission_timestamp' => 'datetime',
+    'base_amount' => 'decimal:2',
+    
+    // NEW: WebApp forwarding timestamp
+    'webapp_forwarded_at' => 'datetime',
+];
+
+// NEW: Helper methods (don't interfere with existing functionality)
+public function isForwardedToWebApp(): bool
+{
+    return !is_null($this->webapp_forwarded_at);
+}
+
+public function markAsForwardedToWebApp(): void
+{
+    $this->update(['webapp_forwarded_at' => now()]);
+}
+```
+
+#### 2. WebApp Forwarding Service (Isolated Implementation)
+```php
+// app/Services/WebAppForwardingService.php
+<?php
+
+namespace App\Services;
+
+use App\Models\Transaction;
+use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Cache;
+
+class WebAppForwardingService
+{
+    private string $webAppEndpoint;
+    private int $timeout;
+    private int $batchSize;
+    private string $circuitBreakerKey = 'webapp_forwarding_circuit_breaker';
+
+    public function __construct()
+    {
+        $this->webAppEndpoint = config('tsms.web_app.endpoint');
+        $this->timeout = config('tsms.web_app.timeout', 30);
+        $this->batchSize = config('tsms.web_app.batch_size', 50);
+    }
+
+    /**
+     * MAIN METHOD: Forward unforwarded transactions to WebApp
+     * 
+     * SAFETY: This method only READS validated transactions and UPDATES
+     * webapp_forwarded_at field. No interference with POS operations.
+     */
+    public function forwardUnsentTransactions(): array
+    {
+        // Check circuit breaker (prevents cascading failures)
+        if ($this->isCircuitBreakerOpen()) {
+            Log::warning('WebApp forwarding skipped - circuit breaker is open');
+            return ['success' => false, 'reason' => 'circuit_breaker_open'];
+        }
+
+        // SAFE READ: Only select VALID transactions not yet forwarded
+        // This query does NOT interfere with POS transaction processing
+        $transactions = Transaction::where('validation_status', 'VALID')
+            ->whereNull('webapp_forwarded_at')
+            ->orderBy('processed_at', 'asc')
+            ->limit($this->batchSize)
+            ->get(['id', 'transaction_id', 'terminal_id', 'tenant_id', 
+                   'base_amount', 'transaction_timestamp', 'processed_at', 
+                   'checksum', 'submission_uuid']); // Only needed fields
+
+        if ($transactions->isEmpty()) {
+            return ['success' => true, 'forwarded_count' => 0, 'reason' => 'no_transactions'];
+        }
+
+        // Build bulk payload (read-only operation)
+        $payload = $this->buildBulkPayload($transactions);
+
+        try {
+            // Send to web app (external HTTP call - no DB impact)
+            $response = Http::timeout($this->timeout)
+                ->post($this->webAppEndpoint . '/api/transactions/bulk', $payload);
+
+            if ($response->successful()) {
+                // SAFE UPDATE: Only update webapp_forwarded_at field
+                // This does NOT modify any POS-related fields
+                $transactionIds = $transactions->pluck('id')->toArray();
+                Transaction::whereIn('id', $transactionIds)
+                    ->update(['webapp_forwarded_at' => now()]);
+
+                // Reset circuit breaker on success
+                $this->resetCircuitBreaker();
+
+                Log::info('Bulk transactions forwarded successfully', [
+                    'count' => $transactions->count(),
+                    'transaction_ids' => $transactions->pluck('transaction_id')->toArray()
+                ]);
+
+                return [
+                    'success' => true,
+                    'forwarded_count' => $transactions->count(),
+                    'response_status' => $response->status()
+                ];
+            }
+
+            // Handle HTTP errors (external system issue - no DB impact)
+            $this->recordFailure();
+            Log::error('WebApp forwarding failed', [
+                'status' => $response->status(),
+                'response' => $response->body(),
+                'transaction_count' => $transactions->count()
+            ]);
+
+            return [
+                'success' => false,
+                'error' => 'HTTP error: ' . $response->status(),
+                'transaction_count' => $transactions->count()
+            ];
+
+        } catch (\Exception $e) {
+            // Handle exceptions (no impact on main TSMS operations)
+            $this->recordFailure();
+            Log::error('WebApp forwarding exception', [
+                'error' => $e->getMessage(),
+                'transaction_count' => $transactions->count()
+            ]);
+
+            return [
+                'success' => false,
+                'error' => $e->getMessage(),
+                'transaction_count' => $transactions->count()
+            ];
+        }
+    }
+
+    /**
+     * Build payload for WebApp (read-only data transformation)
+     * 
+     * SAFETY: Only reads transaction data, no modifications
+     */
+    private function buildBulkPayload($transactions): array
+    {
+        return [
+            'source' => 'TSMS',
+            'batch_id' => 'TSMS_' . now()->format('YmdHis') . '_' . uniqid(),
+            'timestamp' => now()->toISOString(),
+            'transaction_count' => $transactions->count(),
+            'transactions' => $transactions->map(function ($transaction) {
+                return [
+                    'tsms_id' => $transaction->id,
+                    'transaction_id' => $transaction->transaction_id,
+                    'terminal_serial' => $transaction->terminal->serial_number,
+                    'tenant_code' => $transaction->tenant->customer_code,
+                    'tenant_name' => $transaction->tenant->name,
+                    'transaction_timestamp' => $transaction->transaction_timestamp,
+                    'amount' => $transaction->base_amount,
+                    'validation_status' => $transaction->validation_status,
+                    'processed_at' => $transaction->processed_at,
+                    'checksum' => $transaction->checksum,
+                    'submission_uuid' => $transaction->submission_uuid
+                ];
+            })->toArray()
+        ];
+    }
+
+    // Simple Circuit Breaker Implementation (Cache-based, no DB impact)
+    private function isCircuitBreakerOpen(): bool
+    {
+        $failures = Cache::get($this->circuitBreakerKey . '_failures', 0);
+        $lastFailure = Cache::get($this->circuitBreakerKey . '_last_failure');
+
+        // Open circuit if 5 consecutive failures
+        if ($failures >= 5) {
+            // Auto-reset after 10 minutes
+            if ($lastFailure && now()->diffInMinutes($lastFailure) >= 10) {
+                $this->resetCircuitBreaker();
+                return false;
+            }
+            return true;
+        }
+
+        return false;
+    }
+
+    private function recordFailure(): void
+    {
+        $failures = Cache::get($this->circuitBreakerKey . '_failures', 0) + 1;
+        Cache::put($this->circuitBreakerKey . '_failures', $failures, now()->addHour());
+        Cache::put($this->circuitBreakerKey . '_last_failure', now(), now()->addHour());
+    }
+
+    private function resetCircuitBreaker(): void
+    {
+        Cache::forget($this->circuitBreakerKey . '_failures');
+        Cache::forget($this->circuitBreakerKey . '_last_failure');
+    }
+
+    public function getCircuitBreakerStatus(): array
+    {
+        return [
+            'is_open' => $this->isCircuitBreakerOpen(),
+            'failures' => Cache::get($this->circuitBreakerKey . '_failures', 0),
+            'last_failure' => Cache::get($this->circuitBreakerKey . '_last_failure'),
+        ];
+    }
+}
+```
+
+**Isolation Guarantees**:
+- ✅ **Read-Only Operations**: Never modifies core transaction fields (validation_status, base_amount, etc.)
+- ✅ **Minimal Updates**: Only touches webapp_forwarded_at field after successful forwarding
+- ✅ **No Blocking Queries**: Uses efficient indexed queries with LIMIT
+- ✅ **Error Isolation**: Exceptions don't affect POS transaction processing
+- ✅ **Cache-Based State**: Circuit breaker uses cache, not database
+- ✅ **External Dependencies**: WebApp failures don't impact TSMS core functionality
+
+#### 3. Scheduled Command (Isolated from POS Operations)
+```php
+// app/Console/Commands/ForwardTransactionsToWebApp.php
+<?php
+
+namespace App\Console\Commands;
+
+use App\Services\WebAppForwardingService;
+use Illuminate\Console\Command;
+
+class ForwardTransactionsToWebApp extends Command
+{
+    protected $signature = 'tsms:forward-transactions 
+                           {--dry-run : Show what would be forwarded without executing}
+                           {--force : Force forwarding even if circuit breaker is open}';
+    
+    protected $description = 'Forward validated transactions to web app in bulk (POS-safe)';
+
+    public function handle(WebAppForwardingService $forwardingService): int
+    {
+        // DRY RUN: Safe read-only operation to check pending transactions
+        if ($this->option('dry-run')) {
+            $count = \App\Models\Transaction::where('validation_status', 'VALID')
+                ->whereNull('webapp_forwarded_at')
+                ->count();
+            
+            $this->info("Would forward {$count} transactions to web app");
+            $this->line("This operation is POS-safe: only reads data, no interference with POS operations");
+            return 0;
+        }
+
+        // FORCE OPTION: Bypass circuit breaker if needed
+        if ($this->option('force')) {
+            $this->warn('Forcing forwarding (bypassing circuit breaker)');
+            \Illuminate\Support\Facades\Cache::forget('webapp_forwarding_circuit_breaker_failures');
+        }
+
+        // MAIN EXECUTION: Forward transactions (isolated from POS operations)
+        $result = $forwardingService->forwardUnsentTransactions();
+
+        if ($result['success']) {
+            $this->info("Successfully forwarded {$result['forwarded_count']} transactions");
+            if ($result['forwarded_count'] > 0) {
+                $this->line("POS operations continue unaffected - only webapp_forwarded_at field updated");
+            }
+        } else {
+            $this->error("Failed to forward transactions: {$result['error']}");
+            $this->line("POS operations continue unaffected - no changes made to transaction data");
+            return 1;
+        }
+
+        return 0;
+    }
+}
+```
+
+#### 4. Laravel 11 Scheduling Setup (Queue-Based)
+```php
+// routes/console.php - Laravel 11 approach (NO Kernel.php)
+use App\Jobs\ForwardTransactionsToWebAppJob;
+
+// WebApp Transaction Forwarding - Every 5 minutes via Horizon queue
+Schedule::job(new ForwardTransactionsToWebAppJob())
+    ->everyFiveMinutes()
+    ->name('webapp-transaction-forwarding')
+    ->withoutOverlapping()      // Prevents multiple instances
+    ->onOneServer()             // Single server execution
+    ->when(function () {
+        // Only run if forwarding is enabled
+        return config('tsms.web_app.enabled', false);
+    });
+
+// Health monitoring: Check status hourly
+Schedule::call(function () {
+    $service = app(\App\Services\WebAppForwardingService::class);
+    $stats = $service->getForwardingStats();
+    
+    \Log::info('WebApp forwarding health check', $stats);
+    
+    // Alert conditions
+    if ($stats['circuit_breaker']['is_open']) {
+        \Log::warning('WebApp forwarding circuit breaker is open');
+    }
+})->hourly()->name('webapp-forwarding-health-check')->onOneServer();
+
+// Cleanup: Remove old completed forwards daily
+Schedule::call(function () {
+    $cleanupDays = config('tsms.performance.cleanup_completed_after_days', 30);
+    
+    if (config('tsms.performance.enable_auto_cleanup', true)) {
+        $deleted = \App\Models\WebappTransactionForward::completed()
+            ->where('completed_at', '<', now()->subDays($cleanupDays))
+            ->delete();
+            
+        if ($deleted > 0) {
+            \Log::info("Cleaned up {$deleted} old forwarding records");
+        }
+    }
+})->dailyAt('02:00')->name('webapp-forwarding-cleanup')->onOneServer();
+```
+
+**Laravel 11 Features Used**:
+- ✅ **No Console Kernel**: Uses routes/console.php directly
+- ✅ **Job Scheduling**: Horizon processes ForwardTransactionsToWebAppJob  
+- ✅ **Queue Management**: Dedicated 'webapp-forwarding' queue
+- ✅ **Single Server**: `onOneServer()` prevents duplicate execution
+- ✅ **Named Events**: Proper event naming for multi-server environments
+- ✅ **Conditional Execution**: Only runs when enabled in configuration
+
+#### 5. Configuration (Simplified)
+```php
+// config/tsms.php - Add web_app section
+return [
+    'web_app' => [
+        'endpoint' => env('WEBAPP_FORWARDING_ENDPOINT', 'https://your-webapp.com'),
+        'timeout' => env('WEBAPP_FORWARDING_TIMEOUT', 30),
+        'batch_size' => env('WEBAPP_FORWARDING_BATCH_SIZE', 50),
+        'auth_token' => env('WEBAPP_FORWARDING_AUTH_TOKEN'),
+        'verify_ssl' => env('WEBAPP_FORWARDING_VERIFY_SSL', true),
+    ]
+];
+```
+
+```bash
+# .env configuration
+WEBAPP_FORWARDING_ENDPOINT=https://your-webapp.com
+WEBAPP_FORWARDING_TIMEOUT=30
+WEBAPP_FORWARDING_BATCH_SIZE=50
+WEBAPP_FORWARDING_AUTH_TOKEN=your-secure-token
+WEBAPP_FORWARDING_VERIFY_SSL=true
+```
+
+#### 6. WebApp Receiving End Implementation Requirements
+
+The WebApp must implement a robust API endpoint to receive and process bulk transaction data from TSMS. Here's the complete implementation guide:
+
+#### **6.1 Required API Endpoint**
+
+**Endpoint**: `POST /api/transactions/bulk`
+**Content-Type**: `application/json`
+**Authentication**: Bearer Token (configured in TSMS)
+
+#### **6.2 Request Payload Structure** 
+**⚠️ EXACT STRUCTURE - Generated by TSMS WebAppForwardingService**
+
+```json
+{
+    "source": "TSMS",
+    "batch_id": "TSMS_20250712143000_abc123",
+    "timestamp": "2025-07-12T14:30:00.000Z",
+    "transaction_count": 25,
+    "transactions": [
+        {
+            "tsms_id": 12345,
+            "transaction_id": "TX001",
+            "terminal_serial": "T001",
+            "tenant_code": "TENANT001",
+            "tenant_name": "Store ABC",
+            "transaction_timestamp": "2025-07-12T14:25:00.000Z",
+            "amount": 100.50,
+            "validation_status": "VALID",
+            "processed_at": "2025-07-12T14:25:30.000Z",
+            "checksum": "abc123def456",
+            "submission_uuid": "uuid-here"
+        }
+    ]
+}
+```
+
+**Generated by**: `WebAppForwardingService::buildBulkPayload()` and `WebAppForwardingService::buildTransactionPayload()`
+
+#### **6.3 Field Descriptions**
+**⚠️ CRITICAL - These are the EXACT fields generated by TSMS WebAppForwardingService**
+
+**Batch Metadata Fields:**
+| Field | Type | Required | Description | Generated By | Example |
+|-------|------|----------|-------------|--------------|---------|
+| `source` | string | Yes | Always "TSMS" - identifies source system | `buildBulkPayload()` | `"TSMS"` |
+| `batch_id` | string | Yes | Unique batch identifier for tracking | `generateBatchId()` | `"TSMS_20250712143000_abc123"` |
+| `timestamp` | ISO8601 | Yes | When TSMS generated this batch (with milliseconds) | `now()->toISOString()` | `"2025-07-12T14:30:00.000Z"` |
+| `transaction_count` | integer | Yes | Number of transactions in this batch | `$forwardingRecords->count()` | `25` |
+| `transactions` | array | Yes | Array of transaction objects | `buildTransactionPayload()` | See below |
+
+**Transaction Fields (EXACT mapping from TSMS Transaction model):**
+
+#### **6.4 Transaction Object Structure**
+**⚠️ EXACT FIELDS - Direct mapping from TSMS Transaction model (buildTransactionPayload method)**
+
+| Field | Type | Required | TSMS Source | Nullable | Description | Example |
+|-------|------|----------|-------------|----------|-------------|---------|
+| `tsms_id` | integer | Yes | `$transaction->id` | No | Internal TSMS transaction ID (Primary Key) | `12345` |
+| `transaction_id` | string | Yes | `$transaction->transaction_id` | No | Original POS transaction ID | `"TX001"` |
+| `terminal_serial` | string | No | `$transaction->terminal->serial_number` | **Yes** | POS terminal serial number (null if no terminal) | `"T001"` or `null` |
+| `tenant_code` | string | No | `$transaction->tenant->customer_code` | **Yes** | Store/tenant identifier (null if no tenant) | `"TENANT001"` or `null` |
+| `tenant_name` | string | No | `$transaction->tenant->name` | **Yes** | Store/tenant display name (null if no tenant) | `"Store ABC"` or `null` |
+| `transaction_timestamp` | ISO8601 | No | `$transaction->transaction_timestamp?->toISOString()` | **Yes** | When transaction occurred (null if not set) | `"2025-07-12T14:25:00.000Z"` or `null` |
+| `amount` | decimal | Yes | `$transaction->base_amount` | No | Transaction amount (validated, always present) | `100.50` |
+| `validation_status` | string | Yes | `$transaction->validation_status` | No | Always "VALID" (only valid transactions forwarded) | `"VALID"` |
+| `processed_at` | ISO8601 | No | `$transaction->processed_at?->toISOString()` | **Yes** | When TSMS validated the transaction (null if not processed) | `"2025-07-12T14:25:30.000Z"` or `null` |
+| `checksum` | string | Yes | `$transaction->payload_checksum` | No | TSMS validation checksum | `"abc123def456"` |
+| `submission_uuid` | string | Yes | `$transaction->submission_uuid` | No | Unique submission identifier | `"uuid-here"` |
+
+**IMPORTANT NOTES:**
+- **NULL Handling**: Fields marked as "Nullable: Yes" can be `null` in the JSON payload
+- **Timestamps**: All timestamps use `toISOString()` format with milliseconds (`.000Z`)
+- **Only VALID Transactions**: Only transactions with `validation_status = 'VALID'` are forwarded
+- **Required Validation**: WebApp MUST handle null values for nullable fields gracefully
+
+#### **6.4.1 TSMS Code Implementation Reference**
+**For WebApp developers - this is exactly how TSMS generates the payload:**
+
+```php
+// File: app/Services/WebAppForwardingService.php
+
+private function buildBulkPayload(Collection $forwardingRecords, string $batchId): array
+{
+    return [
+        'source' => 'TSMS',                           // Always "TSMS"
+        'batch_id' => $batchId,                       // Generated UUID-based ID
+        'timestamp' => now()->toISOString(),          // Current time with .000Z format
+        'transaction_count' => $forwardingRecords->count(),  // Integer count
+        'transactions' => $forwardingRecords->map(function ($forward) {
+            return $forward->request_payload;         // Each transaction payload
+        })->toArray()
+    ];
+}
+
+private function buildTransactionPayload(Transaction $transaction): array
+{
+    return [
+        'tsms_id' => $transaction->id,                // Integer (never null)
+        'transaction_id' => $transaction->transaction_id,  // String (never null)
+        'terminal_serial' => $transaction->terminal->serial_number ?? null,  // String or NULL
+        'tenant_code' => $transaction->tenant->customer_code ?? null,        // String or NULL
+        'tenant_name' => $transaction->tenant->name ?? null,                 // String or NULL
+        'transaction_timestamp' => $transaction->transaction_timestamp?->toISOString(),  // ISO8601 or NULL
+        'amount' => $transaction->base_amount,        // Decimal (never null)
+        'validation_status' => $transaction->validation_status,  // "VALID" (never null)
+        'processed_at' => $transaction->processed_at?->toISOString(),  // ISO8601 or NULL
+        'checksum' => $transaction->payload_checksum,  // String (never null)
+        'submission_uuid' => $transaction->submission_uuid,  // String (never null)
+    ];
+}
+```
+
+**Key Implementation Details:**
+- `??` operator means "use null if the relationship or property doesn't exist"
+- `?->` operator means "call method only if object is not null, otherwise return null"
+- `toISOString()` produces format like `"2025-07-12T14:25:30.000Z"`
+- Only transactions with `validation_status = 'VALID'` are included in forwarding
+
+#### **6.5 Required WebApp Response Format**
+
+**Success Response (HTTP 200)**:
+```json
+{
+    "status": "success",
+    "received_count": 25,
+    "batch_id": "TSMS_20250712143000_abc123",
+    "processed_at": "2025-07-12T14:30:15Z",
+    "message": "Transactions processed successfully"
+}
+```
+
+**Error Response (HTTP 400/422/500)**:
+```json
+{
+    "status": "error",
+    "error_code": "VALIDATION_ERROR",
+    "message": "Invalid transaction data",
+    "batch_id": "TSMS_20250712143000_abc123",
+    "errors": [
+        {
+            "transaction_id": "TX001",
+            "field": "amount",
+            "message": "Amount must be positive"
+        }
+    ]
+}
+```
+
+#### **6.6 WebApp Implementation Examples**
+
+##### **PHP Laravel Implementation**
+**⚠️ UPDATED - Handles nullable fields correctly**
+
+```php
+// routes/api.php
+Route::post('/transactions/bulk', [TransactionController::class, 'receiveBulk'])
+    ->middleware(['auth:api', 'throttle:60,1']);
+
+// app/Http/Controllers/TransactionController.php
+class TransactionController extends Controller
+{
+    public function receiveBulk(Request $request)
+    {
+        // Validate request structure - EXACT TSMS payload structure
+        $validated = $request->validate([
+            'source' => 'required|string|in:TSMS',
+            'batch_id' => 'required|string|max:255',
+            'timestamp' => 'required|date_format:Y-m-d\TH:i:s.v\Z',  // Handles .000Z format
+            'transaction_count' => 'required|integer|min:1|max:1000',
+            'transactions' => 'required|array|min:1',
+            
+            // Required fields (never null in TSMS payload)
+            'transactions.*.tsms_id' => 'required|integer',
+            'transactions.*.transaction_id' => 'required|string|max:255',
+            'transactions.*.amount' => 'required|numeric|min:0',
+            'transactions.*.validation_status' => 'required|in:VALID',
+            'transactions.*.checksum' => 'required|string|max:255',
+            'transactions.*.submission_uuid' => 'required|string|max:255',
+            
+            // Nullable fields (can be null in TSMS payload)
+            'transactions.*.terminal_serial' => 'nullable|string|max:255',
+            'transactions.*.tenant_code' => 'nullable|string|max:255',
+            'transactions.*.tenant_name' => 'nullable|string|max:255',
+            'transactions.*.transaction_timestamp' => 'nullable|date_format:Y-m-d\TH:i:s.v\Z',
+            'transactions.*.processed_at' => 'nullable|date_format:Y-m-d\TH:i:s.v\Z',
+        ]);
+
+        DB::beginTransaction();
+        try {
+            $processedCount = 0;
+            
+            foreach ($validated['transactions'] as $transactionData) {
+                // Check for duplicates using tsms_id (primary) or combination
+                $existing = WebAppTransaction::where('tsms_id', $transactionData['tsms_id'])
+                    ->orWhere(function ($query) use ($transactionData) {
+                        $query->where('transaction_id', $transactionData['transaction_id'])
+                              ->where('terminal_serial', $transactionData['terminal_serial'] ?? 'NULL_TERMINAL');
+                    })->first();
+
+                if (!$existing) {
+                    // Create new transaction record - handle null values properly
+                    WebAppTransaction::create([
+                        'tsms_id' => $transactionData['tsms_id'],
+                        'transaction_id' => $transactionData['transaction_id'],
+                        'terminal_serial' => $transactionData['terminal_serial'], // Can be null
+                        'tenant_code' => $transactionData['tenant_code'], // Can be null
+                        'tenant_name' => $transactionData['tenant_name'], // Can be null
+                        'transaction_timestamp' => $transactionData['transaction_timestamp'] 
+                            ? Carbon::parse($transactionData['transaction_timestamp']) : null,
+                        'amount' => $transactionData['amount'],
+                        'validation_status' => $transactionData['validation_status'],
+                        'processed_at' => $transactionData['processed_at'] 
+                            ? Carbon::parse($transactionData['processed_at']) : null,
+                        'checksum' => $transactionData['checksum'],
+                        'submission_uuid' => $transactionData['submission_uuid'],
+                        'batch_id' => $validated['batch_id'],
+                        'received_at' => now(),
+                    ]);
+                    $processedCount++;
+                } else {
+                    // Log duplicate but don't fail
+                    Log::info('Duplicate transaction skipped', [
+                        'tsms_id' => $transactionData['tsms_id'],
+                        'transaction_id' => $transactionData['transaction_id']
+                    ]);
+                }
+            }
+
+            // Log batch receipt
+            WebAppBatchLog::create([
+                'batch_id' => $validated['batch_id'],
+                'source' => $validated['source'],
+                'transaction_count' => $validated['transaction_count'],
+                'processed_count' => $processedCount,
+                'received_at' => now(),
+                'status' => 'completed'
+            ]);
+
+            DB::commit();
+
+            return response()->json([
+                'status' => 'success',
+                'received_count' => $processedCount,
+                'batch_id' => $validated['batch_id'],
+                'processed_at' => now()->toISOString(),
+                'message' => "Successfully processed {$processedCount} transactions"
+            ]);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            
+            Log::error('Bulk transaction processing failed', [
+                'batch_id' => $validated['batch_id'],
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return response()->json([
+                'status' => 'error',
+                'error_code' => 'PROCESSING_ERROR',
+                'message' => 'Failed to process transaction batch',
+                'batch_id' => $validated['batch_id']
+            ], 500);
+        }
+    }
+}
+```
+
+##### **Node.js Express Implementation**
+```javascript
+// routes/transactions.js
+const express = require('express');
+const router = express.Router();
+const { body, validationResult } = require('express-validator');
+
+router.post('/bulk', [
+    body('source').equals('TSMS'),
+    body('batch_id').isString().isLength({ max: 255 }),
+    body('timestamp').isISO8601(),
+    body('transaction_count').isInt({ min: 1, max: 1000 }),
+    body('transactions').isArray({ min: 1 }),
+    body('transactions.*.tsms_id').isInt(),
+    body('transactions.*.transaction_id').isString(),
+    body('transactions.*.amount').isNumeric()
+], async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({
+            status: 'error',
+            error_code: 'VALIDATION_ERROR',
+            message: 'Invalid request data',
+            errors: errors.array()
+        });
+    }
+
+    const { batch_id, transactions } = req.body;
+    
+    try {
+        const processedCount = await processTransactionBatch(transactions, batch_id);
+        
+        res.json({
+            status: 'success',
+            received_count: processedCount,
+            batch_id: batch_id,
+            processed_at: new Date().toISOString()
+        });
+    } catch (error) {
+        console.error('Bulk transaction processing failed:', error);
+        
+        res.status(500).json({
+            status: 'error',
+            error_code: 'PROCESSING_ERROR',
+            message: 'Failed to process transaction batch',
+            batch_id: batch_id
+        });
+    }
+});
+
+async function processTransactionBatch(transactions, batchId) {
+    let processedCount = 0;
+    
+    for (const transaction of transactions) {
+        // Check for duplicates
+        const existing = await WebAppTransaction.findOne({
+            $or: [
+                { tsms_id: transaction.tsms_id },
+                { 
+                    transaction_id: transaction.transaction_id,
+                    terminal_serial: transaction.terminal_serial 
+                }
+            ]
+        });
+
+        if (!existing) {
+            await WebAppTransaction.create({
+                ...transaction,
+                batch_id: batchId,
+                received_at: new Date()
+            });
+            processedCount++;
+        }
+    }
+    
+    return processedCount;
+}
+```
+
+#### **6.7 WebApp Database Schema Recommendations**
+**⚠️ UPDATED - Reflects exact TSMS payload structure with nullable fields**
+
+##### **Transaction Storage Table**
+```sql
+-- WebApp transactions table - matches TSMS payload structure exactly
+CREATE TABLE webapp_transactions (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    
+    -- TSMS reference data (REQUIRED fields - never null in TSMS payload)
+    tsms_id BIGINT UNSIGNED NOT NULL UNIQUE,
+    transaction_id VARCHAR(255) NOT NULL,
+    amount DECIMAL(12, 2) NOT NULL,
+    validation_status VARCHAR(20) NOT NULL DEFAULT 'VALID',
+    checksum VARCHAR(255) NOT NULL,
+    submission_uuid VARCHAR(255) NOT NULL,
+    
+    -- TSMS relationship data (NULLABLE - can be null in TSMS payload)
+    terminal_serial VARCHAR(255) NULL,     -- NULL if transaction.terminal is null
+    tenant_code VARCHAR(255) NULL,         -- NULL if transaction.tenant is null
+    tenant_name VARCHAR(255) NULL,         -- NULL if transaction.tenant is null
+    
+    -- TSMS timestamp data (NULLABLE - can be null in TSMS payload)
+    transaction_timestamp TIMESTAMP NULL,  -- NULL if not set in TSMS
+    processed_at TIMESTAMP NULL,           -- NULL if not processed in TSMS
+    
+    -- WebApp processing data
+    batch_id VARCHAR(255) NOT NULL,
+    received_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    
+    -- Indexes for performance
+    INDEX idx_tsms_id (tsms_id),
+    INDEX idx_transaction_id (transaction_id),
+    INDEX idx_terminal_serial (terminal_serial),
+    INDEX idx_tenant_code (tenant_code),
+    INDEX idx_batch_id (batch_id),
+    INDEX idx_transaction_timestamp (transaction_timestamp),
+    INDEX idx_validation_status (validation_status),
+    
+    -- Unique constraints (handle nullable fields properly)
+    UNIQUE KEY unique_tsms_id (tsms_id),
+    INDEX unique_transaction_lookup (transaction_id, terminal_serial)  -- Note: Not UNIQUE due to nulls
+);
+```
+
+**CRITICAL NULL HANDLING NOTES:**
+1. **Required Fields**: `tsms_id`, `transaction_id`, `amount`, `validation_status`, `checksum`, `submission_uuid` are NEVER null
+2. **Nullable Fields**: `terminal_serial`, `tenant_code`, `tenant_name`, `transaction_timestamp`, `processed_at` CAN be null
+3. **Unique Constraints**: Use `tsms_id` as primary unique identifier (never null)
+4. **Indexing**: Index nullable fields separately for performance
+5. **Duplicate Detection**: Use `tsms_id` primarily, fallback to `transaction_id` + `terminal_serial` combination
+```
+
+##### **Batch Logging Table**
+```sql
+-- WebApp batch processing log
+CREATE TABLE webapp_batch_logs (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    batch_id VARCHAR(255) NOT NULL UNIQUE,
+    source VARCHAR(50) NOT NULL DEFAULT 'TSMS',
+    transaction_count INT NOT NULL,
+    processed_count INT NOT NULL,
+    received_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    processing_time_ms INT,
+    status ENUM('completed', 'failed', 'partial') NOT NULL,
+    error_message TEXT,
+    
+    INDEX idx_batch_id (batch_id),
+    INDEX idx_received_at (received_at),
+    INDEX idx_status (status)
+);
+```
+
+#### **6.8 Security and Authentication**
+
+##### **API Authentication**
+```php
+// Middleware for TSMS API authentication
+class TSMSAuthMiddleware
+{
+    public function handle($request, Closure $next)
+    {
+        $token = $request->bearerToken();
+        $expectedToken = config('webapp.tsms_auth_token');
+        
+        if (!$token || !hash_equals($expectedToken, $token)) {
+            return response()->json([
+                'status' => 'error',
+                'error_code' => 'UNAUTHORIZED',
+                'message' => 'Invalid or missing authentication token'
+            ], 401);
+        }
+        
+        return $next($request);
+    }
+}
+```
+
+##### **Rate Limiting**
+```php
+// Rate limiting for TSMS endpoint
+Route::post('/transactions/bulk', [TransactionController::class, 'receiveBulk'])
+    ->middleware(['auth:tsms', 'throttle:30,1']); // 30 requests per minute
+```
+
+#### **6.9 Error Handling and Monitoring**
+
+##### **Logging Requirements**
+```php
+// Log all batch receipts
+Log::info('TSMS batch received', [
+    'batch_id' => $batchId,
+    'transaction_count' => $transactionCount,
+    'processed_count' => $processedCount,
+    'processing_time_ms' => $processingTime,
+    'source_ip' => $request->ip()
+]);
+
+// Log errors for monitoring
+Log::error('TSMS batch processing failed', [
+    'batch_id' => $batchId,
+    'error' => $exception->getMessage(),
+    'transaction_count' => $transactionCount
+]);
+```
+
+##### **Health Check Endpoint**
+```php
+// GET /api/health/tsms
+public function tsmsHealth()
+{
+    $lastBatch = WebAppBatchLog::latest('received_at')->first();
+    $recentFailures = WebAppBatchLog::where('status', 'failed')
+        ->where('received_at', '>', now()->subHour())
+        ->count();
+    
+    return response()->json([
+        'status' => $recentFailures > 5 ? 'unhealthy' : 'healthy',
+        'last_batch_received' => $lastBatch?->received_at,
+        'recent_failures' => $recentFailures,
+        'endpoint_status' => 'active'
+    ]);
+}
+```
+
+#### **6.10 Testing the Integration**
+
+##### **Test Payload for WebApp Development**
+```json
+{
+    "source": "TSMS",
+    "batch_id": "TSMS_TEST_20250712_001",
+    "timestamp": "2025-07-12T14:30:00Z",
+    "transaction_count": 2,
+    "transactions": [
+        {
+            "tsms_id": 1,
+            "transaction_id": "TEST_TX001",
+            "terminal_serial": "TEST_TERMINAL_001",
+            "tenant_code": "TEST_TENANT",
+            "tenant_name": "Test Store",
+            "transaction_timestamp": "2025-07-12T14:25:00Z",
+            "amount": 100.50,
+            "validation_status": "VALID",
+            "processed_at": "2025-07-12T14:25:30Z",
+            "checksum": "test_checksum_001",
+            "submission_uuid": "test-uuid-001"
+        },
+        {
+            "tsms_id": 2,
+            "transaction_id": "TEST_TX002",
+            "terminal_serial": "TEST_TERMINAL_002",
+            "tenant_code": "TEST_TENANT",
+            "tenant_name": "Test Store",
+            "transaction_timestamp": "2025-07-12T14:26:00Z",
+            "amount": 250.75,
+            "validation_status": "VALID",
+            "processed_at": "2025-07-12T14:26:30Z",
+            "checksum": "test_checksum_002",
+            "submission_uuid": "test-uuid-002"
+        }
+    ]
+}
+```
+
+#### 7. Simple Monitoring & Management
+```php
+// app/Console/Commands/WebAppForwardingStatus.php
+<?php
+
+namespace App\Console\Commands;
+
+use App\Models\Transaction;
+use App\Services\WebAppForwardingService;
+use Illuminate\Console\Command;
+
+class WebAppForwardingStatus extends Command
+{
+    protected $signature = 'tsms:forwarding-status';
+    protected $description = 'Show web app forwarding status';
+
+    public function handle(WebAppForwardingService $forwardingService): int
+    {
+        // Count pending transactions
+        $pendingCount = Transaction::where('validation_status', 'VALID')
+            ->whereNull('webapp_forwarded_at')
+            ->count();
+
+        // Count forwarded today
+        $forwardedToday = Transaction::where('validation_status', 'VALID')
+            ->whereNotNull('webapp_forwarded_at')
+            ->whereDate('webapp_forwarded_at', today())
+            ->count();
+
+        // Circuit breaker status
+        $circuitStatus = $forwardingService->getCircuitBreakerStatus();
+
+        $this->info("WebApp Forwarding Status:");
+        $this->line("Pending transactions: {$pendingCount}");
+        $this->line("Forwarded today: {$forwardedToday}");
+        $this->line("Circuit breaker: " . ($circuitStatus['is_open'] ? 'OPEN' : 'CLOSED'));
+        
+        if ($circuitStatus['failures'] > 0) {
+            $this->warn("Failure count: {$circuitStatus['failures']}");
+        }
+
+        return 0;
+    }
+}
+```
+
+#### 8. Testing Requirements (Simplified)
+```php
+// tests/Feature/WebAppForwardingTest.php
+class WebAppForwardingTest extends TestCase
+{
+    public function test_forwards_validated_transactions_in_bulk()
+    {
+        // Create test validated transactions
+        $transactions = Transaction::factory()
+            ->count(5)
+            ->create(['validation_status' => 'VALID']);
+
+        // Mock web app endpoint
+        Http::fake([
+            config('tsms.web_app.endpoint') . '/api/transactions/bulk' => Http::response([
+                'status' => 'success',
+                'received_count' => 5
+            ], 200)
+        ]);
+
+        // Run forwarding service
+        $service = new WebAppForwardingService();
+        $result = $service->forwardUnsentTransactions();
+
+        // Assert success
+        $this->assertTrue($result['success']);
+        $this->assertEquals(5, $result['forwarded_count']);
+
+        // Assert transactions marked as forwarded
+        $this->assertEquals(5, Transaction::whereNotNull('webapp_forwarded_at')->count());
+    }
+
+    public function test_circuit_breaker_opens_after_failures()
+    {
+        // Create test transactions
+        Transaction::factory()->count(3)->create(['validation_status' => 'VALID']);
+
+        // Mock failing endpoint
+        Http::fake([
+            config('tsms.web_app.endpoint') . '/api/transactions/bulk' => Http::response([], 500)
+        ]);
+
+        $service = new WebAppForwardingService();
+
+        // Trigger 5 failures to open circuit breaker
+        for ($i = 0; $i < 5; $i++) {
+            $service->forwardUnsentTransactions();
+        }
+
+        // Circuit breaker should be open
+        $status = $service->getCircuitBreakerStatus();
+        $this->assertTrue($status['is_open']);
+
+        // Next call should skip due to circuit breaker
+        $result = $service->forwardUnsentTransactions();
+        $this->assertFalse($result['success']);
+        $this->assertEquals('circuit_breaker_open', $result['reason']);
+    }
+
+    public function test_scheduled_command_works()
+    {
+        Transaction::factory()->count(3)->create(['validation_status' => 'VALID']);
+
+        Http::fake([
+            config('tsms.web_app.endpoint') . '/api/transactions/bulk' => Http::response([
+                'status' => 'success',
+                'received_count' => 3
+            ], 200)
+        ]);
+
+        $this->artisan('tsms:forward-transactions')
+             ->expectsOutput('Successfully forwarded 3 transactions')
+             ->assertExitCode(0);
+    }
+}
+```
+
+#### 9. Production Deployment Steps (Zero-Downtime)
+
+**Step 1: Safe Database Migration**
+```bash
+# Migration can be run without downtime - nullable column addition
+php artisan make:migration add_webapp_forwarding_to_transactions_table
+
+# Migration content (non-breaking):
+# ALTER TABLE transactions ADD COLUMN webapp_forwarded_at TIMESTAMP NULL;
+# ALTER TABLE transactions ADD INDEX idx_webapp_forwarded (webapp_forwarded_at);
+
+php artisan migrate  # Safe to run on production without POS impact
+```
+
+**Step 2: Environment Configuration**
+```bash
+# Add to production .env (can be done without restart)
+WEBAPP_FORWARDING_ENDPOINT=https://production-webapp.com
+WEBAPP_FORWARDING_AUTH_TOKEN=production-secure-token
+WEBAPP_FORWARDING_BATCH_SIZE=100
+WEBAPP_FORWARDING_TIMEOUT=30
+WEBAPP_FORWARDING_VERIFY_SSL=true
+```
+
+**Step 3: Deploy Code (Laravel 11 - No Kernel.php)**
+```bash
+# Deploy new service, job, and command classes
+# Laravel 11 uses routes/console.php instead of Console Kernel
+# All new functionality is isolated in dedicated files
+
+# New files added:
+# - app/Services/WebAppForwardingService.php
+# - app/Jobs/ForwardTransactionsToWebAppJob.php  
+# - app/Console/Commands/ForwardTransactionsToWebApp.php
+# - app/Console/Commands/WebAppForwardingStatus.php
+# - routes/console.php (scheduled task addition)
+
+# Zero-downtime deployment - no POS functionality affected
+```
+
+---
+
+## 🎯 **WEBAPP INTEGRATION CHECKLIST**
+**Complete Implementation Guide for WebApp Developers**
+
+### **CRITICAL SUCCESS FACTORS**
+
+#### ✅ **1. Endpoint Implementation**
+- [ ] **URL**: Implement `POST /api/transactions/bulk` endpoint
+- [ ] **Authentication**: Accept Bearer token authentication  
+- [ ] **Content-Type**: Handle `application/json` requests
+- [ ] **Rate Limiting**: Handle up to 60 requests per minute
+- [ ] **Timeout**: Respond within 30 seconds
+
+#### ✅ **2. Exact Payload Validation**
+**REQUIRED Fields (Never Null):**
+- [ ] `source` (string) - Always "TSMS"
+- [ ] `batch_id` (string) - Unique batch identifier
+- [ ] `timestamp` (ISO8601) - Format: `2025-07-12T14:30:00.000Z`
+- [ ] `transaction_count` (integer) - Count of transactions in batch
+- [ ] `transactions` (array) - Array of transaction objects
+
+**Transaction Object - REQUIRED Fields:**
+- [ ] `tsms_id` (integer) - TSMS internal ID
+- [ ] `transaction_id` (string) - Original POS transaction ID  
+- [ ] `amount` (decimal) - Transaction amount
+- [ ] `validation_status` (string) - Always "VALID"
+- [ ] `checksum` (string) - TSMS validation checksum
+- [ ] `submission_uuid` (string) - Unique submission ID
+
+**Transaction Object - NULLABLE Fields (Handle null gracefully):**
+- [ ] `terminal_serial` (string|null) - Can be null if no terminal
+- [ ] `tenant_code` (string|null) - Can be null if no tenant
+- [ ] `tenant_name` (string|null) - Can be null if no tenant  
+- [ ] `transaction_timestamp` (ISO8601|null) - Can be null if not set
+- [ ] `processed_at` (ISO8601|null) - Can be null if not processed
+
+#### ✅ **3. Database Schema Implementation**
+```sql
+-- EXACT schema matching TSMS payload structure
+CREATE TABLE webapp_transactions (
+    id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+    
+    -- REQUIRED fields (never null)
+    tsms_id BIGINT UNSIGNED NOT NULL UNIQUE,
+    transaction_id VARCHAR(255) NOT NULL,
+    amount DECIMAL(12, 2) NOT NULL,
+    validation_status VARCHAR(20) NOT NULL DEFAULT 'VALID',
+    checksum VARCHAR(255) NOT NULL,
+    submission_uuid VARCHAR(255) NOT NULL,
+    
+    -- NULLABLE fields (handle nulls properly)  
+    terminal_serial VARCHAR(255) NULL,
+    tenant_code VARCHAR(255) NULL,
+    tenant_name VARCHAR(255) NULL,
+    transaction_timestamp TIMESTAMP NULL,
+    processed_at TIMESTAMP NULL,
+    
+    -- WebApp metadata
+    batch_id VARCHAR(255) NOT NULL,
+    received_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    
+    -- Performance indexes
+    INDEX idx_tsms_id (tsms_id),
+    INDEX idx_transaction_id (transaction_id),
+    INDEX idx_batch_id (batch_id)
+);
+```
+
+#### ✅ **4. Duplicate Prevention Strategy**
+- [ ] **Primary**: Check `tsms_id` for duplicates (most reliable)
+- [ ] **Secondary**: Check `transaction_id` + `terminal_serial` combination
+- [ ] **Handle Nulls**: Account for null `terminal_serial` in duplicate detection
+- [ ] **Log Skips**: Log duplicate transactions but don't fail the batch
+
+#### ✅ **5. Response Format Implementation**
+**Success Response (HTTP 200):**
+```json
+{
+    "status": "success",
+    "received_count": 25,
+    "batch_id": "TSMS_20250712143000_abc123",
+    "processed_at": "2025-07-12T14:30:15.000Z",
+    "message": "Transactions processed successfully"
+}
+```
+
+**Error Response (HTTP 400/422/500):**
+```json
+{
+    "status": "error", 
+    "error_code": "VALIDATION_ERROR",
+    "message": "Invalid transaction data",
+    "batch_id": "TSMS_20250712143000_abc123"
+}
+```
+
+#### ✅ **6. Error Handling & Resilience**
+- [ ] **Database Transactions**: Use DB transactions for batch processing
+- [ ] **Rollback on Error**: Rollback entire batch if any transaction fails
+- [ ] **Detailed Logging**: Log all batch receipts and processing errors
+- [ ] **Graceful Degradation**: Handle partial failures appropriately
+- [ ] **Monitoring Integration**: Implement health checks and alerting
+
+#### ✅ **7. Security Implementation**
+- [ ] **Bearer Authentication**: Validate TSMS auth token
+- [ ] **IP Whitelisting**: Optionally restrict to TSMS server IPs
+- [ ] **Request Validation**: Validate all required and optional fields
+- [ ] **Rate Limiting**: Prevent abuse with reasonable limits
+- [ ] **Audit Logging**: Log all transaction receipt events
+
+#### ✅ **8. Performance Optimization**
+- [ ] **Batch Processing**: Handle up to 1000 transactions per batch efficiently
+- [ ] **Database Indexing**: Index frequently queried fields
+- [ ] **Memory Management**: Process large batches without memory issues
+- [ ] **Response Time**: Respond within 30 seconds for largest batches
+- [ ] **Concurrent Batches**: Handle multiple simultaneous batch requests
+
+#### ✅ **9. Testing & Validation**
+- [ ] **Unit Tests**: Test individual transaction processing logic
+- [ ] **Integration Tests**: Test full batch processing workflow  
+- [ ] **Load Tests**: Verify performance with maximum batch sizes
+- [ ] **Error Tests**: Test error handling and rollback scenarios
+- [ ] **Null Handling Tests**: Test all nullable field scenarios
+
+#### ✅ **10. Monitoring & Operations**
+- [ ] **Health Endpoint**: Implement `/api/health/tsms` endpoint
+- [ ] **Metrics Collection**: Track transaction volumes, processing times
+- [ ] **Error Alerting**: Alert on processing failures or high error rates
+- [ ] **Batch Logging**: Maintain audit trail of all received batches
+- [ ] **Performance Monitoring**: Monitor response times and throughput
+
+### **TSMS CONFIGURATION (Reference)**
+```env
+# TSMS will be configured with:
+WEBAPP_FORWARDING_ENDPOINT=https://your-webapp.com
+WEBAPP_FORWARDING_AUTH_TOKEN=your-secure-token
+WEBAPP_FORWARDING_BATCH_SIZE=100  # Transactions per batch
+WEBAPP_FORWARDING_TIMEOUT=30      # Request timeout in seconds
+```
+
+### **INTEGRATION TESTING**
+```bash
+# Test with TSMS dry-run mode
+php artisan tsms:forward-transactions --dry-run
+
+# Check forwarding status  
+php artisan tsms:forwarding-status
+
+# Manual forwarding for testing
+php artisan tsms:forward-transactions --force
+```
+
+### **PRODUCTION READINESS VERIFICATION**
+- [ ] ✅ WebApp endpoint responds correctly to test payloads
+- [ ] ✅ Database schema handles all TSMS field types and nulls
+- [ ] ✅ Authentication works with TSMS bearer token
+- [ ] ✅ Duplicate detection prevents data corruption  
+- [ ] ✅ Error handling provides meaningful responses
+- [ ] ✅ Performance meets TSMS timeout requirements (30s)
+- [ ] ✅ Monitoring and alerting systems are operational
+- [ ] ✅ Integration testing completed successfully
+
+**🚀 READY FOR PRODUCTION DEPLOYMENT** 
+
+---
+# - app/Services/WebAppForwardingService.php
+# - app/Jobs/ForwardTransactionsToWebAppJob.php  
+# - app/Models/WebappTransactionForward.php
+# - app/Console/Commands/ForwardTransactionsToWebApp.php
+# - app/Console/Commands/WebAppForwardingStatus.php
+# - config/tsms.php
+# - routes/console.php (scheduling configuration)
+
+# NO Console Kernel required in Laravel 11
+# NO existing POS code modified
+```
+
+**Step 4: Verification (No POS Impact)**
+```bash
+# Test the system without affecting POS operations
+
+# 1. Dry run check
+php artisan tsms:forward-transactions --dry-run
+# Shows pending transactions without making changes
+
+# 2. Manual single execution
+php artisan tsms:forward-transactions
+# Forwards transactions once, scheduler will handle future executions
+
+# 3. Status monitoring
+php artisan tsms:forwarding-status
+# Shows current status and pending counts
+
+# 4. Log monitoring
+tail -f storage/logs/webapp-forwarding.log
+# Monitor forwarding activity
+
+# POS operations continue normally during all verification steps
+```
+
+**Step 5: Monitoring Setup**
+```bash
+# Scheduler automatically starts forwarding every 5 minutes
+# No manual intervention required
+
+# Monitor effectiveness:
+# - Check webapp-forwarding.log for activity
+# - Verify webapp_forwarded_at timestamps on transactions
+# - Monitor WebApp API for incoming data
+
+# POS monitoring remains unchanged:
+# - Transaction ingestion continues as normal
+# - ProcessTransactionJob continues validation
+# - All existing logs and monitoring intact
+```
+
+#### 10. Rollback Strategy (If Needed)
+
+**Emergency Rollback** (if WebApp forwarding causes unexpected issues):
+```bash
+# 1. Stop scheduled forwarding (immediate)
+# Comment out schedule in app/Console/Kernel.php and deploy
+# OR set environment variable to disable
+WEBAPP_FORWARDING_ENABLED=false
+
+# 2. Remove database column (optional, non-urgent)
+# Can be done later during maintenance window
+# ALTER TABLE transactions DROP COLUMN webapp_forwarded_at;
+# ALTER TABLE transactions DROP INDEX idx_webapp_forwarded;
+
+# 3. Remove code files (optional)
+# app/Services/WebAppForwardingService.php
+# app/Console/Commands/ForwardTransactionsToWebApp.php
+
+# POS operations completely unaffected during rollback
+# No POS transaction data is lost or corrupted
+```
+
+**Data Safety During Rollback**:
+- ✅ **No Data Loss**: POS transaction data completely preserved
+- ✅ **No Downtime**: POS operations continue during rollback
+- ✅ **Reversible**: Can re-enable forwarding anytime
+- ✅ **Audit Trail**: webapp_forwarded_at timestamps remain for historical tracking
+
+#### 10. Performance Metrics
+
+**Expected Performance** (for 1000+ terminals):
+- **Batch Size**: 50-100 transactions per API call
+- **Frequency**: Every 5 minutes
+- **Processing Time**: < 30 seconds per batch
+- **Memory Usage**: < 50MB per execution
+- **Retry Logic**: 5 failures = 10-minute circuit breaker
+
+**Monitoring Queries**:
+```sql
+-- Pending transactions count
+SELECT COUNT(*) as pending_count 
+FROM transactions 
+WHERE validation_status = 'VALID' AND webapp_forwarded_at IS NULL;
+
+-- Forwarding success rate (last 24 hours)
+SELECT 
+    COUNT(*) as total_validated,
+    SUM(CASE WHEN webapp_forwarded_at IS NOT NULL THEN 1 ELSE 0 END) as forwarded,
+    ROUND(SUM(CASE WHEN webapp_forwarded_at IS NOT NULL THEN 1 ELSE 0 END) * 100.0 / COUNT(*), 2) as success_rate_percent
+FROM transactions 
+WHERE validation_status = 'VALID' 
+  AND processed_at >= DATE_SUB(NOW(), INTERVAL 24 HOUR);
+
+-- Average forwarding delay
+SELECT 
+    AVG(TIMESTAMPDIFF(MINUTE, processed_at, webapp_forwarded_at)) as avg_delay_minutes
+FROM transactions 
+WHERE webapp_forwarded_at IS NOT NULL
+  AND processed_at >= DATE_SUB(NOW(), INTERVAL 24 HOUR);
+```
+
+### Implementation Priority
+This simplified bulk forwarding feature should be implemented immediately to complete the TSMS-to-WebApp integration workflow.
+
+**🔒 POS Operation Safety Guarantees**:
+- ✅ **Zero Interference**: WebApp forwarding operates completely independently from POS transactions
+- ✅ **Read-Only Access**: Only reads validated transaction data, never modifies core fields
+- ✅ **Isolated Database Operations**: Single nullable column addition with optimized queries
+- ✅ **Separate Process Execution**: Scheduled job runs independently every 5 minutes
+- ✅ **No Blocking Operations**: Background processing with non-overlapping execution
+- ✅ **Failure Isolation**: WebApp issues don't affect POS transaction processing
+- ✅ **Rollback Safety**: Can be disabled/removed without affecting POS operations
+
+**Key Advantages of This Approach**:
+- ✅ **Simple Database Design**: Single column addition to existing transactions table
+- ✅ **Bulk Processing**: Efficient API calls every 5 minutes with 50+ transactions
+- ✅ **Reliable Scheduling**: Laravel scheduler handles timing automatically
+- ✅ **Simple Circuit Breaker**: Cache-based failure tracking with auto-reset
+- ✅ **Easy Monitoring**: Single command to check status and logs
+- ✅ **Production Ready**: Minimal complexity with proven Laravel patterns
+- ✅ **POS-Safe Architecture**: Designed specifically to not interfere with POS operations
+
+**Implementation Time Estimate**: 4-6 hours for complete implementation and testing.
+
+**Testing Strategy for POS Safety**:
+```bash
+# Before implementation - measure baseline POS performance
+php artisan tsms:test-pos-performance --baseline
+
+# After implementation - verify no performance impact
+php artisan tsms:test-pos-performance --compare
+
+# Concurrent testing - run POS transactions while forwarding active
+php artisan tsms:simulate-pos-load --concurrent-with-forwarding
+```
+
+This implementation provides a **production-grade, POS-safe foundation** for WebApp transaction forwarding that operates completely independently from core TSMS-POS operations while maintaining excellent performance, reliability, and operational visibility.
+
+---
+
 ## Task Description
 
 -   Fix failing tests and ensure robust notification and transaction validation logic for a Laravel-based POS terminal system
@@ -1949,3 +3465,7 @@ The transaction retry feature is now **fully implemented, tested, and production
 - ✅ **Error Handling**: Graceful failure handling and recovery mechanisms
 
 The system demonstrates enterprise-grade reliability with proper error handling, audit trails, and monitoring capabilities. The retry infrastructure can handle production workloads and provides a solid foundation for advanced retry policies and analytics.
+
+### 🚀 **Next Critical Implementation Priority**
+
+**WebApp Transaction Forwarding Service** has been identified as the next high-priority feature to implement. This will complete the end-to-end transaction processing workflow by forwarding validated transactions to the web application. See the detailed implementation plan in the HIGH PRIORITY section above.

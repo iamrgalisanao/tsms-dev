@@ -30,11 +30,11 @@ This document provides a comprehensive implementation status checklist for the T
 
 | Requirement                     | Status                       | Notes                                                 |
 | ------------------------------- | ---------------------------- | ----------------------------------------------------- |
-| JWT Token Authentication        | ✅ **IMPLEMENTED**           | JWT authentication implemented with tymon/jwt-auth    |
+| JWT Token Authentication        | ✅ **IMPLEMENTED**           | Sanctum token authentication implemented with laravel/sanctum |
 | Bearer Token Authorization      | ✅ **IMPLEMENTED**           | Authorization header support implemented              |
 | HTTPS/TLS 1.2+ Transport        | ✅ **IMPLEMENTED**           | HTTPS enforced in production                          |
 | Token Scoping (Tenant/Terminal) | ✅ **IMPLEMENTED**           | Tenant and terminal-specific token validation         |
-| Token Expiry Management         | ⚠️ **PARTIALLY IMPLEMENTED** | Token expiry implemented, refresh endpoint pending    |
+| Token Expiry Management         | ⚠️ **PARTIALLY IMPLEMENTED** | Sanctum token expiry implemented, refresh endpoint pending |
 | Rate Limiting                   | ✅ **IMPLEMENTED**           | API rate limiting implemented with bypass for testing |
 | Security Audit Logging          | ✅ **IMPLEMENTED**           | Comprehensive security audit trails                   |
 
@@ -48,7 +48,7 @@ This document provides a comprehensive implementation status checklist for the T
 | `GET /api/v1/transactions/{id}/status` | ✅ **IMPLEMENTED**           | Transaction status checking endpoint            |
 | `GET /api/v1/healthcheck`              | ✅ **IMPLEMENTED**           | Health check endpoint (no auth required)        |
 | `POST /api/v1/terminals/register`      | ❌ **NOT IMPLEMENTED**       | Terminal registration endpoint                  |
-| `POST /api/v1/auth/refresh`            | ❌ **NOT IMPLEMENTED**       | Token refresh endpoint                          |
+| `POST /api/v1/auth/refresh`            | ❌ **NOT IMPLEMENTED**       | Sanctum token refresh endpoint                         |
 | `GET /api/v1/notifications`            | ⚠️ **PARTIALLY IMPLEMENTED** | Notification polling endpoint (basic structure) |
 
 ### 3.3 Transaction Payload Processing
@@ -138,7 +138,7 @@ This document provides a comprehensive implementation status checklist for the T
 | Advanced Validation        | ✅ **IMPLEMENTED** | 2 tests    | Negative values, precision testing   |
 | Idempotency Testing        | ✅ **IMPLEMENTED** | 3 tests    | Duplicate handling, race conditions  |
 | HTTP Protocol Testing      | ✅ **IMPLEMENTED** | 3 tests    | Content-type, method validation      |
-| Authentication Testing     | ✅ **IMPLEMENTED** | 2 tests    | JWT token validation                 |
+| Authentication Testing     | ✅ **IMPLEMENTED** | 2 tests    | Sanctum bearer token validation                     |
 
 ### 5.2 Test Results Summary
 
@@ -192,7 +192,7 @@ This document provides a comprehensive implementation status checklist for the T
 | Item                      | Priority   | Estimated Effort | Description                                |
 | ------------------------- | ---------- | ---------------- | ------------------------------------------ |
 | Terminal Registration API | **HIGH**   | 2-3 weeks        | `POST /api/v1/terminals/register` endpoint |
-| Token Refresh Endpoint    | **HIGH**   | 1 week           | `POST /api/v1/auth/refresh` implementation |
+| Token Refresh Endpoint    | **HIGH**   | 1 week           | `POST /api/v1/auth/refresh` Sanctum implementation |
 | Client SDK Development    | **HIGH**   | 3-4 weeks        | PHP/JavaScript SDKs for POS integration    |
 | Enhanced Error Messages   | **MEDIUM** | 1 week           | More detailed error descriptions           |
 
