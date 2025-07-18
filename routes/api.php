@@ -10,6 +10,7 @@ use App\Http\Controllers\API\V1\TestParserController;
 use App\Http\Controllers\Api\TerminalAuthController;
 use App\Services\TransactionValidationService;
 use Illuminate\Support\Facades\Log;
+use App\Http\Controllers\API\V1\TransactionController as ApiTransactionController;
 
 /*
 |--------------------------------------------------------------------------
@@ -332,3 +333,6 @@ Route::get('v1/transaction-id-exists', function (Illuminate\Http\Request $reques
         'transaction_id' => $id
     ]);
 });
+
+Route::post('/transactions/bulk', [ApiTransactionController::class, 'bulk'])
+     ->name('api.transactions.bulk');

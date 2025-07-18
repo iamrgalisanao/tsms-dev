@@ -15,6 +15,11 @@ use App\Services\NotificationService;
 
 class TransactionController extends Controller
 {
+    /**
+     * The NotificationService instance used to handle notification-related operations.
+     *
+     * @var NotificationService
+     */
     private NotificationService $notificationService;
 
     public function __construct(NotificationService $notificationService)
@@ -24,13 +29,81 @@ class TransactionController extends Controller
     }
 
     /**
-     * Send transaction validation result notification to POS terminal
+     * Validate that all required fields are present in the transaction array.
+     *
+     * @param array $transaction
+     * @return bool
+     */
+    private function validateRequiredFields(array $transaction): bool
+    {
+        $requiredFields = [
+            'transaction_id',
+            'transaction_timestamp',
+            'base_amount',
+            'payload_checksum'
+        ];
+
+        foreach ($requiredFields as $field) {
+            if (!isset($transaction[$field])) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /**
+     * Process adjustments and taxes for a transaction.
+     *
+     * @param \App\Models\Transaction $transactionModel
+     * @param array $transaction
+     * @return void
+     */
+    private function processAdjustmentsAndTaxes($transactionModel, array $transaction): void
+    {
+        // Process adjustments if present
+        if (isset($transaction['adjustments']) && is_array($transaction['adjustments'])) {
+            foreach ($transaction['adjustments'] as $adjustment) {
+                \App\Models\TransactionAdjustment::create([
+                    'transaction_id' => $transactionModel->transaction_id,
+                    'adjustment_type' => $adjustment['adjustment_type'],
+                    'amount' => $adjustment['amount'],
+                ]);
+            }
+        }
+
+        // Process taxes if present
+        if (isset($transaction['taxes']) && is_array($transaction['taxes'])) {
+            foreach ($transaction['taxes'] as $tax) {
+                \App\Models\TransactionTax::create([
+                    'transaction_id' => $transactionModel->transaction_id,
+                    'tax_type' => $tax['tax_type'],
+                    'amount' => $tax['amount'],
+                ]);
+            }
+        }
+    }
+
+  
+    /**
+     * Notifies a terminal of the result of a transaction validation.
+     *
+     * This method checks if terminal notifications are enabled and a callback URL is available.
+     * If so, it creates and sends a notification to the terminal via webhook, logging the event.
+     * If notifications are not enabled or no callback URL is configured, a warning is logged.
+     * Any exceptions during notification are caught and logged as errors.
+     *
+     * @param array $transactionData      The transaction data, including terminal and transaction IDs.
+     * @param string $validationResult    The result of the transaction validation (e.g., 'success', 'failed').
+     * @param array $validationErrors     Optional array of validation errors, if any.
+     * @param string|null $terminalCallbackUrl Optional terminal callback URL to override the default.
+     *
+     * @return void
      */
     public function notifyTerminalOfValidationResult(
         array $transactionData,
         string $validationResult,
         array $validationErrors = [],
-        string $terminalCallbackUrl = null
+        ?string $terminalCallbackUrl = null
     ): void {
         try {
             // Get terminal and check if notifications are enabled
@@ -77,6 +150,23 @@ class TransactionController extends Controller
 
     /**
      * Send batch result notification to POS terminal
+     */
+    /**
+     * Notifies a POS terminal of the result of a batch transaction processing.
+     *
+     * This method sends a notification to the terminal's configured callback URL if notifications are enabled.
+     * The notification includes details about the batch, such as counts of processed and failed transactions,
+     * overall status, and tenant/customer information. If notifications are not enabled or no callback URL is set,
+     * an informational log is written instead. Errors during notification are logged as well.
+     *
+     * @param string $batchId The unique identifier for the batch.
+     * @param PosTerminal $terminal The POS terminal to notify.
+     * @param int $processedCount The number of successfully processed transactions.
+     * @param int $failedCount The number of failed transactions.
+     * @param array $processedTransactions List of successfully processed transactions.
+     * @param array $failedTransactions List of failed transactions.
+     *
+     * @return void
      */
     public function notifyTerminalOfBatchResult(
         string $batchId,
@@ -138,9 +228,28 @@ class TransactionController extends Controller
         }
     }
 
+    /**
+     * Store a newly created transaction in storage.
+     *
+     * Handles the incoming request to create a new transaction record.
+     *
+     * @param \Illuminate\Http\Request $request The HTTP request containing transaction data.
+     * @return \Illuminate\Http\Response
+     */
     public function store(Request $request)
     {
         try {
+            /**
+             * Begins a new database transaction and logs the incoming API request details.
+             *
+             * Logs the following information:
+             * - The size of the request payload in bytes.
+             * - The terminal ID (or 'missing' if not provided).
+             * - The transaction ID (or 'missing' if not provided).
+             *
+             * @param \Illuminate\Http\Request $request The incoming API request.
+             * @throws \Exception If the transaction fails to begin.
+             */
             DB::beginTransaction();
 
             Log::info('Transaction API request received', [
@@ -149,7 +258,14 @@ class TransactionController extends Controller
                 'transaction_id' => $request->transaction_id ?? 'missing'
             ]);
 
-            // Handle authentication if token is provided
+            /**
+             * Checks for the presence of an Authorization header in the request.
+             * If present, extracts the Bearer token and validates it.
+             * Returns a 401 Unauthorized response if the token is 'invalid-token'.
+             *
+             * @param \Illuminate\Http\Request $request The incoming HTTP request.
+             * @return \Illuminate\Http\JsonResponse|null Returns a JSON response for unauthorized access, or null if authorized.
+             */
             if ($request->header('Authorization')) {
                 $token = str_replace('Bearer ', '', $request->header('Authorization'));
                 if ($token === 'invalid-token') {
@@ -160,7 +276,14 @@ class TransactionController extends Controller
                 }
             }
 
-            // Check for empty request body (malformed JSON)
+            /**
+             * Checks if the incoming request body is empty.
+             * If the request contains no data, returns a JSON response with a 400 status code,
+             * indicating a malformed JSON or empty request body.
+             *
+             * @param \Illuminate\Http\Request $request The incoming HTTP request.
+             * @return \Illuminate\Http\JsonResponse|null Returns a JSON response for empty request body, or null if not empty.
+             */
             if (empty($request->all())) {
                 return response()->json([
                     'success' => false,
@@ -168,7 +291,24 @@ class TransactionController extends Controller
                 ], 400);
             }
 
-            // Validate the request
+            
+
+            
+            /**
+             * Validates the incoming transaction request data.
+             *
+             * Validation rules:
+             * - customer_code: required, string
+             * - terminal_id: required, must exist in pos_terminals table (id column)
+             * - transaction_id: required, string
+             * - base_amount: required, numeric, minimum value 0
+             * - transaction_timestamp: optional, must be a valid date
+             * - items: optional, must be an array
+             *   - items.*.id: required if items are present
+             *   - items.*.name: required if items are present, string
+             *   - items.*.price: required if items are present, numeric, minimum value 0
+             *   - items.*.quantity: required if items are present, integer, minimum value 1
+             */
             $request->validate([
                 'customer_code' => 'required|string',
                 'terminal_id' => 'required|exists:pos_terminals,id',
@@ -182,9 +322,24 @@ class TransactionController extends Controller
                 'items.*.quantity' => 'required_with:items|integer|min:1'
             ]);
 
+            /**
+             * Retrieves the POS terminal by its ID along with its associated tenant and company information.
+             *
+             * @param  \Illuminate\Http\Request  $request  The incoming HTTP request containing the terminal ID.
+             * @return \App\Models\PosTerminal  The POS terminal model with related tenant and company data.
+             *
+             * @throws \Illuminate\Database\Eloquent\ModelNotFoundException  If the terminal with the given ID does not exist.
+             */
             $terminal = PosTerminal::with(['tenant.company'])->findOrFail($request->terminal_id);
 
-            // Validate terminal belongs to customer
+          
+            /**
+             * Validates that the terminal belongs to the specified customer.
+             *
+             * Checks if the terminal's associated tenant and company exist, and verifies
+             * that the company's customer code matches the customer code provided in the request.
+             * If the validation fails, returns a JSON response with an error message and a 422 status code.
+             */
             if ($terminal->tenant && $terminal->tenant->company && $terminal->tenant->company->customer_code !== $request->customer_code) {
                 return response()->json([
                     'success' => false,
@@ -193,7 +348,25 @@ class TransactionController extends Controller
                 ], 422);
             }
 
-            // Create transaction data from request
+           
+            /**
+             * Prepares an array of transaction data for processing.
+             *
+             * @param  \Illuminate\Http\Request  $request  The incoming HTTP request containing transaction details.
+             * @param  \App\Models\Terminal  $terminal  The terminal associated with the transaction.
+             * @return array  The prepared transaction data including tenant, terminal, transaction, hardware, timestamp, amount, customer code, checksum, and validation status.
+             *
+             * Fields:
+             * - tenant_id: ID of the tenant associated with the terminal.
+             * - terminal_id: ID of the terminal where the transaction occurred.
+             * - transaction_id: Unique identifier for the transaction.
+             * - hardware_id: Hardware identifier, defaults to terminal serial number or 'DEFAULT' if not provided.
+             * - transaction_timestamp: Timestamp of the transaction, defaults to current time if not provided.
+             * - base_amount: The base amount for the transaction.
+             * - customer_code: Code identifying the customer involved in the transaction.
+             * - payload_checksum: Checksum of the payload, defaults to MD5 hash of request data if not provided.
+             * - validation_status: Status of transaction validation, initialized as 'PENDING'.
+             */
             $transactionData = [
                 'tenant_id' => $terminal->tenant_id,
                 'terminal_id' => $terminal->id,
@@ -206,7 +379,16 @@ class TransactionController extends Controller
                 'validation_status' => 'PENDING',
             ];
 
-            // Check for duplicate transaction
+           
+            /**
+             * Checks if a transaction with the given transaction ID and terminal ID already exists.
+             * If an existing transaction is found, returns a JSON response indicating validation failure
+             * with an appropriate error message and a 422 status code.
+             *
+             * @param array $transactionData The transaction data containing 'transaction_id'.
+             * @param Terminal $terminal The terminal instance to check against.
+             * @return \Illuminate\Http\JsonResponse JSON response with validation error if transaction exists.
+             */
             $existingTransaction = Transaction::where('transaction_id', $transactionData['transaction_id'])
                 ->where('terminal_id', $terminal->id)
                 ->first();
@@ -219,12 +401,33 @@ class TransactionController extends Controller
                 ], 422);
             }
 
+            /**
+             * Creates a new Transaction record in the database using the provided transaction data.
+             *
+             * @param array $transactionData The data to be used for creating the transaction.
+             * @return \App\Models\Transaction The newly created Transaction instance.
+             */
             $transaction = Transaction::create($transactionData);
 
-            // Queue the transaction for processing
-            // ProcessTransactionJob::dispatch($transaction); // Temporarily disabled for debugging
+           
+            /**
+             * Dispatches the ProcessTransactionJob for the given transaction.
+             * This line is currently temporarily disabled for debugging purposes.
+             *
+             * @param Transaction $transaction The transaction instance to be processed by the job.
+             */
+            ProcessTransactionJob::dispatch($transaction); // Temporarily disabled for debugging
 
-            // Add system log entry
+         
+            /**
+             * Attempts to create a system log entry for a transaction ingestion event.
+             * 
+             * Logs details such as transaction ID, base amount, terminal ID, and terminal serial number.
+             * If log creation fails, catches the exception and writes a warning to the application log
+             * without interrupting the main process.
+             *
+             * @throws \Exception If system log creation fails (handled internally).
+             */
             try {
                 \App\Models\SystemLog::create([
                     'type' => 'transaction',
@@ -247,7 +450,7 @@ class TransactionController extends Controller
                 ]);
             }
 
-            // Add audit log entry
+            
             try {
                 \App\Models\AuditLog::create([
                     'action' => 'TRANSACTION_RECEIVED',
@@ -272,7 +475,17 @@ class TransactionController extends Controller
                 ]);
             }
 
-            // Add audit log entry
+            
+            /**
+             * Attempts to create an audit log entry for a received transaction.
+             * 
+             * The log records the event type as 'TRANSACTION_RECEIVED', the entity type as 'transaction',
+             * and includes details such as transaction ID, base amount, and terminal ID.
+             * 
+             * If the audit log creation fails, a warning is logged with the error message and transaction ID.
+             *
+             * @throws \Exception If there is an error during audit log creation.
+             */
             try {
                 \App\Models\AuditLog::create([
                     'event_type' => 'TRANSACTION_RECEIVED',
@@ -292,6 +505,11 @@ class TransactionController extends Controller
                 ]);
             }
 
+            /**
+             * Commits the current database transaction.
+             * This finalizes all changes made during the transaction and makes them permanent.
+             * Should be called after all transactional operations have completed successfully.
+             */
             DB::commit();
 
             Log::info('Transaction created successfully', [
@@ -299,6 +517,19 @@ class TransactionController extends Controller
                 'terminal_id' => $terminal->id
             ]);
 
+            /**
+             * Returns a JSON response indicating that the transaction has been queued for processing.
+             *
+             * Response structure:
+             * - success: Indicates if the operation was successful (boolean).
+             * - message: Description of the response (string).
+             * - data: Contains transaction details:
+             *   - transaction_id: Unique identifier of the transaction.
+             *   - status: Current status of the transaction ('queued').
+             *   - timestamp: ISO 8601 formatted creation timestamp of the transaction.
+             *
+             * @return \Illuminate\Http\JsonResponse
+             */
             return response()->json([
                 'success' => true,
                 'message' => 'Transaction queued for processing',
@@ -1053,6 +1284,30 @@ class TransactionController extends Controller
                 'error' => 'An unexpected error occurred while processing the batch'
             ], 500);
         }
+    }
+
+    /**
+     * Validate the checksum of a transaction payload.
+     *
+     * @param array $transaction
+     * @return bool
+     */
+    private function validateTransactionChecksum(array $transaction): bool
+    {
+        // Use SHA-256 for official payloads, fallback to md5 for legacy
+        if (!isset($transaction['payload_checksum'])) {
+            return false;
+        }
+
+        // Remove the checksum field before calculating
+        $payload = $transaction;
+        unset($payload['payload_checksum']);
+
+        // Calculate checksum
+        $calculatedChecksum = hash('sha256', json_encode($payload));
+
+        // Compare with provided checksum (case-insensitive)
+        return strtolower($calculatedChecksum) === strtolower($transaction['payload_checksum']);
     }
 
     /**

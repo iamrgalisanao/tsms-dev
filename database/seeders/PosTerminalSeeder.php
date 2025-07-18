@@ -88,6 +88,20 @@ class PosTerminalSeeder extends Seeder
             ],
             // Greenwich terminals
             [
+                'tenant_id' => 1, // Dormitos
+                'serial_number' => 'DORMITOS_DEMO_SN2025',
+                'machine_number' => 'DORMITOS-MACHINE-001',
+                'pos_type_id' => 1,
+                'integration_type_id' => 1,
+                'auth_type_id' => 1,
+                'status_id' => 1,
+                'is_active' => true,
+                'supports_guest_count' => false,
+                'notifications_enabled' => true,
+                'callback_url' => 'https://dormitos-pos.example.com/webhook/tsms',
+                'heartbeat_threshold' => 300,
+            ],
+            [
                 'tenant_id' => 2, // Greenwich
                 'serial_number' => 'GREENWICH_001_SN2025',
                 'machine_number' => 'GW-MACHINE-001',
@@ -171,10 +185,12 @@ class PosTerminalSeeder extends Seeder
                 // Generate unique API key for each terminal
                 $terminalData['api_key'] = Str::random(64);
                 $terminalData['registered_at'] = now();
-                
+
+                // Log terminal data for debugging
+                Log::info('Attempting to insert terminal:', $terminalData);
+
                 // Check if terminal already exists to make seeder idempotent
                 $existingTerminal = PosTerminal::where('serial_number', $terminalData['serial_number'])->first();
-                
                 if ($existingTerminal) {
                     Log::info("Terminal with serial_number {$terminalData['serial_number']} already exists, skipping.");
                     $skipCount++;
@@ -187,9 +203,12 @@ class PosTerminalSeeder extends Seeder
                     Log::warning("Tenant with ID {$terminalData['tenant_id']} not found, skipping terminal {$terminalData['serial_number']}.");
                     $skipCount++;
                     continue;
+                } else {
+                    Log::info("Tenant with ID {$terminalData['tenant_id']} found: " . json_encode($tenant->toArray()));
                 }
 
                 PosTerminal::create($terminalData);
+                Log::info("Inserted terminal with serial_number {$terminalData['serial_number']}.");
                 $importCount++;
 
             } catch (\Exception $e) {
