@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Collection;
+use Carbon\Carbon;
 
 class WebAppForwardingService
 {
@@ -25,6 +26,14 @@ class WebAppForwardingService
         $this->batchSize = config('tsms.web_app.batch_size', 50);
         $this->authToken = config('tsms.web_app.auth_token') ?: '';
         $this->verifySSL = config('tsms.web_app.verify_ssl', true);
+    }
+
+    private function formatTimestamp(?string $dt): ?string
+    {
+        if (! $dt) {
+            return null;
+        }
+        return Carbon::parse($dt)->format('Y-m-d\TH:i:s.v\Z');
     }
 
     /**
@@ -201,18 +210,26 @@ class WebAppForwardingService
      */
     private function sendToWebApp(array $payload): \Illuminate\Http\Client\Response
     {
-        $httpClient = Http::timeout($this->timeout);
-
+         $client = Http::timeout($this->timeout)->withoutVerifying();
+        
         if (!$this->verifySSL) {
-            $httpClient = $httpClient->withoutVerifying();
+            $client = $client->withoutVerifying();
         }
-
         if ($this->authToken) {
-            $httpClient = $httpClient->withToken($this->authToken);
+            $client = $client->withToken($this->authToken);
         }
 
-        return $httpClient->post($this->webAppEndpoint . '/api/transactions/bulk', $payload);
-    }
+        Log::debug('[TSMS] Forwarding to URL: '.$this->webAppEndpoint.' via POST');
+        Log::debug('[TSMS] Payload: '.json_encode($payload));
+
+        $response = $client->post($this->webAppEndpoint, $payload);
+
+        // Log the 422 body
+        Log::debug('[TSMS] Response status: ' . $response->status());
+        Log::debug('[TSMS] Response body: '   . $response->body());
+
+        return $response;
+        }
 
     /**
      * Build payload for single transaction
@@ -222,11 +239,13 @@ class WebAppForwardingService
         return [
             'tsms_id' => $transaction->id,
             'transaction_id' => $transaction->transaction_id,
-            
-            // Calculate amount from TSMS transaction data
-            'amount' => $this->calculateTransactionAmount($transaction),
-            
+            'terminal_serial' => $transaction->terminal->serial_number ?? null,
+            'tenant_code' => $transaction->tenant->customer_code ?? null,
+            'tenant_name' => $transaction->tenant->name ?? null,
+            'transaction_timestamp' => $this->formatTimestamp($transaction->transaction_timestamp),
+            'amount' => $transaction->base_amount,
             'validation_status' => $transaction->validation_status,
+            'processed_at' => $this->formatTimestamp($transaction->processed_at),
             'checksum' => $transaction->payload_checksum,
             'submission_uuid' => $transaction->submission_uuid,
             
@@ -264,7 +283,7 @@ class WebAppForwardingService
         return [
             'source' => 'TSMS',
             'batch_id' => $batchId,
-            'timestamp' => now()->toISOString(),
+            'timestamp' => Carbon::now()->format('Y-m-d\TH:i:s.v\Z'),
             'transaction_count' => $forwardingRecords->count(),
             'transactions' => $forwardingRecords->map(function ($forward) {
                 return $forward->request_payload;

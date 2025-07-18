@@ -49,8 +49,8 @@ class DatabaseSeeder extends Seeder
 
         $this->call([
             // Core data - run these first
-            CompanySeeder::class,           // Import companies from CSV
-            TenantSeeder::class,           // Import tenants from CSV (depends on companies)
+            // CompanySeeder::class,           // Import companies from CSV
+            // TenantSeeder::class,           // Import tenants from CSV (depends on companies)
             
             // Schema-specific seeders
             //TransactionSchemaTestSeeder::class, // Job statuses, validation statuses, etc.
