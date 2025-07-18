@@ -17,6 +17,17 @@ class ProcessTransactionJob implements ShouldQueue
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
+    /**
+     * The transaction instance to be processed by the job.
+     *
+     * @var mixed
+     */
+     
+    /**
+     * The maximum number of attempts to process the transaction.
+     *
+     * @var int
+     */
     protected $transaction;
     protected $maxAttempts = 3;
 
@@ -31,9 +42,24 @@ class ProcessTransactionJob implements ShouldQueue
     }
 
     /**
-     * Execute the job.
+     * Handles the processing of a transaction, including validation and job tracking.
      *
-     * @return void
+     * This method performs the following steps:
+     * 1. Logs the start of transaction processing with relevant details.
+     * 2. Refreshes the transaction model to ensure up-to-date data.
+     * 3. Creates a TransactionJob record to track the processing attempt.
+     * 4. Creates a TransactionValidation record to track the validation status.
+     * 5. Runs transaction validation using the provided TransactionValidationService.
+     * 6. If validation fails:
+     *    - Updates the validation and job records with error status and details.
+     *    - Throws an exception with the validation error messages.
+     * 7. If validation passes:
+     *    - Updates the validation and job records with completed status.
+     * 8. Handles any thrown exceptions by invoking the error handler and rethrowing.
+     *
+     * @param TransactionValidationService $validationService The service used to validate the transaction.
+     * @throws Exception If transaction validation fails.
+     * @throws \Throwable For any other errors during processing.
      */
      public function handle(TransactionValidationService $validationService)
     {
@@ -97,7 +123,17 @@ class ProcessTransactionJob implements ShouldQueue
         }
     }
 
-      protected function flattenErrorArray($errors)
+    /**
+     * Flattens a multi-dimensional array of error messages into a single-level array of strings.
+     *
+     * This method recursively traverses the input array, extracting all string error messages,
+     * regardless of their nesting level. If a nested value is not a string or array, it adds
+     * a placeholder message indicating an unknown error format.
+     *
+     * @param array $errors The array of error messages, potentially nested.
+     * @return array A flat array containing all error messages as strings.
+     */
+    protected function flattenErrorArray($errors)
     {
         $result = [];
 
