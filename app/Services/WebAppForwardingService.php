@@ -66,7 +66,7 @@ class WebAppForwardingService
                 $query->where('status', WebappTransactionForward::STATUS_COMPLETED);
             })
             ->with(['terminal', 'tenant'])
-            ->orderBy('processed_at', 'asc')
+            ->orderBy('created_at', 'asc')
             ->limit($this->batchSize)
             ->get();
     }
@@ -222,16 +222,38 @@ class WebAppForwardingService
         return [
             'tsms_id' => $transaction->id,
             'transaction_id' => $transaction->transaction_id,
-            'terminal_serial' => $transaction->terminal->serial_number ?? null,
-            'tenant_code' => $transaction->tenant->customer_code ?? null,
-            'tenant_name' => $transaction->tenant->name ?? null,
-            'transaction_timestamp' => $transaction->transaction_timestamp?->toISOString(),
-            'amount' => $transaction->base_amount,
+            
+            // Calculate amount from TSMS transaction data
+            'amount' => $this->calculateTransactionAmount($transaction),
+            
             'validation_status' => $transaction->validation_status,
-            'processed_at' => $transaction->processed_at?->toISOString(),
             'checksum' => $transaction->payload_checksum,
             'submission_uuid' => $transaction->submission_uuid,
+            
+            // Terminal and tenant info from relationships
+            'terminal_serial' => $transaction->terminal?->serial_number ?? null,
+            'tenant_code' => $transaction->tenant?->customer_code ?? null,
+            'tenant_name' => $transaction->tenant?->name ?? null,
+            
+            'transaction_timestamp' => $transaction->transaction_timestamp?->format('Y-m-d\TH:i:s.v\Z'),
+            'processed_at' => $transaction->created_at?->format('Y-m-d\TH:i:s.v\Z'),
         ];
+    }
+
+    /**
+     * Calculate transaction amount for WebApp integration
+     * Uses base_amount as primary source with fallback logic
+     */
+    private function calculateTransactionAmount(Transaction $transaction): float
+    {
+        // Primary: Use base_amount (current TSMS standard)
+        if (!is_null($transaction->base_amount) && $transaction->base_amount > 0) {
+            return (float) $transaction->base_amount;
+        }
+        
+        // Fallback: If base_amount is null or zero, return 0 
+        // (This should rarely happen for valid transactions)
+        return 0.0;
     }
 
     /**

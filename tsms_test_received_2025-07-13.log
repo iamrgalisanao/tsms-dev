@@ -1,0 +1,12 @@
+=== TSMS Integration Test - 2025-07-13 04:21:45 ===
+{
+    "timestamp": "2025-07-13 04:21:45",
+    "client_ip": "127.0.0.1",
+    "batch_id": "unknown",
+    "transaction_count": 0,
+    "payload_size_bytes": 29,
+    "received_data": {
+        "test": "connectivity_check"
+    }
+}
+
