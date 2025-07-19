@@ -171,6 +171,10 @@
 
               <div class="col-md-6">
                 <label for="vat_amount" class="form-label">VAT Amount</label>
+              <div class="col-md-6">
+                <label for="customer_code" class="form-label">Customer Code</label>
+                <input type="text" name="customer_code" id="customer_code" class="form-control" value="{{ old('customer_code') }}" placeholder="Optional">
+              </div>
                 <div class="input-group">
                   <input type="number" name="vat_amount" id="vat_amount" class="form-control" step="0.01" min="0"
                     value="{{ old('vat_amount', '120.00') }}" required>
@@ -187,6 +191,10 @@
                 <label for="transaction_count" class="form-label">Transaction Count</label>
                 <input type="number" name="transaction_count" id="transaction_count" class="form-control" min="1"
                   value="{{ old('transaction_count', '1') }}" required>
+              <div class="col-md-6">
+                <label for="hardware_id" class="form-label">Hardware ID</label>
+                <input type="text" name="hardware_id" id="hardware_id" class="form-control" value="{{ old('hardware_id') }}" placeholder="Optional">
+              </div>
                 <small class="form-text text-muted">
                   This will create the specified number of transactions (e.g., 3 will create 3 transactions).
                 </small>
@@ -201,6 +209,11 @@
               <div class="col-md-4">
                 <label for="validation_override" class="form-label">Validation Override</label>
                 <select name="validation_override" id="validation_override" class="form-select">
+              <div class="col-md-6">
+                <label for="base_amount" class="form-label">Base Amount</label>
+                <input type="number" name="base_amount" id="base_amount" class="form-control" step="0.01" min="0" value="{{ old('base_amount', '1000.00') }}" required>
+                <small class="form-text text-muted">Base amount before VAT and other calculations</small>
+              </div>
                   <option value="">Normal Validation</option>
                   <option value="force_valid">Force Valid</option>
                   <option value="force_invalid">Force Invalid</option>
