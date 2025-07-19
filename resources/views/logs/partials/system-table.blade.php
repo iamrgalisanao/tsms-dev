@@ -14,9 +14,9 @@ use App\Helpers\BadgeHelper;
                   <th>Type</th>
                   <th>Severity</th>
                   <th>User</th>
-                  <th>Terminal</th>
+                  {{-- <th>Terminal</th> --}}
                   <th>Message</th>
-                  <th>Transaction</th>
+                  {{-- <th>Transaction</th> --}}
                   {{-- <th class="text-center">Actions</th> --}}
                 </tr>
             </thead>
@@ -51,14 +51,14 @@ use App\Helpers\BadgeHelper;
                   </span>
                 </td>
                 <td class="text-nowrap">{{ $log->user?->name ?? 'System' }}</td>
-                <td class="text-nowrap">{{ $log->terminal_uid ?? 'N/A' }}</td>
+                {{-- <td class="text-nowrap">{{ $log->terminal_uid ?? 'N/A' }}</td> --}}
                 <td class="text-wrap" style="max-width: 300px;">
                   <small class="text-muted">{{ $log->message }}</small>
                   @if($log->type === 'security' && isset($log->context['ip_address']))
                     <br><small class="text-info">IP: {{ $log->context['ip_address'] }}</small>
                   @endif
                 </td>
-                <td class="text-nowrap">
+                {{-- <td class="text-nowrap">
                   @if($log->transaction_id)
                   <a href="{{ route('transactions.show', $log->transaction_id) }}"
                     class="btn btn-sm btn-link text-decoration-none">
@@ -67,7 +67,7 @@ use App\Helpers\BadgeHelper;
                   @else
                   <span class="text-muted">N/A</span>
                   @endif
-                </td>
+                </td> --}}
                 {{-- <td class="text-center">
                   @if($log->context)
                   <button class="btn btn-sm btn-outline-primary" onclick="showContext('{{ $log->id }}')">

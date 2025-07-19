@@ -65,7 +65,8 @@
           @forelse($transactions as $transaction)
           <tr>
             <td>{{ $transaction->transaction_id }}</td>
-            <td>{{ $transaction->posTerminal->terminal_uid ?? 'Unknown' }}</td>
+            <td>{{ $transaction->serial_number }}</td>
+            {{-- <td>{{ $transaction->posTerminal->terminal_uid ?? 'Unknown' }}</td> --}}
             <td>{{ number_format($transaction->gross_sales, 2) }}</td>
             <td>{{ $transaction->created_at->format('Y-m-d H:i') }}</td>
             <td>

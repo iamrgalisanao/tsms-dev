@@ -73,9 +73,9 @@ use App\Helpers\BadgeHelper;
                   <th>Time</th>
                   <th>Type</th>
                   <th>Severity</th>
-                  <th>Terminal</th>
-                  <th>Message</th>
-                  <th>Transaction</th>
+                  {{-- <th>Terminal</th> --}}
+                  <th>Messages</th>
+                  {{-- <th>Transaction</th> --}}
                   {{-- <th class="text-center">Actions</th> --}}
                 </tr>
             </thead>
@@ -93,11 +93,11 @@ use App\Helpers\BadgeHelper;
                     {{ strtoupper($log->severity) }}
                   </span>
                 </td>
-                <td class="text-nowrap">{{ $log->terminal_uid ?? 'N/A' }}</td>
+                {{-- <td class="text-nowrap">{{ $log->terminal_uid ?? 'N/A' }}</td> --}}
                 <td class="text-wrap" style="max-width: 300px;">
                   <small class="text-muted">{{ $log->message }}</small>
                 </td>
-                <td class="text-nowrap">
+                {{-- <td class="text-nowrap">
                   @if($log->transaction_id)
                   <a href="{{ route('transactions.show', $log->transaction_id) }}"
                     class="btn btn-sm btn-link text-decoration-none">
@@ -106,7 +106,7 @@ use App\Helpers\BadgeHelper;
                   @else
                   <span class="text-muted">N/A</span>
                   @endif
-                </td>
+                </td> --}}
                 {{-- <td class="text-center">
                   @if($log->context)
                   <button class="btn btn-sm btn-outline-danger" onclick="showContext('{{ $log->id }}')">

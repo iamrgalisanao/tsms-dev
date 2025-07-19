@@ -310,16 +310,15 @@ class TransactionController extends Controller
              *   - items.*.quantity: required if items are present, integer, minimum value 1
              */
             $request->validate([
-                'customer_code' => 'required|string',
-                'terminal_id' => 'required|exists:pos_terminals,id',
-                'transaction_id' => 'required|string',
+                'tenant_id' => 'required|exists:tenants,id',
+                'serial_number' => 'required|exists:pos_terminals,serial_number',
+                'transaction_id' => 'required|string|max:191',
+                'hardware_id' => 'required|string|max:191',
+                'transaction_timestamp' => 'required|date',
                 'base_amount' => 'required|numeric|min:0',
-                'transaction_timestamp' => 'date',
-                'items' => 'array',
-                'items.*.id' => 'required_with:items',
-                'items.*.name' => 'required_with:items|string',
-                'items.*.price' => 'required_with:items|numeric|min:0',
-                'items.*.quantity' => 'required_with:items|integer|min:1'
+                // 'customer_code' => 'required|string|max:191',
+                'submission_uuid' => 'required|string|max:191',
+                'submission_timestamp' => 'required|date',
             ]);
 
             /**
@@ -330,7 +329,7 @@ class TransactionController extends Controller
              *
              * @throws \Illuminate\Database\Eloquent\ModelNotFoundException  If the terminal with the given ID does not exist.
              */
-            $terminal = PosTerminal::with(['tenant.company'])->findOrFail($request->terminal_id);
+            $terminal = PosTerminal::with(['tenant.company'])->where('serial_number', $request->serial_number)->firstOrFail();
 
           
             /**
@@ -344,7 +343,7 @@ class TransactionController extends Controller
                 return response()->json([
                     'success' => false,
                     'message' => 'Validation failed',
-                    'errors' => ['terminal_id' => ['The terminal does not belong to the specified customer']]
+                    'errors' => ['serial_number' => ['The terminal does not belong to the specified customer']]
                 ], 422);
             }
 
@@ -369,12 +368,12 @@ class TransactionController extends Controller
              */
             $transactionData = [
                 'tenant_id' => $terminal->tenant_id,
-                'terminal_id' => $terminal->id,
+                'serial_number' => $terminal->serial_number,
                 'transaction_id' => $request->transaction_id,
-                'hardware_id' => $request->hardware_id ?? $terminal->serial_number ?? 'DEFAULT', // Provide fallback
+                'hardware_id' => $request->hardware_id ?? $terminal->serial_number ?? 'DEFAULT',
                 'transaction_timestamp' => $request->transaction_timestamp ?? now(),
                 'base_amount' => $request->base_amount,
-                'customer_code' => $request->customer_code,
+                // 'customer_code' => $request->customer_code, // Commented out as requested
                 'payload_checksum' => $request->payload_checksum ?? md5(json_encode($request->all())),
                 'validation_status' => 'PENDING',
             ];
@@ -390,7 +389,7 @@ class TransactionController extends Controller
              * @return \Illuminate\Http\JsonResponse JSON response with validation error if transaction exists.
              */
             $existingTransaction = Transaction::where('transaction_id', $transactionData['transaction_id'])
-                ->where('terminal_id', $terminal->id)
+                ->where('serial_number', $terminal->serial_number)
                 ->first();
 
             if ($existingTransaction) {
@@ -439,7 +438,7 @@ class TransactionController extends Controller
                     'context' => json_encode([
                         'transaction_id' => $transaction->transaction_id,
                         'base_amount' => $transaction->base_amount,
-                        'terminal_id' => $terminal->id
+                        'serial_number' => $terminal->serial_number
                     ])
                 ]);
             } catch (\Exception $logError) {
@@ -463,7 +462,7 @@ class TransactionController extends Controller
                     'metadata' => json_encode([
                         'transaction_id' => $transaction->transaction_id,
                         'base_amount' => $transaction->base_amount,
-                        'terminal_id' => $terminal->id,
+                        'serial_number' => $terminal->serial_number,
                         'customer_code' => $request->customer_code
                     ])
                 ]);
@@ -495,7 +494,7 @@ class TransactionController extends Controller
                     'details' => json_encode([
                         'transaction_id' => $transaction->transaction_id,
                         'base_amount' => $transaction->base_amount,
-                        'terminal_id' => $terminal->id
+                        'serial_number' => $terminal->serial_number
                     ])
                 ]);
             } catch (\Exception $logError) {
@@ -514,7 +513,7 @@ class TransactionController extends Controller
 
             Log::info('Transaction created successfully', [
                 'transaction_id' => $transaction->transaction_id,
-                'terminal_id' => $terminal->id
+                'serial_number' => $terminal->serial_number
             ]);
 
             /**
@@ -535,6 +534,7 @@ class TransactionController extends Controller
                 'message' => 'Transaction queued for processing',
                 'data' => [
                     'transaction_id' => $transaction->transaction_id,
+                    'serial_number' => $terminal->serial_number,
                     'status' => 'queued',
                     'timestamp' => $transaction->created_at->toISOString()
                 ]
@@ -558,9 +558,8 @@ class TransactionController extends Controller
 
             // Try to log the error to system logs
             try {
-                $terminalId = $request->terminal_id ?? 'unknown';
-                $terminal = is_numeric($terminalId) ? PosTerminal::find($terminalId) : null;
-                
+                $serialNumber = $request->serial_number ?? 'unknown';
+                $terminal = PosTerminal::where('serial_number', $serialNumber)->first();
                 \App\Models\SystemLog::create([
                     'type' => 'error',
                     'severity' => 'error',
@@ -854,7 +853,11 @@ class TransactionController extends Controller
             }
 
             // Validate payload checksums
-            $checksumResults = $checksumService->validateSubmissionChecksums($request->all());
+            // $checksumResults = $checksumService->validateSubmissionChecksums($request->all());
+            $rawPayload = $request->getContent();
+            $payloadArray = json_decode($rawPayload, true);
+
+            $checksumResults = $checksumService->validateSubmissionChecksums($payloadArray);
             if (!$checksumResults['valid']) {
                 return response()->json([
                     'success' => false,
@@ -862,6 +865,12 @@ class TransactionController extends Controller
                     'errors' => $checksumResults['errors']
                 ], 422);
             }
+
+            // Add this next:
+            Log::info('Checksum validation passed', [
+                'submission_uuid'   => $request->submission_uuid,
+                'transaction_count' => $request->transaction_count,
+            ]);
 
             // Get terminal and validate tenant
             $terminal = PosTerminal::with(['tenant.company'])->findOrFail($request->terminal_id);
@@ -1303,8 +1312,8 @@ class TransactionController extends Controller
         $payload = $transaction;
         unset($payload['payload_checksum']);
 
-        // Calculate checksum
-        $calculatedChecksum = hash('sha256', json_encode($payload));
+        // Calculate checksum using correct flags
+        $calculatedChecksum = hash('sha256', json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
 
         // Compare with provided checksum (case-insensitive)
         return strtolower($calculatedChecksum) === strtolower($transaction['payload_checksum']);

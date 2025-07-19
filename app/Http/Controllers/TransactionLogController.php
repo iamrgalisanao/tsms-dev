@@ -41,35 +41,35 @@ class TransactionLogController extends Controller
         }
 
         $logs = Transaction::select([
-                'id',
-                'transaction_id',
-                'terminal_id',
-                'base_amount as amount',
-                'validation_status',
-                'created_at'
+            'id',
+            'transaction_id',
+            'terminal_id',
+            'base_amount as amount',
+            'validation_status',
+            'created_at'
             ])
-            ->with(['terminal:id,serial_number,tenant_id'])
+            ->with(['terminal:id,serial_number,tenant_id,machine_number'])
             ->when(isset($filters['transaction_id']), function ($query) use ($filters) {
-                $search = str_replace('TX-', '', $filters['transaction_id']);
-                return $query->where('transaction_id', 'like', "%{$search}%");
+            $search = str_replace('TX-', '', $filters['transaction_id']);
+            return $query->where('transaction_id', 'like', "%{$search}%");
             })
             ->when(isset($filters['status']), function ($query) use ($filters) {
-                return $query->where('validation_status', $filters['status']);
+            return $query->where('validation_status', $filters['status']);
             })
             ->when(isset($filters['date_from']), function ($query) use ($filters) {
-                return $query->where('created_at', '>=', $filters['date_from'] . ' 00:00:00');
+            return $query->where('created_at', '>=', $filters['date_from'] . ' 00:00:00');
             })
             ->when(isset($filters['date_to']), function ($query) use ($filters) {
-                return $query->where('created_at', '<=', $filters['date_to'] . ' 23:59:59');
+            return $query->where('created_at', '<=', $filters['date_to'] . ' 23:59:59');
             })
             ->when(isset($filters['terminal_id']), function ($query) use ($filters) {
-                return $query->where('terminal_id', $filters['terminal_id']);
+            return $query->where('terminal_id', $filters['terminal_id']);
             })
             ->when(isset($filters['amount_min']), function ($query) use ($filters) {
-                return $query->where('base_amount', '>=', $filters['amount_min']);
+            return $query->where('base_amount', '>=', $filters['amount_min']);
             })
             ->when(isset($filters['amount_max']), function ($query) use ($filters) {
-                return $query->where('base_amount', '<=', $filters['amount_max']);
+            return $query->where('base_amount', '<=', $filters['amount_max']);
             })
             ->latest()
             ->paginate(15);

@@ -22,8 +22,10 @@
         <table id="example3" class="table table-bordered table-striped">
             <thead>
                 <tr>
-                  <th>Terminal ID</th>
+                 
                   <th>Tenant</th>
+                  <th>Tenant ID</th>
+                   <th>Serial Number</th>
                   <th>Created</th>
                   <th>Expires At</th>
                   <th>Status</th>
@@ -34,8 +36,10 @@
             <tbody>
                 @forelse($terminals as $terminal)
                   <tr>
-                    <td>{{ $terminal->terminal_uid }}</td>
-                    <td>{{ $terminal->tenant->name ?? 'Unknown' }}</td>
+                    
+                    <td>{{ $terminal->tenant->trade_name ?? 'Unknown' }}</td>
+                    <td>{{ $terminal->tenant_id }}</td>
+                    <td>{{ $terminal->serial_number }}</td>
                     <td>{{ $terminal->created_at ? $terminal->created_at->format('Y-m-d H:i') : 'N/A' }}</td>
                     <td>
                       @if(isset($terminal->expires_at) && $terminal->expires_at)

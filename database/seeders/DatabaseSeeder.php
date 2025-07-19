@@ -2,6 +2,7 @@
 
 namespace Database\Seeders;
 
+use App\Models\Company;
 use App\Models\Transaction;
 use App\Models\TransactionLog;
 use App\Models\User;
@@ -26,26 +27,13 @@ class DatabaseSeeder extends Seeder
             'is_system' => true,
         ]);
 
-        // Always create admin user
-        $adminUser = User::updateOrCreate(
-            ['email' => 'admin@example.com'],
-            [
-                'name' => 'Admin User',
-                'email' => 'admin@example.com',
-                'password' => Hash::make('password123'),
-                'is_active' => 1,
-            ]
-        );
-
-        // Assign the admin role using Spatie
-        if (!$adminUser->hasRole('admin')) {
-            $adminUser->assignRole('admin');
-        }
+        // Call the admin user seeder
+        // $this->call(AdminUserSeeder::class);
 
         // In test environment, seed test data
-        if (app()->environment('testing')) {
-            $this->call(TestDataSeeder::class);
-        }
+        // if (app()->environment('testing')) {
+        //     $this->call(TestDataSeeder::class);
+        // }
 
         $this->call([
             // Core data - run these first
@@ -66,6 +54,11 @@ class DatabaseSeeder extends Seeder
             // TransactionSeeder::class,
             // StoreHoursSeeder::class,
             // StoreSeeder::class,
+            AdminUserSeeder::class, // Always create admin user
+            CompanySeeder::class, // Import companies from CSV
+            TenantSeeder::class, // Import tenants from CSV (depends on companies)
+            ReferenceTablesSeeder::class, // Seed reference tables like pos_types, integration_types, etc
+            PosTerminalSeeder::class, // Seed POS terminals
         ]);
     }
 }

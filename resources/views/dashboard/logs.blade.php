@@ -67,7 +67,7 @@
 
   <!-- Additional Auth Stats Row -->
   <div class="row g-4 mb-4">
-    <div class="col-md-3 col-sm-6 col-12">
+    <div class="col-md-4 col-sm-6 col-12">
       <div class="info-box">
         <span class="info-box-icon bg-primary">
           <i class="fas fa-sign-in-alt"></i>
@@ -79,7 +79,7 @@
       </div>
     </div>
 
-    <div class="col-md-3 col-sm-6 col-12">
+    <div class="col-md-4 col-sm-6 col-12">
       <div class="info-box">
         <span class="info-box-icon bg-danger">
           <i class="fas fa-times-circle"></i>
@@ -91,7 +91,7 @@
       </div>
     </div>
 
-    <div class="col-md-3 col-sm-6 col-12">
+    <div class="col-md-4 col-sm-6 col-12">
       <div class="info-box">
         <span class="info-box-icon bg-info">
           <i class="fas fa-server"></i>
@@ -103,7 +103,7 @@
       </div>
     </div>
 
-    <div class="col-md-3 col-sm-6 col-12">
+    {{-- <div class="col-md-3 col-sm-6 col-12">
       <div class="info-box">
         <span class="info-box-icon bg-warning">
           <i class="fas fa-exchange-alt"></i>
@@ -113,7 +113,7 @@
           <span class="info-box-number">{{ number_format($stats['webhook_total'] ?? 0) }}</span>
         </div>
       </div>
-    </div>
+    </div> --}}
   </div>
 
     
@@ -150,11 +150,11 @@
               <i class="fas fa-cogs me-2"></i> System Logs
             </a>
           </li>
-          <li class="nav-item">
+          {{-- <li class="nav-item">
             <a class="nav-link" data-bs-toggle="tab" href="#webhook">
               <i class="fas fa-exchange-alt me-2"></i> Webhook Logs
             </a>
-          </li>
+          </li> --}}
         </ul>
         {{-- <div class="d-flex gap-3">
           <div class="dropdown">

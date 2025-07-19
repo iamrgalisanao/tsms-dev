@@ -22,13 +22,13 @@ class ProcessTransactionJob implements ShouldQueue
      *
      * @var mixed
      */
-     
+     protected $transaction;
     /**
      * The maximum number of attempts to process the transaction.
      *
      * @var int
      */
-    protected $transaction;
+    
     protected $maxAttempts = 3;
 
     /**
@@ -64,9 +64,9 @@ class ProcessTransactionJob implements ShouldQueue
      public function handle(TransactionValidationService $validationService)
     {
         Log::debug('Starting transaction processing', [
-            'transaction_id' => $this->transaction->id,
+            'transaction_id' => is_object($this->transaction) ? $this->transaction->id : $this->transaction,
             'attempt' => $this->attempts(),
-            'transaction_data' => $this->transaction->toArray()
+            'transaction_data' => is_object($this->transaction) ? $this->transaction->toArray() : ['transaction_id' => $this->transaction]
         ]);
 
         try {
