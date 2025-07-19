@@ -3,13 +3,13 @@
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use App\Http\Controllers\API\V1\TransactionController;
 use App\Http\Controllers\API\V1\LogViewerController;
 use App\Http\Controllers\API\V1\RetryHistoryController;
 use App\Http\Controllers\API\V1\TestParserController;
 use App\Http\Controllers\Api\TerminalAuthController;
 use App\Services\TransactionValidationService;
-use Illuminate\Support\Facades\Log;
 use App\Http\Controllers\API\V1\TransactionController as ApiTransactionController;
 
 /*
@@ -232,7 +232,7 @@ Route::get('/v1/recent-test-transactions', function() {
             'data' => $transactions
         ]);
     } catch (\Exception $e) {
-        \Log::error('Error fetching recent transactions', [
+        Log::error('Error fetching recent transactions', [
             'error' => $e->getMessage(),
             'trace' => $e->getTraceAsString()
         ]);
