@@ -16,6 +16,17 @@ class NotificationService
 {
     private array $config;
 
+    /**
+     * NotificationService constructor.
+     *
+     * Initializes the notification configuration with default values if not set.
+     * Configuration options include:
+     * - transaction_failure_threshold: int, number of transaction failures before notification.
+     * - transaction_failure_time_window: int, time window in minutes to monitor failures.
+     * - batch_failure_threshold: int, minimum batch failures to trigger notification.
+     * - notification_channels: array, channels to send notifications (e.g., mail, database).
+     * - admin_emails: array, list of admin email addresses to notify.
+     */
     public function __construct()
     {
         $this->config = config('notifications', [

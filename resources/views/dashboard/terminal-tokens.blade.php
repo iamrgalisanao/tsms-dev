@@ -27,6 +27,7 @@
                   <th>Created</th>
                   <th>Expires At</th>
                   <th>Status</th>
+                  <th>API Key</th>
                   <th>Actions</th>
                 </tr>
             </thead>
@@ -35,34 +36,41 @@
                   <tr>
                     <td>{{ $terminal->terminal_uid }}</td>
                     <td>{{ $terminal->tenant->name ?? 'Unknown' }}</td>
-                    <td>{{ $terminal->created_at->format('Y-m-d H:i') }}</td>
+                    <td>{{ $terminal->created_at ? $terminal->created_at->format('Y-m-d H:i') : 'N/A' }}</td>
                     <td>
-                      @if($terminal->expires_at)
-                        {{ $terminal->expires_at->format('Y-m-d H:i') }}
+                      @if(isset($terminal->expires_at) && $terminal->expires_at)
+                        {{ \Carbon\Carbon::parse($terminal->expires_at)->format('Y-m-d H:i') }}
                       @else
                         Never
                       @endif
                     </td>
                     <td>
-                      @if($terminal->is_revoked)
+                      @if(isset($terminal->is_revoked) && $terminal->is_revoked)
                         <span class="badge bg-danger">Revoked</span>
-                      @elseif($terminal->expires_at && $terminal->expires_at->isPast())
+                      @elseif(isset($terminal->expires_at) && $terminal->expires_at && \Carbon\Carbon::parse($terminal->expires_at)->isPast())
                         <span class="badge bg-warning">Expired</span>
                       @else
                         <span class="badge bg-success">Active</span>
                       @endif
                     </td>
                     <td>
+                      <div class="input-group">
+                        <input type="password" class="form-control api-key-input" value="{{ $terminal->api_key }}" readonly style="max-width: 180px;">
+                        <button type="button" class="btn btn-outline-secondary btn-show-api-key" title="Show/Hide"><i class="fa fa-eye"></i></button>
+                        <button type="button" class="btn btn-outline-secondary btn-copy-api-key" title="Copy"><i class="fa fa-copy"></i></button>
+                      </div>
+                    </td>
+                    <td>
                       <form method="POST" action="{{ route('terminal-tokens.regenerate', $terminal->id) }}" class="d-inline">
                         @csrf
-                        <button type="submit" class="btn btn-sm btn-primary">Regenerate JWT</button>
+                        <button type="submit" class="btn btn-sm btn-warning">Regenerate API Key</button>
                       </form>
                     </td>
                   </tr>
                   @empty
-                  {{-- <tr>
-                    <td colspan="6" class="text-center">No terminals found</td>
-                  </tr> --}}
+                  <tr>
+                    <td colspan="7" class="text-center">No terminals found</td>
+                  </tr>
                 @endforelse
             </tbody>
         </table>
@@ -129,6 +137,25 @@ $(function () {
     @if(session('error'))
         toastr.error("{{ session('error') }}");
     @endif
+    // API Key show/hide and copy functionality
+    $(document).on('click', '.btn-show-api-key', function() {
+      var input = $(this).siblings('.api-key-input');
+      if (input.attr('type') === 'password') {
+        input.attr('type', 'text');
+        $(this).find('i').removeClass('fa-eye').addClass('fa-eye-slash');
+      } else {
+        input.attr('type', 'password');
+        $(this).find('i').removeClass('fa-eye-slash').addClass('fa-eye');
+      }
+    });
+    $(document).on('click', '.btn-copy-api-key', function() {
+      var input = $(this).siblings('.api-key-input');
+      input.attr('type', 'text'); // temporarily show
+      input[0].select();
+      document.execCommand('copy');
+      input.attr('type', 'password');
+      toastr.success('API Key copied to clipboard');
+    });
 });
 </script>
 

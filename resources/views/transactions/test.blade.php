@@ -105,13 +105,26 @@
             @csrf
 
             <div class="row mb-3">
+
               <div class="col-md-6">
                 <label for="terminal_id" class="form-label">Terminal</label>
                 <select name="terminal_id" id="terminal_id" class="form-select" required>
                   <option value="">Select Terminal</option>
                   @foreach($terminals as $terminal)
                   <option value="{{ $terminal->id }}" {{ old('terminal_id') == $terminal->id ? 'selected' : '' }}>
-                    {{ $terminal->terminal_uid }} ({{ $terminal->tenant->name ?? 'Unknown' }})
+                    {{ $terminal->serial_number ?? $terminal->terminal_uid }} ({{ $terminal->tenant->trade_name ?? 'Unknown' }})
+                  </option>
+                  @endforeach
+                </select>
+              </div>
+
+              <div class="col-md-6">
+                <label for="tenant_id" class="form-label">Tenant</label>
+                <select name="tenant_id" id="tenant_id" class="form-select" required>
+                  <option value="">Select Tenant</option>
+                  @foreach($tenants as $tenant)
+                  <option value="{{ $tenant->id }}" {{ old('tenant_id') == $tenant->id ? 'selected' : '' }}>
+                    {{ $tenant->trade_name }}
                   </option>
                   @endforeach
                 </select>

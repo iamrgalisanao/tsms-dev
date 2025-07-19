@@ -27,6 +27,17 @@ class CheckTransactionFailureThresholdsJob implements ShouldQueue
     /**
      * Execute the job.
      */
+    /**
+     * Handles the job to check transaction failure thresholds for a POS terminal.
+     *
+     * This method logs the start and completion of the threshold check process.
+     * It uses the provided NotificationService to perform the check for the specified POS terminal.
+     * If an exception occurs during the process, it logs the error details and rethrows the exception
+     * to mark the job as failed.
+     *
+     * @param NotificationService $notificationService The service used to check transaction failure thresholds.
+     * @throws \Exception If the threshold check fails.
+     */
     public function handle(NotificationService $notificationService): void
     {
         try {
