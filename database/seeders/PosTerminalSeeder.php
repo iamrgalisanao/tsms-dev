@@ -182,18 +182,22 @@ class PosTerminalSeeder extends Seeder
 
         foreach ($terminals as $terminalData) {
             try {
-                // Generate unique API key for each terminal
-                $terminalData['api_key'] = Str::random(64);
+                // Provide a default/initial valid API token for each terminal
+                $terminalData['api_key'] = 'DEFAULT_API_KEY_1234567890';
                 $terminalData['registered_at'] = now();
 
                 // Log terminal data for debugging
                 Log::info('Attempting to insert terminal:', $terminalData);
 
-                // Check if terminal already exists to make seeder idempotent
+                // Check if terminal already exists
                 $existingTerminal = PosTerminal::where('serial_number', $terminalData['serial_number'])->first();
                 if ($existingTerminal) {
-                    Log::info("Terminal with serial_number {$terminalData['serial_number']} already exists, skipping.");
-                    $skipCount++;
+                    // Overwrite existing record with new data
+                    $existingTerminal->fill($terminalData);
+                    $existingTerminal->created_at = now(); // Force-update created_at directly
+                    $existingTerminal->save();
+                    Log::info("Terminal with serial_number {$terminalData['serial_number']} already exists, updated.");
+                    $importCount++;
                     continue;
                 }
 

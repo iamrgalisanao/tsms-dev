@@ -66,71 +66,55 @@ class TerminalTokenController extends Controller
     {
         try {
             $terminal = PosTerminal::findOrFail($terminalId);
-            
-            // Generate a new JWT token
-            $token = $this->generateJWTToken($terminal);
-            
-            // Update the token in the database
-            $updateData = ['jwt_token' => $token];
-            
-            // Check if expires_at column exists before setting it
+            // Generate a new API key (not JWT)
+            $newApiKey = \Illuminate\Support\Str::random(64);
+            $updateData = ['api_key' => $newApiKey];
             if (Schema::hasColumn('pos_terminals', 'expires_at')) {
                 $updateData['expires_at'] = now()->addDays(30);
             }
-            
-            // Check if is_revoked column exists before setting it
             if (Schema::hasColumn('pos_terminals', 'is_revoked')) {
                 $updateData['is_revoked'] = false;
             }
-            
-            // Update just the columns that exist
             $terminal->update($updateData);
-            
-            // Set status to active if no expires_at column
             if (!Schema::hasColumn('pos_terminals', 'expires_at') && Schema::hasColumn('pos_terminals', 'status')) {
                 $terminal->status = 'active';
                 $terminal->save();
             }
-            
-            Log::info('Terminal token regenerated', [
+            Log::info('Terminal API key regenerated', [
                 'terminal_uid' => $terminal->terminal_uid,
                 'user_id' => auth()->id()
             ]);
-            
             return redirect()
                 ->route('terminal-tokens')
-                ->with('success', 'Token successfully regenerated for terminal ' . $terminal->terminal_uid);
-                
+                ->with('success', 'API Key successfully regenerated for terminal ' . $terminal->terminal_uid);
         } catch (\Exception $e) {
-            Log::error('Error regenerating terminal token', [
+            Log::error('Error regenerating terminal API key', [
                 'terminal_id' => $terminalId,
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);
-            
             return redirect()
                 ->route('terminal-tokens')
-                ->with('error', 'Error regenerating token: ' . $e->getMessage());
+                ->with('error', 'Error regenerating API key: ' . $e->getMessage());
         }
     }
     
-    /**
-     * Generate JWT token for a terminal
-     */
-    private function generateJWTToken(PosTerminal $terminal)
-    {
-        // Create claims for the token
-        $payload = [
-            'sub' => $terminal->id,  // Subject (terminal ID)
-            'iat' => now()->timestamp,         // Issued at
-            'exp' => now()->addDays(30)->timestamp, // Expires at
-            'tenant_id' => $terminal->tenant_id, // Include tenant ID for validation
-            'terminal_uid' => $terminal->terminal_uid
-        ];
-        
-        // Generate the token
-        $token = JWTAuth::customClaims($payload)->fromUser($terminal);
-        
-        return $token;
-    }
+    // JWT logic is currently unused. To re-enable JWT, uncomment and update as needed.
+    // /**
+    //  * Generate JWT token for a terminal
+    //  */
+    // private function generateJWTToken(PosTerminal $terminal)
+    // {
+    //     // Create claims for the token
+    //     $payload = [
+    //         'sub' => $terminal->id,  // Subject (terminal ID)
+    //         'iat' => now()->timestamp,         // Issued at
+    //         'exp' => now()->addDays(30)->timestamp, // Expires at
+    //         'tenant_id' => $terminal->tenant_id, // Include tenant ID for validation
+    //         'terminal_uid' => $terminal->terminal_uid
+    //     ];
+    //     // Generate the token
+    //     $token = JWTAuth::customClaims($payload)->fromUser($terminal);
+    //     return $token;
+    // }
 }

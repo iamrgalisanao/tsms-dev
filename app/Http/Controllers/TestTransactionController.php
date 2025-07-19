@@ -20,13 +20,14 @@ class TestTransactionController extends Controller
      */
     public function index()
     {
+        $tenants = DB::table('tenants')->get();
         $terminals = PosTerminal::with('tenant')
             ->orderBy('tenant_id')
             ->orderBy('serial_number')
             ->get()
             ->unique('id');
         
-        return view('transactions.test', compact('terminals'));
+        return view('transactions.test', compact('terminals', 'tenants'));
     }
     
     /**
