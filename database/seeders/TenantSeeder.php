@@ -10,7 +10,9 @@ class TenantSeeder extends Seeder
 {
     public function run(): void
     {
-        $csvPath = 'G:/PITX/document/reports/sample/tenants_quoted_with_timestamps.csv';
+        // $csvPath = 'G:/PITX/document/reports/sample/tenants_quoted_with_timestamps.csv';
+        $csvPath = getenv('HOME') . '/Downloads/tenants_quoted_with_timestamps.csv';
+
         
         if (!file_exists($csvPath)) {
             Log::warning("CSV file not found at: {$csvPath}. Falling back to default tenants.");
