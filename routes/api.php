@@ -34,7 +34,7 @@ Route::get('/v1/health', function () {
 
 // Terminal authentication (public - no middleware)
 Route::prefix('v1/auth')->group(function () {
-    Route::post('/terminal', [TerminalAuthController::class, 'authenticate']);a
+    Route::post('/terminal', [TerminalAuthController::class, 'authenticate']);
 });
 
 // V1 API Routes with Sanctum authentication
