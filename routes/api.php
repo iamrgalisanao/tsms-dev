@@ -8,7 +8,7 @@ use App\Http\Controllers\Api\V1\TransactionController;
 use App\Http\Controllers\Api\V1\LogViewerController;
 use App\Http\Controllers\Api\V1\RetryHistoryController;
 use App\Http\Controllers\Api\V1\TestParserController;
-use App\Http\Controllers\Api\TerminalAuthController;
+use App\Http\Controllers\Api\V1\TerminalAuthController;
 use App\Services\TransactionValidationService;
 use App\Http\Controllers\Api\V1\TransactionController as ApiTransactionController;
 
