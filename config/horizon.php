@@ -49,9 +49,8 @@ return [
     | the existing middleware. Or, you can simply stick with this list.
     */
     'middleware' => [
-        'web',
-        'is.admin',
-        'auth',
+        // 'web',
+        // 'auth',
         ],
 
     /*

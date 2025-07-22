@@ -39,4 +39,8 @@ return Application::configure(basePath: dirname(__DIR__))
         $exceptions->renderable(function (\Throwable $e) {
             // Custom rendering logic 
         });
-    })->create();
+    })
+    ->withProviders([
+        App\Providers\HorizonServiceProvider::class,
+    ])
+    ->create();
