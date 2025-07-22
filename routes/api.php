@@ -4,13 +4,13 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-use App\Http\Controllers\API\V1\TransactionController;
-use App\Http\Controllers\API\V1\LogViewerController;
-use App\Http\Controllers\API\V1\RetryHistoryController;
-use App\Http\Controllers\API\V1\TestParserController;
+use App\Http\Controllers\Api\V1\TransactionController;
+use App\Http\Controllers\Api\V1\LogViewerController;
+use App\Http\Controllers\Api\V1\RetryHistoryController;
+use App\Http\Controllers\Api\V1\TestParserController;
 use App\Http\Controllers\Api\TerminalAuthController;
 use App\Services\TransactionValidationService;
-use App\Http\Controllers\API\V1\TransactionController as ApiTransactionController;
+use App\Http\Controllers\Api\V1\TransactionController as ApiTransactionController;
 
 /*
 |--------------------------------------------------------------------------
@@ -34,7 +34,7 @@ Route::get('/v1/health', function () {
 
 // Terminal authentication (public - no middleware)
 Route::prefix('v1/auth')->group(function () {
-    Route::post('/terminal', [TerminalAuthController::class, 'authenticate']);
+    Route::post('/terminal', [TerminalAuthController::class, 'authenticate']);a
 });
 
 // V1 API Routes with Sanctum authentication
