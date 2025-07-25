@@ -120,6 +120,15 @@ class TenantSeeder extends Seeder
         $this->command->info("Imported {$importCount} tenants, skipped {$skipCount} records.");
     }
 
+    /**
+     * Creates the default tenants for the application.
+     *
+     * This method is responsible for seeding the database with the initial set of tenants
+     * required for the application to function properly. It should be called during the
+     * database seeding process.
+     *
+     * @return void
+     */
     private function createDefaultTenants(): void
     {
         // Get the first company to use as default
