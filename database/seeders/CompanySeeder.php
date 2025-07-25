@@ -16,7 +16,8 @@ class CompanySeeder extends Seeder
     public function run()
     {
         // $csvPath = 'G:/PITX/document/reports/sample/fixed_companies_import.csv';
-        $csvPath = getenv('HOME') . '/Downloads/fixed_companies_import.csv';
+        // $csvPath = getenv('HOME') . '/Downloads/fixed_companies_import.csv';
+          $csvPath = '/home/rgalisanao/Downloads/fixed_companies_import.csv';
 
         
         // Check if CSV file exists
