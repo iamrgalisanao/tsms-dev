@@ -771,8 +771,10 @@ class TransactionController extends Controller
      */
     public function storeOfficial(Request $request)
     {
+        $rawJson = $request->getContent();
         $checksumService = new PayloadChecksumService();
-        
+        $checksumResults = $checksumService->validateSubmissionChecksumsFromRaw($rawJson);
+
         try {
             DB::beginTransaction();
 
