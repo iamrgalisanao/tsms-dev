@@ -210,12 +210,30 @@ The `payload_checksum` field is required for both single and batch submissions. 
 2. Prepare the full submission object (with all transactions now having their checksums), leave the submission-level `payload_checksum` field empty or omit it, serialize to a compact JSON string, and compute the SHA-256 hash.
 3. Insert the resulting hash as the value of the submission's `payload_checksum`.
 
-### Notes
 
--   Always use a compact JSON string (no extra spaces, tabs, or line breaks) for hashing.
--   The order of fields must be consistent.
--   Use standard SHA-256 implementations available in your programming language.
--   The same process applies for both single and batch formats.
+### Important Details for Proper Checksum Computation
+
+- **Omit or blank the `payload_checksum` field** before hashing. For each transaction, remove or leave empty the `payload_checksum` field before computing its hash. For the submission, do the same for the submission-level `payload_checksum` field.
+- **Use compact JSON**: Serialize the object to a compact JSON string (no extra spaces, tabs, or line breaks, and fields in a consistent order) before hashing. Pretty-printed or minified JSON with different field orders will result in a different hash.
+- **SHA-256 Algorithm**: Always use the SHA-256 algorithm for hashing.
+- **Order of Operations for Batch:**
+    1. Compute and insert the `payload_checksum` for each transaction first (with their own `payload_checksum` omitted/blank).
+    2. Then, compute the submission-level `payload_checksum` (with all transaction checksums present, but the submission-level checksum omitted/blank).
+- **For single transaction submissions:**
+    1. Compute the transaction's `payload_checksum` first (with its own field omitted/blank).
+    2. Then, compute the submission's `payload_checksum` (with the transaction checksum present, but the submission-level checksum omitted/blank).
+- **Field order must be consistent**: Always serialize fields in the same order for both checksum calculation and submission.
+- **No extra fields**: Do not include system-generated or validation fields (like `validation_status`, `job_status`, etc.) in the payload or during checksum calculation.
+
+**Summary:**
+
+- Omit or blank the `payload_checksum` field before hashing.
+- Use compact JSON (no pretty-printing, no extra whitespace).
+- Use SHA-256.
+- For batch, calculate transaction checksums first, then the submission checksum.
+- For single, calculate the transaction checksum, then the submission checksum.
+
+This ensures your payloads will pass checksum validation in the TSMS API.
 
 ---
 
