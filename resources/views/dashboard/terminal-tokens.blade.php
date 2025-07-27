@@ -40,7 +40,7 @@
                     
                     <td>{{ $terminal->tenant->trade_name ?? 'Unknown' }}</td>
                     <td>{{ $terminal->tenant_id }}</td>
-                    <td>{{ $terminal->terminal_uid }}</td>
+                    <td>{{ $terminal->id }}</td>
                     <td>{{ $terminal->serial_number }}</td>
                     <td>{{ $terminal->created_at ? $terminal->created_at->format('Y-m-d H:i') : 'N/A' }}</td>
                     <td>
