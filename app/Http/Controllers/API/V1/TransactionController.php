@@ -1135,19 +1135,25 @@ class TransactionController extends Controller
      */
     public function processOfficialSubmission(Request $request)
     {
-        // Validate the submission structure
-        $request->validate([
+        // Decode raw JSON input before Laravel mutates it
+        $rawJson = $request->getContent();
+        $submission = json_decode($rawJson, true);
+
+        // Basic validation of submission-level fields
+        validator($submission, [
             'submission_uuid' => 'required|string|uuid',
             'tenant_id' => 'required|integer',
             'terminal_id' => 'required|integer|exists:pos_terminals,id',
             'submission_timestamp' => 'required|date_format:Y-m-d\TH:i:s\Z',
             'transaction_count' => 'required|integer|min:1',
-            'payload_checksum' => 'required|string|min:64|max:64', // SHA-256 hash
-        ]);
+            'payload_checksum' => 'required|string|min:64|max:64',
+        ])->validate();
 
-        // Validate either single transaction or batch format
-        if ($request->transaction_count === 1) {
-            $request->validate([
+        // Determine if it's single or batch submission
+        $isSingle = $submission['transaction_count'] === 1;
+
+        if ($isSingle) {
+            validator($submission, [
                 'transaction' => 'required|array',
                 'transaction.transaction_id' => 'required|string|uuid',
                 'transaction.transaction_timestamp' => 'required|date_format:Y-m-d\TH:i:s\Z',
@@ -1159,9 +1165,9 @@ class TransactionController extends Controller
                 'transaction.taxes' => 'array',
                 'transaction.taxes.*.tax_type' => 'required_with:transaction.taxes|string',
                 'transaction.taxes.*.amount' => 'required_with:transaction.taxes|numeric',
-            ]);
+            ])->validate();
         } else {
-            $request->validate([
+            validator($submission, [
                 'transactions' => 'required|array|min:1',
                 'transactions.*.transaction_id' => 'required|string|uuid',
                 'transactions.*.transaction_timestamp' => 'required|date_format:Y-m-d\TH:i:s\Z',
@@ -1173,23 +1179,23 @@ class TransactionController extends Controller
                 'transactions.*.taxes' => 'array',
                 'transactions.*.taxes.*.tax_type' => 'required_with:transactions.*.taxes|string',
                 'transactions.*.taxes.*.amount' => 'required_with:transactions.*.taxes|numeric',
-            ]);
+            ])->validate();
         }
 
-        // Validate transaction count matches actual count
-        $actualCount = $request->transaction_count === 1 ? 1 : count($request->transactions);
-        if ($actualCount !== $request->transaction_count) {
+        // Count validation
+        $actualCount = $isSingle ? 1 : count($submission['transactions']);
+        if ($actualCount !== $submission['transaction_count']) {
             return response()->json([
                 'success' => false,
                 'message' => 'Transaction count mismatch',
-                'errors' => ['transaction_count' => ["Expected {$request->transaction_count} transactions, got {$actualCount}"]]
+                'errors' => ['transaction_count' => ["Expected {$submission['transaction_count']} transactions, got {$actualCount}"]],
             ], 422);
         }
 
-        // Validate payload checksums using raw JSON for canonicalization
+        // Checksum validation using raw payload
         $checksumService = new PayloadChecksumService();
-        $rawPayload = $request->getContent();
-        $checksumResults = $checksumService->validateSubmissionChecksumsFromRaw($rawPayload);
+        $checksumResults = $checksumService->validateSubmissionChecksumsFromRaw($rawJson);
+
         if (!$checksumResults['valid']) {
             return response()->json([
                 'success' => false,
@@ -1200,17 +1206,19 @@ class TransactionController extends Controller
 
         try {
             // Find terminal
-            $terminal = PosTerminal::with('tenant.company')->findOrFail($request->terminal_id);
+            $terminal = PosTerminal::with('tenant.company')->findOrFail($submission['terminal_id']);
 
-            // Process each transaction
+            // Normalize transaction list
+            $transactions = $isSingle ? [$submission['transaction']] : $submission['transactions'];
+
             $processedTransactions = [];
             $failedTransactions = [];
             $processedCount = 0;
             $failedCount = 0;
 
-            foreach ($request->transactions as $transaction) {
+            foreach ($transactions as $transaction) {
                 $result = $this->processTransaction($transaction, $terminal);
-                
+
                 if ($result['status'] === 'success') {
                     $processedTransactions[] = $result;
                     $processedCount++;
@@ -1220,16 +1228,15 @@ class TransactionController extends Controller
                 }
             }
 
-            // Check for transaction failure threshold and send admin notification if needed
+            // Dispatch failure monitoring job
             if ($failedCount > 0) {
                 CheckTransactionFailureThresholdsJob::dispatch($terminal->id);
             }
 
-            // Send batch notification to terminal if enabled
+            // Notify terminal if applicable
             if ($terminal->notifications_enabled && $terminal->callback_url) {
-                // Send batch result notification
                 $this->notifyTerminalOfBatchResult(
-                    $request->batch_id ?? $request->submission_uuid,
+                    $submission['batch_id'] ?? $submission['submission_uuid'],
                     $terminal,
                     $processedCount,
                     $failedCount,
@@ -1238,11 +1245,11 @@ class TransactionController extends Controller
                 );
             }
 
-            // Send notification if there are batch failures
+            // Notify admin on failure
             if ($failedCount > 0) {
                 $this->notificationService->notifyBatchProcessingFailure(
-                    $request->batch_id,
-                    count($request->transactions),
+                    $submission['batch_id'] ?? $submission['submission_uuid'],
+                    $submission['transaction_count'],
                     $failedTransactions
                 );
             }
@@ -1251,41 +1258,20 @@ class TransactionController extends Controller
                 'success' => true,
                 'message' => "Batch processed: {$processedCount} successful, {$failedCount} failed",
                 'data' => [
-                    'batch_id' => $request->batch_id,
+                    'batch_id' => $submission['batch_id'] ?? $submission['submission_uuid'],
                     'processed_count' => $processedCount,
                     'failed_count' => $failedCount,
                     'transactions' => array_merge($processedTransactions, $failedTransactions)
                 ]
             ], 200);
-            
+
         } catch (\Exception $e) {
             Log::error('Error processing official batch submission', [
-                'terminal_id' => $request->terminal_id ?? 'unknown',
-                'submission_uuid' => $request->submission_uuid ?? 'unknown',
+                'terminal_id' => $submission['terminal_id'] ?? 'unknown',
+                'submission_uuid' => $submission['submission_uuid'] ?? 'unknown',
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString()
             ]);
-
-            // Try to send notification to terminal if enabled
-            try {
-                $terminal = PosTerminal::find($request->terminal_id);
-                if ($terminal && $terminal->notifications_enabled && $terminal->callback_url) {
-                    $this->notifyTerminalOfValidationResult(
-                        [
-                            'submission_uuid' => $request->submission_uuid ?? 'unknown',
-                            'terminal_id' => $terminal->id,
-                        ],
-                        'INVALID',
-                        ['system_error' => 'Batch processing failed: ' . $e->getMessage()],
-                        $terminal->callback_url
-                    );
-                }
-            } catch (\Exception $notifyEx) {
-                Log::error('Failed to send terminal notification for batch error', [
-                    'terminal_id' => $request->terminal_id ?? 'unknown',
-                    'error' => $notifyEx->getMessage()
-                ]);
-            }
 
             return response()->json([
                 'success' => false,
@@ -1294,6 +1280,7 @@ class TransactionController extends Controller
             ], 500);
         }
     }
+
 
     /**
      * Validate the checksum of a transaction payload.

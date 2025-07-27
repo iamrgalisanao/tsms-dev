@@ -16,36 +16,33 @@ class PayloadChecksumService
      */
     public function validateSubmissionChecksumsFromRaw(string $rawJson): array
     {
-        $parsed = json_decode($rawJson, true);
+        $submission = json_decode($rawJson, true);
         $errors = [];
 
-        // --- Transaction checksum ---
-        if (isset($parsed['transaction'])) {
-            $txn = $parsed['transaction'];
-            unset($txn['payload_checksum']);
-            $computedTxn = $this->computeChecksum($txn);
+        if (isset($submission['transaction'])) {
+            $txn = $submission['transaction'];
+            $txnCopy = $txn;
+            unset($txnCopy['payload_checksum']);
 
-            if (!isset($parsed['transaction']['payload_checksum']) || $parsed['transaction']['payload_checksum'] !== $computedTxn) {
+            $computedTxn = $this->computeChecksum($txnCopy);
+            if (!isset($txn['payload_checksum']) || $txn['payload_checksum'] !== $computedTxn) {
                 $errors[] = 'Invalid payload_checksum for transaction';
             }
-        } else {
-            $errors[] = 'Missing transaction data';
         }
 
-        // --- Submission checksum ---
-        $copy = $parsed;
-        unset($copy['payload_checksum']);
-        $computedRoot = $this->computeChecksum($copy);
-
-        if (!isset($parsed['payload_checksum']) || $parsed['payload_checksum'] !== $computedRoot) {
+        $submissionCopy = $submission;
+        unset($submissionCopy['payload_checksum']);
+        $computedSubmission = $this->computeChecksum($submissionCopy);
+        if (!isset($submission['payload_checksum']) || $submission['payload_checksum'] !== $computedSubmission) {
             $errors[] = 'Invalid submission payload_checksum';
         }
 
         return [
-            'valid' => empty($errors),
-            'errors' => $errors
+            'valid'  => empty($errors),
+            'errors' => $errors,
         ];
     }
+
     /**
      * Validate both transaction and submission checksums.
      *
