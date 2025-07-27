@@ -852,12 +852,9 @@ class TransactionController extends Controller
                 ], 422);
             }
 
-            // Validate payload checksums
-            // $checksumResults = $checksumService->validateSubmissionChecksums($request->all());
+            // Validate payload checksums using raw JSON for canonicalization
             $rawPayload = $request->getContent();
-            $payloadArray = json_decode($rawPayload, true);
-
-            $checksumResults = $checksumService->validateSubmissionChecksums($payloadArray);
+            $checksumResults = $checksumService->validateSubmissionChecksumsFromRaw($rawPayload);
             if (!$checksumResults['valid']) {
                 return response()->json([
                     'success' => false,
@@ -1187,9 +1184,10 @@ class TransactionController extends Controller
             ], 422);
         }
 
-        // Validate payload checksums
+        // Validate payload checksums using raw JSON for canonicalization
         $checksumService = new PayloadChecksumService();
-        $checksumResults = $checksumService->validateSubmissionChecksums($request->all());
+        $rawPayload = $request->getContent();
+        $checksumResults = $checksumService->validateSubmissionChecksumsFromRaw($rawPayload);
         if (!$checksumResults['valid']) {
             return response()->json([
                 'success' => false,

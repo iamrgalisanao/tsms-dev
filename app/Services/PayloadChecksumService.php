@@ -9,6 +9,44 @@ namespace App\Services;
 class PayloadChecksumService
 {
     /**
+     * Validate checksums from raw JSON string (canonicalize from original input).
+     *
+     * @param string $rawJson
+     * @return array ['valid' => bool, 'errors' => array]
+     */
+    public function validateSubmissionChecksumsFromRaw(string $rawJson): array
+    {
+        $parsed = json_decode($rawJson, true);
+        $errors = [];
+
+        // --- Transaction checksum ---
+        if (isset($parsed['transaction'])) {
+            $txn = $parsed['transaction'];
+            unset($txn['payload_checksum']);
+            $computedTxn = $this->computeChecksum($txn);
+
+            if (!isset($parsed['transaction']['payload_checksum']) || $parsed['transaction']['payload_checksum'] !== $computedTxn) {
+                $errors[] = 'Invalid payload_checksum for transaction';
+            }
+        } else {
+            $errors[] = 'Missing transaction data';
+        }
+
+        // --- Submission checksum ---
+        $copy = $parsed;
+        unset($copy['payload_checksum']);
+        $computedRoot = $this->computeChecksum($copy);
+
+        if (!isset($parsed['payload_checksum']) || $parsed['payload_checksum'] !== $computedRoot) {
+            $errors[] = 'Invalid submission payload_checksum';
+        }
+
+        return [
+            'valid' => empty($errors),
+            'errors' => $errors
+        ];
+    }
+    /**
      * Validate both transaction and submission checksums.
      *
      * @param  array  $submission  The decoded submission payload
