@@ -74,6 +74,7 @@ class ProcessTransactionJob implements ShouldQueue
 
             // Create or update TransactionJob record for this attempt
             $job = $this->transaction->jobs()->create([
+                'transaction_id' => $this->transaction->transaction_id,
                 'job_status' => 'PROCESSING',
                 'attempt_number' => $this->attempts(),
                 'started_at' => now(),
@@ -129,6 +130,12 @@ class ProcessTransactionJob implements ShouldQueue
                 'job_status' => 'COMPLETED',
                 'completed_at' => now(),
             ]);
+            Log::debug('Job status updated to COMPLETED', [
+                'job_id' => $job->id,
+                'transaction_id' => $this->transaction->transaction_id,
+                'job_status' => $job->job_status,
+                'updated_at' => $job->updated_at,
+            ]);
 
             // Update main transaction status to VALID
             $this->handleSuccess();
@@ -181,7 +188,6 @@ class ProcessTransactionJob implements ShouldQueue
             $validationResult['errors'];
 
         $this->transaction->update([
-            'job_status' => 'FAILED',
             'validation_status' => 'INVALID',
             'validation_details' => json_encode($validationResult['errors']),
             'last_error' => $errorMessages,
@@ -208,7 +214,6 @@ class ProcessTransactionJob implements ShouldQueue
         ]);
 
         $this->transaction->update([
-            'job_status' => 'COMPLETED',
             'validation_status' => 'VALID',
             'last_error' => null,
             'completed_at' => now()

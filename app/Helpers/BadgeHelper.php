@@ -6,30 +6,33 @@ class BadgeHelper
 {
     public static function getValidationStatusBadge($status)
     {
-        $class = match(strtoupper($status)) {
+        $statusStr = $status ?? 'PENDING';
+        $class = match(strtoupper($statusStr)) {
             'VALID' => 'success',
             'INVALID' => 'danger',
             'PENDING' => 'warning',
             default => 'secondary'
         };
-        return "<span class='badge bg-{$class}'>" . strtoupper($status ?? 'PENDING') . "</span>";
+        return "<span class='badge bg-{$class}'>" . strtoupper($statusStr) . "</span>";
     }
 
     public static function getJobStatusBadge($status)
     {
-        $class = match(strtoupper($status)) {
+        $statusStr = $status ?? 'QUEUED';
+        $class = match(strtoupper($statusStr)) {
             'COMPLETED' => 'success',
             'FAILED' => 'danger',
             'PROCESSING' => 'primary',
             'QUEUED' => 'warning',
             default => 'secondary'
         };
-        return "<span class='badge bg-{$class}'>" . strtoupper($status) . "</span>";
+        return "<span class='badge bg-{$class}'>" . strtoupper($statusStr) . "</span>";
     }
 
     public static function getStatusBadgeColor($status)
     {
-        return match(strtoupper($status)) {
+        $statusStr = $status ?? 'PENDING';
+        return match(strtoupper($statusStr)) {
             'VALID', 'COMPLETED', 'SUCCESS' => 'success',
             'INVALID', 'FAILED', 'ERROR' => 'danger',
             'PENDING', 'WAITING' => 'warning',

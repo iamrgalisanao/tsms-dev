@@ -8,6 +8,8 @@ use Illuminate\Database\Eloquent\Model;
 class Transaction extends Model
 {
     use HasFactory;
+
+    use HasFactory;
     
     /**
      * The table associated with the model.
@@ -36,6 +38,17 @@ class Transaction extends Model
         'created_at',
         'updated_at',
     ];
+
+    /**
+     * Accessor for the latest job status from transaction_jobs
+     *
+     * @return string|null
+     */
+    public function getLatestJobStatusAttribute()
+    {
+        $latestJob = $this->jobs()->latest('created_at')->first();
+        return $latestJob ? $latestJob->job_status : self::JOB_STATUS_QUEUED;
+    }
 
     /**
      * The attributes that should be cast.

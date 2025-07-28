@@ -387,6 +387,7 @@ class TransactionController extends Controller
                 // 'customer_code' => $request->customer_code, // Commented out as requested
                 'payload_checksum' => $request->payload_checksum ?? md5(json_encode($request->all())),
                 'validation_status' => 'PENDING',
+                'job_status' => 'QUEUED',
             ];
 
             Log::info('TransactionController@store: Transaction data prepared', $transactionData);
@@ -549,6 +550,7 @@ class TransactionController extends Controller
                     'transaction_id' => $transaction->transaction_id,
                     'serial_number' => $terminal->serial_number,
                     'status' => 'queued',
+                    'job_status' => $transaction->validation_status ?? 'PENDING',
                     'timestamp' => $transaction->created_at->toISOString()
                 ]
             ], 200);

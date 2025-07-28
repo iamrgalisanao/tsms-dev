@@ -8,7 +8,7 @@
         <th class="text-center">Validation</th>
         <th class="text-center">Status</th>
         <!-- <th class="text-center">Attempts</th> -->
-        <th class="text-center">Transaction Count</th>
+        <!-- <th class="text-center">Transaction Count</th> -->
         <th class="text-center">Created At</th>
         <!-- <th class="text-end pe-3">Actions</th> -->
       </tr>
@@ -30,12 +30,12 @@
         </td>
         <td class="text-center">
           <span
-            class="badge bg-{{ $transaction->job_status === 'COMPLETED' ? 'success' : ($transaction->job_status === 'FAILED' ? 'danger' : 'info') }}">
-            {{ $transaction->job_status }}
+            class="badge bg-{{ $transaction->latest_job_status === 'COMPLETED' ? 'success' : ($transaction->latest_job_status === 'FAILED' ? 'danger' : 'info') }}">
+            {{ $transaction->latest_job_status ?? 'QUEUED' }}
           </span>
         </td>
         <!-- <td class="text-center">{{ $transaction->job_attempts }}</td>q -->
-        <td class="text-center">{{ $transaction->transaction_count }}</td>
+        <!-- <td class="text-center">{{ $transaction->transaction_count }}</td> -->
         <td class="text-center">{{ $transaction->created_at->format('M d, Y h:i A') }}</td>
         <!-- <td class=" text-end pe-3">
           <div class="d-flex gap-2 justify-content-end">

@@ -44,6 +44,7 @@
                   <th class="text-center">Validation</th>
                   <th class="text-center">Status</th>
                   <th class="text-center">Attempts</th>
+                 <th class="text-center">Job Debug</th>
                   <th>Created At</th>
                   <th class="text-end pe-3">Actions</th>
                 </tr>
@@ -62,11 +63,23 @@
                   </td>
                   <td class="text-center job-status">
                     <span
-                      class="badge bg-{{ $transaction->job_status === 'COMPLETED' ? 'success' : ($transaction->job_status === 'FAILED' ? 'danger' : 'info') }}">
-                      {{ $transaction->job_status }}
+                      class="badge bg-{{ $transaction->latest_job_status === 'COMPLETED' ? 'success' : ($transaction->latest_job_status === 'FAILED' ? 'danger' : 'info') }}">
+                      {{ $transaction->latest_job_status ?? 'QUEUED' }}
                     </span>
                   </td>
                   <td class="text-center attempts">{{ $transaction->job_attempts }}</td>
+                 <td class="text-center">
+                   @foreach($transaction->jobs as $job)
+                     <div style="font-size: 11px; margin-bottom: 2px;">
+                       <strong>Status:</strong> {{ $job->job_status }}<br>
+                       <strong>Attempt:</strong> {{ $job->attempts ?? $job->attempt_number ?? 'N/A' }}<br>
+                       <strong>Completed:</strong> {{ $job->completed_at ?? 'N/A' }}
+                     </div>
+                   @endforeach
+                   @if($transaction->jobs->isEmpty())
+                     <span class="text-muted">No jobs</span>
+                   @endif
+                 </td>
                   <td>{{ $transaction->created_at->format('M d, Y h:i A') }}</td>
                   <td class="text-end pe-3">
                     <div class="d-flex gap-2 justify-content-end">
