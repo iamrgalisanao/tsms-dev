@@ -7,7 +7,7 @@
         <th class="text-end">Amount</th>
         <th class="text-center">Validation</th>
         <th class="text-center">Status</th>
-        <th class="text-center">Attempts</th>
+        <!-- <th class="text-center">Attempts</th> -->
         <th class="text-center">Transaction Count</th>
         <th class="text-center">Created At</th>
         <!-- <th class="text-end pe-3">Actions</th> -->
@@ -17,8 +17,8 @@
       @forelse($transactions as $transaction)
       <tr>
         <td class="ps-3">{{ $transaction->transaction_id }}</td>
-        <td>{{ $transaction->terminal->identifier ?? 'N/A' }}</td>
-        <td class="text-end">₱{{ number_format($transaction->gross_sales, 2) }}</td>
+        <td>{{ $transaction->terminal->id ?? 'N/A' }}</td>
+        <td class="text-end">₱{{ number_format($transaction->base_amount, 2) }}</td>
         <td class="text-center">
           <span class="badge bg-{{
             $transaction->validation_status === 'VALID' ? 'success' :
@@ -34,7 +34,7 @@
             {{ $transaction->job_status }}
           </span>
         </td>
-        <td class="text-center">{{ $transaction->job_attempts }}</td>
+        <!-- <td class="text-center">{{ $transaction->job_attempts }}</td>q -->
         <td class="text-center">{{ $transaction->transaction_count }}</td>
         <td class="text-center">{{ $transaction->created_at->format('M d, Y h:i A') }}</td>
         <!-- <td class=" text-end pe-3">

@@ -45,12 +45,12 @@ class TransactionSchemaTestSeeder extends Seeder
                 'transaction_id' => $transaction->transaction_id,
                 'terminal_id' => $transaction->terminal_id,
                 // Optionally assign a random job status code
-                'job_status_code' => 'QUEUED',
+                'job_status' => 'QUEUED',
             ]);
             TransactionValidation::factory(1)->create([
                 'transaction_id' => $transaction->transaction_id,
                 // Optionally assign a random validation status code
-                'validation_status_code' => 'PENDING',
+                'status_code' => 'PENDING',
             ]);
         });
     }

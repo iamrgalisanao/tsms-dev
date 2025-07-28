@@ -67,7 +67,7 @@
             <td>{{ $transaction->transaction_id }}</td>
             <td>{{ $transaction->serial_number }}</td>
             {{-- <td>{{ $transaction->posTerminal->terminal_uid ?? 'Unknown' }}</td> --}}
-            <td>{{ number_format($transaction->gross_sales, 2) }}</td>
+            <td>{{ number_format($transaction->base_amount, 2) }}</td>
             <td>{{ $transaction->created_at->format('Y-m-d H:i') }}</td>
             <td>
               <span class="badge {{ $transaction->validation_status === 'valid' ? 'bg-success' : 

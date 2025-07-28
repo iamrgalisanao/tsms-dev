@@ -4,7 +4,7 @@ namespace App\Services;
 
 use App\Models\Transaction;
 use App\Models\PosTerminal;
-use App\Models\Store;
+// ...existing code...
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
@@ -17,6 +17,17 @@ class TransactionValidationService
     //    C O N S T A N T S   &   P R O P E R T I E S
     // ────────────────────────────────────────────────────────────────────────────────
     //
+    /**
+     * Stub for tenant validation. Returns empty array (no errors) for now.
+     *
+     * @param Transaction $transaction
+     * @return array
+     */
+    protected function validateTenant(Transaction $transaction): array
+    {
+        // TODO: Implement tenant validation logic if needed
+        return [];
+    }
 
     /**
      * Maximum allowable difference (in absolute value) between computed VAT and reported VAT.
@@ -472,13 +483,7 @@ class TransactionValidationService
     }
 
     /**
-     * Validate a fully‐hydrated Transaction model. We gather errors from:
-     *  - store & operating hours rules
-     *  - terminal status
-     *  - amount calculations (gross/net/vat/service/rounding)
-     *  - transaction integrity (duplicate, sequence gaps, date of transaction)
-     *  - high-level business rules (daily limits, store settings, tax exemptions, etc)
-     *  - discount‐specific rules (senior/pwd auth code, sum of individual discounts)
+     * Validate a fully‐hydrated Transaction model. Only tenant-based logic is used.
      *
      * @param  Transaction  $transaction
      * @return array   ['valid' => bool, 'errors' => array]
@@ -491,10 +496,10 @@ class TransactionValidationService
 
         $errors = [];
 
-        // 1) Store rules (does terminal → store exist? is store_name provided or inferred?)
-        $storeErrors = $this->validateStore($transaction);
-        if (! empty($storeErrors)) {
-            $errors = array_merge($errors, $storeErrors);
+        // 1) Tenant rules (does tenant exist?)
+        $tenantErrors = $this->validateTenant($transaction);
+        if (! empty($tenantErrors)) {
+            $errors = array_merge($errors, $tenantErrors);
         }
 
         // 2) Terminal rules (does terminal exist? is it active?)
@@ -515,7 +520,7 @@ class TransactionValidationService
             $errors = array_merge($errors, $integrityErrors);
         }
 
-        // 5) High‐level business rules (store limits, daily totals, tax exemptions, etc.)
+        // 5) High‐level business rules (tenant limits, daily totals, tax exemptions, etc.)
         $businessErrors = $this->validateBusinessRules($transaction);
         if (! empty($businessErrors)) {
             $errors = array_merge($errors, $businessErrors);
@@ -540,52 +545,6 @@ class TransactionValidationService
     }
 
     // ────────────────────────────────────────────────────────────────────────────────
-    //    “V A L I D A T E   S T O R E   &   O P E R A T I N G   H O U R S”
-    // ────────────────────────────────────────────────────────────────────────────────
-
-    /**
-     * Ensure that the Transaction has a valid terminal_id → store. If the store doesn’t
-     * exist, produce an error. Otherwise, autofill transaction->store_name if missing.
-     *
-     * @param  Transaction  $transaction
-     * @return array  List of error messages (empty if none)
-     */
-    protected function validateStore(Transaction $transaction): array
-    {
-        $errors = [];
-
-        // Must have a terminal_id
-        if (! $transaction->terminal_id) {
-            $errors[] = 'Terminal ID is required.';
-            return $errors;
-        }
-
-        // Fetch terminal, then get store via relationship if defined. Otherwise, fallback to a join.
-        $terminal = PosTerminal::find($transaction->terminal_id);
-        if (! $terminal) {
-            $errors[] = 'Terminal not found.';
-            return $errors;
-        }
-
-        /** @var Store|null $store */
-        $store = Store::find($terminal->store_id);
-        if (! $store) {
-            // If store isn’t found, only add an error if transaction->store_name is also empty
-            if (empty($transaction->store_name)) {
-                $errors[] = 'Store not found for this terminal.';
-            }
-        } else {
-            // If store exists and we have no store_name in the transaction, write it & save
-            if (empty($transaction->store_name)) {
-                $transaction->store_name = $store->name;
-                $transaction->save();
-            }
-        }
-
-        return $errors;
-    }
-
-    // ────────────────────────────────────────────────────────────────────────────────
     //    “V A L I D A T E   T E R M I N A L”
     // ────────────────────────────────────────────────────────────────────────────────
 
@@ -605,8 +564,15 @@ class TransactionValidationService
             return $errors;
         }
 
-        if ($terminal->status !== 'active') {
-            $errors[] = 'Terminal is not active (current status: ' . $terminal->status . ').';
+        // Check if the related TerminalStatus name is 'active'
+        $terminalStatus = $terminal->status;
+        $isActive = false;
+        if ($terminalStatus && strtolower($terminalStatus->name) === 'active') {
+            $isActive = true;
+        }
+        // Also check is_active boolean and expiration
+        if (!($isActive && $terminal->is_active && (!$terminal->expires_at || $terminal->expires_at->isFuture()))) {
+            $errors[] = 'Terminal is not active (current status: ' . json_encode(['id' => $terminal->status_id, 'name' => $terminalStatus ? $terminalStatus->name : null]) . ').';
         }
 
         return $errors;
@@ -632,10 +598,28 @@ class TransactionValidationService
         $errors = [];
 
         // 1) Basic positivity checks
-        if ($transaction->gross_sales <= 0) {
+        if ($transaction->base_amount <= 0) {
             $errors[] = 'Gross sales amount must be positive.';
         }
-        if ($transaction->net_sales <= 0) {
+        // Calculate net sales: base_amount - total discounts + total taxes
+        $discounts = 0;
+        if (isset($transaction->adjustments) && is_array($transaction->adjustments)) {
+            foreach ($transaction->adjustments as $adj) {
+                if (isset($adj['amount'])) {
+                    $discounts += $adj['amount'];
+                }
+            }
+        }
+        $taxes = 0;
+        if (isset($transaction->taxes) && is_array($transaction->taxes)) {
+            foreach ($transaction->taxes as $tax) {
+                if (isset($tax['amount'])) {
+                    $taxes += $tax['amount'];
+                }
+            }
+        }
+        $net_sales = $transaction->base_amount - $discounts + $taxes;
+        if ($net_sales <= 0) {
             $errors[] = 'Net sales amount must be positive.';
         }
         if ($transaction->vatable_sales < 0) {
@@ -845,12 +829,12 @@ class TransactionValidationService
     // ────────────────────────────────────────────────────────────────────────────────
 
     /**
-     * These are higher‐level, store‐specific business constraints:
-     *  - Does store allow service_charge?
-     *  - Is gross_sales ≤ store->max_transaction_amount?
-     *  - Does adding this transaction exceed the store’s daily sales limit?
+     * These are higher‐level, tenant‐specific business constraints:
+     *  - Does tenant allow service_charge?
+     *  - Is gross_sales ≤ tenant->max_transaction_amount?
+     *  - Does adding this transaction exceed the tenant’s daily sales limit?
      *  - If tax_exempt, then vat_amount must be 0 and tax_exempt_id must exist
-     *  - If not tax_exempt but store is tax_exempt, that’s a special error
+     *  - If not tax_exempt but tenant is tax_exempt, that’s a special error
      *  - Discounts must be ≤ 30% of gross
      *
      * @param  Transaction  $transaction
@@ -860,46 +844,46 @@ class TransactionValidationService
     {
         $errors = [];
 
-        // 1) Terminal → store
+        // 1) Terminal → tenant
         $terminal = PosTerminal::find($transaction->terminal_id);
         if (! $terminal) {
             $errors[] = 'Terminal not found for business‐rules validation.';
             return $errors;
         }
 
-        $store = Store::find($terminal->store_id);
-        if (! $store) {
-            $errors[] = 'Store not found for this terminal.';
+        $tenant = \App\Models\Tenant::find($transaction->tenant_id);
+        if (! $tenant) {
+            $errors[] = 'Tenant not found for this terminal.';
             return $errors;
         }
 
         // 2) Single‐transaction amount limit
-        if ($store->max_transaction_amount !== null
-            && $transaction->gross_sales > $store->max_transaction_amount
+        if ($tenant->max_transaction_amount !== null
+            && $transaction->gross_sales > $tenant->max_transaction_amount
         ) {
             $errors[] = sprintf(
-                'Transaction (%.2f) exceeds maximum allowed for this store (%.2f).',
+                'Transaction (%.2f) exceeds maximum allowed for this tenant (%.2f).',
                 $transaction->gross_sales,
-                $store->max_transaction_amount
+                $tenant->max_transaction_amount
             );
         }
 
         // 3) Daily transaction total limit
         $transactionDate = Carbon::parse($transaction->transaction_timestamp);
-        $dailyTotal = $store->getDailySalesTotal($transactionDate);
+        $dailyTotal = $tenant->getDailySalesTotal($transactionDate);
         $newTotal   = $dailyTotal + $transaction->gross_sales;
 
-        if ($store->max_daily_sales !== null && $newTotal > $store->max_daily_sales) {
+        if ($tenant->max_daily_sales !== null && $newTotal > $tenant->max_daily_sales) {
             $errors[] = sprintf(
-                'Transaction would exceed daily sales limit for this store (%.2f + %.2f = %.2f > %.2f).',
+                'Transaction would exceed daily sales limit for this tenant (%.2f + %.2f = %.2f > %.2f).',
                 $dailyTotal,
                 $transaction->gross_sales,
                 $newTotal,
-                $store->max_daily_sales
+                $tenant->max_daily_sales
             );
         }
 
-        // 4) Service‐charge must be allowed by store
+        // 4) Service‐charge must be allowed by tenant
         $serviceChargeUsed = null;
         if (property_exists($transaction, 'service_charge') && $transaction->service_charge > 0) {
             $serviceChargeUsed = $transaction->service_charge;
@@ -910,9 +894,9 @@ class TransactionValidationService
             $serviceChargeUsed = $transaction->management_service_charge;
         }
 
-        if ($serviceChargeUsed !== null && ! $store->allows_service_charge) {
+        if ($serviceChargeUsed !== null && ! $tenant->allows_service_charge) {
             $errors[] = sprintf(
-                'This store does not allow service charges (found %.2f).',
+                'This tenant does not allow service charges (found %.2f).',
                 $serviceChargeUsed
             );
         }
@@ -934,10 +918,10 @@ class TransactionValidationService
             }
         }
         else {
-            // If the store itself is tax_exempt but this transaction is not flagged as exempt,
+            // If the tenant itself is tax_exempt but this transaction is not flagged as exempt,
             // that is a special situation.
-            if ($store->tax_exempt && $transaction->vat_amount > 0) {
-                $errors[] = 'Non‐exempt transactions in a tax‐exempt store must be flagged.';
+            if ($tenant->tax_exempt && $transaction->vat_amount > 0) {
+                $errors[] = 'Non‐exempt transactions in a tax‐exempt tenant must be flagged.';
             }
         }
 

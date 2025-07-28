@@ -11,7 +11,7 @@ class TransactionValidation extends Model
     protected $table = 'transaction_validations';
     protected $fillable = [
         'transaction_id',
-        'validation_status_code',
+        'status_code',
         'validation_details',
         'error_code',
         'validated_at',

@@ -258,6 +258,8 @@ class TransactionController extends Controller
                 'transaction_id' => $request->transaction_id ?? 'missing'
             ]);
 
+            Log::info('TransactionController@store: request received', $request->all());
+
             /**
              * Checks for the presence of an Authorization header in the request.
              * If present, extracts the Bearer token and validates it.
@@ -268,7 +270,9 @@ class TransactionController extends Controller
              */
             if ($request->header('Authorization')) {
                 $token = str_replace('Bearer ', '', $request->header('Authorization'));
+                Log::info('TransactionController@store: Authorization header found', ['token' => $token]);
                 if ($token === 'invalid-token') {
+                    Log::warning('TransactionController@store: Invalid token');
                     return response()->json([
                         'success' => false,
                         'message' => 'Unauthorized'
@@ -285,6 +289,7 @@ class TransactionController extends Controller
              * @return \Illuminate\Http\JsonResponse|null Returns a JSON response for empty request body, or null if not empty.
              */
             if (empty($request->all())) {
+                Log::warning('TransactionController@store: Empty request body');
                 return response()->json([
                     'success' => false,
                     'message' => 'Malformed JSON or empty request body'
@@ -309,17 +314,23 @@ class TransactionController extends Controller
              *   - items.*.price: required if items are present, numeric, minimum value 0
              *   - items.*.quantity: required if items are present, integer, minimum value 1
              */
-            $request->validate([
-                'tenant_id' => 'required|exists:tenants,id',
-                'serial_number' => 'required|exists:pos_terminals,serial_number',
-                'transaction_id' => 'required|string|max:191',
-                'hardware_id' => 'required|string|max:191',
-                'transaction_timestamp' => 'required|date',
-                'base_amount' => 'required|numeric|min:0',
-                // 'customer_code' => 'required|string|max:191',
-                'submission_uuid' => 'required|string|max:191',
-                'submission_timestamp' => 'required|date',
-            ]);
+            try {
+                $request->validate([
+                    'tenant_id' => 'required|exists:tenants,id',
+                    'serial_number' => 'required|exists:pos_terminals,serial_number',
+                    'transaction_id' => 'required|string|max:191',
+                    'hardware_id' => 'required|string|max:191',
+                    'transaction_timestamp' => 'required|date',
+                    'base_amount' => 'required|numeric|min:0',
+                    // 'customer_code' => 'required|string|max:191',
+                    'submission_uuid' => 'required|string|max:191',
+                    'submission_timestamp' => 'required|date',
+                ]);
+                Log::info('TransactionController@store: Validation passed');
+            } catch (\Illuminate\Validation\ValidationException $e) {
+                Log::warning('TransactionController@store: Validation failed', ['errors' => $e->errors()]);
+                throw $e;
+            }
 
             /**
              * Retrieves the POS terminal by its ID along with its associated tenant and company information.
@@ -378,6 +389,7 @@ class TransactionController extends Controller
                 'validation_status' => 'PENDING',
             ];
 
+            Log::info('TransactionController@store: Transaction data prepared', $transactionData);
            
             /**
              * Checks if a transaction with the given transaction ID and terminal ID already exists.
@@ -393,6 +405,7 @@ class TransactionController extends Controller
                 ->first();
 
             if ($existingTransaction) {
+                Log::warning('TransactionController@store: Duplicate transaction', ['transaction_id' => $transactionData['transaction_id']]);
                 return response()->json([
                     'success' => false,
                     'message' => 'Validation failed',
@@ -406,16 +419,16 @@ class TransactionController extends Controller
              * @param array $transactionData The data to be used for creating the transaction.
              * @return \App\Models\Transaction The newly created Transaction instance.
              */
+            Log::info('TransactionController@store: Creating transaction record');
             $transaction = Transaction::create($transactionData);
 
-           
-            /**
-             * Dispatches the ProcessTransactionJob for the given transaction.
-             * This line is currently temporarily disabled for debugging purposes.
-             *
-             * @param Transaction $transaction The transaction instance to be processed by the job.
-             */
+            // Log before dispatch
+            \Log::info('About to dispatch ProcessTransactionJob', ['transaction_id' => $transaction->id]);
+
             ProcessTransactionJob::dispatch($transaction); // Temporarily disabled for debugging
+
+            // Log after dispatch
+            \Log::info('Dispatched ProcessTransactionJob', ['transaction_id' => $transaction->id]);
 
          
             /**
@@ -771,6 +784,8 @@ class TransactionController extends Controller
      */
     public function storeOfficial(Request $request)
     {
+        Log::info('storeOfficial: request received', ['body' => $request->all()]);
+
         $rawJson = $request->getContent();
         $checksumService = new PayloadChecksumService();
         $checksumResults = $checksumService->validateSubmissionChecksumsFromRaw($rawJson);
@@ -787,7 +802,9 @@ class TransactionController extends Controller
             // Handle authentication if token is provided
             if ($request->header('Authorization')) {
                 $token = str_replace('Bearer ', '', $request->header('Authorization'));
+                Log::info('storeOfficial: Authorization header found', ['token' => $token]);
                 if ($token === 'invalid-token') {
+                    Log::warning('storeOfficial: Invalid token');
                     return response()->json([
                         'success' => false,
                         'message' => 'Unauthorized'
@@ -797,6 +814,7 @@ class TransactionController extends Controller
 
             // Check for empty request body
             if (empty($request->all())) {
+                Log::warning('storeOfficial: Empty request body');
                 return response()->json([
                     'success' => false,
                     'message' => 'Malformed JSON or empty request body'
@@ -887,6 +905,7 @@ class TransactionController extends Controller
             $transactions = $request->transaction_count === 1 ? [$request->transaction] : $request->transactions;
 
             foreach ($transactions as $index => $transactionData) {
+                Log::info('storeOfficial: Processing transaction', ['index' => $index, 'transaction_id' => $transactionData['transaction_id']]);
                 try {
                     // Check for duplicate transaction
                     $existingTransaction = Transaction::where('transaction_id', $transactionData['transaction_id'])
@@ -894,6 +913,7 @@ class TransactionController extends Controller
                         ->first();
 
                     if ($existingTransaction) {
+                        Log::warning('storeOfficial: Duplicate transaction', ['transaction_id' => $transactionData['transaction_id']]);
                         $processedTransactions[] = [
                             'transaction_id' => $existingTransaction->transaction_id,
                             'status' => 'duplicate',
@@ -901,8 +921,7 @@ class TransactionController extends Controller
                         ];
                         continue;
                     }
-
-                    // Create transaction record
+                    Log::info('storeOfficial: Creating transaction record', ['transaction_id' => $transactionData['transaction_id']]);
                     $transaction = Transaction::create([
                         'tenant_id' => $terminal->tenant_id,
                         'terminal_id' => $terminal->id,
@@ -940,7 +959,9 @@ class TransactionController extends Controller
                     }
 
                     // Queue the transaction for processing
+                    Log::info('storeOfficial: Dispatching ProcessTransactionJob', ['transaction_id' => $transaction->transaction_id]);
                     ProcessTransactionJob::dispatch($transaction);
+                    Log::info('storeOfficial: ProcessTransactionJob dispatched', ['transaction_id' => $transaction->transaction_id]);
 
                     // Send notification to terminal if enabled
                     if ($terminal->notifications_enabled && $terminal->callback_url) {
@@ -1207,6 +1228,8 @@ class TransactionController extends Controller
         try {
             // Find terminal
             $terminal = PosTerminal::with('tenant.company')->findOrFail($submission['terminal_id']);
+
+            Log::info('storeOfficial: Terminal loaded', ['terminal_id' => $terminal->id, 'tenant_id' => $terminal->tenant_id]);
 
             // Normalize transaction list
             $transactions = $isSingle ? [$submission['transaction']] : $submission['transactions'];

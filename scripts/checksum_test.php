@@ -6,8 +6,8 @@ use App\Services\PayloadChecksumService;
 $payload = [
     
     "submission_uuid" => "e3b0c442-98fc-1c14-9afb-4c8996fb9242",
-    "tenant_id" => 45,
-    "terminal_id" => 5,
+    "tenant_id" => 34,
+    "terminal_id" => 1,
     "submission_timestamp" => "2025-07-19T12:00:00Z",
     "transaction_count" => 1,
     "payload_checksum" => "7639f380298e007962afe6e7d606b80a883bd1c7c1b03168743034b60fce7fd0",

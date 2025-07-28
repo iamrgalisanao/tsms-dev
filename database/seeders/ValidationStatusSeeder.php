@@ -14,6 +14,7 @@ class ValidationStatusSeeder extends Seeder
             ['code' => 'VALID', 'description' => 'Transaction passed all validation rules'],
             ['code' => 'INVALID', 'description' => 'Transaction failed one or more validation rules'],
             ['code' => 'REVIEW_REQUIRED', 'description' => 'Validation inconclusive—needs human/manual review'],
+            ['code' => 'ERROR', 'description' => 'System or processing error'],
         ];
         foreach ($statuses as $status) {
             ValidationStatus::updateOrCreate(['code' => $status['code']], $status);

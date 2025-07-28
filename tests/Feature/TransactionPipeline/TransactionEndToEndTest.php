@@ -312,10 +312,11 @@ class TransactionEndToEndTest extends TestCase
         $transaction->update(['validation_status' => 'PENDING']);
         
         // Create failed job record
+
         TransactionJob::create([
             'transaction_id' => $transaction->id,
             'job_type' => 'process',
-            'status' => 'failed',
+            'job_status' => 'FAILED',
             'error_message' => 'System failure during processing',
             'retry_count' => 0
         ]);

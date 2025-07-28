@@ -108,10 +108,6 @@ class PosTerminal extends Model implements Authenticatable
         return $this->hasMany(IntegrationLog::class, 'terminal_id');
     }
 
-    public function store()
-    {
-        return $this->belongsTo(Store::class);
-    }
 
     public function posType()
     {

@@ -13,7 +13,7 @@ class TransactionJobFactory extends Factory
     {
         return [
             'transaction_id' => $this->faker->uuid,
-            'job_status_code' => $this->faker->randomElement(['QUEUED', 'RUNNING', 'RETRYING', 'COMPLETED', 'PERMANENTLY_FAILED']),
+            'job_status' => $this->faker->randomElement(['QUEUED', 'RUNNING', 'RETRYING', 'COMPLETED', 'PERMANENTLY_FAILED']),
             'last_error' => $this->faker->optional()->sentence,
             'attempts' => $this->faker->numberBetween(1, 3),
             'retry_count' => $this->faker->numberBetween(0, 2),

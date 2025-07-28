@@ -145,6 +145,7 @@ class DashboardController extends Controller
     protected function getRecentTransactions()
     {
         return Transaction::with(['terminal', 'tenant'])
+            ->select(['*']) // Ensure all columns are selected
             ->latest()
             ->take(10)
             ->get();

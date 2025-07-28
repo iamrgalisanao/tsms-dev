@@ -74,14 +74,18 @@ class ProcessTransactionJob implements ShouldQueue
 
             // Create or update TransactionJob record for this attempt
             $job = $this->transaction->jobs()->create([
-                'status' => 'PROCESSING',
+                'job_status' => 'PROCESSING',
                 'attempt_number' => $this->attempts(),
                 'started_at' => now(),
             ]);
 
             // Create TransactionValidation record
+            Log::debug('Creating TransactionValidation', [
+                'status_code' => 'PENDING',
+                'transaction_id' => $this->transaction->id
+            ]);
             $validation = $this->transaction->validations()->create([
-                'status' => 'PENDING',
+                'status_code' => 'PENDING',
                 'started_at' => now(),
             ]);
 
@@ -95,12 +99,17 @@ class ProcessTransactionJob implements ShouldQueue
                 $errorMessages = implode('; ', $this->flattenErrorArray($errors));
 
                 $validation->update([
-                    'status' => 'ERROR',
+                    'status_code' => 'ERROR',
                     'details' => $errorMessages,
                     'completed_at' => now(),
                 ]);
+                Log::debug('Updating TransactionValidation', [
+                    'status_code' => 'ERROR',
+                    'transaction_id' => $this->transaction->id,
+                    'details' => $errorMessages
+                ]);
                 $job->update([
-                    'status' => 'FAILED',
+                    'job_status' => 'FAILED',
                     'completed_at' => now(),
                 ]);
                 throw new Exception("Validation failed: " . $errorMessages);
@@ -108,14 +117,21 @@ class ProcessTransactionJob implements ShouldQueue
 
             // Mark as COMPLETED if validation passed
             $validation->update([
-                'status' => 'VALID',
+                'status_code' => 'VALID',
                 'details' => 'Validated successfully',
                 'completed_at' => now(),
             ]);
+            Log::debug('Updating TransactionValidation', [
+                'status_code' => 'VALID',
+                'transaction_id' => $this->transaction->id
+            ]);
             $job->update([
-                'status' => 'COMPLETED',
+                'job_status' => 'COMPLETED',
                 'completed_at' => now(),
             ]);
+
+            // Update main transaction status to VALID
+            $this->handleSuccess();
 
         } catch (\Throwable $e) {
             $this->handleError($e);
@@ -186,6 +202,11 @@ class ProcessTransactionJob implements ShouldQueue
 
     protected function handleSuccess(): void
     {
+        Log::info('handleSuccess called', [
+            'transaction_id' => $this->transaction->id,
+            'old_status' => $this->transaction->validation_status
+        ]);
+
         $this->transaction->update([
             'job_status' => 'COMPLETED',
             'validation_status' => 'VALID',
@@ -193,8 +214,12 @@ class ProcessTransactionJob implements ShouldQueue
             'completed_at' => now()
         ]);
 
+        // Refresh the model to get the latest value from DB
+        $this->transaction->refresh();
+
         Log::info('Transaction processed successfully', [
-            'transaction_id' => $this->transaction->id
+            'transaction_id' => $this->transaction->id,
+            'new_status' => $this->transaction->validation_status
         ]);
     }
 
@@ -209,7 +234,7 @@ class ProcessTransactionJob implements ShouldQueue
         $job = $this->transaction->jobs()->latest()->first();
         if ($job) {
             $job->update([
-                'status' => 'FAILED',
+                'job_status' => 'FAILED',
                 'completed_at' => now(),
                 'error_message' => $e->getMessage(),
             ]);
@@ -217,9 +242,14 @@ class ProcessTransactionJob implements ShouldQueue
         $validation = $this->transaction->validations()->latest()->first();
         if ($validation) {
             $validation->update([
-                'status' => 'ERROR',
+                'status_code' => 'ERROR',
                 'details' => $e->getMessage(),
                 'completed_at' => now(),
+            ]);
+            Log::debug('Updating TransactionValidation in handleError', [
+                'status_code' => 'ERROR',
+                'transaction_id' => $this->transaction->id,
+                'details' => $e->getMessage()
             ]);
         }
     }

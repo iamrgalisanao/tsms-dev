@@ -8,6 +8,17 @@ use Illuminate\Database\Eloquent\Model;
 class TransactionJob extends Model
 {
     use HasFactory;
+    // Ensure job_status is always set on creation
+    protected static function boot()
+    {
+        parent::boot();
+        static::creating(function ($model) {
+            if (empty($model->job_status)) {
+                throw new \InvalidArgumentException('job_status must be set when creating a TransactionJob.');
+            }
+        });
+    }
+    use HasFactory;
     protected $table = 'transaction_jobs';
     protected $fillable = [
         'transaction_id',

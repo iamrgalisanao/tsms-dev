@@ -1247,9 +1247,10 @@ class TransactionStatusTrackingTest extends TransactionProcessingBaseTest
         ]);
 
         // Create job record
+
         $job = TransactionJob::create([
             'transaction_id' => $transaction->transaction_id,
-            'status' => 'COMPLETED',
+            'job_status' => 'COMPLETED',
             'attempt_number' => 1,
             'started_at' => now()->subMinutes(2),
             'completed_at' => now()->subMinute()
@@ -1258,7 +1259,7 @@ class TransactionStatusTrackingTest extends TransactionProcessingBaseTest
         // Create validation record
         $validation = TransactionValidation::create([
             'transaction_id' => $transaction->transaction_id,
-            'status' => 'VALID',
+            'status_code' => 'VALID',
             'started_at' => now()->subMinutes(2),
             'validated_at' => now()->subMinute()
         ]);

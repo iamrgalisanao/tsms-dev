@@ -46,8 +46,8 @@ class DatabaseSeeder extends Seeder
             // Optional test data seeders (uncomment as needed)
             // RetryTransactionSeeder::class, // Create retry test data
             // TestDataSeeder::class,
-            // JobStatusSeeder::class,
-            // ValidationStatusSeeder::class,
+            JobStatusSeeder::class,
+            ValidationStatusSeeder::class,
             // TransactionLogSeeder::class,
             // PosSampleDataSeeder::class,
             // CircuitBreakerSeeder::class,
