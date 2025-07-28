@@ -34,8 +34,8 @@ use App\Helpers\FormatHelper;
                     <th>Amount</th>
                     <th>Validation Status</th>
                     <th>Job Status</th>
-                    {{-- <th>Attempts</th> --}}
-                    <th>Transaction Count</th>
+                    <!-- {{-- <th>Attempts</th> --}} -->
+                    <!-- <th>Transaction Count</th> -->
                     <th>Completed At</th>
                     <th>Created At</th>
                 </tr>
@@ -47,13 +47,13 @@ use App\Helpers\FormatHelper;
                     {{-- <td>{{ $log->terminal->identifier ?? 'N/A' }}</td>
                     <td> --}}
                     <td>{{$log->terminal->machine_number ?? 'N/A'}}</td>
-                    {{-- <td>{{ $log->terminal->terminal_uid ?? 'N/A' }}</td> --}}
+                    <!-- {{-- <td>{{ $log->terminal->terminal_uid ?? 'N/A' }}</td> --}} -->
                     <td class="text-end">₱{{ number_format($log->amount, 2) }}</td>
                     <td class="text-center">{!! BadgeHelper::getValidationStatusBadge($log->validation_status) !!}</td>
-                    <td class="text-center">{!! BadgeHelper::getJobStatusBadge($log->job_status, 'job') !!}</td>
-                    {{-- <td class="text-center">{{ $log->job_attempts }}</td> --}}
-                    {{-- <td class="text-center">{{ FormatHelper::formatDate($log->completed_at) }}</td> --}}
-                    <td class="text-center">{{ $log->transaction_count }}</td>
+                    <td class="text-center">{!! BadgeHelper::getJobStatusBadge($log->latest_job_status, 'job') !!}</td>
+                    <!-- {{-- <td class="text-center">{{ $log->job_attempts }}</td> --}}
+                    {{-- <td class="text-center">{{ FormatHelper::formatDate($log->completed_at) }}</td> --}} -->
+                    <!-- <td class="text-center">{{ $log->transaction_count }}</td> -->
                     <td class="text-center">{{ \Carbon\Carbon::parse($log->completed_at)->format('Y-m-d H:i:s') }}</td>
                     <td class="text-center">{{ \Carbon\Carbon::parse($log->created_at)->format('Y-m-d H:i:s') }}</td>
                 </tr>
