@@ -9,6 +9,13 @@ namespace App\Services;
 class PayloadChecksumService
 {
     /**
+     * Public wrapper for canonicalize (for debugging/external use)
+     */
+    public function getCanonicalized($data)
+    {
+        return $this->canonicalize($data);
+    }
+    /**
      * Validate checksums from raw JSON string (canonicalize from original input).
      *
      * @param string $rawJson
@@ -17,30 +24,7 @@ class PayloadChecksumService
     public function validateSubmissionChecksumsFromRaw(string $rawJson): array
     {
         $submission = json_decode($rawJson, true);
-        $errors = [];
-
-        if (isset($submission['transaction'])) {
-            $txn = $submission['transaction'];
-            $txnCopy = $txn;
-            unset($txnCopy['payload_checksum']);
-
-            $computedTxn = $this->computeChecksum($txnCopy);
-            if (!isset($txn['payload_checksum']) || $txn['payload_checksum'] !== $computedTxn) {
-                $errors[] = 'Invalid payload_checksum for transaction';
-            }
-        }
-
-        $submissionCopy = $submission;
-        unset($submissionCopy['payload_checksum']);
-        $computedSubmission = $this->computeChecksum($submissionCopy);
-        if (!isset($submission['payload_checksum']) || $submission['payload_checksum'] !== $computedSubmission) {
-            $errors[] = 'Invalid submission payload_checksum';
-        }
-
-        return [
-            'valid'  => empty($errors),
-            'errors' => $errors,
-        ];
+        return $this->validateSubmissionChecksums($submission);
     }
 
     /**
@@ -53,21 +37,63 @@ class PayloadChecksumService
     {
         $errors = [];
 
-        // Validate transaction-level checksum
-        $txn = $submission['transaction'];
-        $txnCopy = $txn;
-        unset($txnCopy['payload_checksum']);
-        $computedTxn = $this->computeChecksum($txnCopy);
+        // Single transaction submission (preserve working logic)
+        if (isset($submission['transaction'])) {
+            $txn = $submission['transaction'];
+            $txnCopy = $txn;
+            unset($txnCopy['payload_checksum']);
+            $computedTxn = $this->computeChecksum($txnCopy);
+            if (!isset($txn['payload_checksum']) || $txn['payload_checksum'] !== $computedTxn) {
+                $errors[] = 'Invalid payload_checksum for transaction';
+            }
 
-        if (!isset($txn['payload_checksum']) || $txn['payload_checksum'] !== $computedTxn) {
-            $errors[] = 'Invalid payload_checksum for transaction';
+            // Validate submission-level checksum
+            $submissionCopy = $submission;
+            unset($submissionCopy['payload_checksum']);
+            $computedSubmission = $this->computeChecksum($submissionCopy);
+            if (!isset($submission['payload_checksum']) || $submission['payload_checksum'] !== $computedSubmission) {
+                $errors[] = 'Invalid submission payload_checksum';
+            }
+
+            return [
+                'valid'  => empty($errors),
+                'errors' => $errors,
+            ];
         }
 
-        // Validate submission-level checksum
+        // Batch transaction submission
+        if (isset($submission['transactions']) && is_array($submission['transactions'])) {
+            $allTxnValid = true;
+            foreach ($submission['transactions'] as $i => $txn) {
+                $txnCopy = $txn;
+                unset($txnCopy['payload_checksum']);
+                $computedTxn = $this->computeChecksum($txnCopy);
+                if (!isset($txn['payload_checksum']) || $txn['payload_checksum'] !== $computedTxn) {
+                    $errors[] = "Invalid payload_checksum for transaction at index {$i}";
+                    $allTxnValid = false;
+                }
+            }
+
+            // Only validate submission-level checksum if all transaction checksums are valid
+            if ($allTxnValid) {
+                $submissionCopy = $submission;
+                unset($submissionCopy['payload_checksum']);
+                $computedSubmission = $this->computeChecksum($submissionCopy);
+                if (!isset($submission['payload_checksum']) || $submission['payload_checksum'] !== $computedSubmission) {
+                    $errors[] = 'Invalid submission payload_checksum';
+                }
+            }
+
+            return [
+                'valid'  => empty($errors),
+                'errors' => $errors,
+            ];
+        }
+
+        // If neither single nor batch, just check submission-level checksum
         $submissionCopy = $submission;
         unset($submissionCopy['payload_checksum']);
         $computedSubmission = $this->computeChecksum($submissionCopy);
-
         if (!isset($submission['payload_checksum']) || $submission['payload_checksum'] !== $computedSubmission) {
             $errors[] = 'Invalid submission payload_checksum';
         }
