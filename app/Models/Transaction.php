@@ -7,6 +7,11 @@ use Illuminate\Database\Eloquent\Model;
 
 class Transaction extends Model
 {
+    // Validation statuses
+    public const VALIDATION_STATUS_VALID   = 'VALID';
+    public const VALIDATION_STATUS_PENDING = 'PENDING';
+    public const VALIDATION_STATUS_FAILED  = 'FAILED';
+    // Add more as needed
     use HasFactory;
 
     use HasFactory;

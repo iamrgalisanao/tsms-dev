@@ -29,7 +29,7 @@ return [
     'circuit_breaker' => [
         'failure_threshold' => (int) env('WEBAPP_CB_FAILURE_THRESHOLD', 5),
         'recovery_timeout_minutes' => (int) env('WEBAPP_CB_RECOVERY_TIMEOUT', 10),
-        'enabled' => (bool) env('WEBAPP_CB_ENABLED', true),
+        'enabled' => false, // Disabled for secured API token integration
     ],
 
     /*

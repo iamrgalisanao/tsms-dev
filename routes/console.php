@@ -3,22 +3,33 @@
 use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
-use App\Jobs\ForwardTransactionsToWebAppJob;
+use Illuminate\Support\Facades\Log;
+use App\Services\WebAppForwardingService;
 
 Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
 })->purpose('Display an inspiring quote');
 
-// WebApp Transaction Forwarding - Every 5 minutes
-Schedule::job(new ForwardTransactionsToWebAppJob())
+Schedule::call(function () {
+    // This is a placeholder for any scheduled tasks you want to run
+    // You can add your custom logic here
+
+    Log::info('Laravel scheduler tick: cron is running');
+})->everyMinute();
+
+
+
+// WebApp Transaction Forwarding - Every 5 minutes (DI version)
+Schedule::call(function () {
+    $svc = app(WebAppForwardingService::class);
+    $result = $svc->forwardUnsentTransactions();
+    Log::info('[Cron] WebApp forwarding run', ['result' => $result]);
+})
     ->everyFiveMinutes()
     ->name('webapp-transaction-forwarding')
     ->withoutOverlapping()
     ->onOneServer()
-    ->when(function () {
-        // Only run if forwarding is enabled
-        return config('tsms.web_app.enabled', false);
-    });
+    ->when(fn () => config('tsms.web_app.enabled', true));
 
 // Health check for WebApp forwarding - Every hour
 Schedule::call(function () {
@@ -27,7 +38,7 @@ Schedule::call(function () {
         $stats = $service->getForwardingStats();
         
         // Log health status
-        \Log::info('WebApp forwarding health check', [
+        Log::info('WebApp forwarding health check', [
             'unforwarded_transactions' => $stats['unforwarded_transactions'],
             'pending_forwards' => $stats['pending_forwards'],
             'failed_forwards' => $stats['failed_forwards'],
@@ -37,12 +48,12 @@ Schedule::call(function () {
         
         // Alert on circuit breaker open
         if ($stats['circuit_breaker']['is_open']) {
-            \Log::warning('WebApp forwarding circuit breaker is open', $stats['circuit_breaker']);
+            Log::warning('WebApp forwarding circuit breaker is open', $stats['circuit_breaker']);
         }
         
         // Alert on high failure count
         if ($stats['failed_forwards'] > 50) {
-            \Log::warning('High number of failed WebApp forwards', [
+            Log::warning('High number of failed WebApp forwards', [
                 'failed_count' => $stats['failed_forwards']
             ]);
         }
@@ -53,13 +64,13 @@ Schedule::call(function () {
             ->count();
             
         if ($oldPending > 0) {
-            \Log::warning('Old pending WebApp forwards detected', [
+            Log::warning('Old pending WebApp forwards detected', [
                 'old_pending_count' => $oldPending
             ]);
         }
 
     } catch (\Exception $e) {
-        \Log::error('WebApp forwarding health check failed', [
+        Log::error('WebApp forwarding health check failed', [
             'error' => $e->getMessage()
         ]);
     }
@@ -84,14 +95,14 @@ Schedule::call(function () {
                 ->delete();
             
             if ($completedDeleted > 0 || $failedDeleted > 0) {
-                \Log::info('WebApp forwarding cleanup completed', [
+                Log::info('WebApp forwarding cleanup completed', [
                     'completed_deleted' => $completedDeleted,
                     'failed_deleted' => $failedDeleted,
                 ]);
             }
         }
     } catch (\Exception $e) {
-        \Log::error('WebApp forwarding cleanup failed', [
+        Log::error('WebApp forwarding cleanup failed', [
             'error' => $e->getMessage()
         ]);
     }
