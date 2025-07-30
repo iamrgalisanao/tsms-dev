@@ -1,6 +1,7 @@
 <?php
-
 namespace App\Services;
+
+use App\Services\PayloadChecksumService;
 
 use App\Models\Transaction;
 use App\Models\WebappTransactionForward;
@@ -13,6 +14,7 @@ use Carbon\Carbon;
 
 class WebAppForwardingService
 {
+    private PayloadChecksumService $checksumService;
     private string $webAppEndpoint;
     private int    $timeout;
     private int    $batchSize;
@@ -33,6 +35,7 @@ class WebAppForwardingService
         $this->circuitBreakerEnabled    = config('tsms.circuit_breaker.enabled', true);
         $this->circuitBreakerThreshold  = config('tsms.circuit_breaker.threshold', 5);
         $this->circuitBreakerCooldown   = config('tsms.circuit_breaker.cooldown', 10);
+        $this->checksumService          = app(PayloadChecksumService::class);
     }
 
     public function forwardUnsentTransactions(): array
@@ -88,13 +91,30 @@ class WebAppForwardingService
         $batchId = 'TSMS_' . now()->format('YmdHis') . '_' . uniqid();
 
         return $transactions->map(function (Transaction $tx) use ($batchId) {
+            // Always recompute checksum before building payload
+            $payloadArr = [
+                'tsms_id'               => $tx->id,
+                'transaction_id'        => $tx->transaction_id,
+                'terminal_serial'       => $tx->terminal?->serial_number,
+                'tenant_code'           => $tx->tenant?->customer_code,
+                'tenant_name'           => $tx->tenant?->name,
+                'transaction_timestamp' => $this->isoTimestamp($tx->transaction_timestamp),
+                'amount'                => (float) $tx->base_amount,
+                'validation_status'     => $tx->validation_status,
+                'processed_at'          => $this->isoTimestamp($tx->created_at),
+                'submission_uuid'       => $tx->submission_uuid,
+            ];
+            // Remove checksum if present, then compute
+            unset($payloadArr['checksum']);
+            $payloadArr['checksum'] = $this->checksumService->computeChecksum($payloadArr);
+
             $forward = WebappTransactionForward::firstOrNew(
                 ['transaction_id' => $tx->id],
                 [
                     'batch_id'        => $batchId,
                     'status'          => WebappTransactionForward::STATUS_PENDING,
                     'max_attempts'    => 3,
-                    'request_payload' => $this->buildTransactionPayload($tx),
+                    'request_payload' => $payloadArr,
                 ]
             );
 
@@ -103,7 +123,7 @@ class WebAppForwardingService
                 WebappTransactionForward::STATUS_FAILED,
             ])) {
                 $forward->batch_id        = $batchId;
-                $forward->request_payload = $this->buildTransactionPayload($tx);
+                $forward->request_payload = $payloadArr;
             }
 
             $forward->save();
@@ -157,22 +177,7 @@ class WebAppForwardingService
         $records->each(fn ($f) => $f->markAsFailed($error, $statusCode));
     }
 
-    private function buildTransactionPayload(Transaction $tx): array
-    {
-        return [
-            'tsms_id'               => $tx->id,
-            'transaction_id'        => $tx->transaction_id,
-            'terminal_serial'       => $tx->terminal?->serial_number,
-            'tenant_code'           => $tx->tenant?->customer_code,
-            'tenant_name'           => $tx->tenant?->name,
-            'transaction_timestamp' => $this->isoTimestamp($tx->transaction_timestamp),
-            'amount'                => (float) $tx->base_amount,
-            'validation_status'     => $tx->validation_status,
-            'processed_at'          => $this->isoTimestamp($tx->created_at),
-            'checksum'              => $tx->payload_checksum,
-            'submission_uuid'       => $tx->submission_uuid,
-        ];
-    }
+    // buildTransactionPayload is now inlined in createForwardingRecords to ensure checksum is always up-to-date
 
     private function buildBulkPayload(Collection $records, string $batchId): array
     {
