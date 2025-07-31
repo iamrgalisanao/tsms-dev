@@ -258,7 +258,7 @@ return [
 
         'local' => [
             'transaction-supervisor' => [
-                'connection' => env('QUEUE_CONNECTION', 'reids'),  // Use database for local dev
+                'connection' => env('QUEUE_CONNECTION', 'redis'),  // Use database for local dev
                 'queue' => ['transactions', 'priority', 'webapp-forwarding'],
                 'balance' => 'simple',
                 'maxProcesses' => 3,         // Conservative for development
@@ -273,7 +273,7 @@ return [
             ],
 
             'default-supervisor' => [
-                'connection' => env('QUEUE_CONNECTION', 'database'),
+                'connection' => env('QUEUE_CONNECTION', 'redis'),
                 'queue' => ['default', 'notifications', 'retry'],
                 'balance' => 'simple',
                 'maxProcesses' => 2,
