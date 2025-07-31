@@ -191,9 +191,9 @@
             <a href="#" class="forgot-link">Forgot password?</a>
           </div> --}}
           <div class="d-flex justify-content-between align-items-center">
-            <p>Demo Account:</p>
+            <!-- <p>Demo Account:</p>
             <p class="text-muted">admin@example.com<strong>
-              </strong> | password123</p> 
+              </strong> | password123</p>  -->
             
           </div>
           <button type="submit" class="btn btn-primary">Sign in</button>
