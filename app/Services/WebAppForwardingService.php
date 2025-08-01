@@ -57,6 +57,23 @@ class WebAppForwardingService
             return ['success' => true, 'forwarded_count' => 0, 'reason' => 'no_transactions'];
         }
 
+        // Get submission_uuid from first transaction (assumes batch is for one submission)
+        $submissionUuid = $records->first()->submission_uuid ?? null;
+        if ($submissionUuid) {
+            $existing = \App\Models\WebappTransactionForward::where('submission_uuid', $submissionUuid)
+                ->where('status', WebappTransactionForward::STATUS_COMPLETED)
+                ->get();
+            if ($existing->count() > 0) {
+                Log::info('Idempotent forwarding: submission already processed', ['submission_uuid' => $submissionUuid]);
+                return [
+                    'success' => true,
+                    'forwarded_count' => $existing->count(),
+                    'batch_id' => $existing->first()->batch_id,
+                    'idempotent' => true
+                ];
+            }
+        }
+
         $forwarding = $this->createForwardingRecords($records);
         return $this->processBatchForwarding($forwarding);
     }
@@ -109,7 +126,10 @@ class WebAppForwardingService
             $payloadArr['checksum'] = $this->checksumService->computeChecksum($payloadArr);
 
             $forward = WebappTransactionForward::firstOrNew(
-                ['transaction_id' => $tx->id],
+                [
+                    'transaction_id' => $tx->id,
+                    'submission_uuid' => $tx->submission_uuid,
+                ],
                 [
                     'batch_id'        => $batchId,
                     'status'          => WebappTransactionForward::STATUS_PENDING,
@@ -131,6 +151,24 @@ class WebAppForwardingService
         });
     }
 
+    /**
+     * Processes a batch of records for forwarding to the web application endpoint.
+     *
+     * This method marks all records as "in progress", builds the bulk payload, and sends it via HTTP POST
+     * to the configured web application endpoint. It handles SSL verification based on configuration,
+     * logs the payload and results, and manages circuit breaker state.
+     *
+     * On success, marks all records as completed and returns a success response with batch details.
+     * On failure (HTTP or other exceptions), logs the error, records the failure, handles batch failure,
+     * and returns an error response with batch details.
+     *
+     * @param \Illuminate\Support\Collection $records The collection of records to be forwarded.
+     * @return array An associative array containing the result of the forwarding operation:
+     *               - 'success' (bool): Whether the forwarding was successful.
+     *               - 'forwarded_count' (int, optional): Number of records forwarded (on success).
+     *               - 'error' (string, optional): Error message (on failure).
+     *               - 'batch_id' (mixed): The batch ID associated with the records.
+     */
     private function processBatchForwarding(Collection $records): array
     {
         $batchId = $records->first()->batch_id;

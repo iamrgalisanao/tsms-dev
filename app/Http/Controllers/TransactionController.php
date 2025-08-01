@@ -52,12 +52,27 @@ class TransactionController extends Controller
         try {
             DB::beginTransaction(); // Add transaction wrapper
 
+            // Idempotency check for submission_uuid
+            $submissionUuid = $request->input('submission_uuid');
+            if ($submissionUuid) {
+                $existing = \App\Models\Transaction::where('submission_uuid', $submissionUuid)->first();
+                if ($existing) {
+                    DB::rollBack();
+                    Log::info('Idempotent transaction: submission already processed', ['submission_uuid' => $submissionUuid]);
+                    return response()->json([
+                        'status' => 'idempotent',
+                        'transaction' => $existing,
+                        'message' => 'Duplicate submission_uuid, returning existing transaction.'
+                    ], 200);
+                }
+            }
+
             // Backup current state if needed
             $backupData = Cache::remember('transaction_backup_' . $request->transaction_id, 60, function() use ($request) {
                 return $request->all();
             });
 
-            $result = $this->transactionService->process($request->all());
+            $result = $this->transactionService->store($request->all());
 
             DB::commit();
             return $result;
