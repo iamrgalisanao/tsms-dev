@@ -8,6 +8,29 @@ use App\Events\TransactionUpdated;
 
 class TransactionService
 {
+    /**
+     * Process a refund for an existing transaction.
+     *
+     * @param Transaction $transaction
+     * @param array $refundData
+     * @return Transaction
+     */
+    public function processRefund(Transaction $transaction, array $refundData): Transaction
+    {
+        if (!$transaction->canRefund()) {
+            throw new \Exception('Transaction cannot be refunded.');
+        }
+        $transaction->update([
+            'refund_status' => $refundData['refund_status'] ?? 'REFUNDED',
+            'refund_amount' => $refundData['refund_amount'] ?? null,
+            'refund_reason' => $refundData['refund_reason'] ?? null,
+            'refund_reference_id' => $refundData['refund_reference_id'] ?? null,
+            'refund_processed_at' => $refundData['refund_processed_at'] ?? now(),
+        ]);
+        $this->logTransactionHistory($transaction, 'REFUNDED', $refundData['refund_reason'] ?? null);
+        event(new TransactionUpdated($transaction));
+        return $transaction;
+    }
     public function store(array $payload): Transaction
     {
         // Exclude any system-computed fields from the payload for checksum

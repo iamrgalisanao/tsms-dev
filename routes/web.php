@@ -1,3 +1,4 @@
+
 <?php
 
 use Illuminate\Support\Facades\Route;
@@ -16,6 +17,9 @@ use App\Http\Controllers\TransactionLogController;
 use App\Http\Controllers\TestTransactionController;
 use App\Http\Controllers\SystemLogController;
 use App\Http\Controllers\LogController;
+use App\Http\Controllers\McpController;
+
+
 
 // Home route redirects based on auth status
 Route::get('/', function () {
@@ -30,7 +34,6 @@ Route::middleware('guest')->group(function () {
     Route::get('/login', function () {
         return view('auth.login');
     })->name('login');
-    
     Route::post('/login', [LoginController::class, 'login']);
 });
 
@@ -97,6 +100,7 @@ Route::middleware(['auth'])->group(function () {
     Route::prefix('terminal-tokens')->group(function () {
         Route::get('/', [TerminalTokenController::class, 'index'])->name('terminal-tokens');
         Route::post('/{terminalId}/regenerate', [TerminalTokenController::class, 'regenerate'])->name('terminal-tokens.regenerate');
+        Route::post('/{terminalId}/revoke', [TerminalTokenController::class, 'revoke'])->name('terminal-tokens.revoke');
     });
 
     // Provider Routes

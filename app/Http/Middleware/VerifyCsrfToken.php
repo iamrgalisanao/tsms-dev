@@ -12,6 +12,7 @@ class VerifyCsrfToken extends Middleware
      * @var array<int, string>
      */
     protected $except = [
-        // Don't exclude any web routes from CSRF protection
+        '/mcp',
+        'mcp',
     ];
 }

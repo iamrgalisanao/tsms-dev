@@ -4,12 +4,12 @@
     "terminal_id": 5,
     "submission_timestamp": "2025-07-19T12:00:00Z",
     "transaction_count": 1,
-    "payload_checksum": "05bf3d6fceefc58188b19441e635f3d62e9c58687dd848993e07dbde9bfd1d64",
+    "payload_checksum": "ead5688292c1d0e659db5cc7254595d09e819e398ec965df60f00302b84bcb40",
     "transaction": {
-        "transaction_id": "f47ac10b-58cc-4372-a567-0e02b2c3d527",
+        "transaction_id": "f47ac10b-58cc-4372-a567-0e02b2c3d529",
         "transaction_timestamp": "2025-07-19T12:00:01Z",
         "base_amount": 1000,
-        "payload_checksum": "224422451bd9d4a96c25d64e4b9db180c9892687ab50198ac891eda700190440",
+        "payload_checksum": "e6b744175a45ccde52c6707b27684c4f116165017897d8c281847ed0d848d371",
         "adjustments": [
             {
                 "adjustment_type": "promo_discount",

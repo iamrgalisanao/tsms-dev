@@ -71,6 +71,10 @@
                         @csrf
                         <button type="submit" class="btn btn-sm btn-warning">Regenerate API Key</button>
                       </form>
+                      <form method="POST" action="{{ route('terminal-tokens.revoke', $terminal->id) }}" class="d-inline ms-1">
+                        @csrf
+                        <button type="submit" class="btn btn-sm btn-danger" onclick="return confirm('Are you sure you want to revoke this API key?')">Revoke API Key</button>
+                      </form>
                     </td>
                   </tr>
                   @empty

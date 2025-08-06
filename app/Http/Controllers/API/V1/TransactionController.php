@@ -16,6 +16,31 @@ use App\Services\NotificationService;
 class TransactionController extends Controller
 {
     /**
+     * Refund a transaction
+     *
+     * @param Request $request
+     * @param int $id
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function refund(Request $request, $id)
+    {
+        $transaction = Transaction::findOrFail($id);
+        $refundData = $request->validate([
+            'refund_amount' => 'required|numeric|min:0.01',
+            'refund_reason' => 'required|string',
+            'refund_reference_id' => 'nullable|string',
+        ]);
+        $refundData['refund_status'] = 'REFUNDED';
+        $refundData['refund_processed_at'] = now();
+        try {
+            $service = app(\App\Services\TransactionService::class);
+            $service->processRefund($transaction, $refundData);
+            return response()->json(['status' => 'success', 'transaction' => $transaction]);
+        } catch (\Exception $e) {
+            return response()->json(['status' => 'error', 'message' => $e->getMessage()], 400);
+        }
+    }
+    /**
      * The NotificationService instance used to handle notification-related operations.
      *
      * @var NotificationService

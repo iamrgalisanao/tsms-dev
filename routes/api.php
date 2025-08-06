@@ -11,6 +11,10 @@ use App\Http\Controllers\API\V1\TestParserController;
 use App\Http\Controllers\API\V1\TerminalAuthController;
 use App\Services\TransactionValidationService;
 use App\Http\Controllers\API\V1\TransactionController as ApiTransactionController;
+use App\Http\Controllers\McpController;
+
+// MCP endpoint for kirschbaum-development/laravel-loop (public, no auth, CSRF-free)
+Route::post('/mcp', [McpController::class, 'handle']);
 
 /*
 |--------------------------------------------------------------------------
@@ -50,6 +54,7 @@ Route::prefix('v1')->middleware(['auth:sanctum'])->group(function () {
         Route::post('/transactions', [TransactionController::class, 'store']);
         Route::post('/transactions/batch', [TransactionController::class, 'batchStore']);
         Route::post('/transactions/official', [TransactionController::class, 'storeOfficial']);
+        Route::post('/transactions/{id}/refund', [TransactionController::class, 'refund']);
     });
     
     Route::middleware('abilities:transaction:read')->group(function () {

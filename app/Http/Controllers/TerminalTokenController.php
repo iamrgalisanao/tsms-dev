@@ -10,6 +10,36 @@ use Tymon\JWTAuth\Facades\JWTAuth;
 
 class TerminalTokenController extends Controller
 {
+    public function revoke($terminalId)
+    {
+        try {
+            $terminal = PosTerminal::findOrFail($terminalId);
+            if (Schema::hasColumn('pos_terminals', 'is_revoked')) {
+                $terminal->is_revoked = true;
+                $terminal->save();
+            }
+            // Revoke all active Sanctum tokens for this terminal
+            if (method_exists($terminal, 'tokens')) {
+                $terminal->tokens()->delete();
+            }
+            \Log::info('Terminal API key and all tokens revoked', [
+                'terminal_uid' => $terminal->terminal_uid,
+                'user_id' => auth()->id()
+            ]);
+            return redirect()
+                ->route('terminal-tokens')
+                ->with('success', 'API Key and all tokens revoked for terminal ' . $terminal->terminal_uid);
+        } catch (\Exception $e) {
+            \Log::error('Error revoking terminal API key', [
+                'terminal_id' => $terminalId,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            return redirect()
+                ->route('terminal-tokens')
+                ->with('error', 'Error revoking API key: ' . $e->getMessage());
+        }
+    }
     public function index(Request $request)
     {
         $query = PosTerminal::with('tenant');

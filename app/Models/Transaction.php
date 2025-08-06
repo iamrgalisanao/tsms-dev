@@ -7,6 +7,28 @@ use Illuminate\Database\Eloquent\Model;
 
 class Transaction extends Model
 {
+    // ...existing code...
+
+    /**
+     * Check if this transaction is refunded
+     *
+     * @return bool
+     */
+    public function isRefunded(): bool
+    {
+        return $this->refund_status === 'REFUNDED' && $this->refund_amount > 0;
+    }
+
+    /**
+     * Check if this transaction can be refunded
+     *
+     * @return bool
+     */
+    public function canRefund(): bool
+    {
+        // Only allow refund if not already refunded and base_amount is positive
+        return !$this->isRefunded() && $this->base_amount > 0;
+    }
     // Validation statuses
     public const VALIDATION_STATUS_VALID   = 'VALID';
     public const VALIDATION_STATUS_PENDING = 'PENDING';
@@ -40,6 +62,11 @@ class Transaction extends Model
         'validation_status',
         'submission_uuid',
         'submission_timestamp',
+        'refund_status',
+        'refund_amount',
+        'refund_reason',
+        'refund_reference_id',
+        'refund_processed_at',
         'created_at',
         'updated_at',
     ];
@@ -64,6 +91,8 @@ class Transaction extends Model
         'transaction_timestamp' => 'datetime',
         'submission_timestamp' => 'datetime',
         'base_amount' => 'decimal:2',
+        'refund_amount' => 'decimal:2',
+        'refund_processed_at' => 'datetime',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
     ];
