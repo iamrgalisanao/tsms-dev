@@ -14,6 +14,36 @@ use Carbon\Carbon;
 
 class WebAppForwardingService
 {
+    /**
+     * Notify POS of permanent forwarding failure
+     */
+    private function notifyPosFailure(WebappTransactionForward $forward)
+    {
+        $callbackUrl = $forward->transaction->terminal->callback_url ?? null;
+        if (!$callbackUrl) {
+            \Log::warning('No POS callback URL for failed transaction', ['transaction_id' => $forward->transaction_id]);
+            return;
+        }
+        $payload = [
+            'transaction_id' => $forward->transaction->transaction_id ?? $forward->transaction_id,
+            'status' => 'FAILED',
+            'error' => $forward->error_message ?? 'Forwarding failed after max attempts',
+        ];
+        try {
+            $response = \Http::post($callbackUrl, $payload);
+            \Log::info('POS notified of permanent failure', [
+                'transaction_id' => $forward->transaction_id,
+                'callback_url' => $callbackUrl,
+                'response_status' => $response->status(),
+            ]);
+        } catch (\Throwable $e) {
+            \Log::error('Failed to notify POS of permanent failure', [
+                'transaction_id' => $forward->transaction_id,
+                'callback_url' => $callbackUrl,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
     private PayloadChecksumService $checksumService;
     private string $webAppEndpoint;
     private int    $timeout;
@@ -125,28 +155,18 @@ class WebAppForwardingService
             unset($payloadArr['checksum']);
             $payloadArr['checksum'] = $this->checksumService->computeChecksum($payloadArr);
 
-            $forward = WebappTransactionForward::firstOrNew(
+            $forward = WebappTransactionForward::updateOrCreate(
                 [
                     'transaction_id' => $tx->id,
-                    'submission_uuid' => $tx->submission_uuid,
                 ],
                 [
                     'batch_id'        => $batchId,
                     'status'          => WebappTransactionForward::STATUS_PENDING,
                     'max_attempts'    => 3,
                     'request_payload' => $payloadArr,
+                    'submission_uuid' => $tx->submission_uuid,
                 ]
             );
-
-            if ($forward->exists && ! in_array($forward->status, [
-                WebappTransactionForward::STATUS_PENDING,
-                WebappTransactionForward::STATUS_FAILED,
-            ])) {
-                $forward->batch_id        = $batchId;
-                $forward->request_payload = $payloadArr;
-            }
-
-            $forward->save();
             return $forward->load('transaction.terminal', 'transaction.tenant');
         });
     }
@@ -212,7 +232,13 @@ class WebAppForwardingService
 
     private function handleBatchFailure(Collection $records, string $error, int $statusCode = null): void
     {
-        $records->each(fn ($f) => $f->markAsFailed($error, $statusCode));
+        $records->each(function ($f) use ($error, $statusCode) {
+            $f->markAsFailed($error, $statusCode);
+            // Notify POS if permanently failed
+            if ($f->status === \App\Models\WebappTransactionForward::STATUS_FAILED && $f->attempts >= $f->max_attempts) {
+                $this->notifyPosFailure($f);
+            }
+        });
     }
 
     // buildTransactionPayload is now inlined in createForwardingRecords to ensure checksum is always up-to-date
