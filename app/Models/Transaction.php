@@ -10,6 +10,29 @@ class Transaction extends Model
     // ...existing code...
 
     /**
+     * Mark this transaction as voided.
+     *
+     * @param string|null $reason
+     * @return void
+     */
+    public function void($reason = null)
+    {
+        $this->voided_at = now();
+        $this->void_reason = $reason;
+        $this->save();
+    }
+
+    /**
+     * Check if this transaction is voided.
+     *
+     * @return bool
+     */
+    public function isVoided(): bool
+    {
+        return !empty($this->voided_at);
+    }
+
+    /**
      * Check if this transaction is refunded
      *
      * @return bool
@@ -67,6 +90,8 @@ class Transaction extends Model
         'refund_reason',
         'refund_reference_id',
         'refund_processed_at',
+        'voided_at',
+        'void_reason',
         'created_at',
         'updated_at',
     ];
@@ -93,6 +118,7 @@ class Transaction extends Model
         'base_amount' => 'decimal:2',
         'refund_amount' => 'decimal:2',
         'refund_processed_at' => 'datetime',
+        'voided_at' => 'datetime',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
     ];

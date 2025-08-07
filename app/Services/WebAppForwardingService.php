@@ -15,6 +15,65 @@ use Carbon\Carbon;
 class WebAppForwardingService
 {
     /**
+     * Process automated void transaction forwarding.
+     *
+     * @param string $transactionId
+     * @param string|null $reason
+     * @return void
+     */
+    public function processVoidTransaction($transactionId, $reason = null)
+    {
+        $transaction = \App\Models\Transaction::where('transaction_id', $transactionId)->first();
+        if ($transaction && !$transaction->isVoided()) {
+            $transaction->void($reason);
+            $this->forwardVoidedTransaction($transaction);
+        }
+    }
+
+    /**
+     * Forward voided transaction to webapp.
+     *
+     * @param \App\Models\Transaction $transaction
+     * @return void
+     */
+    public function forwardVoidedTransaction($transaction)
+    {
+        $payload = [
+            'tsms_id'               => $transaction->id,
+            'transaction_id'        => $transaction->transaction_id,
+            'terminal_serial'       => $transaction->terminal?->serial_number,
+            'tenant_code'           => $transaction->tenant?->customer_code,
+            'tenant_name'           => $transaction->tenant?->name,
+            'transaction_timestamp' => $this->isoTimestamp($transaction->transaction_timestamp),
+            'amount'                => (float) $transaction->base_amount,
+            'validation_status'     => $transaction->validation_status,
+            'processed_at'          => $this->isoTimestamp($transaction->created_at),
+            'submission_uuid'       => $transaction->submission_uuid,
+            'voided_at'             => $this->isoTimestamp($transaction->voided_at),
+            'void_reason'           => $transaction->void_reason,
+            'status'                => 'VOIDED',
+        ];
+        $payload['checksum'] = $this->checksumService->computeChecksum($payload);
+
+        $client = \Illuminate\Support\Facades\Http::timeout($this->timeout)
+            ->withToken($this->authToken);
+        if (! $this->verifySSL) {
+            $client = $client->withoutVerifying();
+        }
+        try {
+            $response = $client->post($this->webAppEndpoint, $payload);
+            \Illuminate\Support\Facades\Log::info('Forwarded voided transaction', [
+                'transaction_id' => $transaction->transaction_id,
+                'response_status' => $response->status(),
+            ]);
+        } catch (\Throwable $e) {
+            \Illuminate\Support\Facades\Log::error('Failed to forward voided transaction', [
+                'transaction_id' => $transaction->transaction_id,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+    /**
      * Notify POS of permanent forwarding failure
      */
     private function notifyPosFailure(WebappTransactionForward $forward)

@@ -1,3 +1,5 @@
+// Void transaction endpoint (API v1)
+Route::post('api/v1/transactions/{transaction_id}/void', [\App\Http\Controllers\API\V1\TransactionController::class, 'void']);
 <?php
 
 use Illuminate\Http\Request;

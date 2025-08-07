@@ -803,6 +803,61 @@ class TransactionController extends Controller
     }
 
     /**
+     * Void a transaction by transaction_id
+     *
+     * @param Request $request
+     * @param string $transaction_id
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function void(Request $request, $transaction_id)
+    {
+        $request->validate([
+            'void_reason' => 'required|string|max:255',
+        ]);
+
+        $transaction = Transaction::where('transaction_id', $transaction_id)->first();
+        if (!$transaction) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Transaction not found'
+            ], 404);
+        }
+
+        if ($transaction->voided_at) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Transaction already voided',
+                'voided_at' => $transaction->voided_at,
+                'void_reason' => $transaction->void_reason
+            ], 409);
+        }
+
+        $transaction->voided_at = now();
+        $transaction->void_reason = $request->void_reason;
+        $transaction->save();
+
+        // Forward to webapp after voiding
+        try {
+            $forwardingService = app(\App\Services\WebAppForwardingService::class);
+            $forwardingService->forwardVoidedTransaction($transaction);
+        } catch (\Exception $e) {
+            \Log::error('Failed to forward voided transaction to webapp', [
+                'transaction_id' => $transaction->transaction_id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+        }
+
+        return response()->json([
+            'success' => true,
+            'message' => 'Transaction voided successfully',
+            'transaction_id' => $transaction->transaction_id,
+            'voided_at' => $transaction->voided_at,
+            'void_reason' => $transaction->void_reason
+        ]);
+    }
+
+    /**
      * Store transactions using the official TSMS payload format.
      * Supports both single transaction and batch submissions.
      * 
