@@ -25,30 +25,42 @@ use App\Helpers\BadgeHelper;
               <tr>
                 <td class="text-nowrap">{{ $log->created_at->format('Y-m-d H:i:s') }}</td>
                 <td>
-                  <span class="badge bg-{{ LogHelper::getLogTypeClass($log->log_type) }}">
-                    @if($log->type === 'security' && isset($log->context['auth_event']))
-                      @switch($log->context['auth_event'])
-                        @case('login')
-                          <i class="fas fa-sign-in-alt me-1"></i>Login
-                          @break
-                        @case('logout')
-                          <i class="fas fa-sign-out-alt me-1"></i>Logout
-                          @break
-                        @case('login_failed')
-                          <i class="fas fa-exclamation-triangle me-1"></i>Failed Login
-                          @break
-                        @default
-                          <i class="fas fa-shield-alt me-1"></i>Security
-                      @endswitch
-                    @else
-                      {{ ucfirst($log->type) }}
-                    @endif
-                  </span>
+                  @if($log->log_type || ($log->type === 'security' && isset($log->context['auth_event'])))
+                    <span class="badge bg-{{ LogHelper::getLogTypeClass($log->log_type ?: 'security') }}">
+                      @if($log->type === 'security' && isset($log->context['auth_event']))
+                        @switch($log->context['auth_event'])
+                          @case('login')
+                            <i class="fas fa-sign-in-alt me-1"></i>Login
+                            @break
+                          @case('logout')
+                            <i class="fas fa-sign-out-alt me-1"></i>Logout
+                            @break
+                          @case('login_failed')
+                            <i class="fas fa-exclamation-triangle me-1"></i>Failed Login
+                            @break
+                          @default
+                            <i class="fas fa-shield-alt me-1"></i>Security
+                        @endswitch
+                      @else
+                        {{ ucfirst($log->log_type ?: $log->type ?: 'System') }}
+                      @endif
+                    </span>
+                  @else
+                    <span class="badge bg-secondary">
+                      <i class="fas fa-cog me-1"></i>{{ ucfirst($log->type ?: 'System') }}
+                    </span>
+                  @endif
                 </td>
                 <td>
-                  <span class="badge bg-{{ BadgeHelper::getStatusBadgeColor($log->severity) }}">
-                    {{ strtoupper($log->severity) }}
-                  </span>
+                  @if($log->severity)
+                    <span class="badge bg-{{ BadgeHelper::getStatusBadgeColor($log->severity) }}">
+                      {{ strtoupper($log->severity) }}
+                    </span>
+                  @else
+                    <span class="badge bg-info">
+                      INFO
+                    </span>
+                  @endif
                 </td>
                 <td class="text-nowrap">{{ $log->user?->name ?? 'System' }}</td>
                 {{-- <td class="text-nowrap">{{ $log->terminal_uid ?? 'N/A' }}</td> --}}
@@ -77,13 +89,13 @@ use App\Helpers\BadgeHelper;
                 </td> --}}
               </tr>
               @empty
-              {{-- <tr>
-                <td colspan="7" class="text-center py-4">
+              <tr>
+                <td colspan="5" class="text-center py-4">
                   <div class="text-muted">
                     <i class="fas fa-info-circle me-1"></i>No system logs found
                   </div>
                 </td>
-              </tr> --}}
+              </tr>
               @endforelse
             </tbody>
         </table>
@@ -116,13 +128,14 @@ $(function () {
         "info": true,
         "paging": true,
         "searching": true,
+        "order": [[ 0, "desc" ]], // Sort by time (newest first)
         "language": {
-            "emptyTable": "No transaction logs available",
-            "zeroRecords": "No matching records found",
-            "info": "Showing _START_ to _END_ of _TOTAL_ entries",
-            "infoEmpty": "Showing 0 to 0 of 0 entries",
-            "infoFiltered": "(filtered from _MAX_ total entries)",
-            "search": "Search:",
+            "emptyTable": "No system logs available",
+            "zeroRecords": "No matching system logs found",
+            "info": "Showing _START_ to _END_ of _TOTAL_ system log entries",
+            "infoEmpty": "Showing 0 to 0 of 0 system log entries", 
+            "infoFiltered": "(filtered from _MAX_ total system log entries)",
+            "search": "Search system logs:",
             "paginate": {
                 "first": "First",
                 "last": "Last",
@@ -131,11 +144,10 @@ $(function () {
             }
         },
         "buttons": [
-            { extend: "csv",   text: "CSV",   className: "btn btn-danger" },
-              { extend: "excel", text: "Excel", className: "btn btn-danger" },
-              { extend: "pdf",   text: "PDF",   className: "btn btn-danger" },
-              // { extend: "print", text: "Print", className: "btn btn-sm btn-danger" },
-              { extend: "colvis",text: "Cols",  className: "btn btn-lg btn-danger" }
+            { extend: "csv",   text: "<i class='fas fa-file-csv'></i> CSV",   className: "btn btn-success btn-sm" },
+            { extend: "excel", text: "<i class='fas fa-file-excel'></i> Excel", className: "btn btn-success btn-sm" },
+            { extend: "pdf",   text: "<i class='fas fa-file-pdf'></i> PDF",   className: "btn btn-danger btn-sm" },
+            { extend: "colvis",text: "<i class='fas fa-columns'></i> Columns",  className: "btn btn-info btn-sm" }
         ]
     }).buttons().container().appendTo('#example1_wrapper .col-md-6:eq(0)');
 

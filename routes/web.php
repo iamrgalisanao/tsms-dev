@@ -57,6 +57,7 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/', [LogViewerController::class, 'index'])->name('index');
         Route::get('/export/{format?}', [LogViewerController::class, 'export'])->name('export');
         Route::get('/context/{id}', [LogViewerController::class, 'getContext'])->name('context');
+        Route::get('/audit-context/{id}', [LogViewerController::class, 'getAuditContext'])->name('audit-context');
         Route::get('/filtered', [LogViewerController::class, 'getFilteredLogs'])->name('filtered');
         Route::get('/audit', [LogViewerController::class, 'auditTrail'])->name('audit');
         Route::get('/webhooks', [LogViewerController::class, 'webhookLogs'])->name('webhooks');
@@ -101,6 +102,8 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/', [TerminalTokenController::class, 'index'])->name('terminal-tokens');
         Route::post('/{terminalId}/regenerate', [TerminalTokenController::class, 'regenerate'])->name('terminal-tokens.regenerate');
         Route::post('/{terminalId}/revoke', [TerminalTokenController::class, 'revoke'])->name('terminal-tokens.revoke');
+        Route::get('/{terminalId}/tokens', [TerminalTokenController::class, 'listTokens'])->name('terminal-tokens.list');
+        Route::post('/generate-all', [TerminalTokenController::class, 'generateTokensForAllTerminals'])->name('terminal-tokens.generate-all');
     });
 
     // Provider Routes

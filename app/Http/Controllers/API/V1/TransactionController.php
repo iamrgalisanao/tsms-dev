@@ -365,7 +365,22 @@ class TransactionController extends Controller
              *
              * @throws \Illuminate\Database\Eloquent\ModelNotFoundException  If the terminal with the given ID does not exist.
              */
-            $terminal = PosTerminal::with(['tenant.company'])->where('serial_number', $request->serial_number)->firstOrFail();
+            $terminal = PosTerminal::with(['tenant.company', 'status'])->where('serial_number', $request->serial_number)->firstOrFail();
+
+            // Validate terminal is active and not expired
+            if (!$terminal->isActiveAndValid()) {
+                $status = $terminal->status ? $terminal->status->name : 'unknown';
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Terminal is not active or has expired',
+                    'errors' => [
+                        'terminal_status' => [
+                            "Terminal status: {$status}, active flag: " . ($terminal->is_active ? 'true' : 'false') . 
+                            ($terminal->expires_at ? ", expires: " . $terminal->expires_at->toISOString() : ', no expiration')
+                        ]
+                    ]
+                ], 422);
+            }
 
           
             /**
@@ -380,6 +395,37 @@ class TransactionController extends Controller
                     'success' => false,
                     'message' => 'Validation failed',
                     'errors' => ['serial_number' => ['The terminal does not belong to the specified customer']]
+                ], 422);
+            }
+
+            // Validate transaction amount business rules
+            $baseAmount = $request->base_amount;
+            
+            // Minimum transaction amount validation
+            if ($baseAmount <= 0) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Validation failed',
+                    'errors' => ['base_amount' => ['Transaction amount must be greater than 0']]
+                ], 422);
+            }
+            
+            // Maximum transaction amount validation (configurable per store/terminal)
+            $maxAmount = config('tsms.transaction.max_amount', 999999.99);
+            if ($baseAmount > $maxAmount) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Validation failed', 
+                    'errors' => ['base_amount' => ["Transaction amount exceeds maximum limit of {$maxAmount}"]]
+                ], 422);
+            }
+            
+            // Validate transaction timestamp is not in the future
+            if ($request->transaction_timestamp && now()->lt($request->transaction_timestamp)) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Validation failed',
+                    'errors' => ['transaction_timestamp' => ['Transaction timestamp cannot be in the future']]
                 ], 422);
             }
 
@@ -431,12 +477,21 @@ class TransactionController extends Controller
                 ->first();
 
             if ($existingTransaction) {
-                Log::warning('TransactionController@store: Duplicate transaction', ['transaction_id' => $transactionData['transaction_id']]);
+                Log::info('TransactionController@store: Returning existing transaction for idempotency', [
+                    'transaction_id' => $transactionData['transaction_id'],
+                    'existing_id' => $existingTransaction->id
+                ]);
+                
+                // Return success for idempotency - transaction already processed
                 return response()->json([
-                    'success' => false,
-                    'message' => 'Validation failed',
-                    'errors' => ['transaction_id' => ['The transaction id has already been taken.']]
-                ], 422);
+                    'success' => true,
+                    'message' => 'Transaction already processed',
+                    'data' => [
+                        'transaction_id' => $existingTransaction->transaction_id,
+                        'status' => 'processed',
+                        'timestamp' => $existingTransaction->created_at->toISOString()
+                    ]
+                ], 200);
             }
 
             /**
@@ -816,6 +871,11 @@ class TransactionController extends Controller
         ]);
 
         $transaction = Transaction::where('transaction_id', $transaction_id)->first();
+        if ($transaction) {
+            // Ensure tenant_id and terminal_id are loaded
+            $tenant_id = $transaction->tenant_id ?? null;
+            $terminal_id = $transaction->terminal_id ?? ($transaction->serial_number ? \App\Models\PosTerminal::where('serial_number', $transaction->serial_number)->value('id') : null);
+        }
         if (!$transaction) {
             return response()->json([
                 'success' => false,
@@ -832,6 +892,7 @@ class TransactionController extends Controller
             ], 409);
         }
 
+
         $transaction->voided_at = now();
         $transaction->void_reason = $request->void_reason;
         $transaction->save();
@@ -839,7 +900,25 @@ class TransactionController extends Controller
         // Forward to webapp after voiding
         try {
             $forwardingService = app(\App\Services\WebAppForwardingService::class);
-            $forwardingService->forwardVoidedTransaction($transaction);
+            // Set the endpoint for void transactions explicitly if needed
+            if (method_exists($forwardingService, 'setEndpoint')) {
+                $voidEndpoint = config('tsms.web_app.void_endpoint', env('WEBAPP_FORWARDING_VOID_ENDPOINT', 'https://tsms-ops.test/api/transactions/void'));
+                $forwardingService->setEndpoint($voidEndpoint);
+            }
+            // Build payload with tenant_id and terminal_id
+            $payload = [
+                'transaction_id' => $transaction->transaction_id,
+                'voided_at' => $transaction->voided_at,
+                'void_reason' => $transaction->void_reason,
+                'tenant_id' => $tenant_id,
+                'terminal_id' => $terminal_id,
+            ];
+            if (method_exists($forwardingService, 'forwardVoidedTransaction')) {
+                $forwardingService->forwardVoidedTransaction($payload);
+            } else {
+                // Fallback: send via generic forward method
+                $forwardingService->forward($payload);
+            }
         } catch (\Exception $e) {
             \Log::error('Failed to forward voided transaction to webapp', [
                 'transaction_id' => $transaction->transaction_id,
@@ -855,6 +934,236 @@ class TransactionController extends Controller
             'voided_at' => $transaction->voided_at,
             'void_reason' => $transaction->void_reason
         ]);
+    }
+
+    /**
+     * Void a transaction initiated by POS terminal
+     *
+     * @param Request $request
+     * @param string $transaction_id
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function voidFromPOS(Request $request, $transaction_id)
+    {
+        try {
+            DB::beginTransaction();
+
+            // Validate request includes transaction_id and matches route parameter
+            $request->validate([
+                'transaction_id' => 'required|string|max:191',
+                'void_reason' => 'required|string|max:255',
+                'payload_checksum' => 'required|string|min:64|max:64', // SHA-256 required for POS requests
+            ]);
+
+            // Ensure request transaction_id matches route parameter for security
+            if ($request->transaction_id !== $transaction_id) {
+                DB::rollBack();
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Transaction ID mismatch',
+                    'errors' => ['transaction_id' => ['Request transaction_id must match the transaction being voided']]
+                ], 422);
+            }
+
+            // Get authenticated terminal (from Sanctum middleware)
+            $posTerminal = $request->user(); // This is the POS terminal making the request
+            
+            if (!$posTerminal) {
+                DB::rollBack();
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized - invalid terminal token'
+                ], 401);
+            }
+
+            $transaction = Transaction::where('transaction_id', $transaction_id)
+                ->where(function($query) use ($posTerminal) {
+                    $query->where('terminal_id', $posTerminal->id)
+                          ->orWhere('serial_number', $posTerminal->serial_number);
+                })
+                ->first();
+            
+            if (!$transaction) {
+                DB::rollBack();
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Transaction not found or does not belong to this terminal'
+                ], 404);
+            }
+
+            // Fix: Move variable assignment after null check
+            $tenant_id = $transaction->tenant_id ?? null;
+            $terminal_id = $posTerminal->id;
+
+            if ($transaction->voided_at) {
+                DB::rollBack();
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Transaction already voided',
+                    'voided_at' => $transaction->voided_at,
+                    'void_reason' => $transaction->void_reason
+                ], 409);
+            }
+
+            // Enhanced business rule validation
+            if (isset($transaction->validation_status) && $transaction->validation_status === 'PROCESSING') {
+                DB::rollBack();
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Cannot void transaction currently being processed'
+                ], 409);
+            }
+
+            // Use PayloadChecksumService for consistent checksum validation
+            $checksumService = new \App\Services\PayloadChecksumService();
+            $expectedPayload = [
+                'transaction_id' => $request->transaction_id,
+                'void_reason' => $request->void_reason,
+            ];
+            
+            $expectedChecksum = $checksumService->computeChecksum($expectedPayload);
+            
+            if ($request->payload_checksum !== $expectedChecksum) {
+                DB::rollBack();
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Invalid payload checksum',
+                    'errors' => ['payload_checksum' => ['Checksum validation failed']]
+                ], 422);
+            }
+
+            // Update transaction with void information and timestamp
+            $voidedAt = now();
+            $transaction->voided_at = $voidedAt;
+            $transaction->void_reason = $request->void_reason;
+            $transaction->save();
+
+            Log::info('Transaction voided successfully', [
+                'transaction_id' => $transaction->transaction_id,
+                'voided_at' => $voidedAt,
+                'void_reason' => $request->void_reason,
+                'initiated_by' => 'POS',
+                'terminal_id' => $posTerminal->id
+            ]);
+
+            // Add system log entry
+            try {
+                \App\Models\SystemLog::create([
+                    'type' => 'transaction',
+                    'log_type' => 'TRANSACTION_VOID_POS',
+                    'severity' => 'info',
+                    'terminal_uid' => $posTerminal->serial_number,
+                    'transaction_id' => $transaction->transaction_id,
+                    'message' => 'Transaction voided by POS terminal',
+                    'context' => json_encode([
+                        'void_reason' => $request->void_reason,
+                        'terminal_id' => $posTerminal->id,
+                        'voided_at' => $voidedAt,
+                        'initiated_by' => 'POS',
+                        'request_transaction_id' => $request->transaction_id
+                    ])
+                ]);
+            } catch (\Exception $logError) {
+                Log::warning('Failed to create system log for POS void', [
+                    'error' => $logError->getMessage(),
+                    'transaction_id' => $transaction->transaction_id
+                ]);
+            }
+
+            // Add audit log entry
+            try {
+                \App\Models\AuditLog::create([
+                    'action' => 'TRANSACTION_VOID_POS',
+                    'action_type' => 'TRANSACTION_VOID_POS',
+                    'resource_type' => 'transaction',
+                    'resource_id' => $transaction->transaction_id,
+                    'auditable_type' => 'transaction',
+                    'auditable_id' => $transaction->id,
+                    'message' => 'Transaction voided by POS terminal',
+                    'metadata' => json_encode([
+                        'transaction_id' => $transaction->transaction_id,
+                        'void_reason' => $request->void_reason,
+                        'terminal_id' => $posTerminal->id,
+                        'terminal_serial' => $posTerminal->serial_number,
+                        'tenant_id' => $tenant_id,
+                        'initiated_by' => 'POS',
+                        'voided_at' => $voidedAt,
+                        'request_transaction_id' => $request->transaction_id
+                    ])
+                ]);
+            } catch (\Exception $logError) {
+                Log::warning('Failed to create audit log for POS void', [
+                    'error' => $logError->getMessage(),
+                    'transaction_id' => $transaction->transaction_id
+                ]);
+            }
+
+            // Forward to webapp after voiding
+            try {
+                $forwardingService = app(\App\Services\WebAppForwardingService::class);
+                // Set the endpoint for void transactions explicitly if needed
+                if (method_exists($forwardingService, 'setEndpoint')) {
+                    $voidEndpoint = config('tsms.web_app.void_endpoint', env('WEBAPP_FORWARDING_VOID_ENDPOINT', 'https://tsms-ops.test/api/transactions/void'));
+                    $forwardingService->setEndpoint($voidEndpoint);
+                }
+                // Build payload with tenant_id and terminal_id
+                $payload = [
+                    'transaction_id' => $transaction->transaction_id,
+                    'voided_at' => $transaction->voided_at,
+                    'void_reason' => $transaction->void_reason,
+                    'tenant_id' => $tenant_id,
+                    'terminal_id' => $terminal_id,
+                    'initiated_by' => 'POS',
+                    'terminal_serial' => $posTerminal->serial_number,
+                ];
+                if (method_exists($forwardingService, 'forwardVoidedTransaction')) {
+                    $forwardingService->forwardVoidedTransaction($payload);
+                } else {
+                    // Fallback: send via generic forward method
+                    $forwardingService->forward($payload);
+                }
+            } catch (\Exception $e) {
+                // Don't rollback for forwarding failures - void operation should still succeed
+                \Log::error('Failed to forward voided transaction to webapp', [
+                    'transaction_id' => $transaction->transaction_id,
+                    'error' => $e->getMessage(),
+                    'trace' => $e->getTraceAsString(),
+                ]);
+            }
+
+            DB::commit();
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Transaction voided successfully by POS',
+                'transaction_id' => $transaction->transaction_id,
+                'voided_at' => $transaction->voided_at,
+                'void_reason' => $transaction->void_reason
+            ]);
+
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            DB::rollBack();
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors()
+            ], 422);
+
+        } catch (\Exception $e) {
+            DB::rollBack();
+            Log::error('POS void transaction error', [
+                'transaction_id' => $transaction_id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+                'terminal_id' => isset($posTerminal) ? $posTerminal->id : 'unknown',
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to void transaction: ' . $e->getMessage(),
+                'timestamp' => now()->toISOString()
+            ], 500);
+        }
     }
 
     /**
@@ -971,6 +1280,42 @@ class TransactionController extends Controller
                 'transaction_count' => $request->transaction_count,
             ]);
 
+            // Check for duplicate submission (idempotency at submission level)
+            $existingSubmission = Transaction::where('submission_uuid', $request->submission_uuid)
+                ->where('terminal_id', $request->terminal_id)
+                ->first();
+                
+            if ($existingSubmission) {
+                Log::info('storeOfficial: Duplicate submission detected, returning success for idempotency', [
+                    'submission_uuid' => $request->submission_uuid,
+                    'existing_transaction_id' => $existingSubmission->transaction_id
+                ]);
+                
+                // Get all transactions for this submission
+                $existingTransactions = Transaction::where('submission_uuid', $request->submission_uuid)
+                    ->where('terminal_id', $request->terminal_id)
+                    ->get();
+                    
+                DB::commit(); // Commit the read-only transaction
+                
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Submission already processed',
+                    'data' => [
+                        'submission_uuid' => $request->submission_uuid,
+                        'processed_count' => $existingTransactions->count(),
+                        'failed_count' => 0,
+                        'transactions' => $existingTransactions->map(function($tx) {
+                            return [
+                                'transaction_id' => $tx->transaction_id,
+                                'status' => 'success',
+                                'message' => 'Transaction already processed'
+                            ];
+                        })->toArray()
+                    ]
+                ], 200);
+            }
+
             // Get terminal and validate tenant
             $terminal = PosTerminal::with(['tenant.company'])->findOrFail($request->terminal_id);
             if ($terminal->tenant_id !== $request->tenant_id) {
@@ -995,11 +1340,14 @@ class TransactionController extends Controller
                         ->first();
 
                     if ($existingTransaction) {
-                        Log::warning('storeOfficial: Duplicate transaction', ['transaction_id' => $transactionData['transaction_id']]);
+                        Log::info('storeOfficial: Returning existing transaction for idempotency', [
+                            'transaction_id' => $transactionData['transaction_id'],
+                            'existing_id' => $existingTransaction->id
+                        ]);
                         $processedTransactions[] = [
                             'transaction_id' => $existingTransaction->transaction_id,
-                            'status' => 'duplicate',
-                            'message' => 'Transaction already exists'
+                            'status' => 'success', // ✅ Fixed: Return success for idempotency
+                            'message' => 'Transaction already processed'
                         ];
                         continue;
                     }

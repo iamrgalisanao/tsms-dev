@@ -1,5 +1,3 @@
-// Void transaction endpoint (API v1)
-Route::post('api/v1/transactions/{transaction_id}/void', [\App\Http\Controllers\API\V1\TransactionController::class, 'void']);
 <?php
 
 use Illuminate\Http\Request;
@@ -57,10 +55,18 @@ Route::prefix('v1')->middleware(['auth:sanctum'])->group(function () {
         Route::post('/transactions/batch', [TransactionController::class, 'batchStore']);
         Route::post('/transactions/official', [TransactionController::class, 'storeOfficial']);
         Route::post('/transactions/{id}/refund', [TransactionController::class, 'refund']);
+        Route::post('/transactions/{transaction_id}/void', [TransactionController::class, 'voidFromPOS']);
     });
     
     Route::middleware('abilities:transaction:read')->group(function () {
         Route::get('/transactions/{id}/status', [TransactionController::class, 'status']);
+    });
+    
+    // Terminal Token Management API (requires admin authentication)
+    Route::middleware('abilities:admin:manage')->group(function () {
+        Route::post('/terminals/{terminalId}/generate-token', [TerminalTokenController::class, 'generateToken']);
+        Route::get('/terminals/{terminalId}/tokens', [TerminalTokenController::class, 'listTokens']);
+        Route::post('/terminals/generate-all-tokens', [TerminalTokenController::class, 'generateTokensForAllTerminals']);
     });
 });
 
@@ -343,3 +349,9 @@ Route::get('v1/transaction-id-exists', function (Illuminate\Http\Request $reques
 
 Route::post('/transactions/bulk', [ApiTransactionController::class, 'bulk'])
      ->name('api.transactions.bulk');
+
+// Void transaction endpoint (API v1)
+Route::post('api/v1/transactions/{transaction_id}/void', [\App\Http\Controllers\API\V1\TransactionController::class, 'void']);
+
+// Register the new endpoint for receiving voided transactions in the webapp
+Route::post('/transactions/void', [\App\Http\Controllers\Api\VoidTransactionController::class, 'receive']);

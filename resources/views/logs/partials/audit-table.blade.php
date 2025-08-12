@@ -3,7 +3,8 @@ use App\Helpers\LogHelper;
 use App\Helpers\BadgeHelper;
 @endphp
 
-  {{-- <div class="card">
+<!-- PROPER AUDIT TRAIL IMPLEMENTATION -->
+<div class="card">
     <div class="card-body">
       <table id="example1" class="table table-bordered table-striped">
           <thead>
@@ -23,7 +24,7 @@ use App\Helpers\BadgeHelper;
               <td class="text-nowrap">{{ $log->created_at->format('Y-m-d H:i:s') }}</td>
               <td>{{ $log->user?->name ?? 'System' }}</td>
               <td>
-                <span class="badge bg-{{ LogHelper::getActionTypeClass($log->action_type) }}">
+                <span class="badge bg-{{ LogHelper::getActionTypeClass($log->action_type ?? 'default') }}">
                   @if(str_starts_with($log->action, 'auth.'))
                   @switch($log->action)
                   @case('auth.login')
@@ -38,94 +39,123 @@ use App\Helpers\BadgeHelper;
                   @default
                   {{ $log->action }}
                   @endswitch
+                  @elseif(str_starts_with($log->action, 'TRANSACTION'))
+                  @switch($log->action)
+                  @case('TRANSACTION_RECEIVED')
+                  <i class="fas fa-inbox me-1"></i>Transaction Received
+                  @break
+                  @case('TRANSACTION_VOID_POS')
+                  <i class="fas fa-ban me-1"></i>Transaction Voided
+                  @break
+                  @case('TRANSACTION_PROCESSED')
+                  <i class="fas fa-check me-1"></i>Transaction Processed
+                  @break
+                  @default
+                  <i class="fas fa-exchange-alt me-1"></i>{{ $log->action }}
+                  @endswitch
                   @else
                   {{ $log->action }}
                   @endif
                 </span>
               </td>
-              <td>{{ $log->resource_type }}</td>
+              <td>
+                <span class="badge bg-info">{{ $log->resource_type ?? 'N/A' }}</span>
+                @if($log->resource_id)
+                  <br><small class="text-muted">{{ $log->resource_id }}</small>
+                @endif
+              </td>
               <td class="text-wrap" style="max-width: 300px;">
                 <small class="text-muted">{{ $log->message }}</small>
+                @if($log->old_values || $log->new_values)
+                  <br><small class="badge bg-warning">Data Changed</small>
+                @endif
               </td>
-              <td class="text-center">{{ $log->ip_address }}</td>
+              <td class="text-center">{{ $log->ip_address ?? 'N/A' }}</td>
               <td class="text-center">
-                @if($log->metadata || $log->old_values)
-                <button class="btn btn-sm btn-outline-primary" onclick="showContext('{{ $log->id }}')">
+                @if($log->metadata || $log->old_values || $log->new_values)
+                <button class="btn btn-sm btn-outline-primary" onclick="showAuditContext('{{ $log->id }}')">
                   <i class="fas fa-search me-1"></i>Details
                 </button>
                 @endif
               </td>
             </tr>
             @empty
-          
+            <tr>
+              <td colspan="7" class="text-center py-4">
+                <div class="text-muted">
+                  <i class="fas fa-info-circle me-1"></i>No audit logs found
+                </div>
+              </td>
+            </tr>
             @endforelse
           </tbody>
       </table>
     </div>
-  </div> --}}
-  
-<div class="card">
-     
-    <div class="card-body">
-        <table id="example2" class="table table-bordered table-striped">
-            <thead>
-                <tr>
-                  <th>Time</th>
-                  <th>Type</th>
-                  <th>Severity</th>
-                  {{-- <th>Terminal</th> --}}
-                  <th>Messages</th>
-                  {{-- <th>Transaction</th> --}}
-                  {{-- <th class="text-center">Actions</th> --}}
-                </tr>
-            </thead>
-            <tbody>
-              @forelse($systemLogs as $log)
-              <tr>
-                <td class="text-nowrap">{{ $log->created_at->format('Y-m-d H:i:s') }}</td>
-                <td>
-                  <span class="badge bg-{{ LogHelper::getLogTypeClass($log->log_type) }}">
-                    {{ ucfirst($log->log_type) }}
-                  </span>
-                </td>
-                <td>
-                  <span class="badge bg-{{ BadgeHelper::getStatusBadgeColor($log->severity) }}">
-                    {{ strtoupper($log->severity) }}
-                  </span>
-                </td>
-                {{-- <td class="text-nowrap">{{ $log->terminal_uid ?? 'N/A' }}</td> --}}
-                <td class="text-wrap" style="max-width: 300px;">
-                  <small class="text-muted">{{ $log->message }}</small>
-                </td>
-                {{-- <td class="text-nowrap">
-                  @if($log->transaction_id)
-                  <a href="{{ route('transactions.show', $log->transaction_id) }}"
-                    class="btn btn-sm btn-link text-decoration-none">
-                    {{ $log->transaction_id }}
-                  </a>
-                  @else
-                  <span class="text-muted">N/A</span>
-                  @endif
-                </td> --}}
-                {{-- <td class="text-center">
-                  @if($log->context)
-                  <button class="btn btn-sm btn-outline-danger" onclick="showContext('{{ $log->id }}')">
-                    <i class="fas fa-search me-1"></i> Details
-                  </button>
-                  @endif
-                </td> --}}
-              </tr>
-              @empty
-              {{-- <tr>
-                <td colspan="7" class="text-center py-4">
-                  <div class="text-muted">
-                    <i class="fas fa-info-circle me-1"></i>No system logs found
-                  </div>
-                </td>
-              </tr> --}}
-              @endforelse
-            </tbody>
-        </table>
+</div>
+
+<!-- AUDIT CONTEXT MODAL FOR DATA CHANGES -->
+<div class="modal fade" id="auditContextModal" tabindex="-1" aria-labelledby="auditContextModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="auditContextModalLabel">
+                    <i class="fas fa-history me-2"></i>Audit Trail Details
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <!-- Audit Log Basic Info -->
+                <div class="row mb-4">
+                    <div class="col-md-6">
+                        <h6><i class="fas fa-info-circle me-1"></i>Basic Information</h6>
+                        <table class="table table-sm">
+                            <tr><td><strong>Time:</strong></td><td id="audit-time"></td></tr>
+                            <tr><td><strong>User:</strong></td><td id="audit-user"></td></tr>
+                            <tr><td><strong>Action:</strong></td><td id="audit-action"></td></tr>
+                            <tr><td><strong>Resource:</strong></td><td id="audit-resource"></td></tr>
+                            <tr><td><strong>IP Address:</strong></td><td id="audit-ip"></td></tr>
+                        </table>
+                    </div>
+                    <div class="col-md-6">
+                        <h6><i class="fas fa-comment me-1"></i>Message</h6>
+                        <div class="border rounded p-3 bg-light">
+                            <div id="audit-message"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Data Changes Section -->
+                <div id="dataChangesSection" style="display: none;">
+                    <hr>
+                    <h6><i class="fas fa-exchange-alt me-1"></i>Data Changes</h6>
+                    <div class="row">
+                        <div class="col-md-6">
+                            <h7><i class="fas fa-arrow-left me-1"></i>Before (Old Values):</h7>
+                            <pre id="oldValues" class="bg-danger bg-opacity-10 p-3 rounded"></pre>
+                        </div>
+                        <div class="col-md-6">
+                            <h7><i class="fas fa-arrow-right me-1"></i>After (New Values):</h7>
+                            <pre id="newValues" class="bg-success bg-opacity-10 p-3 rounded"></pre>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Metadata Section -->
+                <div id="metadataSection" style="display: none;">
+                    <hr>
+                    <h6><i class="fas fa-tags me-1"></i>Additional Context</h6>
+                    <pre id="metadataContent" class="bg-info bg-opacity-10 p-3 rounded"></pre>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+                    <i class="fas fa-times me-1"></i>Close
+                </button>
+                <button type="button" class="btn btn-primary" onclick="exportAuditDetail()">
+                    <i class="fas fa-download me-1"></i>Export Details
+                </button>
+            </div>
+        </div>
     </div>
 </div>
 
@@ -148,7 +178,7 @@ use App\Helpers\BadgeHelper;
 
 <script>
 $(function () {
-    $("#example2").DataTable({
+    $("#example1").DataTable({
         "responsive": true, 
         "lengthChange": false, 
         "autoWidth": false,
@@ -156,13 +186,14 @@ $(function () {
         "info": true,
         "paging": true,
         "searching": true,
+        "order": [[ 0, "desc" ]], // Sort by time (newest first)
         "language": {
-            "emptyTable": "No transaction logs available",
-            "zeroRecords": "No matching records found",
-            "info": "Showing _START_ to _END_ of _TOTAL_ entries",
-            "infoEmpty": "Showing 0 to 0 of 0 entries",
-            "infoFiltered": "(filtered from _MAX_ total entries)",
-            "search": "Search:",
+            "emptyTable": "No audit logs available",
+            "zeroRecords": "No matching audit records found",
+            "info": "Showing _START_ to _END_ of _TOTAL_ audit entries",
+            "infoEmpty": "Showing 0 to 0 of 0 audit entries",
+            "infoFiltered": "(filtered from _MAX_ total audit entries)",
+            "search": "Search audit logs:",
             "paginate": {
                 "first": "First",
                 "last": "Last",
@@ -171,14 +202,12 @@ $(function () {
             }
         },
         "buttons": [
-              // { extend: "copy",  text: "Copy",  className: "btn btn-sm btn-outline-primary" },
-              { extend: "csv",   text: "CSV",   className: "btn btn-danger" },
-              { extend: "excel", text: "Excel", className: "btn btn-danger" },
-              { extend: "pdf",   text: "PDF",   className: "btn btn-danger" },
-              // { extend: "print", text: "Print", className: "btn btn-sm btn-danger" },
-              { extend: "colvis",text: "Cols",  className: "btn btn-lg btn-danger" }
+              { extend: "csv",   text: "<i class='fas fa-file-csv'></i> CSV",   className: "btn btn-success btn-sm" },
+              { extend: "excel", text: "<i class='fas fa-file-excel'></i> Excel", className: "btn btn-success btn-sm" },
+              { extend: "pdf",   text: "<i class='fas fa-file-pdf'></i> PDF",   className: "btn btn-danger btn-sm" },
+              { extend: "colvis",text: "<i class='fas fa-columns'></i> Columns",  className: "btn btn-info btn-sm" }
         ]
-    }).buttons().container().appendTo('#example2_wrapper .col-md-6:eq(0)');
+    }).buttons().container().appendTo('#example1_wrapper .col-md-6:eq(0)');
 
     // Toastr notifications
     @if(session('success'))
@@ -189,6 +218,83 @@ $(function () {
         toastr.error("{{ session('error') }}");
     @endif
 });
+
+// Show audit context with data changes
+function showAuditContext(auditId) {
+    // Show loading state
+    $('#auditContextModal .modal-body').html('<div class="text-center"><i class="fas fa-spinner fa-spin"></i> Loading audit details...</div>');
+    $('#auditContextModal').modal('show');
+    
+    // Fetch audit details
+    $.get('/log-viewer/audit-context/' + auditId)
+        .done(function(data) {
+            // Populate basic info
+            $('#audit-time').text(new Date(data.created_at).toLocaleString());
+            $('#audit-user').text(data.user?.name || 'System');
+            $('#audit-action').html('<span class="badge bg-primary">' + (data.action || 'N/A') + '</span>');
+            $('#audit-resource').html('<span class="badge bg-info">' + (data.resource_type || 'N/A') + '</span>' + 
+                (data.resource_id ? '<br><small class="text-muted">' + data.resource_id + '</small>' : ''));
+            $('#audit-ip').text(data.ip_address || 'N/A');
+            $('#audit-message').text(data.message || 'No message');
+
+            // Show/hide data changes section
+            if (data.old_values || data.new_values) {
+                $('#dataChangesSection').show();
+                $('#oldValues').text(data.old_values ? JSON.stringify(JSON.parse(data.old_values), null, 2) : 'No old values');
+                $('#newValues').text(data.new_values ? JSON.stringify(JSON.parse(data.new_values), null, 2) : 'No new values');
+            } else {
+                $('#dataChangesSection').hide();
+            }
+
+            // Show/hide metadata section
+            if (data.metadata) {
+                $('#metadataSection').show();
+                $('#metadataContent').text(typeof data.metadata === 'string' ? 
+                    JSON.stringify(JSON.parse(data.metadata), null, 2) : 
+                    JSON.stringify(data.metadata, null, 2));
+            } else {
+                $('#metadataSection').hide();
+            }
+
+            // Restore full modal content
+            $('#auditContextModal .modal-body').html($('#auditContextModal .modal-body').html());
+        })
+        .fail(function(xhr) {
+            let errorMessage = 'Failed to load audit details';
+            if (xhr.responseJSON && xhr.responseJSON.message) {
+                errorMessage = xhr.responseJSON.message;
+            }
+            $('#auditContextModal .modal-body').html(
+                '<div class="alert alert-danger"><i class="fas fa-exclamation-triangle me-2"></i>' + errorMessage + '</div>'
+            );
+        });
+}
+
+// Export audit detail function
+function exportAuditDetail() {
+    const auditData = {
+        time: $('#audit-time').text(),
+        user: $('#audit-user').text(),
+        action: $('#audit-action').text(),
+        resource: $('#audit-resource').text(),
+        ip: $('#audit-ip').text(),
+        message: $('#audit-message').text(),
+        oldValues: $('#oldValues').text(),
+        newValues: $('#newValues').text(),
+        metadata: $('#metadataContent').text()
+    };
+    
+    const dataStr = JSON.stringify(auditData, null, 2);
+    const dataBlob = new Blob([dataStr], {type: 'application/json'});
+    const url = URL.createObjectURL(dataBlob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'audit-detail-' + Date.now() + '.json';
+    link.click();
+    URL.revokeObjectURL(url);
+    
+    toastr.success('Audit details exported successfully');
+}
 </script>
 @endpush
 
