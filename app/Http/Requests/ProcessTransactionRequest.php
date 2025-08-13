@@ -13,7 +13,8 @@ class ProcessTransactionRequest extends FormRequest
             'customer_code' => 'required|string|exists:customers,code',
             'terminal_id' => 'required|integer|exists:pos_terminals,id',
             'hardware_id' => 'required|string',
-            'transaction_id' => 'required|string|unique:transactions,transaction_id',
+            // Enforce RFC 4122 UUID format & uniqueness in transactions table
+            'transaction_id' => 'required|string|uuid|unique:transactions,transaction_id',
             'transaction_timestamp' => 'required|date',
             'base_amount' => 'required|numeric|min:0',
 

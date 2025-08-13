@@ -305,7 +305,8 @@ class TransactionController extends Controller
                 'customer_code' => 'required|string',
                 'terminal_id' => 'required|exists:pos_terminals,id',
                 'transactions' => 'required|array|min:1',
-                'transactions.*.transaction_id' => 'required|string',
+                // Enforce UUID format for each transaction in batch
+                'transactions.*.transaction_id' => 'required|string|uuid',
                 'transactions.*.base_amount' => 'required|numeric|min:0',
                 'transactions.*.transaction_timestamp' => 'required|date',
                 'transactions.*.items' => 'required|array|min:1',
@@ -550,7 +551,8 @@ class TransactionController extends Controller
 
             // Validate request includes transaction_id and matches route parameter
             $request->validate([
-                'transaction_id' => 'required|string|max:191',
+                // Require RFC 4122 UUID (Laravel uuid rule validates format) to prevent accepting malformed IDs
+                'transaction_id' => 'required|string|uuid|max:191',
                 'void_reason' => 'required|string|max:255',
                 'payload_checksum' => 'required|string|min:64|max:64', // SHA-256 required for POS requests
             ]);

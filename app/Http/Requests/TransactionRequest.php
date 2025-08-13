@@ -18,7 +18,8 @@ class TransactionRequest extends FormRequest
             'customer_code' => 'required|string|exists:customers,code',
             'terminal_id' => 'required|integer|exists:pos_terminals,id',
             'hardware_id' => 'required|string',
-            'transaction_id' => 'required|string',
+            // Enforce RFC 4122 UUID format (any version) for transaction identifiers
+            'transaction_id' => 'required|string|uuid',
             'transaction_timestamp' => 'required|date',
             'base_amount' => 'required|numeric|min:0',
             'payload_checksum' => 'required|string',
