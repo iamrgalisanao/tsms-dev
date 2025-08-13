@@ -38,6 +38,7 @@ class RetryTransactionJob implements ShouldQueue
         $this->attempt = $attempt;
         $this->maxAttempts = config('retry.max_attempts', 3);
         $this->backoff = config('retry.delay', 60);
+        $this->onQueue('low'); // background retry queue
     }
 
     /**
@@ -207,5 +208,12 @@ class RetryTransactionJob implements ShouldQueue
                 ))->delay(now()->addSeconds($backoffDelay));
             }
         }
+    }
+    public function tags(): array
+    {
+        return [
+            'transaction:id='.$this->transactionId,
+            'domain:retry'
+        ];
     }
 }

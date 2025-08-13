@@ -30,6 +30,15 @@ class AuthServiceProvider extends ServiceProvider
             return $user->role === 'admin';
         });
 
+        // Horizon dashboard access gate
+        Gate::define('viewHorizon', function ($user) {
+            // Support either role column or spatie/permission roles
+            if (method_exists($user, 'hasRole')) {
+                return $user->hasRole('admin') || $user->hasRole('ops');
+            }
+            return in_array($user->role ?? null, ['admin','ops']);
+        });
+
         // Register the 'api' guard to use JWT for terminal authentication
         Auth::viaRequest('api', function ($request) {
             // Check for the bearer token

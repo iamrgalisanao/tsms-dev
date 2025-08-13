@@ -23,8 +23,8 @@ class ForwardTransactionsToWebAppJob implements ShouldQueue
      */
     public function __construct()
     {
-        // Set specific queue for webapp forwarding
-        $this->onQueue('webapp-forwarding');
+    // Standardized queue name
+    $this->onQueue('forwarding');
     }
 
     /**
@@ -81,5 +81,10 @@ class ForwardTransactionsToWebAppJob implements ShouldQueue
 
         // Optional: Send notification to administrators
         // You could dispatch a notification job here
+    }
+
+    public function tags(): array
+    {
+        return ['domain:forwarding'];
     }
 }

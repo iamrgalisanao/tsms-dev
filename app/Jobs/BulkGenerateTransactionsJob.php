@@ -24,6 +24,7 @@ class BulkGenerateTransactionsJob implements ShouldQueue
     {
         $this->count = $count;
         $this->params = $params;
+    $this->onQueue('low'); // housekeeping / non-critical
     }
 
     public function handle()
@@ -75,5 +76,10 @@ class BulkGenerateTransactionsJob implements ShouldQueue
             'error' => $exception->getMessage(),
             'trace' => $exception->getTraceAsString()
         ]);
+    }
+
+    public function tags(): array
+    {
+        return ['domain:bulk-generation'];
     }
 }

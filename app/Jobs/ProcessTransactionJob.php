@@ -34,6 +34,8 @@ class ProcessTransactionJob implements ShouldQueue
     public function __construct(int $transactionId)
     {
         $this->transactionId = $transactionId;
+    // Ensure critical processing queue
+    $this->onQueue('transaction-processing');
     }
 
     /**
@@ -317,5 +319,16 @@ class ProcessTransactionJob implements ShouldQueue
     public function failed(\Throwable $exception): void 
     {
         $this->handleError($exception);
+    }
+
+    /**
+     * Horizon tags for filtering / metrics.
+     */
+    public function tags(): array
+    {
+        return [
+            'transaction:pk='.$this->transactionId,
+            'domain:processing'
+        ];
     }
 }
