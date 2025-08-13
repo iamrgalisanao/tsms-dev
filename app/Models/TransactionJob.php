@@ -21,7 +21,7 @@ class TransactionJob extends Model
     use HasFactory;
     protected $table = 'transaction_jobs';
     protected $fillable = [
-        'transaction_id',
+        'transaction_pk',
         'job_status',
         'last_error',
         'attempts',
@@ -30,6 +30,6 @@ class TransactionJob extends Model
     ];
     public function transaction()
     {
-        return $this->belongsTo(Transaction::class, 'transaction_id', 'transaction_id');
+        return $this->belongsTo(Transaction::class, 'transaction_pk', 'id');
     }
 }

@@ -26,7 +26,7 @@ use App\Helpers\FormatHelper;
         <h3 class="card-title text-white">List of Transactions</h3>
     </div>
     <div class="card-body">
-        <table id="example1" class="table table-bordered table-striped">
+    <table id="transactionLogsTable" class="table table-bordered table-striped">
             <thead>
                 <tr>
                     <th>Transaction ID</th>
@@ -87,7 +87,11 @@ use App\Helpers\FormatHelper;
 
 <script>
 $(function () {
-    $("#example1").DataTable({
+    const selector = '#transactionLogsTable';
+    if ($.fn.DataTable.isDataTable(selector)) {
+        return;
+    }
+    $(selector).DataTable({
         "responsive": true, 
         "lengthChange": false, 
         "autoWidth": false,
@@ -116,7 +120,7 @@ $(function () {
               // { extend: "print", text: "Print", className: "btn btn-sm btn-danger" },
               { extend: "colvis",text: "Cols",  className: "btn btn-lg btn-danger" }
         ]
-    }).buttons().container().appendTo('#example1_wrapper .col-md-6:eq(0)');
+    }).buttons().container().appendTo('#transactionLogsTable_wrapper .col-md-6:eq(0)');
 
     // Toastr notifications
     @if(session('success'))

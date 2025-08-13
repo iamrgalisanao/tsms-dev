@@ -75,4 +75,29 @@ return [
         'cleanup_failed_after_days' => (int) env('WEBAPP_CLEANUP_FAILED_DAYS', 7),
         'enable_auto_cleanup' => (bool) env('WEBAPP_AUTO_CLEANUP', true),
     ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Transaction Pruning & Retention
+    |--------------------------------------------------------------------------
+    | Settings to prune stale or failed transaction records while keeping audit
+    | value. PENDING max age protects against stuck jobs. FAILED retention keeps
+    | recent diagnostics.
+    */
+    'transactions' => [
+        'prune_failed_after_days' => (int) env('TX_PRUNE_FAILED_AFTER_DAYS', 14),
+        'prune_pending_after_minutes' => (int) env('TX_PRUNE_PENDING_AFTER_MIN', 180), // treat as stale
+        'enable_pruning' => (bool) env('TX_ENABLE_PRUNING', true),
+        'log_channel' => env('TX_PRUNE_LOG_CHANNEL', 'single'),
+        // Watchdog settings for stuck / slow transactions
+        'watchdog' => [
+            'enabled' => (bool) env('TX_WATCHDOG_ENABLED', true),
+            // If a transaction stays PENDING this long, mark as FAILED (terminal timeout)
+            'max_pending_minutes' => (int) env('TX_WATCHDOG_MAX_PENDING_MIN', 60),
+            // Re-dispatch (requeue) PENDING+QUEUED transactions older than this age
+            'requeue_after_minutes' => (int) env('TX_WATCHDOG_REQUEUE_AFTER_MIN', 10),
+            // Maximum re-dispatch attempts before forcing failure (uses transaction.job_attempts)
+            'max_requeue_attempts' => (int) env('TX_WATCHDOG_MAX_REQUEUE_ATTEMPTS', 2),
+        ],
+    ],
 ];

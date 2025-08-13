@@ -15,18 +15,34 @@ class CompanySeeder extends Seeder
      */
     public function run()
     {
-        // $csvPath = 'G:/PITX/document/reports/sample/fixed_companies_import.csv';
-        // $csvPath = getenv('HOME') . '/Downloads/fixed_companies_import.csv';
-          $csvPath = '/home/rgalisanao/Downloads/fixed_companies_import.csv';
+        // Determine CSV path using precedence:
+        // 1. ENV COMPANY_CSV_PATH
+        // 2. database/seeders/data/fixed_companies_import.csv
+        // 3. storage/app/seeds/fixed_companies_import.csv
+        // 4. project root fixed_companies_import.csv
+        // 5. $HOME/Downloads/fixed_companies_import.csv
+        $envPath = env('COMPANY_CSV_PATH');
+        $candidatePaths = array_filter([
+            $envPath,
+            base_path('database/seeders/data/fixed_companies_import.csv'),
+            storage_path('app/seeds/fixed_companies_import.csv'),
+            base_path('fixed_companies_import.csv'),
+            rtrim(getenv('HOME') ?: '', '/') . '/Downloads/fixed_companies_import.csv',
+        ]);
 
-        
-        // Check if CSV file exists
-        if (!file_exists($csvPath)) {
-            $this->command->error("CSV file not found at: {$csvPath}");
+        $csvPath = null;
+        foreach ($candidatePaths as $path) {
+            if ($path && file_exists($path)) { $csvPath = $path; break; }
+        }
+
+        if (!$csvPath) {
+            $this->command->error('CompanySeeder: CSV file not found. Tried:');
+            foreach ($candidatePaths as $p) { $this->command->warn(' - ' . $p); }
+            $this->command->warn('Provide a file and either set COMPANY_CSV_PATH or place it in database/seeders/data/.');
             return;
         }
 
-        $this->command->info("Reading companies from CSV: {$csvPath}");
+        $this->command->info("CompanySeeder using CSV: {$csvPath}");
 
         try {
             // Clear existing companies carefully due to foreign key constraints
@@ -36,9 +52,18 @@ class CompanySeeder extends Seeder
                 $this->command->info("Will insert new companies or update existing ones...");
             }
 
-            // Read and parse CSV
-            $csvData = array_map('str_getcsv', file($csvPath));
-            $header = array_shift($csvData); // Remove header row
+            // Read and parse CSV (supports UTF-8 BOM)
+            $raw = file($csvPath, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+            if (!$raw) {
+                $this->command->error('CSV file appears empty.');
+                return;
+            }
+            $first = $raw[0];
+            // Strip BOM if present
+            $raw[0] = preg_replace('/^\xEF\xBB\xBF/', '', $first);
+            $csvData = array_map('str_getcsv', $raw);
+            $header = array_shift($csvData); // header row
+            $headerCount = count($header);
             
             $successCount = 0;
             $errorCount = 0;
@@ -49,13 +74,18 @@ class CompanySeeder extends Seeder
                     continue;
                 }
 
-                // Map CSV columns to database fields
+                // Pad row if shorter than header to avoid undefined offsets
+                if (count($row) < $headerCount) {
+                    $row = array_pad($row, $headerCount, null);
+                }
+
+                // Flexible mapping: expecting columns [customer_code, company_name, tin, created_at?, updated_at?]
                 $companyData = [
-                    'customer_code' => trim($row[0]),
-                    'company_name' => trim($row[1]),
-                    'tin' => trim($row[2]),
-                    'created_at' => !empty(trim($row[3])) ? trim($row[3]) : now(),
-                    'updated_at' => !empty(trim($row[4])) ? trim($row[4]) : now(),
+                    'customer_code' => trim((string)$row[0]),
+                    'company_name'  => trim((string)$row[1]),
+                    'tin'           => trim((string)$row[2]),
+                    'created_at'    => isset($row[3]) && trim((string)$row[3]) !== '' ? trim((string)$row[3]) : now(),
+                    'updated_at'    => isset($row[4]) && trim((string)$row[4]) !== '' ? trim((string)$row[4]) : now(),
                 ];
 
                 try {

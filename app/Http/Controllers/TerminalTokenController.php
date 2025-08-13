@@ -6,6 +6,8 @@ use App\Models\PosTerminal;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\DB;
+use Laravel\Sanctum\PersonalAccessToken;
 
 class TerminalTokenController extends Controller
 {
@@ -345,5 +347,98 @@ class TerminalTokenController extends Controller
                 'message' => 'Error generating bulk tokens: ' . $e->getMessage()
             ], 500);
         }
+    }
+    
+    /**
+     * Introspect a token to validate and retrieve its claims.
+     *
+     * @param Request $request
+     * @return \Illuminate\Http\JsonResponse
+     */
+    public function introspectToken(Request $request)
+    {
+        $raw = $request->bearerToken();
+        if (!$raw) {
+            return $this->invalidTokenResponse('missing');
+        }
+
+        // Sanctum tokens have the form id|plaintexttoken
+        if (!str_contains($raw, '|')) {
+            Log::warning('Token introspection: malformed token format');
+            return $this->invalidTokenResponse('malformed');
+        }
+
+        [$id, $plain] = explode('|', $raw, 2);
+        if (!ctype_digit($id) || empty($plain)) {
+            Log::warning('Token introspection: invalid id or empty plain segment', ['token_id' => $id]);
+            return $this->invalidTokenResponse('malformed');
+        }
+
+        $hashed = hash('sha256', $plain);
+
+        // Query personal access token
+        $pat = PersonalAccessToken::query()
+            ->where('id', $id)
+            ->where('token', $hashed)
+            ->first();
+
+        if (!$pat) {
+            Log::info('Token introspection: token not found or hash mismatch', ['token_id' => $id]);
+            return $this->invalidTokenResponse('not_found');
+        }
+
+        // Ensure tokenable is a POS terminal
+        if ($pat->tokenable_type !== PosTerminal::class) {
+            Log::warning('Token introspection: tokenable type mismatch', ['token_id' => $id, 'type' => $pat->tokenable_type]);
+            return $this->invalidTokenResponse('wrong_type');
+        }
+
+        $terminal = PosTerminal::find($pat->tokenable_id);
+        if (!$terminal) {
+            Log::warning('Token introspection: terminal missing', ['token_id' => $id]);
+            return $this->invalidTokenResponse('orphan');
+        }
+
+        $expired = $pat->expires_at && now()->gte($pat->expires_at);
+        $revoked = property_exists($pat, 'is_revoked') ? ($pat->is_revoked ?? false) : false;
+        $inactive = !$terminal->isActiveAndValid();
+
+        if ($expired || $revoked || $inactive) {
+            Log::info('Token introspection: inactive token', [
+                'token_id' => $id,
+                'expired' => $expired,
+                'revoked' => $revoked,
+                'inactive_terminal' => $inactive
+            ]);
+            return $this->invalidTokenResponse('inactive');
+        }
+
+        // Parse abilities JSON (Sanctum stores as JSON in abilities attribute)
+        $abilities = $pat->abilities ?? [];
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'active' => true,
+                'terminal_id' => $terminal->id,
+                'terminal_uid' => $terminal->terminal_uid ?? $terminal->serial_number,
+                'tenant_id' => $terminal->tenant_id,
+                'provider_id' => $terminal->provider_id ?? null,
+                'abilities' => $abilities,
+                'expires_at' => $pat->expires_at,
+                'last_used_at' => $pat->last_used_at,
+                'issued_at' => $pat->created_at,
+            ]
+        ]);
+    }
+
+    private function invalidTokenResponse(string $reason)
+    {
+        // Always collapse to same outward response (avoid enumeration), include code per contract
+        return response()->json([
+            'success' => false,
+            'code' => 'invalid_token',
+            'message' => 'Invalid or expired token',
+        ], 401);
     }
 }

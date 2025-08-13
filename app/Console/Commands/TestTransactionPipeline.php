@@ -33,7 +33,7 @@ class TestTransactionPipeline extends Command
         
         foreach ($transactions as $transaction) {
             $this->info("Dispatching job for transaction: {$transaction->transaction_id}");
-            ProcessTransactionJob::dispatch($transaction);
+            ProcessTransactionJob::dispatch($transaction->id);
         }
         
         $this->info('Jobs dispatched. Please check the dashboard for results in a few moments.');

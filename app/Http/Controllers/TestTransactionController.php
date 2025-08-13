@@ -99,7 +99,7 @@ class TestTransactionController extends Controller
             ]);
             
             // Dispatch job for processing
-            ProcessTransactionJob::dispatch($transaction);
+            ProcessTransactionJob::dispatch($transaction->id)->afterCommit();
             
             DB::commit();
             
@@ -197,7 +197,8 @@ class TestTransactionController extends Controller
             }
 
             // Dispatch job with proper queue
-            ProcessTransactionJob::dispatch($transaction)
+            ProcessTransactionJob::dispatch($transaction->id)
+                ->afterCommit()
                 ->onQueue('transactions')
                 ->delay(now()->addSeconds(5)); // Add small delay to prevent race conditions
 

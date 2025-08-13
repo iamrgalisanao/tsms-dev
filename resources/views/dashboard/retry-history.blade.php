@@ -19,7 +19,7 @@
         <h3 class="card-title text-white">Transaction History Details</h3>
     </div>
     <div class="card-body">
-        <table id="example1" class="table table-bordered table-striped">
+  <table id="retryHistoryTable" class="table table-bordered table-striped">
             <thead>
                 <tr>
                     <th>Transaction ID</th>
@@ -87,7 +87,11 @@
 
 <script>
 $(function () {
-    $("#example1").DataTable({
+  const selector = '#retryHistoryTable';
+  if ($.fn.DataTable.isDataTable(selector)) {
+    return;
+  }
+  $(selector).DataTable({
         "responsive": true, 
         "lengthChange": false, 
         "autoWidth": false,
@@ -116,7 +120,7 @@ $(function () {
               // { extend: "print", text: "Print", className: "btn btn-sm btn-danger" },
               { extend: "colvis",text: "Cols",  className: "btn btn-lg btn-danger" }
         ]
-    }).buttons().container().appendTo('#example1_wrapper .col-md-6:eq(0)');
+  }).buttons().container().appendTo('#retryHistoryTable_wrapper .col-md-6:eq(0)');
 
     // Toastr notifications
     @if(session('success'))
@@ -177,7 +181,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function refreshAll() {
     document
-      .querySelectorAll('#example1 tbody tr')
+  .querySelectorAll('#retryHistoryTable tbody tr')
       .forEach(row => {
         // skip any row that doesn’t have 8 cells
         if (row.cells.length !== 8) return;

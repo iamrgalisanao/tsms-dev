@@ -23,7 +23,7 @@ class RetryHistoryController extends Controller
             
             // Use correct schema with transaction_jobs join
             $query = DB::table('transactions as t')
-                ->join('transaction_jobs as tj', 't.transaction_id', '=', 'tj.transaction_id')
+                ->join('transaction_jobs as tj', 't.id', '=', 'tj.transaction_pk')
                 ->where('tj.retry_count', '>', 0); // Only get transactions that have retry attempts
                 
             // Apply filters if provided
@@ -157,7 +157,8 @@ class RetryHistoryController extends Controller
             ]);
 
             // Queue for processing
-            ProcessTransactionJob::dispatch($transaction)
+            ProcessTransactionJob::dispatch($transaction->id)
+                ->afterCommit()
                 ->onQueue('transactions');
 
             DB::commit();
@@ -199,7 +200,8 @@ class RetryHistoryController extends Controller
             ]);
 
             // Dispatch new job
-            ProcessTransactionJob::dispatch($transaction)
+            ProcessTransactionJob::dispatch($transaction->id)
+                ->afterCommit()
                 ->onQueue('default');
 
             return response()->json([

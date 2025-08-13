@@ -43,7 +43,7 @@ class BulkGenerateTransactionsJob implements ShouldQueue
                         'retry_count' => 0
                     ]));
 
-                    ProcessTransactionJob::dispatch($transaction);
+                    ProcessTransactionJob::dispatch($transaction->id)->afterCommit();
                     $this->successCount++;
 
                 } catch (\Throwable $e) {

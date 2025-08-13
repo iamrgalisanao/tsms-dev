@@ -17,6 +17,111 @@ Schedule::call(function () {
     Log::info('Laravel scheduler tick: cron is running');
 })->everyMinute();
 
+// --------------------------------------------------------------------------
+// Transaction pruning: remove stale PENDING (stuck) & aged FAILED transactions
+// Runs every hour; uses configurable retention in config('tsms.transactions').
+// --------------------------------------------------------------------------
+Schedule::call(function () {
+    $cfg = config('tsms.transactions');
+    if (!($cfg['enable_pruning'] ?? true)) {
+        return; // disabled
+    }
+
+    $failedDays = $cfg['prune_failed_after_days'] ?? 14;
+    $pendingMinutes = $cfg['prune_pending_after_minutes'] ?? 180;
+
+    $failedCutoff = now()->subDays($failedDays);
+    $pendingCutoff = now()->subMinutes($pendingMinutes);
+
+    $failedQuery = \App\Models\Transaction::where('validation_status', 'FAILED')
+        ->where('created_at', '<', $failedCutoff);
+    $stalePendingQuery = \App\Models\Transaction::where('validation_status', 'PENDING')
+        ->where('created_at', '<', $pendingCutoff);
+
+    $failedCount = (clone $failedQuery)->count();
+    $pendingCount = (clone $stalePendingQuery)->count();
+
+    $deletedFailed = 0; $deletedPending = 0;
+    if ($failedCount > 0) { $deletedFailed = $failedQuery->delete(); }
+    if ($pendingCount > 0) { $deletedPending = $stalePendingQuery->delete(); }
+
+    if ($deletedFailed > 0 || $deletedPending > 0) {
+        Log::info('[Prune] Transactions pruned', [
+            'deleted_failed' => $deletedFailed,
+            'deleted_stale_pending' => $deletedPending,
+            'failed_cutoff' => $failedCutoff->toDateTimeString(),
+            'pending_cutoff' => $pendingCutoff->toDateTimeString(),
+        ]);
+    }
+
+    // Metric-style log (counts post-prune)
+    $pendingNow = \App\Models\Transaction::where('validation_status','PENDING')->count();
+    $failedNow = \App\Models\Transaction::where('validation_status','FAILED')->count();
+    Log::info('[Prune] Transaction inventory snapshot', [
+        'pending_remaining' => $pendingNow,
+        'failed_remaining' => $failedNow,
+    ]);
+})->hourly()->name('transactions-prune')->withoutOverlapping()->onOneServer();
+
+// --------------------------------------------------------------------------
+// Transaction Watchdog: requeue or fail stuck PENDING transactions
+// Runs every 5 minutes. Logic:
+//  - Re-dispatch PENDING + QUEUED older than requeue_after_minutes (but younger than max_pending)
+//  - If PENDING older than max_pending_minutes -> mark FAILED (timeout) & log
+//  - Respects max_requeue_attempts using job_attempts counter
+// --------------------------------------------------------------------------
+Schedule::call(function () {
+    $cfg = config('tsms.transactions.watchdog');
+    if (!$cfg || !($cfg['enabled'] ?? false)) { return; }
+
+    $now = now();
+    $requeueCutoff = $now->clone()->subMinutes($cfg['requeue_after_minutes'] ?? 10);
+    $maxPendingCutoff = $now->clone()->subMinutes($cfg['max_pending_minutes'] ?? 60);
+    $maxRequeues = $cfg['max_requeue_attempts'] ?? 2;
+
+    $requeued = 0; $failed = 0; $skipped = 0;
+
+    // Re-dispatch candidates: still PENDING and queued, older than requeue cutoff but not past max pending cutoff
+    $candidates = \App\Models\Transaction::where('validation_status', 'PENDING')
+        ->where('job_status', 'QUEUED')
+        ->whereBetween('created_at', [$maxPendingCutoff, $requeueCutoff]) // between window
+        ->limit(200)
+        ->get();
+
+    foreach ($candidates as $txn) {
+        if (($txn->job_attempts ?? 0) >= $maxRequeues) { $skipped++; continue; }
+        \App\Jobs\ProcessTransactionJob::dispatch($txn->id)->afterCommit();
+        $txn->job_attempts = ($txn->job_attempts ?? 0) + 1;
+        $txn->save();
+        $requeued++;
+    }
+
+    // Fail hard-timeout stale pending beyond maxPendingCutoff (older than threshold)
+    $stale = \App\Models\Transaction::where('validation_status','PENDING')
+        ->where('created_at','<',$maxPendingCutoff)
+        ->limit(200)
+        ->get();
+
+    foreach ($stale as $txn) {
+        $txn->validation_status = 'FAILED';
+        $txn->job_status = 'FAILED';
+        $txn->last_error = 'Watchdog timeout exceeded';
+        $txn->completed_at = now();
+        $txn->save();
+        $failed++;
+    }
+
+    if ($requeued || $failed) {
+        Log::warning('[Watchdog] Transaction watchdog actions', [
+            'requeued' => $requeued,
+            'failed_stale' => $failed,
+            'skipped_due_to_attempts' => $skipped,
+            'requeue_cutoff' => $requeueCutoff->toDateTimeString(),
+            'max_pending_cutoff' => $maxPendingCutoff->toDateTimeString(),
+        ]);
+    }
+})->everyFiveMinutes()->name('transactions-watchdog')->withoutOverlapping()->onOneServer();
+
 
 
 // WebApp Transaction Forwarding - Every 5 minutes (DI version)

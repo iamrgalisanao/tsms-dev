@@ -10,17 +10,38 @@ class TenantSeeder extends Seeder
 {
     public function run(): void
     {
-        // $csvPath = 'G:/PITX/document/reports/sample/tenants_quoted_with_timestamps.csv';
-        // $csvPath = getenv('HOME') . '/Downloads/tenants_quoted_with_timestamps.csv';
-         $csvPath = '/home/rgalisanao/Downloads/tenants_quoted_with_timestamps.csv';
+        // Determine CSV path using precedence (env override first)
+        $envPath = env('TENANTS_CSV_PATH');
+        $candidatePaths = array_filter([
+            $envPath,
+            base_path('database/seeders/data/tenants_quoted_with_timestamps.csv'),
+            base_path('database/seeders/data/tenants.csv'),
+            storage_path('app/seeds/tenants_quoted_with_timestamps.csv'),
+            base_path('tenants_quoted_with_timestamps.csv'),
+            rtrim(getenv('HOME') ?: '', '/') . '/Downloads/tenants_quoted_with_timestamps.csv',
+        ]);
 
-        
-        if (!file_exists($csvPath)) {
-            Log::warning("CSV file not found at: {$csvPath}. Falling back to default tenants.");
+        $csvPath = null;
+        foreach ($candidatePaths as $path) {
+            if ($path && file_exists($path)) { $csvPath = $path; break; }
+        }
+
+        if (!$csvPath) {
+            Log::warning('TenantSeeder: CSV file not found. Falling back to default tenants.', [
+                'tried' => $candidatePaths
+            ]);
+            if (isset($this->command)) {
+                $this->command->error('TenantSeeder: CSV not found. Tried:');
+                foreach ($candidatePaths as $p) { $this->command->warn(' - '.$p); }
+                $this->command->warn('Set TENANTS_CSV_PATH or place file in database/seeders/data/.');
+            }
             $this->createDefaultTenants();
             return;
         }
 
+        if (isset($this->command)) {
+            $this->command->info("TenantSeeder using CSV: {$csvPath}");
+        }
         $this->importFromCsv($csvPath);
     }
 
@@ -29,19 +50,20 @@ class TenantSeeder extends Seeder
         // Get the first company to use as default for all tenants
         // In a real scenario, you'd need proper company-tenant mapping
 
-        $handle = fopen($csvPath, 'r');
-        if ($handle === false) {
-            Log::error("Failed to open CSV file: {$csvPath}");
+        // Robust file read (handle BOM, empty lines)
+        $raw = @file($csvPath, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
+        if (!$raw) {
+            Log::error("TenantSeeder: Failed to read or empty CSV: {$csvPath}");
             $this->createDefaultTenants();
             return;
         }
-
-        // Read and skip header row
-        $header = fgetcsv($handle);
+        // Strip BOM from first line if present
+        $raw[0] = preg_replace('/^\xEF\xBB\xBF/', '', $raw[0]);
+        $rows = array_map('str_getcsv', $raw);
+        $header = array_shift($rows); // discard header
         $importCount = 0;
         $skipCount = 0;
-
-        while (($data = fgetcsv($handle)) !== false) {
+        foreach ($rows as $data) {
             try {
                 // Map CSV columns to tenant attributes directly
                 $tenantData = [
@@ -110,7 +132,7 @@ class TenantSeeder extends Seeder
             }
         }
 
-        fclose($handle);
+    // end foreach
 
         Log::info("Tenant import completed", [
             'imported' => $importCount,

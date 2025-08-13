@@ -10,7 +10,7 @@ class TransactionValidation extends Model
     use HasFactory;
     protected $table = 'transaction_validations';
     protected $fillable = [
-        'transaction_id',
+        'transaction_pk',
         'status_code',
         'validation_details',
         'error_code',
@@ -18,6 +18,6 @@ class TransactionValidation extends Model
     ];
     public function transaction()
     {
-        return $this->belongsTo(Transaction::class, 'transaction_id', 'transaction_id');
+        return $this->belongsTo(Transaction::class, 'transaction_pk', 'id');
     }
 }

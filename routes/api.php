@@ -9,6 +9,7 @@ use App\Http\Controllers\API\V1\LogViewerController;
 use App\Http\Controllers\API\V1\RetryHistoryController;
 use App\Http\Controllers\API\V1\TestParserController;
 use App\Http\Controllers\API\V1\TerminalAuthController;
+use App\Http\Controllers\TerminalTokenController;
 use App\Services\TransactionValidationService;
 use App\Http\Controllers\API\V1\TransactionController as ApiTransactionController;
 use App\Http\Controllers\McpController;
@@ -51,7 +52,8 @@ Route::prefix('v1')->middleware(['auth:sanctum'])->group(function () {
     
     // Transaction endpoints with token abilities
     Route::middleware('abilities:transaction:create')->group(function () {
-        Route::post('/transactions', [TransactionController::class, 'store']);
+        // Legacy basic ingestion endpoint disabled (use /v1/transactions/official)
+        // Route::post('/transactions', [TransactionController::class, 'store']);
         Route::post('/transactions/batch', [TransactionController::class, 'batchStore']);
         Route::post('/transactions/official', [TransactionController::class, 'storeOfficial']);
         Route::post('/transactions/{id}/refund', [TransactionController::class, 'refund']);
@@ -68,11 +70,16 @@ Route::prefix('v1')->middleware(['auth:sanctum'])->group(function () {
         Route::get('/terminals/{terminalId}/tokens', [TerminalTokenController::class, 'listTokens']);
         Route::post('/terminals/generate-all-tokens', [TerminalTokenController::class, 'generateTokensForAllTerminals']);
     });
+
+    // Token introspection (any authenticated token may introspect itself)
+    Route::get('/tokens/introspect', [TerminalTokenController::class, 'introspectToken'])
+        ->middleware('throttle:30,1');
 });
 
 // Legacy V1 API Routes with rate limiting (for backward compatibility)
 Route::prefix('v1')->middleware(['rate.limit'])->group(function () {
-    Route::post('/transactions', [TransactionController::class, 'store']);
+    // Legacy basic ingestion endpoint disabled
+    // Route::post('/transactions', [TransactionController::class, 'store']);
     Route::post('/transactions/batch', [TransactionController::class, 'batchStore']);
     Route::post('/transactions/official', [TransactionController::class, 'storeOfficial']); // New official format endpoint
     Route::get('/transactions/{id}/status', [TransactionController::class, 'status']);
@@ -80,7 +87,8 @@ Route::prefix('v1')->middleware(['rate.limit'])->group(function () {
 
 // Public transaction endpoints for testing (legacy)
 Route::middleware('api')->group(function () {
-    Route::post('/transactions', [TransactionController::class, 'store']);
+    // Legacy public ingestion endpoint disabled
+    // Route::post('/transactions', [TransactionController::class, 'store']);
     Route::get('/transactions/{id}/status', [TransactionController::class, 'status']);
 });
 

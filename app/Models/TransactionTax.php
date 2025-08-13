@@ -10,12 +10,12 @@ class TransactionTax extends Model
     use HasFactory;
     protected $table = 'transaction_taxes';
     protected $fillable = [
-        'transaction_id',
+        'transaction_pk',
         'tax_type',
         'amount',
     ];
     public function transaction()
     {
-        return $this->belongsTo(Transaction::class, 'transaction_id', 'transaction_id');
+        return $this->belongsTo(Transaction::class, 'transaction_pk', 'id');
     }
 }

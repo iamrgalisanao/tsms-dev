@@ -7,7 +7,7 @@ use App\Helpers\BadgeHelper;
 <div class="card">
      
     <div class="card-body">
-        <table id="example1" class="table table-bordered table-striped">
+  <table id="systemLogsTable" class="table table-bordered table-striped">
             <thead>
                 <tr>
                   <th>Time</th>
@@ -120,7 +120,11 @@ use App\Helpers\BadgeHelper;
 
 <script>
 $(function () {
-    $("#example1").DataTable({
+  const selector = '#systemLogsTable';
+  if ($.fn.DataTable.isDataTable(selector)) {
+    return;
+  }
+  $(selector).DataTable({
         "responsive": true, 
         "lengthChange": false, 
         "autoWidth": false,
@@ -149,7 +153,7 @@ $(function () {
             { extend: "pdf",   text: "<i class='fas fa-file-pdf'></i> PDF",   className: "btn btn-danger btn-sm" },
             { extend: "colvis",text: "<i class='fas fa-columns'></i> Columns",  className: "btn btn-info btn-sm" }
         ]
-    }).buttons().container().appendTo('#example1_wrapper .col-md-6:eq(0)');
+  }).buttons().container().appendTo('#systemLogsTable_wrapper .col-md-6:eq(0)');
 
     // Toastr notifications
     @if(session('success'))

@@ -10,12 +10,12 @@ class TransactionAdjustment extends Model
     use HasFactory;
     protected $table = 'transaction_adjustments';
     protected $fillable = [
-        'transaction_id',
+        'transaction_pk',
         'adjustment_type',
         'amount',
     ];
     public function transaction()
     {
-        return $this->belongsTo(Transaction::class, 'transaction_id', 'transaction_id');
+        return $this->belongsTo(Transaction::class, 'transaction_pk', 'id');
     }
 }

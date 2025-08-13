@@ -8,6 +8,37 @@ use Illuminate\Database\Eloquent\Model;
 class Transaction extends Model
 {
     // ...existing code...
+    // Scopes for common filtering patterns
+    public function scopeValidOnly($query)
+    {
+        return $query->where('validation_status', self::VALIDATION_STATUS_VALID);
+    }
+
+    public function scopePending($query)
+    {
+        return $query->where('validation_status', self::VALIDATION_STATUS_PENDING);
+    }
+
+    public function scopeFailed($query)
+    {
+        return $query->where('validation_status', self::VALIDATION_STATUS_FAILED);
+    }
+
+    public function scopeQueued($query)
+    {
+        return $query->where('job_status', self::JOB_STATUS_QUEUED);
+    }
+
+    /**
+     * Determine if this transaction appears stale (pending longer than threshold minutes)
+     */
+    public function isPendingStale(int $thresholdMinutes): bool
+    {
+        if ($this->validation_status !== self::VALIDATION_STATUS_PENDING) {
+            return false;
+        }
+        return $this->created_at && $this->created_at->lt(now()->subMinutes($thresholdMinutes));
+    }
 
     /**
      * Mark this transaction as voided.
@@ -83,6 +114,10 @@ class Transaction extends Model
         'customer_code',
         'payload_checksum',
         'validation_status',
+    'job_status',
+    'last_error',
+    'job_attempts',
+    'completed_at',
         'submission_uuid',
         'submission_timestamp',
         'refund_status',
@@ -216,22 +251,22 @@ class Transaction extends Model
 
     public function adjustments()
     {
-        return $this->hasMany(TransactionAdjustment::class, 'transaction_id', 'transaction_id');
+    return $this->hasMany(TransactionAdjustment::class, 'transaction_pk', 'id');
     }
 
     public function taxes()
     {
-        return $this->hasMany(TransactionTax::class, 'transaction_id', 'transaction_id');
+    return $this->hasMany(TransactionTax::class, 'transaction_pk', 'id');
     }
 
     public function jobs()
     {
-        return $this->hasMany(TransactionJob::class, 'transaction_id', 'transaction_id');
+    return $this->hasMany(TransactionJob::class, 'transaction_pk', 'id');
     }
 
     public function validations()
     {
-        return $this->hasMany(TransactionValidation::class, 'transaction_id', 'transaction_id');
+    return $this->hasMany(TransactionValidation::class, 'transaction_pk', 'id');
     }
 
     /**
@@ -264,5 +299,13 @@ class Transaction extends Model
     public function isEligibleForWebappForward(): bool
     {
         return $this->validation_status === 'VALID' && $this->isPendingWebappForward();
+    }
+
+    /**
+     * Submission envelope relationship
+     */
+    public function submission()
+    {
+        return $this->belongsTo(TransactionSubmission::class, 'submission_uuid', 'submission_uuid');
     }
 }

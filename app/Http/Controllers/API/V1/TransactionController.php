@@ -261,432 +261,32 @@ class TransactionController extends Controller
      * @param \Illuminate\Http\Request $request The HTTP request containing transaction data.
      * @return \Illuminate\Http\Response
      */
+    /**
+     * Legacy basic transaction ingestion endpoint (DEPRECATED).
+     *
+     * This endpoint has been disabled in favor of storeOfficial() which
+     * enforces the canonical TSMS submission contract (submission_uuid,
+     * strong checksum semantics, batch capability, richer validation & idempotency).
+     *
+     * Retained only as a stub to prevent accidental routing to the removed
+     * implementation. If a route still points here it will return HTTP 410.
+     */
     public function store(Request $request)
     {
-        try {
-            /**
-             * Begins a new database transaction and logs the incoming API request details.
-             *
-             * Logs the following information:
-             * - The size of the request payload in bytes.
-             * - The terminal ID (or 'missing' if not provided).
-             * - The transaction ID (or 'missing' if not provided).
-             *
-             * @param \Illuminate\Http\Request $request The incoming API request.
-             * @throws \Exception If the transaction fails to begin.
-             */
-            DB::beginTransaction();
-
-            Log::info('Transaction API request received', [
-                'payload_size' => strlen(json_encode($request->all())),
-                'terminal_id' => $request->terminal_id ?? 'missing',
-                'transaction_id' => $request->transaction_id ?? 'missing'
-            ]);
-
-            Log::info('TransactionController@store: request received', $request->all());
-
-            /**
-             * Checks for the presence of an Authorization header in the request.
-             * If present, extracts the Bearer token and validates it.
-             * Returns a 401 Unauthorized response if the token is 'invalid-token'.
-             *
-             * @param \Illuminate\Http\Request $request The incoming HTTP request.
-             * @return \Illuminate\Http\JsonResponse|null Returns a JSON response for unauthorized access, or null if authorized.
-             */
-            if ($request->header('Authorization')) {
-                $token = str_replace('Bearer ', '', $request->header('Authorization'));
-                Log::info('TransactionController@store: Authorization header found', ['token' => $token]);
-                if ($token === 'invalid-token') {
-                    Log::warning('TransactionController@store: Invalid token');
-                    return response()->json([
-                        'success' => false,
-                        'message' => 'Unauthorized'
-                    ], 401);
-                }
-            }
-
-            /**
-             * Checks if the incoming request body is empty.
-             * If the request contains no data, returns a JSON response with a 400 status code,
-             * indicating a malformed JSON or empty request body.
-             *
-             * @param \Illuminate\Http\Request $request The incoming HTTP request.
-             * @return \Illuminate\Http\JsonResponse|null Returns a JSON response for empty request body, or null if not empty.
-             */
-            if (empty($request->all())) {
-                Log::warning('TransactionController@store: Empty request body');
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Malformed JSON or empty request body'
-                ], 400);
-            }
-
-            
-
-            
-            /**
-             * Validates the incoming transaction request data.
-             *
-             * Validation rules:
-             * - customer_code: required, string
-             * - terminal_id: required, must exist in pos_terminals table (id column)
-             * - transaction_id: required, string
-             * - base_amount: required, numeric, minimum value 0
-             * - transaction_timestamp: optional, must be a valid date
-             * - items: optional, must be an array
-             *   - items.*.id: required if items are present
-             *   - items.*.name: required if items are present, string
-             *   - items.*.price: required if items are present, numeric, minimum value 0
-             *   - items.*.quantity: required if items are present, integer, minimum value 1
-             */
-            try {
-                $request->validate([
-                    'tenant_id' => 'required|exists:tenants,id',
-                    'serial_number' => 'required|exists:pos_terminals,serial_number',
-                    'transaction_id' => 'required|string|max:191',
-                    'hardware_id' => 'required|string|max:191',
-                    'transaction_timestamp' => 'required|date',
-                    'base_amount' => 'required|numeric|min:0',
-                    // 'customer_code' => 'required|string|max:191',
-                    'submission_uuid' => 'required|string|max:191',
-                    'submission_timestamp' => 'required|date',
-                ]);
-                Log::info('TransactionController@store: Validation passed');
-            } catch (\Illuminate\Validation\ValidationException $e) {
-                Log::warning('TransactionController@store: Validation failed', ['errors' => $e->errors()]);
-                throw $e;
-            }
-
-            /**
-             * Retrieves the POS terminal by its ID along with its associated tenant and company information.
-             *
-             * @param  \Illuminate\Http\Request  $request  The incoming HTTP request containing the terminal ID.
-             * @return \App\Models\PosTerminal  The POS terminal model with related tenant and company data.
-             *
-             * @throws \Illuminate\Database\Eloquent\ModelNotFoundException  If the terminal with the given ID does not exist.
-             */
-            $terminal = PosTerminal::with(['tenant.company', 'status'])->where('serial_number', $request->serial_number)->firstOrFail();
-
-            // Validate terminal is active and not expired
-            if (!$terminal->isActiveAndValid()) {
-                $status = $terminal->status ? $terminal->status->name : 'unknown';
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Terminal is not active or has expired',
-                    'errors' => [
-                        'terminal_status' => [
-                            "Terminal status: {$status}, active flag: " . ($terminal->is_active ? 'true' : 'false') . 
-                            ($terminal->expires_at ? ", expires: " . $terminal->expires_at->toISOString() : ', no expiration')
-                        ]
-                    ]
-                ], 422);
-            }
-
-          
-            /**
-             * Validates that the terminal belongs to the specified customer.
-             *
-             * Checks if the terminal's associated tenant and company exist, and verifies
-             * that the company's customer code matches the customer code provided in the request.
-             * If the validation fails, returns a JSON response with an error message and a 422 status code.
-             */
-            if ($terminal->tenant && $terminal->tenant->company && $terminal->tenant->company->customer_code !== $request->customer_code) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Validation failed',
-                    'errors' => ['serial_number' => ['The terminal does not belong to the specified customer']]
-                ], 422);
-            }
-
-            // Validate transaction amount business rules
-            $baseAmount = $request->base_amount;
-            
-            // Minimum transaction amount validation
-            if ($baseAmount <= 0) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Validation failed',
-                    'errors' => ['base_amount' => ['Transaction amount must be greater than 0']]
-                ], 422);
-            }
-            
-            // Maximum transaction amount validation (configurable per store/terminal)
-            $maxAmount = config('tsms.transaction.max_amount', 999999.99);
-            if ($baseAmount > $maxAmount) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Validation failed', 
-                    'errors' => ['base_amount' => ["Transaction amount exceeds maximum limit of {$maxAmount}"]]
-                ], 422);
-            }
-            
-            // Validate transaction timestamp is not in the future
-            if ($request->transaction_timestamp && now()->lt($request->transaction_timestamp)) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Validation failed',
-                    'errors' => ['transaction_timestamp' => ['Transaction timestamp cannot be in the future']]
-                ], 422);
-            }
-
-           
-            /**
-             * Prepares an array of transaction data for processing.
-             *
-             * @param  \Illuminate\Http\Request  $request  The incoming HTTP request containing transaction details.
-             * @param  \App\Models\Terminal  $terminal  The terminal associated with the transaction.
-             * @return array  The prepared transaction data including tenant, terminal, transaction, hardware, timestamp, amount, customer code, checksum, and validation status.
-             *
-             * Fields:
-             * - tenant_id: ID of the tenant associated with the terminal.
-             * - terminal_id: ID of the terminal where the transaction occurred.
-             * - transaction_id: Unique identifier for the transaction.
-             * - hardware_id: Hardware identifier, defaults to terminal serial number or 'DEFAULT' if not provided.
-             * - transaction_timestamp: Timestamp of the transaction, defaults to current time if not provided.
-             * - base_amount: The base amount for the transaction.
-             * - customer_code: Code identifying the customer involved in the transaction.
-             * - payload_checksum: Checksum of the payload, defaults to MD5 hash of request data if not provided.
-             * - validation_status: Status of transaction validation, initialized as 'PENDING'.
-             */
-            $transactionData = [
-                'tenant_id' => $terminal->tenant_id,
-                'serial_number' => $terminal->serial_number,
-                'transaction_id' => $request->transaction_id,
-                'hardware_id' => $request->hardware_id ?? $terminal->serial_number ?? 'DEFAULT',
-                'transaction_timestamp' => $request->transaction_timestamp ?? now(),
-                'base_amount' => $request->base_amount,
-                // 'customer_code' => $request->customer_code, // Commented out as requested
-                'payload_checksum' => $request->payload_checksum ?? md5(json_encode($request->all())),
-                'validation_status' => 'PENDING',
-                'job_status' => 'QUEUED',
-            ];
-
-            Log::info('TransactionController@store: Transaction data prepared', $transactionData);
-           
-            /**
-             * Checks if a transaction with the given transaction ID and terminal ID already exists.
-             * If an existing transaction is found, returns a JSON response indicating validation failure
-             * with an appropriate error message and a 422 status code.
-             *
-             * @param array $transactionData The transaction data containing 'transaction_id'.
-             * @param Terminal $terminal The terminal instance to check against.
-             * @return \Illuminate\Http\JsonResponse JSON response with validation error if transaction exists.
-             */
-            $existingTransaction = Transaction::where('transaction_id', $transactionData['transaction_id'])
-                ->where('serial_number', $terminal->serial_number)
-                ->first();
-
-            if ($existingTransaction) {
-                Log::info('TransactionController@store: Returning existing transaction for idempotency', [
-                    'transaction_id' => $transactionData['transaction_id'],
-                    'existing_id' => $existingTransaction->id
-                ]);
-                
-                // Return success for idempotency - transaction already processed
-                return response()->json([
-                    'success' => true,
-                    'message' => 'Transaction already processed',
-                    'data' => [
-                        'transaction_id' => $existingTransaction->transaction_id,
-                        'status' => 'processed',
-                        'timestamp' => $existingTransaction->created_at->toISOString()
-                    ]
-                ], 200);
-            }
-
-            /**
-             * Creates a new Transaction record in the database using the provided transaction data.
-             *
-             * @param array $transactionData The data to be used for creating the transaction.
-             * @return \App\Models\Transaction The newly created Transaction instance.
-             */
-            Log::info('TransactionController@store: Creating transaction record');
-            $transaction = Transaction::create($transactionData);
-
-            // Log before dispatch
-            \Log::info('About to dispatch ProcessTransactionJob', ['transaction_id' => $transaction->id]);
-
-            ProcessTransactionJob::dispatch($transaction); // Temporarily disabled for debugging
-
-            // Log after dispatch
-            \Log::info('Dispatched ProcessTransactionJob', ['transaction_id' => $transaction->id]);
-
-         
-            /**
-             * Attempts to create a system log entry for a transaction ingestion event.
-             * 
-             * Logs details such as transaction ID, base amount, terminal ID, and terminal serial number.
-             * If log creation fails, catches the exception and writes a warning to the application log
-             * without interrupting the main process.
-             *
-             * @throws \Exception If system log creation fails (handled internally).
-             */
-            try {
-                \App\Models\SystemLog::create([
-                    'type' => 'transaction',
-                    'log_type' => 'TRANSACTION_INGESTION',
-                    'severity' => 'info',
-                    'terminal_uid' => $terminal->serial_number,
-                    'transaction_id' => $transaction->transaction_id,
-                    'message' => 'Transaction queued for processing',
-                    'context' => json_encode([
-                        'transaction_id' => $transaction->transaction_id,
-                        'base_amount' => $transaction->base_amount,
-                        'serial_number' => $terminal->serial_number
-                    ])
-                ]);
-            } catch (\Exception $logError) {
-                // Log creation failed, but don't fail the request
-                Log::warning('Failed to create system log', [
-                    'error' => $logError->getMessage(),
-                    'transaction_id' => $transaction->transaction_id
-                ]);
-            }
-
-            
-            try {
-                \App\Models\AuditLog::create([
-                    'action' => 'TRANSACTION_RECEIVED',
-                    'action_type' => 'TRANSACTION_RECEIVED',
-                    'resource_type' => 'transaction',
-                    'resource_id' => $transaction->transaction_id,
-                    'auditable_type' => 'transaction',
-                    'auditable_id' => $transaction->id,
-                    'message' => 'Transaction received and queued for processing',
-                    'metadata' => json_encode([
-                        'transaction_id' => $transaction->transaction_id,
-                        'base_amount' => $transaction->base_amount,
-                        'serial_number' => $terminal->serial_number,
-                        'customer_code' => $request->customer_code
-                    ])
-                ]);
-            } catch (\Exception $logError) {
-                // Log creation failed, but don't fail the request
-                Log::warning('Failed to create audit log', [
-                    'error' => $logError->getMessage(),
-                    'transaction_id' => $transaction->transaction_id
-                ]);
-            }
-
-            
-            /**
-             * Attempts to create an audit log entry for a received transaction.
-             * 
-             * The log records the event type as 'TRANSACTION_RECEIVED', the entity type as 'transaction',
-             * and includes details such as transaction ID, base amount, and terminal ID.
-             * 
-             * If the audit log creation fails, a warning is logged with the error message and transaction ID.
-             *
-             * @throws \Exception If there is an error during audit log creation.
-             */
-            try {
-                \App\Models\AuditLog::create([
-                    'event_type' => 'TRANSACTION_RECEIVED',
-                    'entity_type' => 'transaction',
-                    'entity_id' => $transaction->transaction_id,
-                    'user_id' => null,
-                    'details' => json_encode([
-                        'transaction_id' => $transaction->transaction_id,
-                        'base_amount' => $transaction->base_amount,
-                        'serial_number' => $terminal->serial_number
-                    ])
-                ]);
-            } catch (\Exception $logError) {
-                Log::warning('Failed to create audit log', [
-                    'error' => $logError->getMessage(),
-                    'transaction_id' => $transaction->transaction_id
-                ]);
-            }
-
-            /**
-             * Commits the current database transaction.
-             * This finalizes all changes made during the transaction and makes them permanent.
-             * Should be called after all transactional operations have completed successfully.
-             */
-            DB::commit();
-
-            Log::info('Transaction created successfully', [
-                'transaction_id' => $transaction->transaction_id,
-                'serial_number' => $terminal->serial_number
-            ]);
-
-            /**
-             * Returns a JSON response indicating that the transaction has been queued for processing.
-             *
-             * Response structure:
-             * - success: Indicates if the operation was successful (boolean).
-             * - message: Description of the response (string).
-             * - data: Contains transaction details:
-             *   - transaction_id: Unique identifier of the transaction.
-             *   - status: Current status of the transaction ('queued').
-             *   - timestamp: ISO 8601 formatted creation timestamp of the transaction.
-             *
-             * @return \Illuminate\Http\JsonResponse
-             */
-            return response()->json([
-                'success' => true,
-                'message' => 'Transaction queued for processing',
-                'data' => [
-                    'transaction_id' => $transaction->transaction_id,
-                    'serial_number' => $terminal->serial_number,
-                    'status' => 'queued',
-                    'job_status' => $transaction->validation_status ?? 'PENDING',
-                    'timestamp' => $transaction->created_at->toISOString()
-                ]
-            ], 200);
-
-        } catch (\Illuminate\Validation\ValidationException $e) {
-            DB::rollBack();
-            return response()->json([
-                'success' => false,
-                'message' => 'Validation failed',
-                'errors' => $e->errors()
-            ], 422);
-
-        } catch (\Exception $e) {
-            DB::rollBack();
-            Log::error('Transaction API error', [
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
-                'request' => $request->except(['password', 'token'])
-            ]);
-
-            // Try to log the error to system logs
-            try {
-                $serialNumber = $request->serial_number ?? 'unknown';
-                $terminal = PosTerminal::where('serial_number', $serialNumber)->first();
-                \App\Models\SystemLog::create([
-                    'type' => 'error',
-                    'severity' => 'error',
-                    'terminal_uid' => $terminal ? $terminal->serial_number : 'unknown',
-                    'transaction_id' => $request->transaction_id ?? null,
-                    'message' => 'Transaction creation failed: ' . $e->getMessage(),
-                    'context' => json_encode([
-                        'error' => $e->getMessage(),
-                        'payload' => $request->all(),
-                        'trace' => $e->getTraceAsString()
-                    ])
-                ]);
-
-                // Check for failure thresholds after logging the error
-                if ($terminal) {
-                    // Queue threshold check for async processing
-                    CheckTransactionFailureThresholdsJob::dispatch($terminal->id);
-                }
-            } catch (\Exception $logError) {
-                Log::error('Failed to create system log', [
-                    'error' => $logError->getMessage(),
-                    'original_error' => $e->getMessage()
-                ]);
-            }
-
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to process transaction: ' . $e->getMessage(),
-                'timestamp' => now()->toISOString()
-            ], 500);
-        }
+        return response()->json([
+            'success' => false,
+            'message' => 'Deprecated endpoint. Use the official submission endpoint (storeOfficial).'
+        ], 410);
     }
+
+    // ---------------------------------------------------------------------
+    // Legacy implementation (commented out for backup/reference). Remove once
+    // all external clients have migrated to storeOfficial().
+    // ---------------------------------------------------------------------
+    // public function store(Request $request)
+    // {
+    //     // Original full implementation preserved in VCS history.
+    // }
 
     public function batchStore(Request $request)
     {
@@ -751,7 +351,7 @@ class TransactionController extends Controller
                     ]);
 
                     // Queue the transaction for processing
-                    ProcessTransactionJob::dispatch($transaction);
+                    ProcessTransactionJob::dispatch($transaction->id)->afterCommit();
 
                     // Log system activity
                     \App\Models\SystemLog::create([
@@ -1176,6 +776,82 @@ class TransactionController extends Controller
     public function storeOfficial(Request $request)
     {
         Log::info('storeOfficial: request received', ['body' => $request->all()]);
+            // ------------------------------------------------------------------
+            // Submission-level idempotency & drift detection
+            // ------------------------------------------------------------------
+            $submission = \App\Models\TransactionSubmission::where('terminal_id', $request->terminal_id)
+                ->where('submission_uuid', $request->submission_uuid)
+                ->first();
+
+            if ($submission) {
+                $payloadDrift = strtolower($submission->payload_checksum) !== strtolower($request->payload_checksum);
+                $countMismatch = (int)$submission->transaction_count !== (int)$request->transaction_count;
+
+                if ($payloadDrift || $countMismatch) {
+                    // Conflict: same terminal + submission_uuid BUT different payload characteristics
+                    Log::warning('storeOfficial: Submission drift conflict detected', [
+                        'submission_uuid' => $request->submission_uuid,
+                        'terminal_id' => $request->terminal_id,
+                        'original_checksum' => $submission->payload_checksum,
+                        'incoming_checksum' => $request->payload_checksum,
+                        'original_count' => $submission->transaction_count,
+                        'incoming_count' => $request->transaction_count,
+                    ]);
+                    DB::rollBack();
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Submission conflict (payload drift)',
+                        'conflict' => [
+                            'submission_uuid' => $request->submission_uuid,
+                            'terminal_id' => $request->terminal_id,
+                            'original' => [
+                                'payload_checksum' => $submission->payload_checksum,
+                                'transaction_count' => $submission->transaction_count,
+                            ],
+                            'incoming' => [
+                                'payload_checksum' => $request->payload_checksum,
+                                'transaction_count' => $request->transaction_count,
+                            ]
+                        ]
+                    ], 409);
+                }
+
+                // Idempotent replay: return previously processed summary
+                $existingTransactions = Transaction::where('submission_uuid', $request->submission_uuid)
+                    ->where('terminal_id', $request->terminal_id)
+                    ->get();
+                Log::info('storeOfficial: Idempotent replay accepted', [
+                    'submission_uuid' => $request->submission_uuid,
+                    'terminal_id' => $request->terminal_id,
+                    'transaction_rows' => $existingTransactions->count(),
+                ]);
+                DB::commit();
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Submission already processed (idempotent)',
+                    'data' => [
+                        'submission_uuid' => $submission->submission_uuid,
+                        'transaction_count' => $submission->transaction_count,
+                        'status' => $submission->status,
+                        'transactions' => $existingTransactions->pluck('transaction_id'),
+                    ]
+                ], 200);
+            }
+
+            // Create submission envelope (status RECEIVED)
+            $submission = \App\Models\TransactionSubmission::create([
+                'tenant_id' => $request->tenant_id,
+                'terminal_id' => $request->terminal_id,
+                'submission_uuid' => $request->submission_uuid,
+                'submission_timestamp' => $request->submission_timestamp,
+                'transaction_count' => $request->transaction_count,
+                'payload_checksum' => $request->payload_checksum,
+                'status' => \App\Models\TransactionSubmission::STATUS_RECEIVED,
+            ]);
+            Log::info('storeOfficial: Submission envelope created', [
+                'submission_uuid' => $submission->submission_uuid,
+                'terminal_id' => $submission->terminal_id,
+            ]);
 
         $rawJson = $request->getContent();
         $checksumService = new PayloadChecksumService();
@@ -1390,22 +1066,10 @@ class TransactionController extends Controller
 
                     // Queue the transaction for processing
                     Log::info('storeOfficial: Dispatching ProcessTransactionJob', ['transaction_id' => $transaction->transaction_id]);
-                    ProcessTransactionJob::dispatch($transaction);
+                    ProcessTransactionJob::dispatch($transaction->id)->afterCommit();
                     Log::info('storeOfficial: ProcessTransactionJob dispatched', ['transaction_id' => $transaction->transaction_id]);
 
-                    // Send notification to terminal if enabled
-                    if ($terminal->notifications_enabled && $terminal->callback_url) {
-                        $this->notifyTerminalOfValidationResult(
-                            [
-                                'transaction_id' => $transaction->transaction_id,
-                                'terminal_id' => $terminal->id,
-                                'submission_uuid' => $request->submission_uuid,
-                            ],
-                            'VALID', 
-                            [], 
-                            $terminal->callback_url
-                        );
-                    }
+                    // (Notification suppressed here; final status notification sent by ProcessTransactionJob after validation)
 
                     // Add system log entry
                     \App\Models\SystemLog::create([
@@ -1509,27 +1173,7 @@ class TransactionController extends Controller
                 'errors' => $e->errors()
             ]);
 
-            // Send notification to terminal if enabled
-            try {
-                if (isset($request->terminal_id)) {
-                    $terminal = PosTerminal::find($request->terminal_id);
-                    if ($terminal && $terminal->notifications_enabled && $terminal->callback_url) {
-                        $this->notifyTerminalOfValidationResult(
-                            [
-                                'terminal_id' => $terminal->id,
-                                'submission_uuid' => $request->submission_uuid ?? 'unknown',
-                            ],
-                            'INVALID',
-                            $e->errors(),
-                            $terminal->callback_url
-                        );
-                    }
-                }
-            } catch (\Exception $notifyEx) {
-                Log::error('Failed to send terminal notification for validation error', [
-                    'error' => $notifyEx->getMessage()
-                ]);
-            }
+            // (Validation failure notification suppressed; errors surfaced in response and async notifications handled elsewhere)
 
             return response()->json([
                 'success' => false,

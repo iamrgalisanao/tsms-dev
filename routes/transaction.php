@@ -11,7 +11,8 @@ Route::post('refresh-token', [TerminalAuthController::class, 'refresh']);
 
 // Authenticated terminal endpoints
 Route::middleware(['auth:pos_api'])->group(function () {
-    Route::post('transactions', [TransactionController::class, 'store']);
+    // Legacy transaction ingestion disabled – use official submission endpoint
+    // Route::post('transactions', [TransactionController::class, 'store']);
     Route::get('transactions/{id}', [TransactionController::class, 'show']);
     Route::get('transaction-status/{id}', [TransactionStatusController::class, 'show']);
 });
