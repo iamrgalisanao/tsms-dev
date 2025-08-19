@@ -827,56 +827,63 @@ class TransactionController extends Controller
                 ->where('submission_uuid', $request->submission_uuid)
                 ->first();
 
-            if ($submission) {
-                $payloadDrift = strtolower($submission->payload_checksum) !== strtolower($request->payload_checksum);
-                $countMismatch = (int)$submission->transaction_count !== (int)$request->transaction_count;
+            // ALSO check for existing transactions (comprehensive idempotency)
+            $existingTransactions = \App\Models\Transaction::where('terminal_id', $request->terminal_id)
+                ->where('submission_uuid', $request->submission_uuid)
+                ->get();
 
-                if ($payloadDrift || $countMismatch) {
-                    // Conflict: same terminal + submission_uuid BUT different payload characteristics
-                    Log::warning('storeOfficial: Submission drift conflict detected', [
-                        'submission_uuid' => $request->submission_uuid,
-                        'terminal_id' => $request->terminal_id,
-                        'original_checksum' => $submission->payload_checksum,
-                        'incoming_checksum' => $request->payload_checksum,
-                        'original_count' => $submission->transaction_count,
-                        'incoming_count' => $request->transaction_count,
-                    ]);
-                    DB::rollBack();
-                    return response()->json([
-                        'success' => false,
-                        'message' => 'Submission conflict (payload drift)',
-                        'conflict' => [
+            if ($submission || $existingTransactions->count() > 0) {
+                // Handle submission envelope drift detection (if submission exists)
+                if ($submission) {
+                    $payloadDrift = strtolower($submission->payload_checksum) !== strtolower($request->payload_checksum);
+                    $countMismatch = (int)$submission->transaction_count !== (int)$request->transaction_count;
+
+                    if ($payloadDrift || $countMismatch) {
+                        // Conflict: same terminal + submission_uuid BUT different payload characteristics
+                        Log::warning('storeOfficial: Submission drift conflict detected', [
                             'submission_uuid' => $request->submission_uuid,
                             'terminal_id' => $request->terminal_id,
-                            'original' => [
-                                'payload_checksum' => $submission->payload_checksum,
-                                'transaction_count' => $submission->transaction_count,
-                            ],
-                            'incoming' => [
-                                'payload_checksum' => $request->payload_checksum,
-                                'transaction_count' => $request->transaction_count,
+                            'original_checksum' => $submission->payload_checksum,
+                            'incoming_checksum' => $request->payload_checksum,
+                            'original_count' => $submission->transaction_count,
+                            'incoming_count' => $request->transaction_count,
+                        ]);
+                        DB::rollBack();
+                        return response()->json([
+                            'success' => false,
+                            'message' => 'Submission conflict (payload drift)',
+                            'conflict' => [
+                                'submission_uuid' => $request->submission_uuid,
+                                'terminal_id' => $request->terminal_id,
+                                'original' => [
+                                    'payload_checksum' => $submission->payload_checksum,
+                                    'transaction_count' => $submission->transaction_count,
+                                ],
+                                'incoming' => [
+                                    'payload_checksum' => $request->payload_checksum,
+                                    'transaction_count' => $request->transaction_count,
+                                ]
                             ]
-                        ]
-                    ], 409);
+                        ], 409);
+                    }
                 }
 
                 // Idempotent replay: return previously processed summary
-                $existingTransactions = Transaction::where('submission_uuid', $request->submission_uuid)
-                    ->where('terminal_id', $request->terminal_id)
-                    ->get();
-                Log::info('storeOfficial: Idempotent replay accepted', [
+                Log::info('storeOfficial: Idempotent replay detected (early check)', [
                     'submission_uuid' => $request->submission_uuid,
                     'terminal_id' => $request->terminal_id,
+                    'submission_exists' => $submission ? true : false,
                     'transaction_rows' => $existingTransactions->count(),
                 ]);
+                
                 DB::commit();
                 return response()->json([
                     'success' => true,
                     'message' => 'Submission already processed (idempotent)',
                     'data' => [
-                        'submission_uuid' => $submission->submission_uuid,
-                        'transaction_count' => $submission->transaction_count,
-                        'status' => $submission->status,
+                        'submission_uuid' => $request->submission_uuid,
+                        'transaction_count' => $submission ? $submission->transaction_count : $existingTransactions->count(),
+                        'status' => $submission ? $submission->status : 'COMPLETED',
                         'transactions' => $existingTransactions->pluck('transaction_id'),
                     ]
                 ], 200);
@@ -960,41 +967,8 @@ class TransactionController extends Controller
                 'transaction_count' => $request->transaction_count,
             ]);
 
-            // Check for duplicate submission (idempotency at submission level)
-            $existingSubmission = Transaction::where('submission_uuid', $request->submission_uuid)
-                ->where('terminal_id', $request->terminal_id)
-                ->first();
-                
-            if ($existingSubmission) {
-                Log::info('storeOfficial: Duplicate submission detected, returning success for idempotency', [
-                    'submission_uuid' => $request->submission_uuid,
-                    'existing_transaction_id' => $existingSubmission->transaction_id
-                ]);
-                
-                // Get all transactions for this submission
-                $existingTransactions = Transaction::where('submission_uuid', $request->submission_uuid)
-                    ->where('terminal_id', $request->terminal_id)
-                    ->get();
-                    
-                DB::commit(); // Commit the read-only transaction
-                
-                return response()->json([
-                    'success' => true,
-                    'message' => 'Submission already processed',
-                    'data' => [
-                        'submission_uuid' => $request->submission_uuid,
-                        'processed_count' => $existingTransactions->count(),
-                        'failed_count' => 0,
-                        'transactions' => $existingTransactions->map(function($tx) {
-                            return [
-                                'transaction_id' => $tx->transaction_id,
-                                'status' => 'success',
-                                'message' => 'Transaction already processed'
-                            ];
-                        })->toArray()
-                    ]
-                ], 200);
-            }
+            // NOTE: Idempotency check now handled at the top of the method
+            // Proceeding with transaction processing...
 
             // Get terminal and validate tenant
             $terminal = PosTerminal::with(['tenant.company'])->findOrFail($request->terminal_id);
