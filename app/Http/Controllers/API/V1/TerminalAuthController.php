@@ -10,7 +10,6 @@ use App\Models\ProviderStatistics;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Carbon\Carbon;
-use Tymon\JWTAuth\Facades\JWTAuth;
 
 class TerminalAuthController extends Controller
 {
@@ -37,8 +36,11 @@ class TerminalAuthController extends Controller
                 'status' => 'active',
             ]);
 
-            // Generate JWT token
-            $token = JWTAuth::fromUser($terminal);
+            // Generate Sanctum token
+            $token = $terminal->createToken(
+                'terminal-' . $terminal->terminal_uid,
+                ['transaction:create', 'heartbeat:send']
+            )->plainTextToken;
 
             // Update provider statistics for today
             $this->updateProviderStatistics($provider->id);

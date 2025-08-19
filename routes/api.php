@@ -358,8 +358,8 @@ Route::get('v1/transaction-id-exists', function (Illuminate\Http\Request $reques
 Route::post('/transactions/bulk', [ApiTransactionController::class, 'bulk'])
      ->name('api.transactions.bulk');
 
-// Void transaction endpoint (API v1)
-Route::post('api/v1/transactions/{transaction_id}/void', [\App\Http\Controllers\API\V1\TransactionController::class, 'void']);
+// Void transaction endpoint (API v1) - DEPRECATED: Use v1 route above instead
+// Route::post('api/v1/transactions/{transaction_id}/void', [\App\Http\Controllers\API\V1\TransactionController::class, 'void']);
 
 // Register the new endpoint for receiving voided transactions in the webapp
 Route::post('/transactions/void', [\App\Http\Controllers\Api\VoidTransactionController::class, 'receive']);

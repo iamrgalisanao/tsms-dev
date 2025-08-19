@@ -579,10 +579,7 @@ class TransactionController extends Controller
             }
 
             $transaction = Transaction::where('transaction_id', $transaction_id)
-                ->where(function($query) use ($posTerminal) {
-                    $query->where('terminal_id', $posTerminal->id)
-                          ->orWhere('serial_number', $posTerminal->serial_number);
-                })
+                ->where('terminal_id', $posTerminal->id)
                 ->first();
             
             if (!$transaction) {

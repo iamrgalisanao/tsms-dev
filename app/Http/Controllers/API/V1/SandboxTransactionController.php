@@ -6,7 +6,6 @@ use App\Http\Controllers\Controller;
 use App\Models\IntegrationLog;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
-use Tymon\JWTAuth\Facades\JWTAuth;
 
 class SandboxTransactionController extends Controller
 {
@@ -15,7 +14,7 @@ class SandboxTransactionController extends Controller
      */
     public function store(Request $request)
     {
-        $terminal = JWTAuth::parseToken()->authenticate();
+        $terminal = $request->user();
 
         if (!$terminal || !$terminal->is_sandbox) {
             return response()->json([
