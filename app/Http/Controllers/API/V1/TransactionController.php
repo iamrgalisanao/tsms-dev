@@ -774,7 +774,52 @@ class TransactionController extends Controller
      */
     public function storeOfficial(Request $request)
     {
-        Log::info('storeOfficial: request received', ['body' => $request->all()]);
+        try {
+            DB::beginTransaction();
+
+            Log::info('Official TSMS transaction API request received', [
+                'payload_size' => strlen(json_encode($request->all())),
+                'submission_uuid' => $request->submission_uuid ?? 'missing',
+                'transaction_count' => $request->transaction_count ?? 'missing'
+            ]);
+
+            // Handle authentication if token is provided
+            if ($request->header('Authorization')) {
+                $token = str_replace('Bearer ', '', $request->header('Authorization'));
+                Log::info('storeOfficial: Authorization header found', ['token' => $token]);
+                if ($token === 'invalid-token') {
+                    Log::warning('storeOfficial: Invalid token');
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Unauthorized'
+                    ], 401);
+                }
+            }
+
+            // Check for empty request body
+            if (empty($request->all())) {
+                Log::warning('storeOfficial: Empty request body');
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Malformed JSON or empty request body'
+                ], 400);
+            }
+
+            // CRITICAL FIX: Validate submission structure FIRST before any database operations
+            $request->validate([
+                'submission_uuid' => 'required|string|uuid',
+                'tenant_id' => 'required|integer',
+                'terminal_id' => 'required|integer|exists:pos_terminals,id',
+                'submission_timestamp' => 'required|date_format:Y-m-d\TH:i:s\Z',
+                'transaction_count' => 'required|integer|min:1',
+                'payload_checksum' => 'required|string|min:64|max:64', // SHA-256 hash
+            ]);
+
+            Log::info('storeOfficial: Basic validation passed', [
+                'submission_uuid' => $request->submission_uuid,
+                'transaction_count' => $request->transaction_count
+            ]);
+
             // ------------------------------------------------------------------
             // Submission-level idempotency & drift detection
             // ------------------------------------------------------------------
@@ -837,66 +882,6 @@ class TransactionController extends Controller
                 ], 200);
             }
 
-            // Create submission envelope (status RECEIVED)
-            $submission = \App\Models\TransactionSubmission::create([
-                'tenant_id' => $request->tenant_id,
-                'terminal_id' => $request->terminal_id,
-                'submission_uuid' => $request->submission_uuid,
-                'submission_timestamp' => $request->submission_timestamp,
-                'transaction_count' => $request->transaction_count,
-                'payload_checksum' => $request->payload_checksum,
-                'status' => \App\Models\TransactionSubmission::STATUS_RECEIVED,
-            ]);
-            Log::info('storeOfficial: Submission envelope created', [
-                'submission_uuid' => $submission->submission_uuid,
-                'terminal_id' => $submission->terminal_id,
-            ]);
-
-        $rawJson = $request->getContent();
-        $checksumService = new PayloadChecksumService();
-        $checksumResults = $checksumService->validateSubmissionChecksumsFromRaw($rawJson);
-
-        try {
-            DB::beginTransaction();
-
-            Log::info('Official TSMS transaction API request received', [
-                'payload_size' => strlen(json_encode($request->all())),
-                'submission_uuid' => $request->submission_uuid ?? 'missing',
-                'transaction_count' => $request->transaction_count ?? 'missing'
-            ]);
-
-            // Handle authentication if token is provided
-            if ($request->header('Authorization')) {
-                $token = str_replace('Bearer ', '', $request->header('Authorization'));
-                Log::info('storeOfficial: Authorization header found', ['token' => $token]);
-                if ($token === 'invalid-token') {
-                    Log::warning('storeOfficial: Invalid token');
-                    return response()->json([
-                        'success' => false,
-                        'message' => 'Unauthorized'
-                    ], 401);
-                }
-            }
-
-            // Check for empty request body
-            if (empty($request->all())) {
-                Log::warning('storeOfficial: Empty request body');
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Malformed JSON or empty request body'
-                ], 400);
-            }
-
-            // Validate the official submission structure
-            $request->validate([
-                'submission_uuid' => 'required|string|uuid',
-                'tenant_id' => 'required|integer',
-                'terminal_id' => 'required|integer|exists:pos_terminals,id',
-                'submission_timestamp' => 'required|date_format:Y-m-d\TH:i:s\Z',
-                'transaction_count' => 'required|integer|min:1',
-                'payload_checksum' => 'required|string|min:64|max:64', // SHA-256 hash
-            ]);
-
             // Validate either single transaction or batch format
             if ($request->transaction_count === 1) {
                 $request->validate([
@@ -931,6 +916,7 @@ class TransactionController extends Controller
             // Validate transaction count matches actual count
             $actualCount = $request->transaction_count === 1 ? 1 : count($request->transactions);
             if ($actualCount !== $request->transaction_count) {
+                DB::rollBack();
                 return response()->json([
                     'success' => false,
                     'message' => 'Transaction count mismatch',
@@ -940,16 +926,35 @@ class TransactionController extends Controller
 
             // Validate payload checksums using raw JSON for canonicalization
             $rawPayload = $request->getContent();
+            $checksumService = new PayloadChecksumService();
             $checksumResults = $checksumService->validateSubmissionChecksumsFromRaw($rawPayload);
             if (!$checksumResults['valid']) {
+                DB::rollBack();
                 return response()->json([
                     'success' => false,
-                    'message' => 'Checksum validation failed',
+                    'message' => 'Invalid payload checksum',
                     'errors' => $checksumResults['errors']
                 ], 422);
             }
 
-            // Add this next:
+            Log::info('storeOfficial: All validations passed, creating submission envelope');
+
+            // NOW create submission envelope (status RECEIVED) - after all validations pass
+            $submission = \App\Models\TransactionSubmission::create([
+                'tenant_id' => $request->tenant_id,
+                'terminal_id' => $request->terminal_id,
+                'submission_uuid' => $request->submission_uuid,
+                'submission_timestamp' => $request->submission_timestamp,
+                'transaction_count' => $request->transaction_count,
+                'payload_checksum' => $request->payload_checksum,
+                'status' => \App\Models\TransactionSubmission::STATUS_RECEIVED,
+            ]);
+            
+            Log::info('storeOfficial: Submission envelope created', [
+                'submission_uuid' => $submission->submission_uuid,
+                'terminal_id' => $submission->terminal_id,
+            ]);
+
             Log::info('Checksum validation passed', [
                 'submission_uuid'   => $request->submission_uuid,
                 'transaction_count' => $request->transaction_count,
