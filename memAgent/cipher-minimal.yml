@@ -1,0 +1,14 @@
+name: "tsms-memory-agent"
+version: "1.0.0"  
+description: "Memory layer for TSMS development"
+
+llm:
+    provider: "openai"
+    model: "gpt-4o-mini"
+    temperature: 0.2
+    max_tokens: 4000
+
+embeddings:
+    provider: "openai"
+    model: "text-embedding-3-small"
+    dimensions: 1536

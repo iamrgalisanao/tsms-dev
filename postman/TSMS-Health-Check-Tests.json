@@ -1,0 +1,126 @@
+{
+  "info": {
+    "name": "TSMS Health Check Tests",
+    "description": "Collection for testing TSMS health check endpoints",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Health Check - Production Staging",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json",
+            "type": "text"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "https://stagingtsms.pitx.com.ph/api/v1/health",
+          "protocol": "https",
+          "host": [
+            "stagingtsms",
+            "pitx",
+            "com",
+            "ph"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "health"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Health Check - Local Staging",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json",
+            "type": "text"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "http://stagingtsms.pitx.com.test/api/v1/health",
+          "protocol": "http",
+          "host": [
+            "stagingtsms",
+            "pitx",
+            "com",
+            "test"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "health"
+          ]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Health Check - Herd Local",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json",
+            "type": "text"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json",
+            "type": "text"
+          }
+        ],
+        "url": {
+          "raw": "http://tsms-dev.test/api/v1/health",
+          "protocol": "http",
+          "host": [
+            "tsms-dev",
+            "test"
+          ],
+          "path": [
+            "api",
+            "v1",
+            "health"
+          ]
+        }
+      },
+      "response": []
+    }
+  ],
+  "variable": [
+    {
+      "key": "staging_url",
+      "value": "https://stagingtsms.pitx.com.ph",
+      "type": "string"
+    },
+    {
+      "key": "local_staging_url",
+      "value": "http://stagingtsms.pitx.com.test",
+      "type": "string"
+    },
+    {
+      "key": "herd_url",
+      "value": "http://tsms-dev.test",
+      "type": "string"
+    }
+  ]
+}

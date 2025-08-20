@@ -17,3 +17,9 @@ yarn-error.log
 /.fleet
 /.idea
 /.vscode
+
+# Cipher Memory Layer - TSMS Project
+/memAgent/.env
+/memAgent/data/
+/memAgent/logs/
+/memAgent/*.pid

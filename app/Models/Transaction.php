@@ -112,6 +112,7 @@ class Transaction extends Model
         'transaction_timestamp',
         'base_amount',
         'customer_code',
+        'promo_status',
         'payload_checksum',
         'validation_status',
     'job_status',

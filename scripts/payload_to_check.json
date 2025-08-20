@@ -1,0 +1,21 @@
+{
+  "submission_uuid": "f943ecec-6ff4-47d4-8e25-920cc5351929",
+  "tenant_id": 125,
+  "terminal_id": 1,
+  "submission_timestamp": "2025-07-31T03:33:35Z",
+  "transaction_count": 1,
+  "transaction": {
+    "transaction_id": "16b07d4c-3484-40e9-82d5-a85bb1dcbf5e",
+    "transaction_timestamp": "2025-07-31T03:33:35Z",
+    "base_amount": 1000,
+    "payload_checksum": "dfb9ee7fd5291188bf56d3ce333479ee7a0fb6b52e53f7e697a6f1f2723339fc",
+    "adjustments": [
+      { "adjustment_type": "promo_discount", "amount": 50 },
+      { "adjustment_type": "senior_discount", "amount": 20 }
+    ],
+    "taxes": [
+      { "tax_type": "VAT", "amount": 120 },
+      { "tax_type": "OTHER_TAX", "amount": 10 }
+    ]
+  }
+}

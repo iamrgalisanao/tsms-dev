@@ -1,0 +1,17 @@
+[Unit]
+Description=TSMS Queue Worker
+After=network.target mysql.service
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+WorkingDirectory=/var/www/tsms-dev
+ExecStart=/usr/bin/php artisan queue:work --sleep=3 --tries=3 --timeout=60
+Restart=always
+RestartSec=5
+StandardOutput=append:/var/www/tsms-dev/storage/logs/queue-worker.log
+StandardError=append:/var/www/tsms-dev/storage/logs/queue-worker-error.log
+
+[Install]
+WantedBy=multi-user.target

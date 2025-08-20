@@ -1,0 +1,135 @@
+# TSMS Cipher Memory Agent Configuration
+# Optimized for Laravel/React POS Transaction Management System
+name: "tsms-memory-agent"
+version: "1.0.0"
+description: "Memory layer for TSMS development - POS Transaction Management System"
+
+# LLM Configuration - Optimized for code understanding
+llm:
+    provider: "openai"
+    model: "gpt-4o-mini"
+    temperature: 0.2  # Lower for more consistent code analysis
+    max_tokens: 4000
+    api_key_env: "OPENAI_API_KEY"
+
+# Embedding Configuration - High-quality embeddings for technical content
+embeddings:
+    provider: "openai"
+    model: "text-embedding-3-small"
+    dimensions: 1536
+    api_key_env: "OPENAI_API_KEY"
+
+# Vector Store Configuration
+vector_store:
+    provider: "local"
+    path: "./data/tsms_vector_store.db"
+    collection: "tsms_project_memory"
+
+# Memory Configuration - Optimized for technical documentation
+memory:
+    max_tokens: 12000      # Increased for comprehensive context
+    overlap_tokens: 400    # Better context preservation
+    chunk_size: 1500       # Larger chunks for code/architecture docs
+    similarity_threshold: 0.75  # Balanced precision
+    max_results: 15        # More comprehensive results
+
+# Data Sources - TSMS Project Specific
+data_sources:
+    # Primary team bundle
+    - type: "file"
+      path: "../web-bundles/teams/team-fullstack.txt"
+      enabled: true
+      weight: 1.0
+    
+    # Core documentation
+    - type: "file"
+      path: "../ARCHITECTURE.md"
+      enabled: true
+      weight: 1.0
+    
+    # Comprehensive markdown documentation
+    - type: "directory"
+      path: "../_md/"
+      patterns: ["*.md"]
+      enabled: true
+      weight: 0.9
+    
+    # Project documentation
+    - type: "directory"
+      path: "../docs/"
+      patterns: ["*.md", "*.txt"]
+      enabled: true
+      weight: 0.9
+    
+    # Configuration and setup files
+    - type: "directory"
+      path: "../"
+      patterns: ["README.md", "composer.json", "package.json", "*.yml", "*.yaml"]
+      exclude: ["vendor", "node_modules", ".git", "storage/logs", "bootstrap/cache"]
+      enabled: true
+      weight: 0.8
+    
+    # Integration guidelines and references
+    - type: "directory"
+      path: "../app/reference/"
+      patterns: ["*.md", "*.txt"]
+      enabled: true
+      weight: 0.85
+    
+    # Testing documentation
+    - type: "directory"
+      path: "../tests/"
+      patterns: ["*.md", "*.txt"]
+      enabled: true
+      weight: 0.7
+    
+    # Operations and scripts documentation
+    - type: "directory"
+      path: "../ops/"
+      patterns: ["*.md", "*.txt", "*.yml"]
+      enabled: true
+      weight: 0.7
+
+# MCP Configuration - VS Code integration ready
+mcp:
+    server:
+        name: "tsms-cipher-memory"
+        version: "1.0.0"
+    capabilities:
+        - "memory_search"
+        - "memory_store"
+        - "context_retrieval"
+        - "code_analysis"
+        - "architecture_query"
+
+# Logging - Development friendly
+logging:
+    level: "info"
+    file: "./logs/tsms_cipher.log"
+    console: true
+    timestamp: true
+
+# Server Configuration
+server:
+    host: "localhost"
+    port: 3333
+    cors: true
+    
+# TSMS-Specific Context Tags
+context_tags:
+    - "pos-integration"
+    - "transaction-processing"
+    - "laravel-framework"
+    - "react-frontend"
+    - "jwt-authentication"
+    - "api-design"
+    - "database-schema"
+    - "testing-procedures"
+    - "deployment-operations"
+    - "security-implementation"
+
+# Search Optimization
+search:
+    boost_recent: true
+    context_window: 5
+    semantic_expansion: true

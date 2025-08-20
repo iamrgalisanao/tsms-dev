@@ -36,8 +36,7 @@ class CircuitBreakerTest extends TestCase
         );
     }
 
-    /** @test */
-    public function it_starts_in_closed_state_when_created()
+    public function test_starts_in_closed_state_when_created()
     {
         $circuitBreaker = CircuitBreaker::forService('api.transactions', 1);
         
@@ -47,8 +46,7 @@ class CircuitBreakerTest extends TestCase
         $this->assertEquals(300, $circuitBreaker->reset_timeout);
     }
 
-    /** @test */
-    public function it_increments_failure_count_when_failure_recorded()
+    public function test_increments_failure_count_when_failure_recorded()
     {
         $circuitBreaker = CircuitBreaker::forService('api.transactions', 1);
         
@@ -60,8 +58,7 @@ class CircuitBreakerTest extends TestCase
         $this->assertEquals(2, $circuitBreaker->failure_count);
     }
 
-    /** @test */
-    public function it_opens_circuit_when_failures_reach_threshold()
+    public function test_opens_circuit_when_failures_reach_threshold()
     {
         $circuitBreaker = CircuitBreaker::forService('api.transactions', 1);
         $circuitBreaker->failure_threshold = 3;
@@ -82,8 +79,7 @@ class CircuitBreakerTest extends TestCase
         $this->assertTrue($circuitBreaker->cooldown_until->isFuture());
     }
 
-    /** @test */
-    public function it_blocks_requests_when_circuit_is_open()
+    public function test_blocks_requests_when_circuit_is_open()
     {
         $circuitBreaker = CircuitBreaker::forService('api.transactions', 1);
         $circuitBreaker->state = CircuitBreaker::STATE_OPEN;
@@ -93,8 +89,7 @@ class CircuitBreakerTest extends TestCase
         $this->assertFalse($circuitBreaker->isAllowed());
     }
 
-    /** @test */
-    public function it_transitions_to_half_open_when_cooldown_period_passes()
+    public function test_transitions_to_half_open_when_cooldown_period_passes()
     {
         $circuitBreaker = CircuitBreaker::forService('api.transactions', 1);
         $circuitBreaker->state = CircuitBreaker::STATE_OPEN;
@@ -111,8 +106,7 @@ class CircuitBreakerTest extends TestCase
         $this->assertEquals(CircuitBreaker::STATE_HALF_OPEN, $circuitBreaker->state);
     }
 
-    /** @test */
-    public function it_allows_requests_in_half_open_state()
+    public function test_allows_requests_in_half_open_state()
     {
         $circuitBreaker = CircuitBreaker::forService('api.transactions', 1);
         $circuitBreaker->state = CircuitBreaker::STATE_HALF_OPEN;
@@ -121,8 +115,7 @@ class CircuitBreakerTest extends TestCase
         $this->assertTrue($circuitBreaker->isAllowed());
     }
 
-    /** @test */
-    public function it_closes_circuit_after_success_in_half_open_state()
+    public function test_closes_circuit_after_success_in_half_open_state()
     {
         $circuitBreaker = CircuitBreaker::forService('api.transactions', 1);
         $circuitBreaker->state = CircuitBreaker::STATE_HALF_OPEN;
@@ -138,8 +131,7 @@ class CircuitBreakerTest extends TestCase
         $this->assertEquals(0, $circuitBreaker->failure_count);
     }
 
-    /** @test */
-    public function it_resets_failure_count_on_success()
+    public function test_resets_failure_count_on_success()
     {
         $circuitBreaker = CircuitBreaker::forService('api.transactions', 1);
         $circuitBreaker->failure_count = 2;
@@ -150,8 +142,7 @@ class CircuitBreakerTest extends TestCase
         $this->assertEquals(0, $circuitBreaker->failure_count);
     }
 
-    /** @test */
-    public function it_creates_unique_circuit_breakers_per_tenant_and_service()
+    public function test_creates_unique_circuit_breakers_per_tenant_and_service()
     {
         // Get the actual tenant IDs from the database to avoid foreign key issues
         $tenant1 = Tenant::where('code', 'TEST1')->first();

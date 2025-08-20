@@ -40,16 +40,11 @@ class Module2Test extends TestCase
             'status' => 'active'
         ]);
         
-        // Generate a token
-        if (class_exists('\Tymon\JWTAuth\Facades\JWTAuth')) {
-            try {
-                $this->token = \Tymon\JWTAuth\Facades\JWTAuth::fromUser($this->terminal);
-            } catch (\Exception $e) {
-                $this->token = 'test-token';
-            }
-        } else {
-            $this->token = 'test-token';
-        }
+        // Generate a Sanctum token
+        $this->token = $this->terminal->createToken(
+            'test-terminal-' . $this->terminal->terminal_uid,
+            ['transaction:create', 'heartbeat:send']
+        )->plainTextToken;
         
         // Write results to log file
         Log::info('Module 2 Test Setup', [

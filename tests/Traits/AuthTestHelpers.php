@@ -10,7 +10,6 @@ use Illuminate\Support\Facades\Config;
 use Laravel\Sanctum\Sanctum;
 use Mockery;
 use Spatie\Permission\Models\Role;
-use Tymon\JWTAuth\Facades\JWTAuth;
 
 trait AuthTestHelpers
 {
@@ -107,9 +106,14 @@ trait AuthTestHelpers
             'status' => 'active'
         ]);
         
+        $token = $terminal->createToken(
+            'test-terminal-' . $terminal->terminal_uid,
+            ['transaction:create', 'heartbeat:send']
+        )->plainTextToken;
+        
         return [
             'terminal' => $terminal,
-            'token' => JWTAuth::fromUser($terminal)
+            'token' => $token
         ];
     }
 

@@ -1,0 +1,24 @@
+; Example systemd unit for Laravel Horizon (TSMS)
+[Unit]
+Description=TSMS Horizon Queue Supervisor
+After=network.target redis.service
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=www-data
+Group=www-data
+Restart=always
+RestartSec=5
+Environment=APP_ENV=production
+Environment=QUEUE_CONNECTION=redis
+WorkingDirectory=/var/www/tsms
+ExecStart=/usr/bin/php /var/www/tsms/artisan horizon
+ExecStop=/usr/bin/php /var/www/tsms/artisan horizon:terminate
+KillSignal=SIGCONT
+TimeoutStopSec=60
+Nice=0
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target

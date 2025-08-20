@@ -1,0 +1,297 @@
+# Tenant Sales Management System (TSMS) API Integration Guidelines for POS Providers
+
+Prepared by: Rommel Galisanao
+Date: April 3, 2025
+Version: 0.
+
+# 1. Objective
+
+This document provides comprehensive technical guidelines for POS providers to enable seamless integration with the Tenant
+Sales Management System (TSMS). The integration ensures secure, accurate, and real-time or scheduled transmission of sales data
+with full error-handling, validation, and audit capabilities.
+
+# 2. Overview of Integration and Communication Channel
+
+The TSMS integration supports secure, real-time or scheduled communication between tenant POS systems and the TSMS server. The
+architecture supports both inbound API requests (POS ➝ TSMS) and optional outbound webhooks (TSMS ➝ POS) to enable
+complete two-way synchronization of transaction and system events.
+**Aspect Description
+Integration Type** RESTful API over HTTPS (TLS 1.2+)
+**Payload Format** JSON (UTF-8 encoded)
+**Authentication** API key (tenant-scoped, passed via Authorization header)
+**Transmission Mode** Real-time (preferred) or Scheduled Batch
+**Middleware Role** Handles retry queues, transformation logic, validation, and audit logging
+**Data Standard** All payloads must adhere to the TSMS Data Dictionary and schema validation rules
+**Outbound
+Communication**
+Optional webhook push from TSMS to registered POS endpoint (e.g., for transmission errors or
+transaction feedback)
+**Resilience Support** POS systems are expected to implement retry queues and exponential backoff for transient errors or
+offline conditions
+
+# 3. Authentication and Security
+
+-   Authorization will be provided by PITX
+
+# 4. API Endpoint Example
+
+**Production Endpoint:**
+POST https://stagingtsms.pitx.com.ph/api/v1/transactions/official
+
+**Headers:**
+Content-Type: application/json
+Authorization: Bearer <to-be-provided>
+
+# 5. Transaction Payload
+
+### {
+
+```
+"submission_uuid": "807b61f5-1a49-42c1-9e42-dd0d197b4207",
+"tenant_id": 125, <to-be-provided-by-PITX>
+```
+
+"terminal_id": 1,
+"submission_timestamp": "2025-07-31T10:59:00Z",
+"transaction_count": 1,
+"payload_checksum": "1004d79b78b35477f9a1d816ea1823a0801df1146ffcb6a4e2aa15115b9e65d6",
+"transaction": {
+"transaction_id": "9861431d-afa9-4415-a7c8-f8d52b26bffd",
+"transaction_timestamp": "2025-07-31T10:59:00Z",
+"base_amount": 12345.67,
+"payload_checksum": "66d96963b3c61403c13f111222f07771f970dd60b3705104cd889c7c33b3d311",
+"adjustments": [
+{ "adjustment_type": "promo_discount", "amount": 150.00 },
+{ "adjustment_type": "employee_discount", "amount": 50.00 },
+{ "adjustment_type": "senior_discount", "amount": 75.00 },
+{ "adjustment_type": "pwd_discount", "amount": 30.00 },
+{ "adjustment_type": "vip_card_discount", "amount": 20.00 },
+{ "adjustment_type": "service_charge_distributed_to_employees", "amount": 120.00 },
+{ "adjustment_type": "service_charge_retained_by_management", "amount": 80.00 }
+],
+"taxes": [
+{ "tax_type": "VAT", "amount": 1200.00 },
+{ "tax_type": "VATABLE_SALES", "amount": 10000.00 },
+{ "tax_type": "SC_VAT_EXEMPT_SALES", "amount": 2000.00 },
+{ "tax_type": "OTHER_TAX", "amount": 100.00 }
+]
+}
+}
+**DATA DICTIONARY
+Client
+Requirement**^ **Proposed Field Name**^^ **Data Type**^^ **Example**^^ **Description / Business Rules**^
+Submission
+UUID
+Submission_uuid GUID 807b61f5-1a49-
+42c1-9e42-dd0d
+197b
+Unique identifier for this submission batch.
+Used for idempotency—duplicates with the
+same UUID should be rejected.
+Tenant ID tenant_id Integer 125
+
+## Identifier of the tenant sending the data.
+
+```
+Terminal ID Terminal_id Integer 1 Identifier of the POS terminal. Must exist in
+the POS_TERMINALS table.
+Submission
+Timestamp
+submission_timestamp DateTime (ISO
+8601, UTC)
+```
+
+### 2025-07-31T10:
+
+### 59:00Z
+
+```
+Time when this submission was created on
+the POS side. Used to detect out-of-order
+submissions.
+Transaction
+Count (for
+Aggregated
+Records)
+transaction_count INTEGER 1 Number of individual transactions represented
+in an aggregated record. Defaults to 1 for
+single transaction payloads, and may increase
+when summarizing multiple transactions.
+Submission
+Payload
+Checksum
+payload_checksum SHA-256 Hex
+String
+1004d79b78b
+5477f9a1d816e
+a1823a0801df
+SHA-256 hash of the entire submission
+payload (excluding this field). Used to verify
+submission integrity.
+```
+
+```
+146ffcb6a4e2aa
+15115b9e65d
+< Transaction Object >
+Transaction ID transaction_id GUID 8a918a90-7cbd-
+4b44-adc0-bc3d
+31cee
+Unique transaction reference from the POS,
+used to prevent duplicate entries. Must be
+unique across all transactions.
+Transaction
+Timestamp
+transaction_timestamp DateTime (ISO
+8601, UTC)
+```
+
+### 2025-03-26T13:
+
+### 45:00Z
+
+```
+Exact time when the transaction occurred.
+Base Amount base_amount Decimal(12,2) 12345.67 Gross amount before any adjustments or
+taxes.
+Transaction
+Payload
+Checksum
+payload_checksum SHA-256 Hex
+String
+66d96963b3c
+403c13f
+f07771f970dd
+0b3705104cd
+9c7c33b3d
+SHA-256 hash of the transaction object
+payload (excluding this field). Verifies
+per-transaction data integrity.
+< Adjustments Array >
+Employee
+Service Charge
+promo_discount DECIMAL(12,2) 150.00 A merchant-configured promotional discount
+(e.g. holiday sale, coupon code).
+employee_discount DECIMAL(12,2) 50.
+Special discount for the merchant’s
+employees.
+senior_discount DECIMAL(12,2) 75.00 Government-mandated discount for senior
+citizens (typically 20% off pre-tax).
+pwd_discount DECIMAL(12,2) 30.00 Government-mandated discount for persons
+with disabilities (typically 20% off pre-tax).
+vip_card_discount DECIMAL(12,2) 20.00 Loyalty-program discount for VIP card
+holders.
+service_charge_distribut
+ed_to_employees
+DECIMAL(12,2) 120.00 Service charge portion allocated for
+distribution to employees.
+service_charge_retained
+_by_management
+DECIMAL(12,2) 80.00 Service charge withheld by management
+< Taxes Array >
+VAT vat DECIMAL(12,2) 14,814.
+Vatable
+Transaction
+Amount
+vatable_sales DECIMAL(12,2) 1200.00 Portion of net sales that is subject to VAT.
+Must adhere to rounding rules and local tax
+regulations.
+SC VAT Exempt
+Transaction
+Amount
+vat_exempt_sales DECIMAL(12,2) 6137.00 Portion of net sales exempt from VAT (e.g.,
+for senior citizen discounts). Critical for tax
+reporting and compliance.
+Other Tax
+(Local or
+Municipal)
+other_tax DECIMAL(12,2) 50.00 Additional tax not covered by VAT, such as
+local or municipal tax. Captured as provided
+by the POS and validated against tax rules.
+```
+
+# 6. Error Handling and Response Codes
+
+-   200 OK: Payload accepted
+-   400 Bad Request: Invalid fields or format
+-   401 Unauthorized: Token issues
+-   409 Conflict: Duplicate transaction_id
+-   500 Server Error: Transient issues — retry via middleware
+
+# 7. Validation & Retry Logic
+
+-   TSMS validates each payload against schema and business rules.
+-   Invalid payloads (e.g., 400 or 409) are logged and excluded from retries.
+
+# 8. Client Resilience and Offline Handling
+
+To ensure seamless operation even during intermittent connectivity, POS systems must implement local queuing and retry logic.
+When the TSMS API is unreachable, transactions should be stored locally and re-attempted using incremental backoff.
+
+## 8. 1. Exponential Backoff Strategy
+
+```
+When a transaction POST fails due to a 500 or network error, the POS should retry the request using exponential backoff.
+Recommended backoff schedule:
+```
+
+-   1st Attempt: 2 seconds
+-   2nd Attempt: 4 seconds
+-   3rd Attempt: 8 seconds
+-   4th Attempt: 16 seconds
+-   5th Attempt: 32 seconds
+    After the final attempt fails, queue the transaction and resume once server is available.
+
+## 8. 2. Retry Queue Requirements
+
+-   Persistence: Queue must survive restarts (e.g., saved to disk).
+-   FIFO: Transactions must be retried in the order they were generated.
+-   Checksum: Retried transactions must retain their original payload_checksum to ensure integrity.
+-   Max Retention Time: Queued data must be retried within 48 hours or flagged for manual review.
+
+# 9. Receiving TSMS Notifications
+
+TSMS supports a notification system that allows POS systems to receive feedback about transmission issues, validation errors, or
+configuration updates.
+
+## 9. 1. Webhook Integration
+
+# POS systems may provide a webhook endpoint that TSMS can call with transaction status updates. Payload includes
+
+# transaction_id, type, and error message.
+
+**Sample Webhook Request Payload:**
+
+```json
+{
+    "transaction_id": "9861431d-afa9-4415-a7c8-f8d52b26bffd",
+    "status": "FAILED", // or "SUCCESS", "PENDING"
+    "type": "transaction_status_update",
+    "error_code": "VALIDATION_ERROR", // optional, present if failed
+    "error_message": "Base amount is required.", // optional, present if failed
+    "timestamp": "2025-07-31T11:00:00Z"
+}
+```
+
+# 10. Token Expiry and Refresh
+
+API tokens issued by TSMS may expire after 24 hours. POS systems must anticipate expiry and implement a token refresh process.
+
+## 10. 1 Refresh workflow
+
+```
+Until the refresh endpoint is available, tokens will have a long expiration period (e.g., 7–14 days) and can be reissued
+manually through the TSMS admin panel.
+```
+
+# 11. Health Check Endpoint
+
+POS systems may use this endpoint to test server availability:
+GET /api/v1/healthcheck
+This endpoint does not require authentication and returns basic server uptime info.
+**Disclaimer:**
+The integration endpoints and authentication flows described in this document are subject to change based on platform
+improvements or deployment environment requirements.
+The **data dictionary referenced herein has been reviewed and approved** and serves as the definitive structure for all
+transaction payloads. This document is intended to **guide** POS providers in aligning their system capabilities with the TSMS
+platform and preparing for API-based communication and webhook handling as required.
