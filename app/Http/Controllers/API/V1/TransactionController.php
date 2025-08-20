@@ -12,6 +12,7 @@ use App\Jobs\ProcessTransactionJob;
 use App\Jobs\CheckTransactionFailureThresholdsJob;
 use App\Services\PayloadChecksumService; // Add this import
 use App\Services\NotificationService;
+use App\Http\Requests\TSMSTransactionRequest;
 
 class TransactionController extends Controller
 {
@@ -772,7 +773,7 @@ class TransactionController extends Controller
      * @param Request $request
      * @return \Illuminate\Http\JsonResponse
      */
-    public function storeOfficial(Request $request)
+    public function storeOfficial(TSMSTransactionRequest $request)
     {
         try {
             DB::beginTransaction();
