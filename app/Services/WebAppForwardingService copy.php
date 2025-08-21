@@ -271,7 +271,7 @@ class WebAppForwardingService
     private function recordFailure(): void
     {
         $fails = Cache::increment($this->circuitBreakerKey.'_failures');
-        Cache::put($this->circuitBreakerKey.'_last_failure', now(), now()->addHour());
+    Cache::put($this->circuitBreakerKey.'_last_failure', now(), now()->addHours(1));
     }
 
     private function resetCircuitBreaker(): void

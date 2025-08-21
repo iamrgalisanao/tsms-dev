@@ -20,12 +20,12 @@ return [
 
     // Trim windows (minutes)
     'trim' => [
-        'recent'        => env('HORIZON_TRIM_RECENT', 60),
-        'pending'       => env('HORIZON_TRIM_PENDING', 60),
-        'completed'     => env('HORIZON_TRIM_COMPLETED', 120),
-        'recent_failed' => env('HORIZON_TRIM_RECENT_FAILED', 43200), // 30 days
-        'failed'        => env('HORIZON_TRIM_FAILED', 43200),
-        'monitored'     => 43200,
+    'recent'        => (int) env('HORIZON_TRIM_RECENT', 60),
+    'pending'       => (int) env('HORIZON_TRIM_PENDING', 60),
+    'completed'     => (int) env('HORIZON_TRIM_COMPLETED', 120),
+    'recent_failed' => (int) env('HORIZON_TRIM_RECENT_FAILED', 43200), // 30 days
+    'failed'        => (int) env('HORIZON_TRIM_FAILED', 43200),
+    'monitored'     => 43200, // already an int literal
     ],
 
     'fast_termination' => true,

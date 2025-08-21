@@ -658,11 +658,11 @@ class SecurityDashboardService implements SecurityDashboardInterface
             
             // Advance to next interval
             if ($interval === 'hour') {
-                $current->addHour();
+                $current->addHours(1);
             } elseif ($interval === 'day') {
-                $current->addDay();
+                $current->addDays(1);
             } else {
-                $current->addWeek();
+                $current->addWeeks(1);
             }
         }
         

@@ -34,7 +34,7 @@ class RateLimitMiddleware
             ], 429);
         }
 
-        Cache::put($key, $attempts + 1, $decayMinutes * 60);
+    Cache::put($key, $attempts + 1, (int)($decayMinutes * 60));
 
         return $next($request);
     }

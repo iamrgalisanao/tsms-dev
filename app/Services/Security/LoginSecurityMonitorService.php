@@ -33,13 +33,13 @@ class LoginSecurityMonitorService implements LoginSecurityMonitorInterface
         Cache::put(
             $ipKey,
             Cache::get($ipKey, 0) + 1,
-            now()->addMinutes($this->decayMinutes)
+                now()->addMinutes((int)$this->decayMinutes)
         );
 
         Cache::put(
             $emailKey,
             Cache::get($emailKey, 0) + 1,
-            now()->addMinutes($this->decayMinutes)
+                now()->addMinutes((int)$this->decayMinutes)
         );
 
         // Record security event

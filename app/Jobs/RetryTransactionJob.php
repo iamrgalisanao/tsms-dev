@@ -205,7 +205,7 @@ class RetryTransactionJob implements ShouldQueue
                     $this->transactionId,
                     $this->terminalId,
                     $this->attempt + 1
-                ))->delay(now()->addSeconds($backoffDelay));
+                ))->delay(now()->addSeconds((int) $backoffDelay));
             }
         }
     }

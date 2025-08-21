@@ -75,7 +75,7 @@ class CircuitBreaker extends Model
         
         if ($this->failures >= $this->failure_threshold) {
             $this->status = self::STATE_OPEN;
-            $this->cooldown_until = Carbon::now()->addSeconds($this->reset_timeout);
+            $this->cooldown_until = Carbon::now()->addSeconds((int) $this->reset_timeout);
         }
         
         $this->save();

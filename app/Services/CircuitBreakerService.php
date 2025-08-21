@@ -43,8 +43,8 @@ class CircuitBreakerService
 
         if ($circuitBreaker->trip_count >= $circuitBreaker->failure_threshold) {
             $circuitBreaker->status = 'OPEN';
-            $circuitBreaker->cooldown_until = now()->addMinutes(
-                config('app.circuit_breaker.cooldown_minutes')
+            $circuitBreaker->cooldown_until = now()->addMinutes((int)
+                (int) config('security.circuit_breaker.cooldown_minutes')
             );
         }
 

@@ -24,7 +24,13 @@ class ProcessTransactionJob implements ShouldQueue
     protected int $transactionId;
 
     /** Max processing attempts (framework also governs retries). */
-    protected int $maxAttempts = 3;
+    public $tries = 3;
+    
+    /** Job timeout in seconds */
+    public $timeout = 120;
+    
+    /** Backoff delay in seconds between retries */
+    public $backoff = 10;
 
     /**
      * Create a new job instance.
@@ -34,8 +40,8 @@ class ProcessTransactionJob implements ShouldQueue
     public function __construct(int $transactionId)
     {
         $this->transactionId = $transactionId;
-    // Ensure critical processing queue
-    $this->onQueue('transaction-processing');
+        // Ensure critical processing queue
+        $this->onQueue('transaction-processing');
     }
 
     /**
@@ -60,10 +66,18 @@ class ProcessTransactionJob implements ShouldQueue
      */
     public function handle(TransactionValidationService $validationService)
     {
+            Log::debug('ProcessTransactionJob started', [
+                'transaction_pk' => $this->transactionId,
+                'attempt' => $this->attempts()
+            ]);
         $lockKey = "txn:process:" . $this->transactionId;
         // Prevent parallel processing (5s lock safeguard)
         $lock = Cache::lock($lockKey, 5);
         if (!$lock->get()) {
+                Log::debug('Early exit: lock contention', [
+                    'transaction_pk' => $this->transactionId,
+                    'attempt' => $this->attempts()
+                ]);
             Log::warning('Skipping transaction processing due to active lock', [
                 'transaction_pk' => $this->transactionId,
                 'attempt' => $this->attempts()
@@ -75,6 +89,10 @@ class ProcessTransactionJob implements ShouldQueue
         try {
             $transaction = Transaction::with([])->find($this->transactionId);
             if (!$transaction) {
+                    Log::debug('Early exit: transaction not found', [
+                        'transaction_pk' => $this->transactionId,
+                        'attempt' => $this->attempts()
+                    ]);
                 Log::error('Transaction not found for processing', [
                     'transaction_pk' => $this->transactionId
                 ]);
@@ -91,6 +109,11 @@ class ProcessTransactionJob implements ShouldQueue
 
             // Short‑circuit if already processed / terminal
             if (in_array($transaction->validation_status, [Transaction::VALIDATION_STATUS_VALID, Transaction::VALIDATION_STATUS_FAILED])) {
+                    Log::debug('Early exit: already terminal status', [
+                        'transaction_id' => $transaction->transaction_id,
+                        'validation_status' => $transaction->validation_status,
+                        'job_status' => $transaction->job_status
+                    ]);
                 Log::info('Skipping processing – transaction already terminal', [
                     'transaction_id' => $transaction->transaction_id,
                     'validation_status' => $transaction->validation_status
@@ -144,6 +167,13 @@ class ProcessTransactionJob implements ShouldQueue
                 $transaction->last_error = $errorMessage;
                 $transaction->job_attempts = ($transaction->job_attempts ?? 0) + 1;
                 $transaction->completed_at = now();
+                    Log::debug('About to save FAILED transaction status', [
+                        'transaction_id' => $transaction->transaction_id,
+                        'validation_status' => $transaction->validation_status,
+                        'job_status' => $transaction->job_status,
+                        'completed_at' => $transaction->completed_at,
+                        'error_message' => $errorMessage
+                    ]);
                 $transaction->save();
 
                 Log::warning('Transaction validation failed', [
@@ -160,6 +190,12 @@ class ProcessTransactionJob implements ShouldQueue
                         'error' => $notifyEx->getMessage(),
                     ]);
                 }
+                    Log::debug('Early exit: validation failed', [
+                        'transaction_id' => $transaction->transaction_id,
+                        'validation_status' => $transaction->validation_status,
+                        'job_status' => $transaction->job_status,
+                        'error_message' => $errorMessage
+                    ]);
                 return; // No retry here; consider queue retry/backoff policy externally.
             }
 
@@ -179,6 +215,12 @@ class ProcessTransactionJob implements ShouldQueue
             $transaction->last_error = null;
             $transaction->job_attempts = ($transaction->job_attempts ?? 0) + 1;
             $transaction->completed_at = now();
+                Log::debug('About to save SUCCESS transaction status', [
+                    'transaction_id' => $transaction->transaction_id,
+                    'validation_status' => $transaction->validation_status,
+                    'job_status' => $transaction->job_status,
+                    'completed_at' => $transaction->completed_at
+                ]);
             $transaction->save();
 
             Log::info('Transaction processed successfully', [
