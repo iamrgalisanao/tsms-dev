@@ -2,6 +2,7 @@
   <table class="table table-hover align-middle mb-0">
     <thead class="table-light">
       <tr>
+        <th>Customer Code</th>
         <th class="ps-3">Transaction ID</th>
         <th>Terminals</th>
         <th class="text-end">Amount</th>
@@ -16,6 +17,7 @@
     <tbody>
       @forelse($transactions as $transaction)
       <tr>
+        <td>{{ $transaction->customer_code }}</td>
         <td class="ps-3">{{ $transaction->transaction_id }}</td>
         <td>{{ $transaction->terminal->id ?? 'N/A' }}</td>
         <td class="text-end">₱{{ number_format($transaction->base_amount, 2) }}</td>
