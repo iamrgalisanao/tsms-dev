@@ -151,9 +151,9 @@ use App\Helpers\BadgeHelper;
                 <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
                     <i class="fas fa-times me-1"></i>Close
                 </button>
-                <button type="button" class="btn btn-primary" onclick="exportAuditDetail()">
+                {{-- <button type="button" class="btn btn-primary" onclick="exportAuditDetail()">
                     <i class="fas fa-download me-1"></i>Export Details
-                </button>
+                </button> --}}
             </div>
         </div>
     </div>
@@ -226,10 +226,17 @@ $(function () {
 
 // Show audit context with data changes
 function showAuditContext(auditId) {
-    // Show loading state
-    $('#auditContextModal .modal-body').html('<div class="text-center"><i class="fas fa-spinner fa-spin"></i> Loading audit details...</div>');
+    // Show loading state in each field
+    $('#audit-time').text('');
+    $('#audit-user').text('');
+    $('#audit-action').html('<span class="badge bg-primary"><i class="fas fa-spinner fa-spin"></i></span>');
+    $('#audit-resource').html('');
+    $('#audit-ip').text('');
+    $('#audit-message').html('<div class="text-center"><i class="fas fa-spinner fa-spin"></i> Loading audit details...</div>');
+    $('#dataChangesSection').hide();
+    $('#metadataSection').hide();
     $('#auditContextModal').modal('show');
-    
+
     // Fetch audit details
     $.get('/log-viewer/audit-context/' + auditId)
         .done(function(data) {
@@ -260,18 +267,16 @@ function showAuditContext(auditId) {
             } else {
                 $('#metadataSection').hide();
             }
-
-            // Restore full modal content
-            $('#auditContextModal .modal-body').html($('#auditContextModal .modal-body').html());
         })
         .fail(function(xhr) {
             let errorMessage = 'Failed to load audit details';
             if (xhr.responseJSON && xhr.responseJSON.message) {
                 errorMessage = xhr.responseJSON.message;
             }
-            $('#auditContextModal .modal-body').html(
-                '<div class="alert alert-danger"><i class="fas fa-exclamation-triangle me-2"></i>' + errorMessage + '</div>'
-            );
+            // Show error in message field only
+            $('#audit-message').html('<div class="alert alert-danger"><i class="fas fa-exclamation-triangle me-2"></i>' + errorMessage + '</div>');
+            $('#dataChangesSection').hide();
+            $('#metadataSection').hide();
         });
 }
 

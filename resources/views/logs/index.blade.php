@@ -11,20 +11,21 @@ use App\Helpers\BadgeHelper;
   <div class="row mb-4">
     <div class="col-12">
       <div class="d-flex justify-content-between align-items-center">
-        <h4 class="mb-0 text-dark">System Logs Dashboard</h4>
+        <h4 class="mb-0 text-dark" id="dashboardTitle">System Logs Dashboard</h4>
         <div class="d-flex gap-3">
           <div class="dropdown">
-            <button class="btn btn-outline-primary dropdown-toggle shadow-sm" type="button" data-bs-toggle="dropdown">
-              <i class="fas fa-download me-2"></i>Export
+            <button class="btn btn-outline-primary dropdown-toggle shadow-sm" type="button" data-bs-toggle="dropdown" aria-haspopup="true" aria-expanded="false" aria-label="Export logs">
+              <i class="fas fa-download me-2" aria-hidden="true"></i>Export
             </button>
-            <ul class="dropdown-menu">
-              <li><a class="dropdown-item" href="{{ route('logs.export', ['format' => 'csv']) }}">CSV</a></li>
-              <li><a class="dropdown-item" href="{{ route('logs.export', ['format' => 'pdf']) }}">PDF</a></li>
+            <ul class="dropdown-menu" aria-labelledby="exportDropdown">
+              <li><a class="dropdown-item" href="{{ route('logs.export', ['format' => 'csv']) }}" aria-label="Export as CSV">CSV</a></li>
+              <li><a class="dropdown-item" href="{{ route('logs.export', ['format' => 'pdf']) }}" aria-label="Export as PDF">PDF</a></li>
             </ul>
           </div>
           <div class="form-check form-switch d-flex align-items-center">
-            <input class="form-check-input me-2" type="checkbox" id="liveUpdate" checked>
+            <input class="form-check-input me-2" type="checkbox" id="liveUpdate" checked aria-label="Toggle live updates">
             <label class="form-check-label text-muted" for="liveUpdate">Live Updates</label>
+            <span id="liveUpdateSpinner" class="ms-2" style="display:none;" aria-live="polite"><i class="fas fa-sync fa-spin text-primary"></i></span>
           </div>
         </div>
       </div>
@@ -129,17 +130,55 @@ use App\Helpers\BadgeHelper;
       <div class="row g-3 mb-4">
         <div class="col-md-6">
           <div class="input-group">
-            <input type="text" class="form-control" id="searchLogs" placeholder="Search logs...">
-            <button class="btn btn-primary px-4" onclick="applyFilters()">
-              <i class="fas fa-search me-2"></i>Search
+            <input type="text" class="form-control" id="searchLogs" placeholder="Search logs..." aria-label="Search logs">
+            <button class="btn btn-outline-secondary" type="button" id="clearSearch" aria-label="Clear search" tabindex="0"><i class="fas fa-times"></i></button>
+            <button class="btn btn-primary px-4" onclick="applyFilters()" aria-label="Search logs">
+              <i class="fas fa-search me-2" aria-hidden="true"></i>Search
             </button>
           </div>
         </div>
         <div class="col-md-6 text-end">
           <button class="btn btn-outline-secondary" type="button" data-bs-toggle="collapse"
-            data-bs-target="#advancedFilters">
-            <i class="fas fa-filter me-2"></i>Advanced Filters
+            data-bs-target="#advancedFilters" aria-controls="advancedFilters" aria-expanded="false" aria-label="Show advanced filters">
+            <i class="fas fa-filter me-2" aria-hidden="true"></i>Advanced Filters
           </button>
+        </div>
+      </div>
+      <!-- Advanced Filters Panel -->
+      <div class="collapse mb-4" id="advancedFilters">
+        <div class="card card-body bg-light">
+          <form id="advancedFiltersForm" class="row g-3" aria-label="Advanced log filters">
+            <div class="col-md-3">
+              <label for="filterDateRange" class="form-label">Date Range</label>
+              <input type="text" class="form-control" id="filterDateRange" name="date_range" placeholder="YYYY-MM-DD to YYYY-MM-DD" aria-label="Date range">
+            </div>
+            <div class="col-md-3">
+              <label for="filterEventType" class="form-label">Event Type</label>
+              <select class="form-select" id="filterEventType" name="event_type" aria-label="Event type">
+                <option value="">All</option>
+                <option value="system">System</option>
+                <option value="success">Success</option>
+                <option value="error">Error</option>
+                <option value="pending">Pending</option>
+              </select>
+            </div>
+            <div class="col-md-3">
+              <label for="filterSeverity" class="form-label">Severity</label>
+              <select class="form-select" id="filterSeverity" name="severity" aria-label="Severity">
+                <option value="">All</option>
+                <option value="info">Info</option>
+                <option value="warning">Warning</option>
+                <option value="critical">Critical</option>
+              </select>
+            </div>
+            <div class="col-md-3">
+              <label for="filterUser" class="form-label">User</label>
+              <input type="text" class="form-control" id="filterUser" name="user" placeholder="Username or ID" aria-label="User">
+            </div>
+            <div class="col-12 text-end">
+              <button type="submit" class="btn btn-primary" aria-label="Apply advanced filters">Apply Filters</button>
+            </div>
+          </form>
         </div>
       </div>
 
@@ -151,6 +190,11 @@ use App\Helpers\BadgeHelper;
         <div class="tab-pane fade" id="webhook">
           @include('logs.partials.webhook-table')
         </div>
+        <!-- Empty State -->
+        <div id="emptyState" class="text-center py-5" style="display:none;">
+          <i class="fas fa-folder-open fa-3x text-muted mb-3" aria-hidden="true"></i>
+          <h5 class="text-muted">No logs found</h5>
+        </div>
       </div>
     </div>
   </div>
@@ -159,6 +203,110 @@ use App\Helpers\BadgeHelper;
 @include('logs.partials.context-modal')
 
 @push('styles')
+@push('scripts')
+<script>
+$(document).ready(function() {
+  // Clear search input
+  $('#clearSearch').on('click', function() {
+    $('#searchLogs').val('');
+    applyFilters();
+  });
+
+  // Advanced filters submit
+  $('#advancedFiltersForm').on('submit', function(e) {
+    e.preventDefault();
+    applyFilters();
+  });
+
+  // Main search button
+  $('#searchLogs').on('keypress', function(e) {
+    if (e.which === 13) {
+      applyFilters();
+    }
+  });
+
+  // Live update toggle
+  $('#liveUpdate').on('change', function() {
+    if ($(this).is(':checked')) {
+      startLiveUpdates();
+    } else {
+      stopLiveUpdates();
+    }
+  });
+
+  // Initial load
+  applyFilters();
+});
+  // Log details modal handler
+  $(document).on('click', '.view-details-btn', function() {
+    const logId = $(this).data('log-id');
+    $('#contextModal .modal-body').html('<div class="text-center py-4"><i class="fas fa-spinner fa-spin fa-2x text-primary"></i></div>');
+    $('#contextModal').modal('show');
+    $.ajax({
+      url: '/logs/details/' + logId,
+      method: 'GET',
+      success: function(response) {
+        $('#contextModal .modal-body').html(response.html);
+      },
+      error: function() {
+        $('#contextModal .modal-body').html('<div class="text-danger">Failed to load log details.</div>');
+      }
+    });
+  });
+
+let liveUpdateInterval = null;
+
+function applyFilters() {
+  $('#liveUpdateSpinner').show();
+  // Gather filter values
+  const data = {
+    search: $('#searchLogs').val(),
+    date_range: $('#filterDateRange').val(),
+    event_type: $('#filterEventType').val(),
+    severity: $('#filterSeverity').val(),
+    user: $('#filterUser').val(),
+    tab: $('.nav-link.active').attr('href').replace('#','')
+  };
+  $.ajax({
+    url: '/logs/ajax',
+    method: 'GET',
+    data: data,
+    success: function(response) {
+      // Replace table partials with new data
+      if (data.tab === 'audit') {
+        $('#audit').html(response.auditHtml);
+      } else {
+        $('#webhook').html(response.webhookHtml);
+      }
+      // Show/hide empty state
+      if (response.isEmpty) {
+        $('#emptyState').show();
+      } else {
+        $('#emptyState').hide();
+      }
+      $('#liveUpdateSpinner').hide();
+    },
+    error: function() {
+      $('#liveUpdateSpinner').hide();
+      alert('Failed to load logs.');
+    }
+  });
+}
+
+function startLiveUpdates() {
+  if (liveUpdateInterval) return;
+  liveUpdateInterval = setInterval(applyFilters, 5000);
+  $('#liveUpdateSpinner').show();
+}
+
+function stopLiveUpdates() {
+  if (liveUpdateInterval) {
+    clearInterval(liveUpdateInterval);
+    liveUpdateInterval = null;
+  }
+  $('#liveUpdateSpinner').hide();
+}
+</script>
 <style>
 .card {
   transition: all 0.3s ease;
