@@ -123,6 +123,9 @@ class ProcessTransactionJob implements ShouldQueue
 
             // Update main record to PROCESSING
             $transaction->job_status = Transaction::JOB_STATUS_PROCESSING;
+            if ($transaction->created_at === null) {
+                $transaction->created_at = now();
+            }
             $transaction->save();
 
             // Audit job row
@@ -131,12 +134,15 @@ class ProcessTransactionJob implements ShouldQueue
                 'job_status' => Transaction::JOB_STATUS_PROCESSING,
                 'attempt_number' => $this->attempts(),
                 'started_at' => now(),
+                'created_at' => now(),
             ]);
 
+            // Validation record
             // Validation record
             $validation = $transaction->validations()->create([
                 'status_code' => Transaction::VALIDATION_STATUS_PENDING,
                 'started_at' => now(),
+                'created_at' => now(),
             ]);
 
             $validationResult = $validationService->validateTransaction($transaction);
@@ -166,7 +172,12 @@ class ProcessTransactionJob implements ShouldQueue
                 $transaction->job_status = Transaction::JOB_STATUS_FAILED;
                 $transaction->last_error = $errorMessage;
                 $transaction->job_attempts = ($transaction->job_attempts ?? 0) + 1;
-                $transaction->completed_at = now();
+                if ($transaction->created_at === null) {
+                    $transaction->created_at = now();
+                }
+                if ($transaction->completed_at === null) {
+                    $transaction->completed_at = now();
+                }
                     Log::debug('About to save FAILED transaction status', [
                         'transaction_id' => $transaction->transaction_id,
                         'validation_status' => $transaction->validation_status,
@@ -214,7 +225,12 @@ class ProcessTransactionJob implements ShouldQueue
             $transaction->job_status = Transaction::JOB_STATUS_COMPLETED;
             $transaction->last_error = null;
             $transaction->job_attempts = ($transaction->job_attempts ?? 0) + 1;
-            $transaction->completed_at = now();
+            if ($transaction->created_at === null) {
+                $transaction->created_at = now();
+            }
+            if ($transaction->completed_at === null) {
+                $transaction->completed_at = now();
+            }
                 Log::debug('About to save SUCCESS transaction status', [
                     'transaction_id' => $transaction->transaction_id,
                     'validation_status' => $transaction->validation_status,
@@ -347,7 +363,12 @@ class ProcessTransactionJob implements ShouldQueue
             }
             $transaction->last_error = $e->getMessage();
             $transaction->job_attempts = ($transaction->job_attempts ?? 0) + 1;
-            $transaction->completed_at = now();
+            if ($transaction->created_at === null) {
+                $transaction->created_at = now();
+            }
+            if ($transaction->completed_at === null) {
+                $transaction->completed_at = now();
+            }
             $transaction->save();
         }
     }
