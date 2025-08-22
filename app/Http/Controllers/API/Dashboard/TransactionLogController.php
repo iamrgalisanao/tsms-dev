@@ -12,7 +12,7 @@ class TransactionLogController extends Controller
 {
     public function index(Request $request)
     {
-        $query = TransactionLog::with('terminal')
+    $query = TransactionLog::with(['terminal', 'customer'])
             ->when($request->terminal_id, function($q) use ($request) {
                 return $q->where('terminal_id', $request->terminal_id);
             })

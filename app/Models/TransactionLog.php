@@ -28,4 +28,10 @@ class TransactionLog extends Model
     {
         return $this->belongsTo(PosTerminal::class, 'terminal_id');
     }
+
+    public function customer()
+    {
+        // Assuming there is a customer_id column, otherwise adjust as needed
+        return $this->belongsTo(Company::class, 'customer_id');
+    }
 }
