@@ -239,11 +239,11 @@ function showAuditContext(auditId) {
             $('#audit-user').text((data.user && data.user.name) ? data.user.name : 'System');
             $('#audit-action').html('<span class="badge bg-primary">' + (data.action || 'N/A') + '</span>');
             $('#audit-resource').html('<span class="badge bg-info">' + (data.resource_type || 'N/A') + '</span>' + 
-                (data.resource_id ? '<br><small class="text-muted">' + data.resource_id + '</small>' : ''));
-            $('#audit-ip').text(data.ip_address || 'N/A');
-            $('#audit-message').text(data.message || 'No message');
+                (data.resource_id ? '<br><small class="text-muted">' + data.resource_id + '</small>' : '<br><small class="text-muted">N/A</small>'));
+            $('#audit-ip').text(data.ip_address ? data.ip_address : 'N/A');
+            $('#audit-message').text(data.message ? data.message : 'No message available');
 
-            // Show/hide data changes section
+            // Show/hide data changes section with fallback
             let oldValuesText = 'No old values';
             let newValuesText = 'No new values';
             if (data.old_values) {
@@ -265,10 +265,12 @@ function showAuditContext(auditId) {
                 $('#oldValues').text(oldValuesText);
                 $('#newValues').text(newValuesText);
             } else {
-                $('#dataChangesSection').hide();
+                $('#dataChangesSection').show();
+                $('#oldValues').text('No old values available');
+                $('#newValues').text('No new values available');
             }
 
-            // Show/hide metadata section
+            // Show/hide metadata section with fallback
             let metadataText = '';
             if (data.metadata) {
                 try {
@@ -279,7 +281,8 @@ function showAuditContext(auditId) {
                 $('#metadataSection').show();
                 $('#metadataContent').text(metadataText);
             } else {
-                $('#metadataSection').hide();
+                $('#metadataSection').show();
+                $('#metadataContent').text('No metadata available');
             }
         })
         .fail(function(xhr) {

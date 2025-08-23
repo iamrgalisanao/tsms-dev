@@ -168,10 +168,10 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-  const ctx = document.getElementById('terminalEnrollmentChart').getContext('2d');
-  const data = @json($enrollmentData ?? []);
-
-  if (ctx) {
+  const canvas = document.getElementById('terminalEnrollmentChart');
+  if (canvas) {
+    const ctx = canvas.getContext('2d');
+    const data = @json($enrollmentData ?? []);
     new Chart(ctx, {
       type: 'line',
       data: {

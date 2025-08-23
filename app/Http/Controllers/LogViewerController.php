@@ -73,48 +73,108 @@ class LogViewerController extends Controller
         return response()->json($log);
     }
 
-    public function getAuditContext($id)
-    {
-        try {
-            $auditLog = \App\Models\AuditLog::with(['user'])->findOrFail($id);
+    // public function getAuditContext($id)
+    // {
+    //     try {
+    //         $auditLog = \App\Models\AuditLog::with(['user'])->findOrFail($id);
             
-            // Log the access to audit details for audit trail
-            \App\Models\AuditLog::create([
-                'user_id' => auth()->id(),
-                'action' => 'audit_log.viewed',
-                'action_type' => 'AUDIT_ACCESS',
-                'resource_type' => 'audit_log',
-                'resource_id' => $auditLog->id,
-                'message' => 'Audit log details accessed',
-                'ip_address' => request()->ip(),
-                'metadata' => json_encode([
-                    'accessed_audit_id' => $auditLog->id,
-                    'original_action' => $auditLog->action,
-                    'original_resource' => $auditLog->resource_type
-                ])
-            ]);
+    //         // Log the access to audit details for audit trail
+    //         \App\Models\AuditLog::create([
+    //             'user_id' => auth()->id(),
+    //             'action' => 'audit_log.viewed',
+    //             'action_type' => 'AUDIT_ACCESS',
+    //             'resource_type' => 'audit_log',
+    //             'resource_id' => $auditLog->id,
+    //             'message' => 'Audit log details accessed',
+    //             'ip_address' => request()->ip(),
+    //             'metadata' => json_encode([
+    //                 'accessed_audit_id' => $auditLog->id,
+    //                 'original_action' => $auditLog->action,
+    //                 'original_resource' => $auditLog->resource_type
+    //             ])
+    //         ]);
 
-            return response()->json([
-                'id' => $auditLog->id,
-                'created_at' => $auditLog->created_at,
-                'user' => $auditLog->user,
-                'action' => $auditLog->action,
-                'action_type' => $auditLog->action_type,
-                'resource_type' => $auditLog->resource_type,
-                'resource_id' => $auditLog->resource_id,
-                'message' => $auditLog->message,
-                'ip_address' => $auditLog->ip_address,
-                'old_values' => $auditLog->old_values,
-                'new_values' => $auditLog->new_values,
-                'metadata' => $auditLog->metadata
-            ]);
-        } catch (\Exception $e) {
-            return response()->json([
-                'error' => 'Failed to load audit context',
-                'message' => $e->getMessage()
-            ], 500);
+    //         return response()->json([
+    //             'id' => $auditLog->id,
+    //             'created_at' => $auditLog->created_at,
+    //             'user' => $auditLog->user,
+    //             'action' => $auditLog->action,
+    //             'action_type' => $auditLog->action_type,
+    //             'resource_type' => $auditLog->resource_type,
+    //             'resource_id' => $auditLog->resource_id,
+    //             'message' => $auditLog->message,
+    //             'ip_address' => $auditLog->ip_address,
+    //             'old_values' => $auditLog->old_values,
+    //             'new_values' => $auditLog->new_values,
+    //             'metadata' => $auditLog->metadata
+    //         ]);
+    //     } catch (\Exception $e) {
+    //         return response()->json([
+    //             'error' => 'Failed to load audit context',
+    //             'message' => $e->getMessage()
+    //         ], 500);
+    //     }
+    // }
+
+    
+public function getAuditContext($id)
+{
+    try {
+        $auditLog = \App\Models\AuditLog::with(['user'])->findOrFail($id);
+        // Log the access to audit details for audit trail
+        \App\Models\AuditLog::create([
+            'user_id' => auth()->id(),
+            'action' => 'audit_log.viewed',
+            'action_type' => 'AUDIT_ACCESS',
+            'resource_type' => 'audit_log',
+            'resource_id' => $auditLog->id,
+            'message' => 'Audit log details accessed',
+            'ip_address' => request()->ip(),
+            'metadata' => [
+                'accessed_audit_id' => $auditLog->id,
+                'original_action' => $auditLog->action,
+                'original_resource' => $auditLog->resource_type
+            ]
+        ]);
+
+        // Legacy data handling: ensure all fields are present and properly formatted
+        $user = $auditLog->user;
+        if (!$user) {
+            $user = (object)[ 'name' => 'System' ];
         }
+        $ip = $auditLog->ip_address ?? 'N/A';
+        $oldValues = $auditLog->old_values ?? null;
+        $newValues = $auditLog->new_values ?? null;
+        $metadata = $auditLog->metadata ?? [];
+        // If metadata is a string, try to decode
+        if (is_string($metadata)) {
+            $decoded = json_decode($metadata, true);
+            if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+                $metadata = $decoded;
+            }
+        }
+
+        return response()->json([
+            'id' => $auditLog->id,
+            'created_at' => $auditLog->created_at,
+            'user' => $user,
+            'action' => $auditLog->action ?? 'N/A',
+            'action_type' => $auditLog->action_type ?? 'N/A',
+            'resource_type' => $auditLog->resource_type ?? 'N/A',
+            'resource_id' => $auditLog->resource_id ?? 'N/A',
+            'message' => $auditLog->message ?? '',
+            'ip_address' => $ip,
+            'old_values' => $oldValues,
+            'new_values' => $newValues,
+            'metadata' => $metadata
+        ]);
+    } catch (\Exception $e) {
+        return response()->json([
+            'error' => 'Failed to load audit context',
+            'message' => $e->getMessage()
+        ], 500);
     }
+}
 
     public function export(Request $request, string $format = 'csv')
     {

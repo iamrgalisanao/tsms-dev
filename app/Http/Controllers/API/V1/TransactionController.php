@@ -673,6 +673,8 @@ class TransactionController extends Controller
             // Add audit log entry
             try {
                 \App\Models\AuditLog::create([
+                    'user_id' => auth()->id(),
+                    'ip_address' => request()->ip(),
                     'action' => 'TRANSACTION_VOID_POS',
                     'action_type' => 'TRANSACTION_VOID_POS',
                     'resource_type' => 'transaction',
@@ -680,7 +682,7 @@ class TransactionController extends Controller
                     'auditable_type' => 'transaction',
                     'auditable_id' => $transaction->id,
                     'message' => 'Transaction voided by POS terminal',
-                    'metadata' => json_encode([
+                    'metadata' => [
                         'transaction_id' => $transaction->transaction_id,
                         'void_reason' => $request->void_reason,
                         'terminal_id' => $posTerminal->id,
@@ -689,7 +691,7 @@ class TransactionController extends Controller
                         'initiated_by' => 'POS',
                         'voided_at' => $voidedAt,
                         'request_transaction_id' => $request->transaction_id
-                    ])
+                    ]
                 ]);
             } catch (\Exception $logError) {
                 Log::warning('Failed to create audit log for POS void', [
@@ -1077,6 +1079,8 @@ class TransactionController extends Controller
 
                     // Add audit log entry
                     \App\Models\AuditLog::create([
+                        'user_id' => auth()->id(),
+                        'ip_address' => request()->ip(),
                         'action' => 'OFFICIAL_TRANSACTION_RECEIVED',
                         'action_type' => 'OFFICIAL_TRANSACTION_RECEIVED',
                         'resource_type' => 'transaction',
@@ -1084,13 +1088,13 @@ class TransactionController extends Controller
                         'auditable_type' => 'transaction',
                         'auditable_id' => $transaction->id,
                         'message' => 'Official format transaction received and queued for processing',
-                        'metadata' => json_encode([
+                        'metadata' => [
                             'submission_uuid' => $request->submission_uuid,
                             'transaction_id' => $transaction->transaction_id,
                             'base_amount' => $transaction->base_amount,
                             'terminal_id' => $terminal->id,
                             'tenant_id' => $terminal->tenant_id,
-                        ])
+                        ]
                     ]);
 
                     $processedTransactions[] = [

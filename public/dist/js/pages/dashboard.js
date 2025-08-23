@@ -113,7 +113,12 @@ $(function () {
 
   /* Chart.js Charts */
   // Sales chart
-  var salesChartCanvas = document.getElementById('revenue-chart-canvas').getContext('2d')
+  var canvas = document.getElementById('revenue-chart-canvas');
+  var salesChartCanvas = null;
+  if (canvas) {
+    salesChartCanvas = canvas.getContext('2d');
+    // ... chart code ...
+  }
   // $('#revenue-chart').get(0).getContext('2d');
 
   var salesChartData = {
@@ -174,6 +179,12 @@ $(function () {
 
   // Donut Chart
   var pieChartCanvas = $('#sales-chart-canvas').get(0).getContext('2d')
+  var pieCanvas = $('#sales-chart-canvas').get(0);
+  var pieChartCanvas = null;
+  if (pieCanvas) {
+    pieChartCanvas = pieCanvas.getContext('2d');
+    // ... chart code ...
+  }
   var pieData = {
     labels: [
       'Instore Sales',
@@ -205,6 +216,12 @@ $(function () {
 
   // Sales graph chart
   var salesGraphChartCanvas = $('#line-chart').get(0).getContext('2d')
+  var lineCanvas = $('#line-chart').get(0);
+  var salesGraphChartCanvas = null;
+  if (lineCanvas) {
+    salesGraphChartCanvas = lineCanvas.getContext('2d');
+    // ... chart code ...
+  }
   // $('#revenue-chart').get(0).getContext('2d');
 
   var salesGraphChartData = {
