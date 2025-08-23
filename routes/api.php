@@ -81,7 +81,6 @@ Route::prefix('v1')->middleware(['rate.limit'])->group(function () {
     // Legacy basic ingestion endpoint disabled
     // Route::post('/transactions', [TransactionController::class, 'store']);
     Route::post('/transactions/batch', [TransactionController::class, 'batchStore']);
-    Route::post('/transactions/official', [TransactionController::class, 'storeOfficial']); // New official format endpoint
     Route::get('/transactions/{id}/status', [TransactionController::class, 'status']);
 });
 

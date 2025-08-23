@@ -19,66 +19,66 @@ use App\Helpers\BadgeHelper;
               </tr>
           </thead>
           <tbody>
-            @forelse($auditLogs as $log)
-            <tr>
-              <td class="text-nowrap">{{ $log->created_at->format('Y-m-d H:i:s') }}</td>
-              <td>{{ $log->user?->name ?? 'System' }}</td>
-              <td>
-                <span class="badge bg-{{ LogHelper::getActionTypeClass($log->action_type ?? 'default') }}">
-                  @if(str_starts_with($log->action, 'auth.'))
-                  @switch($log->action)
-                  @case('auth.login')
-                  <i class="fas fa-sign-in-alt me-1"></i>Login
-                  @break
-                  @case('auth.logout')
-                  <i class="fas fa-sign-out-alt me-1"></i>Logout
-                  @break
-                  @case('auth.failed')
-                  <i class="fas fa-exclamation-triangle me-1"></i>Failed Login
-                  @break
-                  @default
-                  {{ $log->action }}
-                  @endswitch
-                  @elseif(str_starts_with($log->action, 'TRANSACTION'))
-                  @switch($log->action)
-                  @case('TRANSACTION_RECEIVED')
-                  <i class="fas fa-inbox me-1"></i>Transaction Received
-                  @break
-                  @case('TRANSACTION_VOID_POS')
-                  <i class="fas fa-ban me-1"></i>Transaction Voided
-                  @break
-                  @case('TRANSACTION_PROCESSED')
-                  <i class="fas fa-check me-1"></i>Transaction Processed
-                  @break
-                  @default
-                  <i class="fas fa-exchange-alt me-1"></i>{{ $log->action }}
-                  @endswitch
-                  @else
-                  {{ $log->action }}
-                  @endif
-                </span>
-              </td>
-              <td>
-                <span class="badge bg-info">{{ $log->resource_type ?? 'N/A' }}</span>
-                @if($log->resource_id)
-                  <br><small class="text-muted">{{ $log->resource_id }}</small>
-                @endif
-              </td>
-              <td class="text-wrap" style="max-width: 300px;">
-                <small class="text-muted">{{ $log->message }}</small>
-                @if($log->old_values || $log->new_values)
-                  <br><small class="badge bg-warning">Data Changed</small>
-                @endif
-              </td>
-              <td class="text-center">{{ $log->ip_address ?? 'N/A' }}</td>
-              <td class="text-center">
-                @if($log->metadata || $log->old_values || $log->new_values)
-                <button class="btn btn-sm btn-outline-primary" onclick="showAuditContext('{{ $log->id }}')">
-                  <i class="fas fa-search me-1"></i>Details
-                </button>
-                @endif
-              </td>
-            </tr>
+                        @forelse($auditLogs as $log)
+                        <tr>
+                            <td class="text-nowrap">{{ $log->created_at->format('Y-m-d H:i:s') }}</td>
+                            <td>{{ $log->user?->name ?? 'System' }}</td>
+                            <td>
+                                <span class="badge bg-{{ LogHelper::getActionTypeClass($log->action_type ?? 'default') }}">
+                                    @if(str_starts_with($log->action, 'auth.'))
+                                    @switch($log->action)
+                                    @case('auth.login')
+                                    <i class="fas fa-sign-in-alt me-1"></i>Login
+                                    @break
+                                    @case('auth.logout')
+                                    <i class="fas fa-sign-out-alt me-1"></i>Logout
+                                    @break
+                                    @case('auth.failed')
+                                    <i class="fas fa-exclamation-triangle me-1"></i>Failed Login
+                                    @break
+                                    @default
+                                    {{ $log->action }}
+                                    @endswitch
+                                    @elseif(str_starts_with($log->action, 'TRANSACTION'))
+                                    @switch($log->action)
+                                    @case('TRANSACTION_RECEIVED')
+                                    <i class="fas fa-inbox me-1"></i>Transaction Received
+                                    @break
+                                    @case('TRANSACTION_VOID_POS')
+                                    <i class="fas fa-ban me-1"></i>Transaction Voided
+                                    @break
+                                    @case('TRANSACTION_PROCESSED')
+                                    <i class="fas fa-check me-1"></i>Transaction Processed
+                                    @break
+                                    @default
+                                    <i class="fas fa-exchange-alt me-1"></i>{{ $log->action }}
+                                    @endswitch
+                                    @else
+                                    {{ $log->action }}
+                                    @endif
+                                </span>
+                            </td>
+                            <td>
+                                <span class="badge bg-info">{{ $log->resource_type ?? 'N/A' }}</span>
+                                @if($log->resource_id)
+                                    <br><small class="text-muted">{{ $log->resource_id }}</small>
+                                @endif
+                            </td>
+                            <td class="text-wrap" style="max-width: 300px;">
+                                <small class="text-muted">{{ $log->message }}</small>
+                                @if($log->old_values || $log->new_values)
+                                    <br><small class="badge bg-warning">Data Changed</small>
+                                @endif
+                            </td>
+                            <td class="text-center">{{ $log->ip_address ?? 'N/A' }}</td>
+                            <td class="text-center">
+                                @if($log->action !== 'audit_log.viewed')
+                                <button class="btn btn-sm btn-outline-primary" onclick="showAuditContext('{{ $log->id }}')">
+                                    <i class="fas fa-search me-1"></i>Details
+                                </button>
+                                @endif
+                            </td>
+                        </tr>
             @empty
             <tr>
               <td colspan="7" class="text-center py-4">
@@ -178,71 +178,65 @@ use App\Helpers\BadgeHelper;
 
 <script>
 $(function () {
-    // Initialize only if not already initialized (defensive)
-    const selector = '#auditTable';
-    if ($.fn.DataTable.isDataTable(selector)) {
-        return; // already initialized
-    }
-    $(selector).DataTable({
-        "responsive": true, 
-        "lengthChange": false, 
-        "autoWidth": false,
-        "ordering": true,
-        "info": true,
-        "paging": true,
-        "searching": true,
-        "order": [[ 0, "desc" ]], // Sort by time (newest first)
-        "language": {
-            "emptyTable": "No audit logs available",
-            "zeroRecords": "No matching audit records found",
-            "info": "Showing _START_ to _END_ of _TOTAL_ audit entries",
-            "infoEmpty": "Showing 0 to 0 of 0 audit entries",
-            "infoFiltered": "(filtered from _MAX_ total audit entries)",
-            "search": "Search audit logs:",
-            "paginate": {
-                "first": "First",
-                "last": "Last",
-                "next": "Next",
-                "previous": "Previous"
-            }
-        },
-        "buttons": [
-              { extend: "csv",   text: "<i class='fas fa-file-csv'></i> CSV",   className: "btn btn-success btn-sm" },
-              { extend: "excel", text: "<i class='fas fa-file-excel'></i> Excel", className: "btn btn-success btn-sm" },
-              { extend: "pdf",   text: "<i class='fas fa-file-pdf'></i> PDF",   className: "btn btn-danger btn-sm" },
-              { extend: "colvis",text: "<i class='fas fa-columns'></i> Columns",  className: "btn btn-info btn-sm" }
-        ]
-    }).buttons().container().appendTo('#auditTable_wrapper .col-md-6:eq(0)');
+  const selector = '#auditTable';
+  if ($.fn.DataTable.isDataTable(selector)) return;
 
-    // Toastr notifications
-    @if(session('success'))
-        toastr.success("{{ session('success') }}");
-    @endif
+  $(selector).DataTable({
+    responsive: true,
+    lengthChange: false,
+    autoWidth: false,
+    ordering: true,
+    info: true,
+    paging: true,
+    searching: true,
+    order: [[0, 'desc']],
 
-    @if(session('error'))
-        toastr.error("{{ session('error') }}");
-    @endif
+    // EXPLICIT: 7 columns to match <thead>
+    columns: [
+      { defaultContent: '' }, // Time
+      { defaultContent: '' }, // User
+      { defaultContent: '' }, // Action
+      { defaultContent: '' }, // Resource
+      { defaultContent: '' }, // Details
+      { defaultContent: '' }, // IP Address
+      { defaultContent: '' }  // Actions
+    ],
+    columnDefs: [
+      { targets: -1, orderable: false, searchable: false },
+      { targets: '_all', defaultContent: '' }
+    ],
+
+    language: {
+      emptyTable: 'No audit logs available',
+      zeroRecords: 'No matching audit records found',
+      info: 'Showing _START_ to _END_ of _TOTAL_ audit entries',
+      infoEmpty: 'Showing 0 to 0 of 0 audit entries',
+      infoFiltered: '(filtered from _MAX_ total audit entries)',
+      search: 'Search audit logs:',
+      paginate: { first: 'First', last: 'Last', next: 'Next', previous: 'Previous' }
+    },
+    buttons: [
+      { extend: 'csv',   text: "<i class='fas fa-file-csv'></i> CSV",    className: 'btn btn-success btn-sm' },
+      { extend: 'excel', text: "<i class='fas fa-file-excel'></i> Excel", className: 'btn btn-success btn-sm' },
+      { extend: 'pdf',   text: "<i class='fas fa-file-pdf'></i> PDF",     className: 'btn btn-danger btn-sm' },
+      { extend: 'colvis',text: "<i class='fas fa-columns'></i> Columns",  className: 'btn btn-info btn-sm' }
+    ]
+  }).buttons().container().appendTo('#auditTable_wrapper .col-md-6:eq(0)');
 });
+
 
 // Show audit context with data changes
 function showAuditContext(auditId) {
-    // Show loading state in each field
-    $('#audit-time').text('');
-    $('#audit-user').text('');
-    $('#audit-action').html('<span class="badge bg-primary"><i class="fas fa-spinner fa-spin"></i></span>');
-    $('#audit-resource').html('');
-    $('#audit-ip').text('');
-    $('#audit-message').html('<div class="text-center"><i class="fas fa-spinner fa-spin"></i> Loading audit details...</div>');
-    $('#dataChangesSection').hide();
-    $('#metadataSection').hide();
+    // Show loading state
+    $('#auditContextModal .modal-body').html('<div class="text-center"><i class="fas fa-spinner fa-spin"></i> Loading audit details...</div>');
     $('#auditContextModal').modal('show');
 
     // Fetch audit details
     $.get('/log-viewer/audit-context/' + auditId)
         .done(function(data) {
             // Populate basic info
-            $('#audit-time').text(new Date(data.created_at).toLocaleString());
-            $('#audit-user').text(data.user?.name || 'System');
+            $('#audit-time').text(data.created_at ? new Date(data.created_at).toLocaleString() : 'N/A');
+            $('#audit-user').text((data.user && data.user.name) ? data.user.name : 'System');
             $('#audit-action').html('<span class="badge bg-primary">' + (data.action || 'N/A') + '</span>');
             $('#audit-resource').html('<span class="badge bg-info">' + (data.resource_type || 'N/A') + '</span>' + 
                 (data.resource_id ? '<br><small class="text-muted">' + data.resource_id + '</small>' : ''));
@@ -250,20 +244,40 @@ function showAuditContext(auditId) {
             $('#audit-message').text(data.message || 'No message');
 
             // Show/hide data changes section
+            let oldValuesText = 'No old values';
+            let newValuesText = 'No new values';
+            if (data.old_values) {
+                try {
+                    oldValuesText = JSON.stringify(JSON.parse(data.old_values), null, 2);
+                } catch (e) {
+                    oldValuesText = data.old_values;
+                }
+            }
+            if (data.new_values) {
+                try {
+                    newValuesText = JSON.stringify(JSON.parse(data.new_values), null, 2);
+                } catch (e) {
+                    newValuesText = data.new_values;
+                }
+            }
             if (data.old_values || data.new_values) {
                 $('#dataChangesSection').show();
-                $('#oldValues').text(data.old_values ? JSON.stringify(JSON.parse(data.old_values), null, 2) : 'No old values');
-                $('#newValues').text(data.new_values ? JSON.stringify(JSON.parse(data.new_values), null, 2) : 'No new values');
+                $('#oldValues').text(oldValuesText);
+                $('#newValues').text(newValuesText);
             } else {
                 $('#dataChangesSection').hide();
             }
 
             // Show/hide metadata section
+            let metadataText = '';
             if (data.metadata) {
+                try {
+                    metadataText = typeof data.metadata === 'string' ? JSON.stringify(JSON.parse(data.metadata), null, 2) : JSON.stringify(data.metadata, null, 2);
+                } catch (e) {
+                    metadataText = data.metadata;
+                }
                 $('#metadataSection').show();
-                $('#metadataContent').text(typeof data.metadata === 'string' ? 
-                    JSON.stringify(JSON.parse(data.metadata), null, 2) : 
-                    JSON.stringify(data.metadata, null, 2));
+                $('#metadataContent').text(metadataText);
             } else {
                 $('#metadataSection').hide();
             }
@@ -273,10 +287,9 @@ function showAuditContext(auditId) {
             if (xhr.responseJSON && xhr.responseJSON.message) {
                 errorMessage = xhr.responseJSON.message;
             }
-            // Show error in message field only
-            $('#audit-message').html('<div class="alert alert-danger"><i class="fas fa-exclamation-triangle me-2"></i>' + errorMessage + '</div>');
-            $('#dataChangesSection').hide();
-            $('#metadataSection').hide();
+            $('#auditContextModal .modal-body').html(
+                '<div class="alert alert-danger"><i class="fas fa-exclamation-triangle me-2"></i>' + errorMessage + '</div>'
+            );
         });
 }
 

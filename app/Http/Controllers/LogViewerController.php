@@ -9,6 +9,7 @@ use Illuminate\Http\Request;
 
 class LogViewerController extends Controller
 {
+    // ...existing code...
     protected $logService;
     protected $exportService;
 
@@ -59,6 +60,17 @@ class LogViewerController extends Controller
     {
         $log = SystemLog::findOrFail($id);
         return response()->json($log->context);
+    }
+
+    /**
+     * Return system log details for modal AJAX.
+     */
+    public function systemContext($id)
+    {
+        $log = \App\Models\SystemLog::findOrFail($id);
+        // Optionally format context as JSON string if needed
+        $log->context = is_array($log->context) ? json_encode($log->context) : $log->context;
+        return response()->json($log);
     }
 
     public function getAuditContext($id)

@@ -58,6 +58,7 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/export/{format?}', [LogViewerController::class, 'export'])->name('export');
         Route::get('/context/{id}', [LogViewerController::class, 'getContext'])->name('context');
         Route::get('/audit-context/{id}', [LogViewerController::class, 'getAuditContext'])->name('audit-context');
+    Route::get('/system-context/{id}', [LogViewerController::class, 'systemContext'])->name('system-context');
         Route::get('/filtered', [LogViewerController::class, 'getFilteredLogs'])->name('filtered');
         Route::get('/audit', [LogViewerController::class, 'auditTrail'])->name('audit');
         Route::get('/webhooks', [LogViewerController::class, 'webhookLogs'])->name('webhooks');

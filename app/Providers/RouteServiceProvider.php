@@ -38,6 +38,10 @@ class RouteServiceProvider extends ServiceProvider
             Route::middleware('web')
                 ->group(base_path('routes/web.php'));
         });
+
+    // Register Sanctum abilities middleware aliases using Route facade
+    Route::aliasMiddleware('abilities', \Laravel\Sanctum\Http\Middleware\CheckAbilities::class);
+    Route::aliasMiddleware('ability', \Laravel\Sanctum\Http\Middleware\CheckForAnyAbility::class);
     }
 
     /**
@@ -59,6 +63,6 @@ class RouteServiceProvider extends ServiceProvider
      */
     public function configureMiddleware(): void
     {
-        $this->router->aliasMiddleware('validate.transaction', \App\Http\Middleware\ValidateTransaction::class);
+        Route::aliasMiddleware('validate.transaction', \App\Http\Middleware\ValidateTransaction::class);
     }
 }

@@ -60,12 +60,41 @@
                       @endif
                     </td>
                     <td>
+                      @php
+                        $latestToken = $terminal->tokens->last();
+                      @endphp
                       <div class="input-group">
-                        <input type="password" class="form-control api-key-input" value="{{ $terminal->api_key }}" readonly style="max-width: 180px;">
-                        <button type="button" class="btn btn-outline-secondary btn-show-api-key" title="Show/Hide"><i class="fa fa-eye"></i></button>
-                        <button type="button" class="btn btn-outline-secondary btn-copy-api-key" title="Copy"><i class="fa fa-copy"></i></button>
+                        <input type="text" class="form-control" value="{{ $latestToken ? $latestToken->name : '' }}" readonly style="max-width: 180px;">
+                        <span class="input-group-text" title="Token Created">{{ $latestToken ? $latestToken->created_at->format('Y-m-d H:i') : '' }}</span>
                       </div>
                     </td>
+@if(session('bearer_token'))
+  <div class="modal fade" id="newTokenModal" tabindex="-1" aria-labelledby="newTokenModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title" id="newTokenModalLabel">New API Token</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div class="alert alert-success">
+            <strong>Copy this token now. It will not be shown again:</strong>
+            <input type="text" class="form-control mt-2" value="{{ session('bearer_token') }}" readonly onclick="this.select();">
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      var newTokenModal = new bootstrap.Modal(document.getElementById('newTokenModal'));
+      newTokenModal.show();
+    });
+  </script>
+@endif
                     <td>
                       <form method="POST" action="{{ route('terminal-tokens.regenerate', $terminal->id) }}" class="d-inline">
                         @csrf
@@ -105,6 +134,7 @@
 <script src="{{ asset('plugins/datatables-buttons/js/buttons.print.min.js') }}"></script>
 <script src="{{ asset('plugins/datatables-buttons/js/buttons.colVis.min.js') }}"></script>
 <script src="{{ asset('plugins/toastr/toastr.min.js') }}"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 
 <script>
 $(function () {
