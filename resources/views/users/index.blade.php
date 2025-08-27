@@ -10,7 +10,7 @@
 @section('content')
 
 
-<div class="container py-4">
+<div class="container-fluid">
     <div class="card">
         <div class="card-header bg-primary">
             <div class="d-flex justify-content-between align-items-center">
