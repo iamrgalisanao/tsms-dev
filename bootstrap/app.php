@@ -28,6 +28,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'transform.text.format' => \App\Http\Middleware\TransformTextFormat::class,
             'rate.limit' => \App\Http\Middleware\RateLimitMiddleware::class,
+            'role' => \Spatie\Permission\Middleware\RoleMiddleware::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {

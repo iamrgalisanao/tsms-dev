@@ -1,5 +1,12 @@
 <?php
 
+// Dashboard API endpoints (for frontend dashboard)
+use App\Http\Controllers\DashboardController;
+Route::get('dashboard/metrics', [DashboardController::class, 'apiMetrics']);
+Route::get('dashboard/charts', [DashboardController::class, 'apiCharts']);
+Route::get('dashboard/transactions', [DashboardController::class, 'apiTransactions']);
+Route::get('dashboard/audit-logs', [DashboardController::class, 'apiAuditLogs']);
+
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\DB;

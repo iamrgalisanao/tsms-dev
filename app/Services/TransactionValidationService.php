@@ -777,15 +777,15 @@ class TransactionValidationService
             }
         }
 
-        // 3) Timestamp must be within the last 30 days and not in the future
+        // 3) Timestamp must be for the current day only
         $now = Carbon::now();
         $txTime = Carbon::parse($transaction->transaction_timestamp);
 
-        if ($txTime->lt($now->copy()->subDays(self::MAX_TRANSACTION_AGE_DAYS))) {
+        if (!$txTime->isSameDay($now)) {
             $errors[] = sprintf(
-                'Transaction is too old (%s). Transactions older than %d days are not allowed.',
-                $txTime->format('Y-m-d H:i:s'),
-                self::MAX_TRANSACTION_AGE_DAYS
+                'Transaction rejected: Only transactions dated today (%s) are accepted. Provided timestamp: %s.',
+                $now->format('Y-m-d'),
+                $txTime->format('Y-m-d')
             );
         }
         if ($txTime->gt($now)) {

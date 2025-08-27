@@ -4,59 +4,10 @@
 
 @section('content')
 
-  <!-- Summary Cards -->
-  <div class="row mb-4">
-    <div class="col-md-3 col-sm-6 col-12">
-      <div class="info-box">
-        <span class="info-box-icon bg-danger">
-          <i class="far fa-bookmark"></i>
-        </span>
-        <div class="info-box-content">
-          <span class="info-box-text">Total Tenants</span>
-          <span class="info-box-number">{{ $tenants ?? 0 }}</span>
-        </div>
-      </div>
-    </div>
-
-    <div class="col-md-3 col-sm-6 col-12">
-      <div class="info-box">
-        <span class="info-box-icon bg-danger">
-          <i class="fa fa-desktop"></i>
-        </span>
-        <div class="info-box-content">
-          <span class="info-box-text">Total Terminals</span>
-          <span class="info-box-number">{{ $terminalCount ?? 0 }}</span>
-        </div>
-      </div>
-    </div>
-
-     <div class="col-md-3 col-sm-6 col-12">
-      <div class="info-box">
-        <span class="info-box-icon bg-danger">
-          <i class="fas fa-money-bill"></i>
-        </span>
-        <div class="info-box-content">
-          <span class="info-box-text">Transactions</span>
-          <span class="info-box-number">{{ $recentTransactionCount }}</span>
-        </div>
-      </div>
-    </div>
-
-   
-    
-   
-
-    <div class="col-md-3 col-sm-6 col-12">
-      <div class="info-box">
-        <span class="info-box-icon bg-danger">
-          <i class="fas fa-sad-tear"></i>
-        </span>
-        <div class="info-box-content">
-          <span class="info-box-text">Errors</span>
-          <span class="info-box-number">{{ $errorCount }}</span>
-        </div>
-      </div>
-    </div>
+  <!-- Dynamic Dashboard Metrics -->
+  <div class="row mb-4" id="dashboard-metrics">
+    <!-- Metrics will be loaded here by JS -->
+  </div>
 
   </div> 
 
@@ -99,8 +50,15 @@
     </div>
   </div> --}}
 
-  <!-- Transaction Metrics -->
-  {{-- @include('transactions.partials.dashboard-metrics') --}}
+  <!-- Transaction Metrics Chart -->
+  <div class="card mb-4">
+    <div class="card-header">
+      <h5 class="card-title mb-0">Transaction Metrics (Last 7 Days)</h5>
+    </div>
+    <div class="card-body">
+      <canvas id="dashboardChart" height="120"></canvas>
+    </div>
+  </div>
 
   <!-- Terminal Enrollment History Chart -->
   {{-- <div class="card mb-4">
@@ -149,16 +107,51 @@
     </div>
   </div> --}}
 
-  <!-- Recent Transactions -->
+  <!-- Recent Transactions (AJAX) -->
   <div class="card mt-4">
     <div class="card-header d-flex justify-content-between align-items-center">
       <h5 class="mb-0">Recent Transactions</h5>
-      <!-- <a href="{{ route('transactions.index') }}" class="btn btn-primary btn-sm">
-        <i class="fas fa-list"></i> View All
-      </a> -->
     </div>
     <div class="card-body">
-      @include('transactions.partials.transaction-table', ['transactions' => $recentTransactions])
+      <div class="table-responsive">
+        <table class="table table-striped" id="transactions-table">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Terminal</th>
+              <th>Tenant</th>
+              <th>Amount</th>
+              <th>Date</th>
+            </tr>
+          </thead>
+          <tbody>
+            <!-- Transactions will be loaded here by JS -->
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  <!-- Audit Logs (AJAX, RBAC protected) -->
+  <div class="card mt-4">
+    <div class="card-header">
+      <h5 class="mb-0">Audit Logs</h5>
+    </div>
+    <div class="card-body">
+      <div class="table-responsive">
+        <table class="table table-striped" id="audit-logs-table">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>User</th>
+              <th>Action</th>
+              <th>Date</th>
+            </tr>
+          </thead>
+          <tbody>
+            <!-- Audit logs will be loaded here by JS -->
+          </tbody>
+        </table>
+      </div>
     </div>
   </div>
 
@@ -168,50 +161,120 @@
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
 document.addEventListener('DOMContentLoaded', function() {
-  const canvas = document.getElementById('terminalEnrollmentChart');
-  if (canvas) {
-    const ctx = canvas.getContext('2d');
-    const data = @json($enrollmentData ?? []);
-    new Chart(ctx, {
-      type: 'line',
-      data: {
-        labels: data.labels ?? [],
-        datasets: [{
-          label: 'Total Terminals',
-          data: data.totalTerminals ?? [],
-          borderColor: 'rgb(59, 130, 246)',
-          backgroundColor: 'rgba(59, 130, 246, 0.1)',
-          fill: true
-        }, {
-          label: 'Active Terminals',
-          data: data.activeTerminals ?? [],
-          borderColor: 'rgb(16, 185, 129)',
-          backgroundColor: 'rgba(16, 185, 129, 0.1)',
-          fill: true
-        }, {
-          label: 'New Enrollments',
-          data: data.newEnrollments ?? [],
-          type: 'bar',
-          backgroundColor: 'rgba(245, 158, 11, 0.5)',
-          borderColor: 'rgb(245, 158, 11)'
-        }]
-      },
-      options: {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-          legend: {
-            position: 'top'
-          }
+  // Load dashboard metrics
+  fetch('/api/dashboard/metrics')
+    .then(res => res.json())
+    .then(data => {
+      const metricsHtml = `
+        <div class="col-md-3 col-sm-6 col-12">
+          <div class="info-box">
+            <span class="info-box-icon bg-danger"><i class="far fa-bookmark"></i></span>
+            <div class="info-box-content">
+              <span class="info-box-text">Total Sales Today</span>
+              <span class="info-box-number">${data.total_sales ?? 0}</span>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-3 col-sm-6 col-12">
+          <div class="info-box">
+            <span class="info-box-icon bg-danger"><i class="fa fa-desktop"></i></span>
+            <div class="info-box-content">
+              <span class="info-box-text">Total Transactions</span>
+              <span class="info-box-number">${data.total_transactions ?? 0}</span>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-3 col-sm-6 col-12">
+          <div class="info-box">
+            <span class="info-box-icon bg-danger"><i class="fas fa-money-bill"></i></span>
+            <div class="info-box-content">
+              <span class="info-box-text">Voided Transactions</span>
+              <span class="info-box-number">${data.voided_transactions ?? 0}</span>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-3 col-sm-6 col-12">
+          <div class="info-box">
+            <span class="info-box-icon bg-danger"><i class="fas fa-sad-tear"></i></span>
+            <div class="info-box-content">
+              <span class="info-box-text">Active Terminals</span>
+              <span class="info-box-number">${data.active_terminals ?? 0}</span>
+            </div>
+          </div>
+        </div>
+      `;
+      document.getElementById('dashboard-metrics').innerHTML = metricsHtml;
+    });
+
+  // Load dashboard chart
+  fetch('/api/dashboard/charts')
+    .then(res => res.json())
+    .then(data => {
+      const ctx = document.getElementById('dashboardChart').getContext('2d');
+      new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: data.labels,
+          datasets: [
+            {
+              label: 'Sales',
+              data: data.sales,
+              borderColor: 'rgb(59, 130, 246)',
+              backgroundColor: 'rgba(59, 130, 246, 0.1)',
+              fill: true
+            },
+            {
+              label: 'Volume',
+              data: data.volume,
+              borderColor: 'rgb(16, 185, 129)',
+              backgroundColor: 'rgba(16, 185, 129, 0.1)',
+              fill: true
+            }
+          ]
         },
-        scales: {
-          y: {
-            beginAtZero: true
-          }
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { position: 'top' } },
+          scales: { y: { beginAtZero: true } }
         }
+      });
+    });
+
+  // Load recent transactions
+  fetch('/api/dashboard/transactions')
+    .then(res => res.json())
+    .then(transactions => {
+      const tbody = document.querySelector('#transactions-table tbody');
+      tbody.innerHTML = transactions.map(tx => `
+        <tr>
+          <td>${tx.id}</td>
+          <td>${tx.terminal_id}</td>
+          <td>${tx.tenant_id}</td>
+          <td>${tx.gross_sales}</td>
+          <td>${tx.transaction_timestamp}</td>
+        </tr>
+      `).join('');
+    });
+
+  // Load audit logs (RBAC protected)
+  fetch('/api/dashboard/audit-logs')
+    .then(res => res.json())
+    .then(logs => {
+      const tbody = document.querySelector('#audit-logs-table tbody');
+      if (Array.isArray(logs)) {
+        tbody.innerHTML = logs.map(log => `
+          <tr>
+            <td>${log.id}</td>
+            <td>${log.user_id ?? ''}</td>
+            <td>${log.action ?? ''}</td>
+            <td>${log.created_at ?? ''}</td>
+          </tr>
+        `).join('');
+      } else {
+        tbody.innerHTML = `<tr><td colspan="4">${logs.error ?? 'No logs available'}</td></tr>`;
       }
     });
-  }
 });
 </script>
 @endpush

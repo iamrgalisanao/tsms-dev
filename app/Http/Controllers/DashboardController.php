@@ -100,6 +100,67 @@ class DashboardController extends Controller
         ];
     }
 
+    // API: GET /api/dashboard/metrics
+    public function apiMetrics(Request $request)
+    {
+        $today = Carbon::today();
+    $totalSales = Transaction::whereDate('transaction_timestamp', $today)->sum('base_amount');
+        $totalTransactions = Transaction::whereDate('transaction_timestamp', $today)->count();
+        // Count transactions voided today using 'voided_at' timestamp
+        $voidedTransactions = Transaction::whereDate('voided_at', $today)->count();
+        $activeTerminals = PosTerminal::where('is_active', true)->count();
+
+        return response()->json([
+            'total_sales' => $totalSales,
+            'total_transactions' => $totalTransactions,
+            'voided_transactions' => $voidedTransactions,
+            'active_terminals' => $activeTerminals,
+        ]);
+    }
+
+    // API: GET /api/dashboard/charts
+    public function apiCharts(Request $request)
+    {
+        $days = 7;
+        $labels = [];
+        $salesData = [];
+        $volumeData = [];
+        for ($i = $days - 1; $i >= 0; $i--) {
+            $date = Carbon::today()->subDays($i);
+            $labels[] = $date->format('Y-m-d');
+            $salesData[] = Transaction::whereDate('transaction_timestamp', $date)->sum('base_amount');
+            $volumeData[] = Transaction::whereDate('transaction_timestamp', $date)->count();
+        }
+        return response()->json([
+            'labels' => $labels,
+            'sales' => $salesData,
+            'volume' => $volumeData,
+        ]);
+    }
+
+    // API: GET /api/dashboard/transactions
+    public function apiTransactions(Request $request)
+    {
+        $query = Transaction::query();
+        if ($request->has('date')) {
+            $query->whereDate('transaction_timestamp', $request->input('date'));
+        }
+        $transactions = $query->orderByDesc('transaction_timestamp')->limit(50)->get();
+        return response()->json($transactions);
+    }
+
+    // API: GET /api/dashboard/audit-logs
+    public function apiAuditLogs(Request $request)
+    {
+        // RBAC: Only admins/managers
+        if (!auth()->user() || !auth()->user()->hasAnyRole(['admin', 'manager'])) {
+            return response()->json(['error' => 'Forbidden'], 403);
+        }
+        // Example: fetch from AuditLog model
+        $logs = \App\Models\AuditLog::orderByDesc('created_at')->limit(50)->get();
+        return response()->json($logs);
+    }
+
     // protected function getEnrollmentData()
     // {
     //     $dates = collect(range(30, 0))->map(function($days) {

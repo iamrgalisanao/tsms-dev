@@ -1,4 +1,3 @@
-
 <?php
 
 use Illuminate\Support\Facades\Route;
@@ -18,6 +17,7 @@ use App\Http\Controllers\TestTransactionController;
 use App\Http\Controllers\SystemLogController;
 use App\Http\Controllers\LogController;
 use App\Http\Controllers\McpController;
+use App\Http\Controllers\UserController;
 
 
 
@@ -150,4 +150,9 @@ Route::middleware(['auth'])->group(function () {
 
     // Logs export route
     Route::get('/logs/export/{format}', [App\Http\Controllers\LogExportController::class, 'export'])->name('logs.export');
+
+    // User Management Routes - RBAC protected
+    Route::middleware(['role:admin|manager'])->group(function () {
+        Route::resource('users', UserController::class);
+    });
 });

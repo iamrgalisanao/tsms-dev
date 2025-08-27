@@ -50,7 +50,7 @@
             </a>
         </li>
 
-        <li class="nav-item">
+        {{-- <li class="nav-item">
             <a href="{{ route('transactions.logs.index') }}"
             class="nav-link {{ Request::routeIs('transactions.logs.*') ? 'active' : '' }}">
             <i class="nav-icon fas fa-exchange-alt text-white"></i> 
@@ -64,7 +64,7 @@
             <i class="nav-icon fas fa-sync text-white"></i> 
             <p class="text-white"> History </p>
             </a>
-        </li>
+        </li> --}}
 
         <li class="nav-item">
             <a href="{{ route('system-logs.index') }}" class="nav-link {{ Request::routeIs('system-logs.*') ? 'active' : '' }}">
@@ -87,6 +87,16 @@
             <p class="text-white">Terminal Tokens</p>
             </a>
         </li>
+
+        {{-- User Management --}}
+        @if(auth()->user() && auth()->user()->hasAnyRole(['admin', 'manager']))
+        <li class="nav-item">
+            <a href="{{ route('users.index') }}" class="nav-link {{ Request::routeIs('users.*') ? 'active' : '' }}">
+                <i class="nav-icon fas fa-users text-white"></i>
+                <p class="text-white">User Management</p>
+            </a>
+        </li>
+        @endif
 
       {{-- Logout sticks to bottom --}}
       <li class="nav-item d-sm-inline-block mt-auto">
