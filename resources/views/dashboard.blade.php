@@ -12,13 +12,12 @@
 @endpush
 
 @section('content')
-
+<div class="container-fluid">
   <!-- Dynamic Dashboard Metrics -->
   <div class="row mb-4" id="dashboard-metrics">
     <!-- Metrics will be loaded here by JS -->
   </div>
 
-  </div> 
 
   <!-- POS Providers Section -->
   {{-- <div class="card mb-4">
@@ -177,7 +176,7 @@
         </table>
     </div>
   </div>
-
+</div>
 @endsection
 
 @push('scripts')
