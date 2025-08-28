@@ -33,6 +33,7 @@ class DashboardController extends Controller
         $errorCount = \App\Models\TransactionJob::where('created_at', '>=', now()->subDays(7))
             ->where('job_status', 'FAILED')
             ->count();
+        $auditLogs = \App\Models\AuditLog::with('user')->orderByDesc('created_at')->limit(50)->get();
 
         return view('dashboard', compact(
             'metrics',
@@ -40,7 +41,8 @@ class DashboardController extends Controller
             // 'providers',
             'recentTransactions',
             'recentTransactionCount',
-            'errorCount'
+            'errorCount',
+            'auditLogs'
         ));
     }
 
