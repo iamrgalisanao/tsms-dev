@@ -127,6 +127,7 @@
           <thead>
             <tr>
               <th>ID</th>
+              <th>Tenant Code</th>
               <th>Terminal</th>
               <th>Tenant</th>
               <th>Amount</th>
@@ -137,9 +138,10 @@
             @foreach($recentTransactions as $tx)
             <tr>
               <td>{{ $tx->id }}</td>
+              <td>{{ $tx->customer_code }}</td>
               <td>{{ $tx->terminal_id }}</td>
               <td>{{ $tx->tenant_id }}</td>
-              <td>{{ $tx->gross_sales }}</td>
+              <td>{{ $tx->base_amount }}</td>
               <td>{{ $tx->transaction_timestamp }}</td>
             </tr>
             @endforeach
