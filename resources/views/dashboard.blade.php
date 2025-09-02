@@ -140,7 +140,7 @@
               <td>{{ $tx->id }}</td>
               <td>{{ $tx->customer_code }}</td>
               <td>{{ $tx->terminal_id }}</td>
-              <td>{{ $tx->tenant_id }}</td>
+                <td>{{ $tx->tenant->trade_name ?? 'Unknown' }}</td>
               <td>{{ $tx->base_amount }}</td>
               <td>{{ $tx->transaction_timestamp }}</td>
             </tr>
