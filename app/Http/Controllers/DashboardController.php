@@ -143,12 +143,14 @@ class DashboardController extends Controller
     // API: GET /api/dashboard/transactions
     public function apiTransactions(Request $request)
     {
-        $query = Transaction::query();
+        // include tenant/terminal relations and precompute adjustments sum for efficient rendering
+        $query = Transaction::with(['terminal', 'tenant'])
+            ->withSum('adjustments as adjustments_sum', 'amount');
         if ($request->has('date')) {
             $query->whereDate('transaction_timestamp', $request->input('date'));
         }
-        $transactions = $query->orderByDesc('transaction_timestamp')->limit(50)->get();
-        return response()->json($transactions);
+    $transactions = $query->orderByDesc('transaction_timestamp')->limit(50)->get();
+    return \App\Http\Resources\TransactionResource::collection($transactions);
     }
 
     // API: GET /api/dashboard/audit-logs
@@ -207,11 +209,14 @@ class DashboardController extends Controller
 
     protected function getRecentTransactions()
     {
-        return Transaction::with(['terminal', 'tenant'])
+        $transactions = Transaction::with(['terminal', 'tenant'])
+            ->withSum('adjustments as adjustments_sum', 'amount')
             ->select(['*']) // Ensure all columns are selected
             ->latest()
             ->take(10)
             ->get();
+
+    return $transactions;
     }
 
     protected function getTransactionMetrics()

@@ -368,4 +368,4 @@ Route::post('/transactions/bulk', [ApiTransactionController::class, 'bulk'])
 // Route::post('api/v1/transactions/{transaction_id}/void', [\App\Http\Controllers\API\V1\TransactionController::class, 'void']);
 
 // Register the new endpoint for receiving voided transactions in the webapp
-Route::post('/transactions/void', [\App\Http\Controllers\Api\VoidTransactionController::class, 'receive']);
+// Route::post('/transactions/void', [\App\Http\Controllers\Api\VoidTransactionController::class, 'receive']);

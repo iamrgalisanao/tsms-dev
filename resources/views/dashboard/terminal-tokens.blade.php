@@ -69,7 +69,7 @@
                       </div>
                     </td>
 @if(session('bearer_token'))
-  <div class="modal fade" id="newTokenModal" tabindex="-1" aria-labelledby="newTokenModalLabel" aria-hidden="true">
+  <div class="modal fade" id="newTokenModal" tabindex="-1" aria-labelledby="newTokenModalLabel" role="dialog" aria-modal="true">
     <div class="modal-dialog">
       <div class="modal-content">
         <div class="modal-header">
@@ -79,7 +79,7 @@
         <div class="modal-body">
           <div class="alert alert-success">
             <strong>Copy this token now. It will not be shown again:</strong>
-            <input type="text" class="form-control mt-2" value="{{ session('bearer_token') }}" readonly onclick="this.select();">
+            <input id="newApiTokenInput" type="text" class="form-control mt-2" value="{{ session('bearer_token') }}" readonly onclick="this.select();">
           </div>
         </div>
         <div class="modal-footer">
@@ -90,8 +90,37 @@
   </div>
   <script>
     document.addEventListener('DOMContentLoaded', function() {
-      var newTokenModal = new bootstrap.Modal(document.getElementById('newTokenModal'));
-      newTokenModal.show();
+      // Wait for Bootstrap to be available then show modal and focus input after it's fully shown.
+      function showWhenReady() {
+        if (typeof bootstrap === 'undefined' || !document.getElementById('newTokenModal')) {
+          setTimeout(showWhenReady, 50);
+          return;
+        }
+        var modalEl = document.getElementById('newTokenModal');
+        var newTokenModal = new bootstrap.Modal(modalEl);
+        // Focus the input only after the modal 'shown' event to avoid focusing an element
+        // while an ancestor is still aria-hidden (accessibility warning).
+        modalEl.addEventListener('shown.bs.modal', function () {
+          var tokenInput = document.getElementById('newApiTokenInput');
+          if (tokenInput) {
+            try { tokenInput.focus(); } catch (e) {}
+          }
+        }, { once: true });
+
+        // Ensure we fully cleanup when modal is hidden so the page is not left blocked.
+        modalEl.addEventListener('hidden.bs.modal', function () {
+          try { newTokenModal.dispose(); } catch (e) {}
+          // Remove Bootstrap modal-open class and any leftover backdrops
+          document.body.classList.remove('modal-open');
+          document.querySelectorAll('.modal-backdrop').forEach(function(b) { b.remove(); });
+          // Restore focus to a sensible element so keyboard users are not trapped
+          var restore = document.querySelector('input[name="terminal_id"]') || document.querySelector('button') || document.body;
+          try { restore && restore.focus(); } catch (e) {}
+        }, { once: true });
+
+        newTokenModal.show();
+      }
+      showWhenReady();
     });
   </script>
 @endif

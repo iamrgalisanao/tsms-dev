@@ -17,38 +17,49 @@ class TerminalAuthController extends Controller
     {
         try {
             $validated = $request->validate([
-                'tenant_code' => 'required|exists:tenants,code',
-                'terminal_uid' => 'required|string|unique:pos_terminals,terminal_uid',
-                'provider_code' => 'required|exists:pos_providers,code',
+                'customer_code' => 'required|exists:tenants,customer_code',
+                'serial_number' => 'required|string|unique:pos_terminals,serial_number',
+                'provider_name' => 'nullable|string', // Optional - will create or find provider
+                'callback_url' => 'nullable|url',
+                'machine_number' => 'nullable|string',
             ]);
 
-            // Find the tenant and provider
-            $tenant = Tenant::where('code', $validated['tenant_code'])->firstOrFail();
-            $provider = PosProvider::where('code', $validated['provider_code'])->firstOrFail();
+            // Find tenant by customer_code
+            $tenant = Tenant::where('customer_code', $validated['customer_code'])->firstOrFail();
+
+            // Handle provider - create if doesn't exist
+            $provider = $this->findOrCreateProvider($validated['provider_name'] ?? 'Default Provider');
 
             // Create the terminal
             $terminal = PosTerminal::create([
                 'tenant_id' => $tenant->id,
                 'provider_id' => $provider->id,
-                'terminal_uid' => $validated['terminal_uid'],
+                'serial_number' => $validated['serial_number'],
+                'machine_number' => $validated['machine_number'] ?? null,
+                'callback_url' => $validated['callback_url'] ?? null,
+                'status_id' => 1, // Active status
+                'is_active' => true,
                 'registered_at' => now(),
-                'enrolled_at' => now(),
-                'status' => 'active',
+                'api_key' => \Illuminate\Support\Str::random(32), // Generate API key
             ]);
 
             // Generate Sanctum token
             $token = $terminal->createToken(
-                'terminal-' . $terminal->terminal_uid,
-                ['transaction:create', 'heartbeat:send']
+                'terminal-' . $terminal->serial_number,
+                ['transaction:create', 'transaction:read', 'transaction:status', 'heartbeat:send']
             )->plainTextToken;
 
-            // Update provider statistics for today
+            // Update provider statistics
             $this->updateProviderStatistics($provider->id);
 
             return response()->json([
                 'status' => 'success',
-                'token' => $token,
+                'message' => 'Terminal registered successfully',
                 'terminal_id' => $terminal->id,
+                'serial_number' => $terminal->serial_number,
+                'token' => $token,
+                'provider' => $provider->name,
+                'tenant' => $tenant->trade_name,
             ]);
         } catch (\Throwable $e) {
             return response()->json([
@@ -59,8 +70,25 @@ class TerminalAuthController extends Controller
     }
 
     /**
-     * Update provider statistics after terminal registration
+     * Find or create a POS provider
      */
+    private function findOrCreateProvider($providerName)
+    {
+        // Try to find existing provider by name
+        $provider = PosProvider::where('name', $providerName)->first();
+
+        if (!$provider) {
+            // Create new provider if doesn't exist
+            $provider = PosProvider::create([
+                'name' => $providerName,
+                'contact_email' => 'support@' . strtolower(str_replace(' ', '', $providerName)) . '.com',
+                'contact_phone' => 'N/A',
+                'status' => 'active',
+            ]);
+        }
+
+        return $provider;
+    }
     private function updateProviderStatistics($providerId)
     {
         try {

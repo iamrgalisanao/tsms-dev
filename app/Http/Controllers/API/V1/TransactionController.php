@@ -13,6 +13,7 @@ use App\Jobs\CheckTransactionFailureThresholdsJob;
 use App\Services\PayloadChecksumService; // Add this import
 use App\Services\NotificationService;
 use App\Http\Requests\TSMSTransactionRequest;
+use Laravel\Sanctum\PersonalAccessToken;
 
 class TransactionController extends Controller
 {
@@ -786,17 +787,59 @@ class TransactionController extends Controller
                 'transaction_count' => $request->transaction_count ?? 'missing'
             ]);
 
-            // Handle authentication if token is provided
-            if ($request->header('Authorization')) {
-                $token = str_replace('Bearer ', '', $request->header('Authorization'));
-                Log::info('storeOfficial: Authorization header found', ['token' => $token]);
-                if ($token === 'invalid-token') {
-                    Log::warning('storeOfficial: Invalid token');
-                    return response()->json([
-                        'success' => false,
-                        'message' => 'Unauthorized'
-                    ], 401);
-                }
+            // Enforce terminal token -> terminal binding using Sanctum personal access tokens
+            $bearer = $request->bearerToken();
+            if (empty($bearer)) {
+                Log::warning('storeOfficial: Missing Authorization bearer token');
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized - missing token'
+                ], 401);
+            }
+
+            // Resolve token via Sanctum; this safely handles hashed tokens
+            $personalToken = PersonalAccessToken::findToken($bearer);
+            if (!$personalToken) {
+                Log::warning('storeOfficial: Authorization token not found or invalid', ['terminal_id' => $request->terminal_id]);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized - invalid token'
+                ], 401);
+            }
+
+            // Ensure token is issued to a PosTerminal and matches the terminal_id in the request
+            $tokenableType = $personalToken->tokenable_type ?? null;
+            $tokenableId = $personalToken->tokenable_id ?? null;
+
+            if ($tokenableType !== \App\Models\PosTerminal::class || (int)$tokenableId !== (int)$request->terminal_id) {
+                Log::warning('storeOfficial: Token does not belong to the declared terminal', [
+                    'tokenable_type' => $tokenableType,
+                    'tokenable_id' => $tokenableId,
+                    'declared_terminal_id' => $request->terminal_id
+                ]);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Forbidden - token does not match terminal'
+                ], 403);
+            }
+
+            // Check token expiry if set
+            if (method_exists($personalToken, 'expires_at') && $personalToken->expires_at && $personalToken->expires_at->isPast()) {
+                Log::warning('storeOfficial: Authorization token has expired', ['terminal_id' => $request->terminal_id]);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unauthorized - token expired'
+                ], 401);
+            }
+
+            // Optional: ensure the terminal record is active
+            $terminalFromToken = $personalToken->tokenable;
+            if ($terminalFromToken && method_exists($terminalFromToken, 'isActiveAndValid') && !$terminalFromToken->isActiveAndValid()) {
+                Log::warning('storeOfficial: Terminal associated with token is not active/valid', ['terminal_id' => $request->terminal_id]);
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Forbidden - terminal inactive'
+                ], 403);
             }
 
             // Check for empty request body
@@ -1022,6 +1065,7 @@ class TransactionController extends Controller
                         'hardware_id' => $terminal->serial_number ?? 'UNKNOWN',
                         'transaction_timestamp' => $transactionData['transaction_timestamp'],
                         'base_amount' => $transactionData['base_amount'],
+                        'gross_sales' => $transactionData['gross_sales'] ?? $transactionData['base_amount'],
                         'customer_code' => $transactionData['customer_code'] ?? ($terminal->tenant->company->customer_code ?? 'UNKNOWN'),
                         'promo_status' => $transactionData['promo_status'],
                         'payload_checksum' => $transactionData['payload_checksum'],

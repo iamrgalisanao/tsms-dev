@@ -38,7 +38,7 @@ class TSMSTransactionRequest extends FormRequest
                 'transaction.transaction_id' => 'required|string|uuid',
                 'transaction.transaction_timestamp' => 'required|date_format:Y-m-d\TH:i:s\Z',
                 'transaction.base_amount' => 'required|numeric|min:0',
-                'transaction.gross_sales' => 'required|numeric|min:0',
+                'transaction.gross_sales' => 'nullable|numeric|min:0',
                 'transaction.promo_status' => 'required|string',
                 'transaction.customer_code' => 'required|string',
                 'transaction.payload_checksum' => 'required|string|min:64|max:64',
@@ -55,7 +55,7 @@ class TSMSTransactionRequest extends FormRequest
                 'transactions.*.transaction_id' => 'required|string|uuid',
                 'transactions.*.transaction_timestamp' => 'required|date_format:Y-m-d\TH:i:s\Z',
                 'transactions.*.base_amount' => 'required|numeric|min:0',
-                'transactions.*.gross_sales' => 'required|numeric|min:0',
+                'transactions.*.gross_sales' => 'nullable|numeric|min:0',
                 'transactions.*.promo_status' => 'required|string',
                 'transactions.*.customer_code' => 'required|string',
                 'transactions.*.payload_checksum' => 'required|string|min:64|max:64',
@@ -80,6 +80,9 @@ class TSMSTransactionRequest extends FormRequest
             if (!$this->validateStandardStructure()) {
                 $validator->errors()->add('structure', 'Payload does not follow standard TSMS structure');
             }
+
+            // Validate base_amount = gross_sales + service_charge
+            $this->validateAmountRelationship($validator);
         });
     }
 
@@ -107,6 +110,56 @@ class TSMSTransactionRequest extends FormRequest
         }
         
         return true;
+    }
+
+    /**
+     * Validate that base_amount = gross_sales + service_charge
+     */
+    private function validateAmountRelationship(Validator $validator): void
+    {
+        $payload = $this->all();
+
+        if ($this->input('transaction_count') === 1) {
+            $this->validateSingleTransactionAmounts($validator, $payload['transaction'] ?? []);
+        } else {
+            foreach ($payload['transactions'] ?? [] as $index => $transaction) {
+                $this->validateSingleTransactionAmounts($validator, $transaction, "transactions.{$index}");
+            }
+        }
+    }
+
+    /**
+     * Validate amounts for a single transaction
+     */
+    private function validateSingleTransactionAmounts(Validator $validator, array $transaction, string $prefix = 'transaction'): void
+    {
+        $baseAmount = $transaction['base_amount'] ?? null;
+        $grossSales = $transaction['gross_sales'] ?? null;
+        $adjustments = $transaction['adjustments'] ?? [];
+
+        // If gross_sales is not provided, default it to base_amount (existing behavior)
+        if ($grossSales === null) {
+            return;
+        }
+
+        // Calculate service charge from adjustments
+        $serviceCharge = 0;
+        foreach ($adjustments as $adjustment) {
+            if (isset($adjustment['adjustment_type']) && $adjustment['adjustment_type'] === 'service_charge') {
+                $serviceCharge += $adjustment['amount'] ?? 0;
+            }
+        }
+
+        // Expected base_amount = gross_sales + service_charge
+        $expectedBaseAmount = $grossSales + $serviceCharge;
+
+        // Allow for small rounding differences (0.01 tolerance)
+        if (abs($baseAmount - $expectedBaseAmount) > 0.01) {
+            $validator->errors()->add(
+                "{$prefix}.base_amount",
+                "base_amount ({$baseAmount}) must equal gross_sales ({$grossSales}) + service_charge ({$serviceCharge}) = {$expectedBaseAmount}"
+            );
+        }
     }
 
     /**

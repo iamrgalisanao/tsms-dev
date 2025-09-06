@@ -111,6 +111,7 @@ class Transaction extends Model
         'hardware_id',
         'transaction_timestamp',
         'base_amount',
+        'gross_sales',
         'customer_code',
         'promo_status',
         'payload_checksum',
@@ -144,6 +145,19 @@ class Transaction extends Model
     }
 
     /**
+     * Read-only accessor for net amount (base_amount minus adjustments sum).
+     * Prefers precomputed `adjustments_sum` (from withSum) to avoid N+1 queries.
+     *
+     * @return float
+     */
+    public function getNetAmountAttribute()
+    {
+        $adj = $this->adjustments_sum ?? $this->adjustments()->sum('amount') ?? 0;
+        $base = $this->base_amount ?? 0;
+        return round($base - $adj, 2);
+    }
+
+    /**
      * The attributes that should be cast.
      *
      * @var array<string, string>
@@ -152,11 +166,22 @@ class Transaction extends Model
         'transaction_timestamp' => 'datetime',
         'submission_timestamp' => 'datetime',
         'base_amount' => 'decimal:2',
+        'gross_sales' => 'decimal:2',
         'refund_amount' => 'decimal:2',
         'refund_processed_at' => 'datetime',
         'voided_at' => 'datetime',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
+    ];
+    
+    /**
+     * Attributes to append to the model's array / JSON form.
+     * Exposes computed net_amount (base_amount - adjustments_sum) to API consumers.
+     *
+     * @var array<int, string>
+     */
+    protected $appends = [
+        'net_amount',
     ];
     
     // Add job status constants
