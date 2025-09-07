@@ -87,7 +87,7 @@ class ProcessTransactionJob implements ShouldQueue
 
         $started = microtime(true);
         try {
-            $transaction = Transaction::with([])->find($this->transactionId);
+            $transaction = Transaction::with(['adjustments', 'taxes'])->find($this->transactionId);
             if (!$transaction) {
                     Log::debug('Early exit: transaction not found', [
                         'transaction_pk' => $this->transactionId,
@@ -158,7 +158,7 @@ class ProcessTransactionJob implements ShouldQueue
                 $errorMessage = implode('; ', $flatErrors);
 
                 $validation->update([
-                    'status_code' => Transaction::VALIDATION_STATUS_FAILED,
+                    'status_code' => 'INVALID',
                     'details' => json_encode($errorsArray),
                     'completed_at' => now(),
                 ]);
@@ -168,7 +168,7 @@ class ProcessTransactionJob implements ShouldQueue
                     'error_message' => $errorMessage,
                 ]);
 
-                $transaction->validation_status = Transaction::VALIDATION_STATUS_FAILED;
+                $transaction->validation_status = 'INVALID';
                 $transaction->job_status = Transaction::JOB_STATUS_FAILED;
                 $transaction->last_error = $errorMessage;
                 $transaction->job_attempts = ($transaction->job_attempts ?? 0) + 1;
@@ -352,14 +352,14 @@ class ProcessTransactionJob implements ShouldQueue
             $validation = $transaction->validations()->latest()->first();
             if ($validation && $validation->status_code === Transaction::VALIDATION_STATUS_PENDING) {
                 $validation->update([
-                    'status_code' => Transaction::VALIDATION_STATUS_FAILED,
+                    'status_code' => 'ERROR',
                     'details' => $e->getMessage(),
                     'completed_at' => now(),
                 ]);
             }
             $transaction->job_status = Transaction::JOB_STATUS_FAILED;
             if ($transaction->validation_status !== Transaction::VALIDATION_STATUS_VALID) {
-                $transaction->validation_status = Transaction::VALIDATION_STATUS_FAILED;
+                $transaction->validation_status = 'ERROR';
             }
             $transaction->last_error = $e->getMessage();
             $transaction->job_attempts = ($transaction->job_attempts ?? 0) + 1;

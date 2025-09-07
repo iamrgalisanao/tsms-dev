@@ -603,7 +603,7 @@ class TransactionValidationService
         }
         // Calculate net sales: base_amount - total discounts + total taxes
         $discounts = 0;
-        if (isset($transaction->adjustments) && is_array($transaction->adjustments)) {
+        if ($transaction->adjustments && $transaction->adjustments->count() > 0) {
             foreach ($transaction->adjustments as $adj) {
                 if (isset($adj['amount'])) {
                     $discounts += $adj['amount'];
@@ -611,7 +611,7 @@ class TransactionValidationService
             }
         }
         $taxes = 0;
-        if (isset($transaction->taxes) && is_array($transaction->taxes)) {
+        if ($transaction->taxes && $transaction->taxes->count() > 0) {
             foreach ($transaction->taxes as $tax) {
                 if (isset($tax['amount'])) {
                     $taxes += $tax['amount'];
@@ -704,11 +704,18 @@ class TransactionValidationService
     {
         $adjustments = 0.0;
 
+        // Add service charges
         $adjustments += $transaction->service_charge ?? 0.0;
         $adjustments += $transaction->management_service_charge ?? 0.0;
 
-        $adjustments -= $transaction->discount_amount ?? 0.0;
-        $adjustments -= $transaction->discount_total ?? 0.0;
+        // Subtract discounts from adjustments relationship
+        if ($transaction->adjustments && $transaction->adjustments->count() > 0) {
+            foreach ($transaction->adjustments as $adj) {
+                if (isset($adj['amount'])) {
+                    $adjustments -= $adj['amount']; // Discounts are negative adjustments
+                }
+            }
+        }
 
         return $adjustments;
     }
