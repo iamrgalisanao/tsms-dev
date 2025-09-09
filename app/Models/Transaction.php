@@ -80,8 +80,8 @@ class Transaction extends Model
      */
     public function canRefund(): bool
     {
-        // Only allow refund if not already refunded and base_amount is positive
-        return !$this->isRefunded() && $this->base_amount > 0;
+        // Only allow refund if not already refunded and gross_sales is positive
+        return !$this->isRefunded() && $this->gross_sales > 0;
     }
     // Validation statuses
     public const VALIDATION_STATUS_VALID   = 'VALID';
@@ -110,7 +110,6 @@ class Transaction extends Model
         'transaction_id',
         'hardware_id',
         'transaction_timestamp',
-        'base_amount',
         'gross_sales',
         'vatable_sales',
         'vat_amount',
@@ -151,16 +150,35 @@ class Transaction extends Model
     }
 
     /**
-     * Read-only accessor for net amount (base_amount minus adjustments sum).
-     * Prefers precomputed `adjustments_sum` (from withSum) to avoid N+1 queries.
+     * Read-only accessor for net amount following simplified formula:
+     * net_sales = gross_sales - other_tax (excluding VAT)
      *
      * @return float
      */
     public function getNetAmountAttribute()
     {
-        $adj = $this->adjustments_sum ?? $this->adjustments()->sum('amount') ?? 0;
-        $base = $this->base_amount ?? 0;
-        return round($base - $adj, 2);
+        // Calculate other_tax sum (excluding VAT) from relationship
+        $otherTaxSum = $this->taxes()
+            ->where('tax_type', '!=', 'VAT')
+            ->sum('amount') ?? 0;
+
+        // Simplified formula: net_sales = gross_sales - other_tax
+        return round($this->gross_sales - $otherTaxSum, 2);
+    }
+
+    /**
+     * Accessor to validate that net_sales follows the formula: net_sales = gross_sales - other_tax
+     *
+     * @return float
+     */
+    public function getCalculatedNetSalesAttribute()
+    {
+        // Calculate other_tax sum (excluding VAT) from relationship
+        $otherTaxSum = $this->taxes()
+            ->where('tax_type', '!=', 'VAT')
+            ->sum('amount') ?? 0;
+
+        return round($this->gross_sales - $otherTaxSum, 2);
     }
 
     /**
@@ -171,7 +189,6 @@ class Transaction extends Model
     protected $casts = [
         'transaction_timestamp' => 'datetime',
         'submission_timestamp' => 'datetime',
-        'base_amount' => 'decimal:2',
         'gross_sales' => 'decimal:2',
         'vatable_sales' => 'decimal:2',
         'vat_amount' => 'decimal:2',
@@ -188,12 +205,13 @@ class Transaction extends Model
     
     /**
      * Attributes to append to the model's array / JSON form.
-     * Exposes computed net_amount (base_amount - adjustments_sum) to API consumers.
+     * Exposes computed values following new formulas to API consumers.
      *
      * @var array<int, string>
      */
     protected $appends = [
         'net_amount',
+        'calculated_net_sales',
     ];
     
     // Add job status constants

@@ -115,47 +115,33 @@ class JobProcessingService
     protected function validateAmounts(Transaction $transaction): bool
     {
         try {
-            // Basic amount validation including service charges and discounts
-            if ($transaction->gross_sales < 0 || 
-                $transaction->net_sales < 0 || 
-                $transaction->vatable_sales < 0 || 
-                ($transaction->management_service_charge ?? 0) < 0 ||
-                ($transaction->discount_total ?? 0) < 0) {
-                Log::warning('Negative amount detected', [
+            // Calculate adjustments sum from relationship (includes discounts, service charges, and other adjustments)
+            $adjustmentsSum = $transaction->adjustments()->sum('amount') ?? 0;
+
+            // Calculate other_tax sum (excluding VAT) from relationship
+            $otherTaxSum = $transaction->taxes()
+                ->where('tax_type', '!=', 'VAT')
+                ->sum('amount') ?? 0;
+
+            // Validate net_sales = gross_sales - other_tax (simplified formula)
+            $expectedNetSales = $transaction->gross_sales - $otherTaxSum;
+            if (abs($transaction->net_sales - $expectedNetSales) > 0.05) {
+                Log::warning('Net sales validation failed', [
                     'transaction_id' => $transaction->transaction_id,
-                    'gross_sales' => $transaction->gross_sales,
                     'net_sales' => $transaction->net_sales,
-                    'vatable_sales' => $transaction->vatable_sales,
-                    'service_charge' => $transaction->management_service_charge,
-                    'discount_total' => $transaction->discount_total
+                    'expected' => $expectedNetSales,
+                    'gross_sales' => $transaction->gross_sales,
+                    'other_tax' => $otherTaxSum
                 ]);
                 return false;
             }
 
-            // Calculate total sales including service charges and discounts
-            $totalSales = $transaction->vatable_sales + 
-                         $transaction->vat_exempt_sales + 
-                         ($transaction->management_service_charge ?? 0) -
-                         ($transaction->discount_total ?? 0);
-
-            // Validate VAT calculation (12% of vatable sales)
-            $expectedVat = round($transaction->vatable_sales * 0.12, 2);
-            $vatDiff = abs($expectedVat - $transaction->vat_amount);
-
-            // Validate net sales (total sales before VAT)
-            $netDiff = abs($totalSales - $transaction->net_sales);
-
-            // Validate gross sales (net sales + VAT)
-            $expectedGross = $totalSales + $transaction->vat_amount;
-            $grossDiff = abs($expectedGross - $transaction->gross_sales);
-
-            // Check differences with tolerance
-            if ($vatDiff > 0.10 || $netDiff > 0.10 || $grossDiff > 0.10) {
-                Log::warning('Amount validation failed', [
+            // Basic positivity checks
+            if ($transaction->gross_sales < 0 || $transaction->net_sales < 0) {
+                Log::warning('Negative amount detected', [
                     'transaction_id' => $transaction->transaction_id,
-                    'vat_diff' => $vatDiff,
-                    'net_diff' => $netDiff,
-                    'gross_diff' => $grossDiff
+                    'gross_sales' => $transaction->gross_sales,
+                    'net_sales' => $transaction->net_sales
                 ]);
                 return false;
             }
@@ -164,6 +150,7 @@ class JobProcessingService
 
         } catch (\Exception $e) {
             Log::error('Amount validation error', [
+                'transaction_id' => $transaction->transaction_id,
                 'error' => $e->getMessage()
             ]);
             return false;

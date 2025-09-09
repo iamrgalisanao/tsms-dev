@@ -242,7 +242,7 @@ Route::get('/v1/recent-test-transactions', function() {
                 'transactions.id',
                 'transactions.transaction_id',
                 'pos_terminals.serial_number as terminal_uid',
-                'transactions.base_amount as gross_sales',
+                'transactions.gross_sales as gross_sales',
                 'transactions.validation_status',
                 'transactions.created_at'
             )

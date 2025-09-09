@@ -37,8 +37,8 @@ class TSMSTransactionRequest extends FormRequest
                 'transaction' => 'required|array',
                 'transaction.transaction_id' => 'required|string|uuid',
                 'transaction.transaction_timestamp' => 'required|date_format:Y-m-d\TH:i:s\Z',
-                'transaction.base_amount' => 'required|numeric|min:0',
-                'transaction.gross_sales' => 'nullable|numeric|min:0',
+                'transaction.gross_sales' => 'required|numeric|min:0',
+                'transaction.net_sales' => 'required|numeric',
                 'transaction.promo_status' => 'required|string',
                 'transaction.customer_code' => 'required|string',
                 'transaction.payload_checksum' => 'required|string|min:64|max:64',
@@ -54,8 +54,8 @@ class TSMSTransactionRequest extends FormRequest
                 'transactions' => 'required|array|min:1',
                 'transactions.*.transaction_id' => 'required|string|uuid',
                 'transactions.*.transaction_timestamp' => 'required|date_format:Y-m-d\TH:i:s\Z',
-                'transactions.*.base_amount' => 'required|numeric|min:0',
-                'transactions.*.gross_sales' => 'nullable|numeric|min:0',
+                'transactions.*.gross_sales' => 'required|numeric|min:0',
+                'transactions.*.net_sales' => 'required|numeric',
                 'transactions.*.promo_status' => 'required|string',
                 'transactions.*.customer_code' => 'required|string',
                 'transactions.*.payload_checksum' => 'required|string|min:64|max:64',
@@ -81,7 +81,7 @@ class TSMSTransactionRequest extends FormRequest
                 $validator->errors()->add('structure', 'Payload does not follow standard TSMS structure');
             }
 
-            // Validate base_amount = gross_sales + service_charge
+            // Validate transaction structure and required fields
             $this->validateAmountRelationship($validator);
         });
     }
@@ -113,7 +113,7 @@ class TSMSTransactionRequest extends FormRequest
     }
 
     /**
-     * Validate that base_amount = gross_sales + service_charge
+     * Validate amount relationships and required fields
      */
     private function validateAmountRelationship(Validator $validator): void
     {
@@ -129,35 +129,104 @@ class TSMSTransactionRequest extends FormRequest
     }
 
     /**
-     * Validate amounts for a single transaction
+     * Validate amounts and structure for a single transaction
      */
     private function validateSingleTransactionAmounts(Validator $validator, array $transaction, string $prefix = 'transaction'): void
     {
-        $baseAmount = $transaction['base_amount'] ?? null;
         $grossSales = $transaction['gross_sales'] ?? null;
+        $netSales = $transaction['net_sales'] ?? null;
         $adjustments = $transaction['adjustments'] ?? [];
+        $taxes = $transaction['taxes'] ?? [];
 
-        // If gross_sales is not provided, default it to base_amount (existing behavior)
-        if ($grossSales === null) {
+        // Validate gross_sales is present and positive
+        if ($grossSales === null || $grossSales < 0) {
+            $validator->errors()->add(
+                "{$prefix}.gross_sales",
+                "gross_sales must be present and non-negative"
+            );
             return;
         }
 
-        // Calculate service charge from adjustments
-        $serviceCharge = 0;
+        // Validate net_sales is present
+        if ($netSales === null) {
+            $validator->errors()->add(
+                "{$prefix}.net_sales",
+                "net_sales must be present"
+            );
+            return;
+        }
+
+        // Calculate expected net_sales = gross_sales - adjustments - other_tax
+        $adjustmentSum = 0;
         foreach ($adjustments as $adjustment) {
-            if (isset($adjustment['adjustment_type']) && $adjustment['adjustment_type'] === 'service_charge') {
-                $serviceCharge += $adjustment['amount'] ?? 0;
+            if (isset($adjustment['amount'])) {
+                $adjustmentSum += $adjustment['amount'];
             }
         }
 
-        // Expected base_amount = gross_sales + service_charge
-        $expectedBaseAmount = $grossSales + $serviceCharge;
+        $otherTaxSum = 0;
+        foreach ($taxes as $tax) {
+            if (isset($tax['tax_type']) && $tax['tax_type'] !== 'VAT' && isset($tax['amount'])) {
+                $otherTaxSum += $tax['amount'];
+            }
+        }
+
+        $expectedNetSales = round($grossSales - $adjustmentSum - $otherTaxSum, 2);
 
         // Allow for small rounding differences (0.01 tolerance)
-        if (abs($baseAmount - $expectedBaseAmount) > 0.01) {
+        if (abs($netSales - $expectedNetSales) > 0.01) {
             $validator->errors()->add(
-                "{$prefix}.base_amount",
-                "base_amount ({$baseAmount}) must equal gross_sales ({$grossSales}) + service_charge ({$serviceCharge}) = {$expectedBaseAmount}"
+                "{$prefix}.net_sales",
+                "net_sales ({$netSales}) must equal gross_sales ({$grossSales}) - adjustments ({$adjustmentSum}) - other_tax ({$otherTaxSum}) = {$expectedNetSales}"
+            );
+        }
+
+        // Validate adjustments array has required structure
+        if (count($adjustments) < 7) {
+            $validator->errors()->add(
+                "{$prefix}.adjustments",
+                "adjustments array must contain at least 7 entries"
+            );
+        }
+
+        // Validate taxes array has required structure
+        if (count($taxes) < 4) {
+            $validator->errors()->add(
+                "{$prefix}.taxes",
+                "taxes array must contain at least 4 entries"
+            );
+        }
+
+        // Validate that required adjustment types are present
+        $requiredAdjustmentTypes = [
+            'promo_discount',
+            'senior_discount',
+            'pwd_discount',
+            'vip_card_discount',
+            'service_charge_distributed_to_employees',
+            'service_charge_retained_by_management',
+            'employee_discount'
+        ];
+
+        $presentTypes = array_column($adjustments, 'adjustment_type');
+        $missingTypes = array_diff($requiredAdjustmentTypes, $presentTypes);
+
+        if (!empty($missingTypes)) {
+            $validator->errors()->add(
+                "{$prefix}.adjustments",
+                "Missing required adjustment types: " . implode(', ', $missingTypes)
+            );
+        }
+
+        // Validate that required tax types are present
+        $requiredTaxTypes = ['VAT', 'VATABLE_SALES', 'SC_VAT_EXEMPT_SALES'];
+        $presentTaxTypes = array_column($taxes, 'tax_type');
+        $missingTaxTypes = array_diff($requiredTaxTypes, $presentTaxTypes);
+
+        if (!empty($missingTaxTypes)) {
+            $validator->errors()->add(
+                "{$prefix}.taxes",
+                "Missing required tax types: " . implode(', ', $missingTaxTypes)
             );
         }
     }
@@ -207,7 +276,7 @@ class TSMSTransactionRequest extends FormRequest
         }
         
         // Validate required field order: scalar fields before payload_checksum before arrays
-        $scalarFields = ['transaction_id', 'transaction_timestamp', 'base_amount', 'gross_sales', 'promo_status', 'customer_code'];
+        $scalarFields = ['transaction_id', 'transaction_timestamp', 'gross_sales', 'net_sales', 'promo_status', 'customer_code'];
         
         foreach ($scalarFields as $field) {
             $fieldPos = array_search($field, $keys);

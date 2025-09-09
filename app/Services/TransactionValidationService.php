@@ -584,11 +584,11 @@ class TransactionValidationService
 
     /**
      * High‐level checks on all monetary fields:
-     *  - gross_sales & net_sales must be positive
+     *  - net_sales must equal gross_sales - other_tax (excluding VAT)
      *  - vatable_sales must be ≥ 0
      *  - If not tax‐exempt, ensure that vat_amount ≈ 12% of vatable_sales (± MAX_VAT_DIFFERENCE)
      *  - Enforce service‐charge ≤ 15% of gross_sales
-     *  - Check that net_sales actually equals (gross_sales – vat_amount + adjustments) within rounding tolerance
+     *  - Check that calculations are consistent
      *
      * @param  Transaction  $transaction
      * @return array   List of error messages (empty if none)
@@ -597,36 +597,40 @@ class TransactionValidationService
     {
         $errors = [];
 
-        // 1) Basic positivity checks
-        if ($transaction->base_amount <= 0) {
-            $errors[] = 'Gross sales amount must be positive.';
-        }
-        // Calculate net sales: base_amount - total discounts + total taxes
-        $discounts = 0;
-        if ($transaction->adjustments && $transaction->adjustments->count() > 0) {
-            foreach ($transaction->adjustments as $adj) {
-                if (isset($adj['amount'])) {
-                    $discounts += $adj['amount'];
-                }
-            }
-        }
-        $taxes = 0;
+        // Calculate other_tax sum (excluding VAT) from relationship
+        $otherTaxSum = 0;
         if ($transaction->taxes && $transaction->taxes->count() > 0) {
             foreach ($transaction->taxes as $tax) {
-                if (isset($tax['amount'])) {
-                    $taxes += $tax['amount'];
+                if (isset($tax['tax_type']) && $tax['tax_type'] !== 'VAT' && isset($tax['amount'])) {
+                    $otherTaxSum += $tax['amount'];
                 }
             }
         }
-        $net_sales = $transaction->base_amount - $discounts + $taxes;
-        if ($net_sales <= 0) {
-            $errors[] = 'Net sales amount must be positive.';
+
+        // 1) Validate net_sales = gross_sales - other_tax
+        $expectedNetSales = $transaction->gross_sales - $otherTaxSum;
+        if (abs($transaction->net_sales - $expectedNetSales) > self::MAX_ROUNDING_DIFFERENCE) {
+            $errors[] = sprintf(
+                'Net sales (%.2f) does not equal gross_sales - other_tax (%.2f - %.2f = %.2f).',
+                $transaction->net_sales,
+                $transaction->gross_sales,
+                $otherTaxSum,
+                $expectedNetSales
+            );
+        }
+
+        // 2) Basic positivity checks
+        if ($transaction->gross_sales <= 0) {
+            $errors[] = 'Gross sales must be positive.';
+        }
+        if ($transaction->net_sales < 0) {
+            $errors[] = 'Net sales cannot be negative.';
         }
         if ($transaction->vatable_sales < 0) {
             $errors[] = 'Vatable sales cannot be negative.';
         }
 
-        // 2) VAT check (only if not tax_exempt and vatable_sales > 0)
+        // 3) VAT check (only if not tax_exempt and vatable_sales > 0)
         if (empty($transaction->tax_exempt) && $transaction->vatable_sales > 0) {
             $expectedVat = round($transaction->vatable_sales * 0.12, 2);
             $actualVat   = round($transaction->vat_amount, 2);
@@ -640,11 +644,8 @@ class TransactionValidationService
             }
         }
 
-        // 3) Service‐charge percentage check
+        // 4) Service‐charge percentage check
         $this->validateServiceCharges($transaction, $errors);
-
-        // 4) Net‐amount reconciliation (gross − vat + adjustments ?= net)
-        $this->validateAmountReconciliation($transaction, $errors);
 
         return $errors;
     }
@@ -673,10 +674,8 @@ class TransactionValidationService
     }
 
     /**
-     * We expect:
-     *    expectedNet = gross_sales – vat_amount + adjustments
-     * where adjustments = (service_charge + management_service_charge – discounts).
-     * If |expectedNet – net_sales| > MAX_ROUNDING_DIFFERENCE, add an error.
+     * Validate that the amount reconciliation follows the simplified formula:
+     * net_sales = gross_sales - other_tax (excluding VAT)
      *
      * @param  Transaction  $transaction
      * @param  array       &$errors
@@ -684,12 +683,26 @@ class TransactionValidationService
      */
     private function validateAmountReconciliation(Transaction $transaction, array &$errors): void
     {
-        $expectedNet = $transaction->gross_sales
-                     - $transaction->vat_amount
-                     + $this->calculateAdjustments($transaction);
+        // Calculate other_tax sum (excluding VAT) from relationship
+        $otherTaxSum = 0;
+        if ($transaction->taxes && $transaction->taxes->count() > 0) {
+            foreach ($transaction->taxes as $tax) {
+                if (isset($tax['tax_type']) && $tax['tax_type'] !== 'VAT' && isset($tax['amount'])) {
+                    $otherTaxSum += $tax['amount'];
+                }
+            }
+        }
 
-        if (abs($expectedNet - $transaction->net_sales) > self::MAX_ROUNDING_DIFFERENCE) {
-            $errors[] = 'Net sales amount does not reconcile with calculations (possible rounding error).';
+        // Validate net_sales = gross_sales - other_tax
+        $expectedNetSales = $transaction->gross_sales - $otherTaxSum;
+        if (abs($transaction->net_sales - $expectedNetSales) > self::MAX_ROUNDING_DIFFERENCE) {
+            $errors[] = sprintf(
+                'Amount reconciliation failed: net_sales (%.2f) should equal gross_sales - other_tax (%.2f - %.2f = %.2f).',
+                $transaction->net_sales,
+                $transaction->gross_sales,
+                $otherTaxSum,
+                $expectedNetSales
+            );
         }
     }
 
