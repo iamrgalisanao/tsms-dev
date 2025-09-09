@@ -427,7 +427,7 @@ $(function () {
     if ($.fn.DataTable.isDataTable(selector)) {
         return;
     }
-    $(selector).DataTable({
+        $(selector).DataTable({
         "responsive": true, 
         "lengthChange": false, 
         "autoWidth": false,
@@ -435,8 +435,9 @@ $(function () {
         "info": true,
         "paging": true,
         "searching": true,
+        "pageLength": 10,
         "language": {
-            "emptyTable": "No transactions available",
+            "emptyTable": "No audit logs available",
             "zeroRecords": "No matching records found",
             "info": "Showing _START_ to _END_ of _TOTAL_ entries",
             "infoEmpty": "Showing 0 to 0 of 0 entries",
@@ -456,7 +457,7 @@ $(function () {
               // { extend: "print", text: "Print", className: "btn btn-sm btn-danger" },
               { extend: "colvis",text: "Cols",  className: "btn btn-lg btn-danger" }
         ]
-    }).buttons().container().appendTo('#transactionsTable_wrapper .col-md-6:eq(0)');
+    }).buttons().container().appendTo('#auditLogsTable_wrapper .col-md-6:eq(0)');
 
     // Toastr notifications
     @if(session('success'))
