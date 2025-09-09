@@ -149,8 +149,8 @@ class DashboardController extends Controller
         if ($request->has('date')) {
             $query->whereDate('transaction_timestamp', $request->input('date'));
         }
-    $transactions = $query->orderByDesc('transaction_timestamp')->limit(50)->get();
-    return \App\Http\Resources\TransactionResource::collection($transactions);
+        $transactions = $query->orderByDesc('transaction_timestamp')->paginate(50);
+        return new \App\Http\Resources\TransactionCollection($transactions);
     }
 
     // API: GET /api/dashboard/audit-logs
