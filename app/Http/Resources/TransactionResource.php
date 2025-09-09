@@ -19,6 +19,7 @@ class TransactionResource extends JsonResource
             'transaction_id' => $this->transaction_id,
             'original_transaction_id' => $this->original_transaction_id,
             'hardware_id' => $this->hardware_id,
+            'terminal_id' => $this->terminal_id,
             'customer_code' => $this->customer_code,
             'promo_status' => $this->promo_status,
 
