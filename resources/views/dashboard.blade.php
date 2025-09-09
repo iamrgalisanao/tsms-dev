@@ -368,7 +368,9 @@ document.addEventListener('DOMContentLoaded', function() {
       const tbody = table.querySelector('tbody');
       if (!tbody) return;
       if (Array.isArray(logs)) {
-        tbody.innerHTML = logs.map(log => `
+        // Limit to 10 records for display
+        const displayLogs = logs.slice(0, 10);
+        tbody.innerHTML = displayLogs.map(log => `
           <tr>
             <td>${log.id}</td>
             <td>${log.user?.name || 'System'}</td>
@@ -376,31 +378,6 @@ document.addEventListener('DOMContentLoaded', function() {
             <td>${log.created_at ?? ''}</td>
           </tr>
         `).join('');
-        // Initialize DataTables for audit logs table
-        if (window.jQuery && window.jQuery.fn.DataTable) {
-          if (!window.jQuery(table).hasClass('dataTable')) {
-            window.jQuery(table).DataTable({
-              pageLength: 10,
-              lengthChange: false,
-              searching: false,
-              ordering: true,
-              info: true,
-              paging: true,
-              language: {
-                emptyTable: "No audit logs available",
-                zeroRecords: "No matching records found",
-                info: "Showing _START_ to _END_ of _TOTAL_ entries",
-                infoEmpty: "Showing 0 to 0 of 0 entries",
-                paginate: {
-                  first: "First",
-                  last: "Last",
-                  next: "Next",
-                  previous: "Previous"
-                }
-              }
-            });
-          }
-        }
       } else {
         tbody.innerHTML = `<tr><td colspan="4">${logs.error ?? 'No logs available'}</td></tr>`;
       }
@@ -437,7 +414,7 @@ $(function () {
         "searching": true,
         "pageLength": 10,
         "language": {
-            "emptyTable": "No audit logs available",
+            "emptyTable": "No transactions available",
             "zeroRecords": "No matching records found",
             "info": "Showing _START_ to _END_ of _TOTAL_ entries",
             "infoEmpty": "Showing 0 to 0 of 0 entries",
@@ -457,7 +434,7 @@ $(function () {
               // { extend: "print", text: "Print", className: "btn btn-sm btn-danger" },
               { extend: "colvis",text: "Cols",  className: "btn btn-lg btn-danger" }
         ]
-    }).buttons().container().appendTo('#auditLogsTable_wrapper .col-md-6:eq(0)');
+    }).buttons().container().appendTo('#transactionsTable_wrapper .col-md-6:eq(0)');
 
     // Toastr notifications
     @if(session('success'))
@@ -483,8 +460,9 @@ $(function () {
         "info": true,
         "paging": true,
         "searching": true,
+        "pageLength": 10,
         "language": {
-            "emptyTable": "No transactions available",
+            "emptyTable": "No audit logs available",
             "zeroRecords": "No matching records found",
             "info": "Showing _START_ to _END_ of _TOTAL_ entries",
             "infoEmpty": "Showing 0 to 0 of 0 entries",
