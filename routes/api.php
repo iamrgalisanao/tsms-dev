@@ -1,12 +1,5 @@
 <?php
 
-// Dashboard API endpoints (for frontend dashboard)
-use App\Http\Controllers\DashboardController;
-Route::get('dashboard/metrics', [DashboardController::class, 'apiMetrics']);
-Route::get('dashboard/charts', [DashboardController::class, 'apiCharts']);
-Route::get('dashboard/transactions', [DashboardController::class, 'apiTransactions']);
-Route::get('dashboard/audit-logs', [DashboardController::class, 'apiAuditLogs']);
-
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\DB;
@@ -20,6 +13,7 @@ use App\Http\Controllers\TerminalTokenController;
 use App\Services\TransactionValidationService;
 use App\Http\Controllers\API\V1\TransactionController as ApiTransactionController;
 use App\Http\Controllers\McpController;
+use App\Http\Controllers\DashboardController;
 
 // MCP endpoint for kirschbaum-development/laravel-loop (public, no auth, CSRF-free)
 Route::post('/mcp', [McpController::class, 'handle']);
@@ -34,6 +28,14 @@ Route::post('/mcp', [McpController::class, 'handle']);
 | be assigned to the "api" middleware group. Make something great!
 |
 */
+
+// Dashboard API endpoints (for frontend dashboard) - within API middleware
+Route::middleware(['api'])->group(function () {
+    Route::get('dashboard/metrics', [DashboardController::class, 'apiMetrics']);
+    Route::get('dashboard/charts', [DashboardController::class, 'apiCharts']);
+    Route::get('dashboard/transactions', [DashboardController::class, 'apiTransactions']);
+    Route::get('dashboard/audit-logs', [DashboardController::class, 'apiAuditLogs']);
+});
 
 // Health check endpoint (public)
 Route::get('/v1/health', function () {

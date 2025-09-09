@@ -106,7 +106,7 @@ class DashboardController extends Controller
     public function apiMetrics(Request $request)
     {
         $today = Carbon::today();
-    $totalSales = Transaction::whereDate('transaction_timestamp', $today)->sum('base_amount');
+    $totalSales = Transaction::whereDate('transaction_timestamp', $today)->sum('gross_sales');
         $totalTransactions = Transaction::whereDate('transaction_timestamp', $today)->count();
         // Count transactions voided today using 'voided_at' timestamp
         $voidedTransactions = Transaction::whereDate('voided_at', $today)->count();
@@ -130,7 +130,7 @@ class DashboardController extends Controller
         for ($i = $days - 1; $i >= 0; $i--) {
             $date = Carbon::today()->subDays($i);
             $labels[] = $date->format('Y-m-d');
-            $salesData[] = Transaction::whereDate('transaction_timestamp', $date)->sum('base_amount');
+            $salesData[] = Transaction::whereDate('transaction_timestamp', $date)->sum('gross_sales');
             $volumeData[] = Transaction::whereDate('transaction_timestamp', $date)->count();
         }
         return response()->json([

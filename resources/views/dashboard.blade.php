@@ -204,7 +204,12 @@
 document.addEventListener('DOMContentLoaded', function() {
   // Load dashboard metrics
   fetch('/api/dashboard/metrics')
-    .then(res => res.json())
+    .then(res => {
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+      }
+      return res.json();
+    })
     .then(data => {
       const metricsHtml = `
         <div class="col-md-3 col-sm-6 col-12">
@@ -245,11 +250,27 @@ document.addEventListener('DOMContentLoaded', function() {
         </div>
       `;
       document.getElementById('dashboard-metrics').innerHTML = metricsHtml;
+    })
+    .catch(error => {
+      console.error('Error loading dashboard metrics:', error);
+      document.getElementById('dashboard-metrics').innerHTML = `
+        <div class="col-12">
+          <div class="alert alert-danger">
+            <i class="fas fa-exclamation-triangle"></i>
+            Error loading dashboard metrics: ${error.message}
+          </div>
+        </div>
+      `;
     });
 
   // Load dashboard chart
   fetch('/api/dashboard/charts')
-    .then(res => res.json())
+    .then(res => {
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+      }
+      return res.json();
+    })
     .then(data => {
       const ctx = document.getElementById('dashboardChart').getContext('2d');
       new Chart(ctx, {
@@ -280,29 +301,69 @@ document.addEventListener('DOMContentLoaded', function() {
           scales: { y: { beginAtZero: true } }
         }
       });
+    })
+    .catch(error => {
+      console.error('Error loading dashboard charts:', error);
+      const chartContainer = document.getElementById('dashboardChart').parentElement;
+      chartContainer.innerHTML = `
+        <div class="alert alert-danger">
+          <i class="fas fa-exclamation-triangle"></i>
+          Error loading chart data: ${error.message}
+        </div>
+      `;
     });
 
   // Load recent transactions
   fetch('/api/dashboard/transactions')
-    .then(res => res.json())
-    .then(transactions => {
-      const tbody = document.querySelector('#transactions-table tbody');
-      tbody.innerHTML = transactions.map(tx => `
-        <tr>
-          <td>${tx.id}</td>
-          <td>${tx.terminal_id}</td>
-          <td>${tx.tenant_id}</td>
-          <td>${tx.gross_sales}</td>
-          <td>${tx.transaction_timestamp}</td>
-        </tr>
-      `).join('');
+    .then(res => {
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+      }
+      return res.json();
+    })
+    .then(data => {
+      // Handle both paginated and direct array responses
+      const transactions = data.data || data;
+      const tbody = document.querySelector('#transactionsTable tbody');
+      if (tbody && Array.isArray(transactions)) {
+        tbody.innerHTML = transactions.slice(0, 10).map(tx => `
+          <tr>
+            <td>${tx.id}</td>
+            <td>${tx.transaction_id}</td>
+            <td>${tx.customer_code}</td>
+            <td>${tx.terminal_id}</td>
+            <td>${tx.tenant?.trade_name || 'Unknown'}</td>
+            <td>${tx.net_sales ? parseFloat(tx.net_sales).toFixed(2) : '0.00'}</td>
+            <td>${tx.transaction_timestamp}</td>
+          </tr>
+        `).join('');
+      }
+    })
+    .catch(error => {
+      console.error('Error loading transactions:', error);
+      const tbody = document.querySelector('#transactionsTable tbody');
+      if (tbody) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="7" class="text-center text-danger">
+              <i class="fas fa-exclamation-triangle"></i>
+              Error loading transactions: ${error.message}
+            </td>
+          </tr>
+        `;
+      }
     });
 
   // Load audit logs (RBAC protected) with DataTables pagination
   fetch('/api/dashboard/audit-logs')
-    .then(res => res.json())
+    .then(res => {
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+      }
+      return res.json();
+    })
     .then(logs => {
-      const table = document.getElementById('audit-logs-table');
+      const table = document.getElementById('auditLogsTable');
       if (!table) return;
       const tbody = table.querySelector('tbody');
       if (!tbody) return;
@@ -310,7 +371,7 @@ document.addEventListener('DOMContentLoaded', function() {
         tbody.innerHTML = logs.map(log => `
           <tr>
             <td>${log.id}</td>
-            <td>${log.user_id ?? ''}</td>
+            <td>${log.user?.name || 'System'}</td>
             <td>${log.action ?? ''}</td>
             <td>${log.created_at ?? ''}</td>
           </tr>
@@ -342,6 +403,20 @@ document.addEventListener('DOMContentLoaded', function() {
         }
       } else {
         tbody.innerHTML = `<tr><td colspan="4">${logs.error ?? 'No logs available'}</td></tr>`;
+      }
+    })
+    .catch(error => {
+      console.error('Error loading audit logs:', error);
+      const tbody = document.querySelector('#auditLogsTable tbody');
+      if (tbody) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="4" class="text-center text-danger">
+              <i class="fas fa-exclamation-triangle"></i>
+              Error loading audit logs: ${error.message}
+            </td>
+          </tr>
+        `;
       }
     });
 });
