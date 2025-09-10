@@ -584,7 +584,7 @@ class TransactionValidationService
 
     /**
      * High‐level checks on all monetary fields:
-     *  - net_sales must equal gross_sales - other_tax (excluding VAT)
+     *  - net_sales must equal gross_sales - other_tax (excluding VATABLE_SALES)
      *  - vatable_sales must be ≥ 0
      *  - If not tax‐exempt, ensure that vat_amount ≈ 12% of vatable_sales (± MAX_VAT_DIFFERENCE)
      *  - Enforce service‐charge ≤ 15% of gross_sales
@@ -597,11 +597,11 @@ class TransactionValidationService
     {
         $errors = [];
 
-        // Calculate other_tax sum (excluding VAT) from relationship
+        // Calculate other_tax sum (excluding VATABLE_SALES) from relationship
         $otherTaxSum = 0;
         if ($transaction->taxes && $transaction->taxes->count() > 0) {
             foreach ($transaction->taxes as $tax) {
-                if (isset($tax['tax_type']) && $tax['tax_type'] !== 'VAT' && isset($tax['amount'])) {
+                if (isset($tax['tax_type']) && $tax['tax_type'] !== 'VATABLE_SALES' && isset($tax['amount'])) {
                     $otherTaxSum += $tax['amount'];
                 }
             }
@@ -675,7 +675,7 @@ class TransactionValidationService
 
     /**
      * Validate that the amount reconciliation follows the simplified formula:
-     * net_sales = gross_sales - other_tax (excluding VAT)
+     * net_sales = gross_sales - other_tax (excluding VATABLE_SALES)
      *
      * @param  Transaction  $transaction
      * @param  array       &$errors
@@ -683,11 +683,11 @@ class TransactionValidationService
      */
     private function validateAmountReconciliation(Transaction $transaction, array &$errors): void
     {
-        // Calculate other_tax sum (excluding VAT) from relationship
+        // Calculate other_tax sum (excluding VATABLE_SALES) from relationship
         $otherTaxSum = 0;
         if ($transaction->taxes && $transaction->taxes->count() > 0) {
             foreach ($transaction->taxes as $tax) {
-                if (isset($tax['tax_type']) && $tax['tax_type'] !== 'VAT' && isset($tax['amount'])) {
+                if (isset($tax['tax_type']) && $tax['tax_type'] !== 'VATABLE_SALES' && isset($tax['amount'])) {
                     $otherTaxSum += $tax['amount'];
                 }
             }

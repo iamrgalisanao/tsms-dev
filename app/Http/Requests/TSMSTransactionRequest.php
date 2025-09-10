@@ -166,7 +166,7 @@ class TSMSTransactionRequest extends FormRequest
 
         $otherTaxSum = 0;
         foreach ($taxes as $tax) {
-            if (isset($tax['tax_type']) && $tax['tax_type'] !== 'VAT' && isset($tax['amount'])) {
+            if (isset($tax['tax_type']) && $tax['tax_type'] !== 'VATABLE_SALES' && isset($tax['amount'])) {
                 $otherTaxSum += $tax['amount'];
             }
         }
