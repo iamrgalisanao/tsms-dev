@@ -1139,7 +1139,7 @@ class TransactionController extends Controller
                         'metadata' => [
                             'submission_uuid' => $request->submission_uuid,
                             'transaction_id' => $transaction->transaction_id,
-                            'base_amount' => $transaction->base_amount,
+                            'gross_sales' => $transaction->gross_sales,
                             'terminal_id' => $terminal->id,
                             'tenant_id' => $terminal->tenant_id,
                         ]

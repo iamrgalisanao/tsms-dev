@@ -59,7 +59,7 @@ class Tenant extends Model
         $terminalIds = $this->posTerminals()->get()->pluck('id');
         return \App\Models\Transaction::whereIn('terminal_id', $terminalIds)
             ->whereBetween('transaction_timestamp', [$dayStart, $dayEnd])
-            ->sum('base_amount');
+            ->sum('gross_sales');
     }
 
     /**
@@ -76,18 +76,5 @@ class Tenant extends Model
         }
         $currentTotal = $this->getDailySalesTotal($date);
         return ($currentTotal + $amount) > $this->max_daily_sales;
-    }
-
-    /**
-     * Returns the total base_amount of transactions for this tenant for a given date.
-     * @param string|null $date (Y-m-d format)
-     * @return float
-     */
-    public function getDailyBaseAmountTotal($date = null)
-    {
-        $date = $date ?? now()->toDateString();
-        return $this->transactions()
-            ->whereDate('transaction_timestamp', $date)
-            ->sum('base_amount');
     }
 }
