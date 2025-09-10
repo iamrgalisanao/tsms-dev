@@ -44,7 +44,7 @@ class TransactionLogController extends Controller
             'id',
             'transaction_id',
             'terminal_id',
-            'base_amount as amount',
+            'gross_sales as amount',
             'validation_status',
             'created_at'
             ])
@@ -66,10 +66,10 @@ class TransactionLogController extends Controller
             return $query->where('terminal_id', $filters['terminal_id']);
             })
             ->when(isset($filters['amount_min']), function ($query) use ($filters) {
-            return $query->where('base_amount', '>=', $filters['amount_min']);
+            return $query->where('gross_sales', '>=', $filters['amount_min']);
             })
             ->when(isset($filters['amount_max']), function ($query) use ($filters) {
-            return $query->where('base_amount', '<=', $filters['amount_max']);
+            return $query->where('gross_sales', '<=', $filters['amount_max']);
             })
             ->latest()
             ->paginate(15);

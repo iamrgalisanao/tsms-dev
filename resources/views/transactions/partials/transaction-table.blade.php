@@ -20,7 +20,7 @@
         <td>{{ $transaction->customer_code }}</td>
         <td class="ps-3">{{ $transaction->transaction_id }}</td>
         <td>{{ $transaction->terminal->id ?? 'N/A' }}</td>
-        <td class="text-end">₱{{ number_format($transaction->base_amount, 2) }}</td>
+        <td class="text-end">₱{{ number_format($transaction->gross_sales, 2) }}</td>
         <td class="text-center">
           <span class="badge bg-{{
             $transaction->validation_status === 'VALID' ? 'success' :

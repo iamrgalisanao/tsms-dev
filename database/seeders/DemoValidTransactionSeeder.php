@@ -19,6 +19,8 @@ class DemoValidTransactionSeeder extends Seeder
                 'transaction_timestamp' => Carbon::now(),
                 'processed_at' => Carbon::now(),
                 'base_amount' => 400.00,
+                'gross_sales' => 400.00,
+                'net_sales' => 400.00, // No adjustments/taxes in demo
                 'customer_code' => 'CUST004',
                 'payload_checksum' => 'demo101checksum',
                 'validation_status' => 'VALID',

@@ -92,6 +92,8 @@ class TestTransactionController extends Controller
                 'machine_number' => $request->machine_number ?? null,
                 'transaction_timestamp' => $request->transaction_timestamp ?? now(),
                 'base_amount' => $request->base_amount ?? $request->gross_sales, // fallback for test UI
+                'gross_sales' => $request->gross_sales ?? $request->base_amount,
+                'net_sales' => $request->net_sales ?? ($request->gross_sales ?? $request->base_amount),
                 'payload_checksum' => $request->payload_checksum ?? null,
                 'validation_status' => 'PENDING',
                 'job_status' => Transaction::JOB_STATUS_QUEUED,

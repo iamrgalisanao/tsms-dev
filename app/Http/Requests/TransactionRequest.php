@@ -21,7 +21,9 @@ class TransactionRequest extends FormRequest
             // Enforce RFC 4122 UUID format (any version) for transaction identifiers
             'transaction_id' => 'required|string|uuid',
             'transaction_timestamp' => 'required|date',
-            'base_amount' => 'required|numeric|min:0',
+            'base_amount' => 'nullable|numeric|min:0',
+            'gross_sales' => 'required|numeric|min:0',
+            'net_sales' => 'required|numeric|min:0',
             'payload_checksum' => 'required|string',
             'machine_number' => 'nullable|integer',
         ];

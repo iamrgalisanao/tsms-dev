@@ -223,9 +223,21 @@
                 <label for="validation_override" class="form-label">Validation Override</label>
                 <select name="validation_override" id="validation_override" class="form-select">
               <div class="col-md-6">
-                <label for="base_amount" class="form-label">Base Amount</label>
-                <input type="number" name="base_amount" id="base_amount" class="form-control" step="0.01" min="0" value="{{ old('base_amount', '1000.00') }}" required>
-                <small class="form-text text-muted">Base amount before VAT and other calculations</small>
+                <label for="gross_sales" class="form-label">Gross Sales</label>
+                <input type="number" name="gross_sales" id="gross_sales" class="form-control" step="0.01" min="0" value="{{ old('gross_sales', '1000.00') }}" required>
+                <small class="form-text text-muted">Total gross sales amount</small>
+              </div>
+
+              <div class="col-md-6">
+                <label for="net_sales" class="form-label">Net Sales</label>
+                <input type="number" name="net_sales" id="net_sales" class="form-control" step="0.01" min="0" value="{{ old('net_sales', '920.00') }}" required>
+                <small class="form-text text-muted">Net sales after adjustments and taxes</small>
+              </div>
+
+              <div class="col-md-6">
+                <label for="base_amount" class="form-label">Base Amount (Legacy)</label>
+                <input type="number" name="base_amount" id="base_amount" class="form-control" step="0.01" min="0" value="{{ old('base_amount', '1000.00') }}">
+                <small class="form-text text-muted">Legacy field - will be set to gross_sales if not provided</small>
               </div>
                   <option value="">Normal Validation</option>
                   <option value="force_valid">Force Valid</option>

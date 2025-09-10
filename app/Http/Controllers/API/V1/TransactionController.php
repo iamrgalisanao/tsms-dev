@@ -66,7 +66,7 @@ class TransactionController extends Controller
         $requiredFields = [
             'transaction_id',
             'transaction_timestamp',
-            'base_amount',
+            'gross_sales',
             'payload_checksum'
         ];
 
@@ -348,6 +348,8 @@ class TransactionController extends Controller
                         'hardware_id' => $transactionData['hardware_id'] ?? null,
                         'transaction_timestamp' => $transactionData['transaction_timestamp'],
                         'base_amount' => $transactionData['gross_sales'],
+                        'gross_sales' => $transactionData['gross_sales'],
+                        'net_sales' => $transactionData['net_sales'] ?? 0,
                         'customer_code' => $request->customer_code,
                         'payload_checksum' => $transactionData['payload_checksum'] ?? md5(json_encode($transactionData)),
                         'validation_status' => 'PENDING',
@@ -366,7 +368,8 @@ class TransactionController extends Controller
                         'context' => json_encode([
                             'batch_id' => $request->batch_id,
                             'transaction_id' => $transaction->transaction_id,
-                            'base_amount' => $transaction->base_amount
+                            'gross_sales' => $transaction->gross_sales,
+                            'net_sales' => $transaction->net_sales
                         ])
                     ]);
 
@@ -452,7 +455,8 @@ class TransactionController extends Controller
             'data' => [
                 'transaction_id' => $transaction->transaction_id,
                 'customer_code' => $transaction->customer_code,
-                'base_amount' => $transaction->base_amount,
+                'gross_sales' => $transaction->gross_sales,
+                'net_sales' => $transaction->net_sales,
                 'status' => 'queued', // Default status for basic implementation
                 'created_at' => $transaction->created_at->toISOString(),
                 'updated_at' => $transaction->updated_at->toISOString()
@@ -943,6 +947,7 @@ class TransactionController extends Controller
                     'transaction.transaction_timestamp' => 'required|date_format:Y-m-d\TH:i:s\Z',
                     'transaction.base_amount' => 'nullable|numeric|min:0',
                     'transaction.gross_sales' => 'required|numeric|min:0',
+                    'transaction.net_sales' => 'required|numeric|min:0',
                     'transaction.promo_status' => 'required|string',
                     'transaction.customer_code' => 'required|string',
                     'transaction.payload_checksum' => 'required|string|min:64|max:64',
@@ -958,8 +963,9 @@ class TransactionController extends Controller
                     'transactions' => 'required|array|min:1',
                     'transactions.*.transaction_id' => 'required|string|uuid',
                     'transactions.*.transaction_timestamp' => 'required|date_format:Y-m-d\TH:i:s\Z',
-                    'transactions.*.base_amount' => 'required|numeric|min:0',
+                    'transactions.*.base_amount' => 'nullable|numeric|min:0',
                     'transactions.*.gross_sales' => 'required|numeric|min:0',
+                    'transactions.*.net_sales' => 'required|numeric|min:0',
                     'transactions.*.promo_status' => 'required|string',
                     'transactions.*.customer_code' => 'required|string',
                     'transactions.*.payload_checksum' => 'required|string|min:64|max:64',
@@ -1066,6 +1072,7 @@ class TransactionController extends Controller
                         'transaction_timestamp' => $transactionData['transaction_timestamp'],
                         'base_amount' => $transactionData['gross_sales'] ?? $transactionData['base_amount'],
                         'gross_sales' => $transactionData['gross_sales'] ?? $transactionData['base_amount'],
+                        'net_sales' => $transactionData['net_sales'] ?? 0,
                         'customer_code' => $transactionData['customer_code'] ?? ($terminal->tenant->company->customer_code ?? 'UNKNOWN'),
                         'promo_status' => $transactionData['promo_status'],
                         'payload_checksum' => $transactionData['payload_checksum'],
@@ -1114,7 +1121,8 @@ class TransactionController extends Controller
                         'context' => json_encode([
                             'submission_uuid' => $request->submission_uuid,
                             'transaction_id' => $transaction->transaction_id,
-                            'base_amount' => $transaction->base_amount,
+                            'gross_sales' => $transaction->gross_sales,
+                            'net_sales' => $transaction->net_sales,
                             'terminal_id' => $terminal->id,
                             'adjustments_count' => count($transactionData['adjustments'] ?? []),
                             'taxes_count' => count($transactionData['taxes'] ?? []),
@@ -1286,8 +1294,9 @@ class TransactionController extends Controller
                 'transaction' => 'required|array',
                 'transaction.transaction_id' => 'required|string|uuid',
                 'transaction.transaction_timestamp' => 'required|date_format:Y-m-d\TH:i:s\Z',
-                'transaction.base_amount' => 'required|numeric|min:0',
+                'transaction.base_amount' => 'nullable|numeric|min:0',
                 'transaction.gross_sales' => 'required|numeric|min:0',
+                'transaction.net_sales' => 'required|numeric|min:0',
                 'transaction.promo_status' => 'required|string',
                 'transaction.customer_code' => 'required|string',
                 'transaction.payload_checksum' => 'required|string|min:64|max:64',
@@ -1305,6 +1314,7 @@ class TransactionController extends Controller
                 'transactions.*.transaction_timestamp' => 'required|date_format:Y-m-d\TH:i:s\Z',
                 'transactions.*.base_amount' => 'nullable|numeric|min:0',
                 'transactions.*.gross_sales' => 'required|numeric|min:0',
+                'transactions.*.net_sales' => 'required|numeric|min:0',
                 'transactions.*.promo_status' => 'required|string',
                 'transactions.*.customer_code' => 'required|string',
                 'transactions.*.payload_checksum' => 'required|string|min:64|max:64',
@@ -1495,7 +1505,9 @@ class TransactionController extends Controller
                 'terminal_id' => $terminal->id,
                 'transaction_id' => $transaction['transaction_id'],
                 'transaction_timestamp' => $transaction['transaction_timestamp'],
-                'base_amount' => $transaction['base_amount'],
+                'base_amount' => $transaction['gross_sales'] ?? $transaction['base_amount'],
+                'gross_sales' => $transaction['gross_sales'] ?? $transaction['base_amount'],
+                'net_sales' => $transaction['net_sales'] ?? 0,
                 'customer_code' => $transaction['customer_code'] ?? ($terminal->tenant->company->customer_code ?? 'UNKNOWN'),
                 'promo_status' => $transaction['promo_status'],
                 'payload_checksum' => $transaction['payload_checksum'] ?? '',

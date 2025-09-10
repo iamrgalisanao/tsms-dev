@@ -128,6 +128,8 @@ class RetryTransactionSeeder extends Seeder
                         'hardware_id' => 'HW-TEST-' . $i,
                         'transaction_timestamp' => $now->subHours(rand(1, 10)),
                         'base_amount' => $amount = rand(100, 1000),
+                        'gross_sales' => $amount,
+                        'net_sales' => $amount, // No adjustments/taxes in test
                         'customer_code' => 'TEST-CUST-' . $i,
                         'payload_checksum' => md5('test-payload-' . $i),
                         'validation_status' => $validationStatuses[array_rand($validationStatuses)],
