@@ -1061,6 +1061,23 @@ class TransactionController extends Controller
                         continue;
                     }
                     Log::info('storeOfficial: Creating transaction record', ['transaction_id' => $transactionData['transaction_id']]);
+                    
+                    // Extract vatable_sales and vat_amount from taxes if present
+                    $vatableSales = 0;
+                    $vatAmount = 0;
+                    if (isset($transactionData['taxes']) && is_array($transactionData['taxes'])) {
+                        foreach ($transactionData['taxes'] as $tax) {
+                            if (isset($tax['tax_type'])) {
+                                $taxType = strtoupper($tax['tax_type']);
+                                if ($taxType === 'VATABLE_SALES') {
+                                    $vatableSales = $tax['amount'] ?? 0;
+                                } elseif ($taxType === 'VAT' || $taxType === 'VAT_AMOUNT') {
+                                    $vatAmount = $tax['amount'] ?? 0;
+                                }
+                            }
+                        }
+                    }
+                    
                     $transaction = Transaction::create([
                         'tenant_id' => $terminal->tenant_id,
                         'terminal_id' => $terminal->id,
@@ -1069,6 +1086,8 @@ class TransactionController extends Controller
                         'transaction_timestamp' => $transactionData['transaction_timestamp'],
                         'gross_sales' => $transactionData['gross_sales'] ?? $transactionData['base_amount'],
                         'net_sales' => $transactionData['net_sales'] ?? 0,
+                        'vatable_sales' => $vatableSales,
+                        'vat_amount' => $vatAmount,
                         'customer_code' => $transactionData['customer_code'] ?? ($terminal->tenant->company->customer_code ?? 'UNKNOWN'),
                         'promo_status' => $transactionData['promo_status'],
                         'payload_checksum' => $transactionData['payload_checksum'],

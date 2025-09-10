@@ -584,7 +584,7 @@ class TransactionValidationService
 
     /**
      * High‐level checks on all monetary fields:
-     *  - net_sales must equal gross_sales - other_tax (excluding VATABLE_SALES)
+     *  - net_sales must equal vatable_sales (after VAT deduction)
      *  - vatable_sales must be ≥ 0
      *  - If not tax‐exempt, ensure that vat_amount ≈ 12% of vatable_sales (± MAX_VAT_DIFFERENCE)
      *  - Enforce service‐charge ≤ 15% of gross_sales
@@ -607,15 +607,12 @@ class TransactionValidationService
             }
         }
 
-        // 1) Validate net_sales = gross_sales - other_tax
-        $expectedNetSales = $transaction->gross_sales - $otherTaxSum;
-        if (abs($transaction->net_sales - $expectedNetSales) > self::MAX_ROUNDING_DIFFERENCE) {
+        // 1) Validate net_sales = vatable_sales (after VAT deduction)
+        if (abs($transaction->net_sales - $transaction->vatable_sales) > self::MAX_ROUNDING_DIFFERENCE) {
             $errors[] = sprintf(
-                'Net sales (%.2f) does not equal gross_sales - other_tax (%.2f - %.2f = %.2f).',
+                'Net sales (%.2f) does not equal vatable sales (%.2f).',
                 $transaction->net_sales,
-                $transaction->gross_sales,
-                $otherTaxSum,
-                $expectedNetSales
+                $transaction->vatable_sales
             );
         }
 
@@ -675,7 +672,7 @@ class TransactionValidationService
 
     /**
      * Validate that the amount reconciliation follows the simplified formula:
-     * net_sales = gross_sales - other_tax (excluding VATABLE_SALES)
+     * net_sales = vatable_sales (after VAT deduction)
      *
      * @param  Transaction  $transaction
      * @param  array       &$errors
