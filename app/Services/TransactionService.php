@@ -52,7 +52,7 @@ class TransactionService
             'transaction_id' => $payload['transaction_id'],
             'hardware_id' => $payload['hardware_id'],
             'transaction_timestamp' => $payload['transaction_timestamp'],
-            'base_amount' => $payload['base_amount'],
+            'gross_sales' => $payload['gross_sales'] ?? $payload['base_amount'] ?? 0,
             'payload_checksum' => $payload['payload_checksum'],
             'created_at' => $payload['created_at'] ?? now(),
             'updated_at' => $payload['updated_at'] ?? now(),

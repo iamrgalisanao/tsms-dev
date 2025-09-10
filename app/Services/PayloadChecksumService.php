@@ -142,7 +142,7 @@ class PayloadChecksumService
                 $value = $this->canonicalize($value);
 
                 // Cast monetary fields to float
-                if (in_array($key, ['base_amount', 'amount'], true)) {
+                if (in_array($key, ['gross_sales', 'net_sales', 'amount'], true)) {
                     $value = (float) $value;
                 }
             }

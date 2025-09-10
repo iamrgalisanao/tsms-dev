@@ -22,7 +22,7 @@ class TransactionProcessingService
                 'hardware_id' => $data['hardware_id'],
                 'machine_number' => $data['machine_number'] ?? null,
                 'transaction_timestamp' => $data['transaction_timestamp'],
-                'base_amount' => $data['base_amount'],
+                'gross_sales' => $data['gross_sales'] ?? $data['base_amount'] ?? 0,
                 'payload_checksum' => $data['payload_checksum'],
                 'validation_status' => 'PENDING',
                 'job_status' => 'QUEUED',
