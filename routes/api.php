@@ -35,6 +35,7 @@ Route::middleware(['api'])->group(function () {
     Route::get('dashboard/charts', [DashboardController::class, 'apiCharts']);
     Route::get('dashboard/transactions', [DashboardController::class, 'apiTransactions']);
     Route::get('dashboard/audit-logs', [DashboardController::class, 'apiAuditLogs']);
+    Route::post('dashboard/forward-transaction/{id}', [DashboardController::class, 'forwardTransaction']);
 });
 
 // Health check endpoint (public)

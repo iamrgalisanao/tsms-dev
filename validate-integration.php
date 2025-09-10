@@ -247,16 +247,16 @@ class IntegrationValidator
             $validTransactions = \App\Models\Transaction::where('validation_status', 'VALID')->count();
             $totalTransactions = \App\Models\Transaction::count();
             
-            // Check for transactions with base_amount
-            $withBaseAmount = \App\Models\Transaction::whereNotNull('base_amount')
-                ->where('base_amount', '>', 0)
+            // Check for transactions with gross_sales
+            $withGrossSales = \App\Models\Transaction::whereNotNull('gross_sales')
+                ->where('gross_sales', '>', 0)
                 ->count();
             
             $this->output(" ✅ PASSED\n");
             if ($this->verbose) {
                 $this->output("   - Total transactions: {$totalTransactions}\n");
                 $this->output("   - Valid transactions: {$validTransactions}\n");
-                $this->output("   - Transactions with base_amount: {$withBaseAmount}\n");
+                $this->output("   - Transactions with gross_sales: {$withGrossSales}\n");
             }
             
             if ($validTransactions === 0) {

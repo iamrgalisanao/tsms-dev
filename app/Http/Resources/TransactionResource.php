@@ -92,6 +92,31 @@ class TransactionResource extends JsonResource
                 });
             }),
 
+            'adjustments' => $this->whenLoaded('adjustments', function () {
+                return $this->adjustments->map(function ($adjustment) {
+                    return [
+                        'id' => $adjustment->id,
+                        'adjustment_type' => $adjustment->adjustment_type,
+                        'amount' => (float) $adjustment->amount,
+                        'description' => $adjustment->description,
+                        'created_at' => $adjustment->created_at,
+                    ];
+                });
+            }),
+
+            'taxes' => $this->whenLoaded('taxes', function () {
+                return $this->taxes->map(function ($tax) {
+                    return [
+                        'id' => $tax->id,
+                        'tax_type' => $tax->tax_type,
+                        'amount' => (float) $tax->amount,
+                        'rate' => (float) $tax->rate,
+                        'description' => $tax->description,
+                        'created_at' => $tax->created_at,
+                    ];
+                });
+            }),
+
             // Computed properties
             'is_voided' => $this->isVoided(),
             'is_refunded' => $this->isRefunded(),

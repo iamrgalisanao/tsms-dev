@@ -182,7 +182,7 @@ class WebAppForwardingService
             ->whereDoesntHave('webappForward', fn ($q) =>
                 $q->where('status', WebappTransactionForward::STATUS_COMPLETED)
             )
-            ->with(['terminal', 'tenant', 'jobs'])
+            ->with(['terminal', 'tenant', 'jobs', 'adjustments', 'taxes'])
             ->orderBy('created_at', 'asc')
             ->limit($this->batchSize * 2)
             ->get();
@@ -199,18 +199,71 @@ class WebAppForwardingService
 
         return $transactions->map(function (Transaction $tx) use ($batchId) {
             // Always recompute checksum before building payload
+            $adjustments = $tx->adjustments->map(function ($adj) {
+                return [
+                    'adjustment_type' => $adj->adjustment_type,
+                    'amount' => (float) $adj->amount,
+                ];
+            })->toArray();
+
+            // Ensure all adjustment types are included (even if amount is 0)
+            $requiredAdjustmentTypes = [
+                'promo_discount',
+                'senior_discount',
+                'pwd_discount',
+                'vip_card_discount',
+                'service_charge_distributed_to_employees',
+                'service_charge_retained_by_management',
+                'employee_discount'
+            ];
+
+            $completeAdjustments = [];
+            foreach ($requiredAdjustmentTypes as $type) {
+                $existing = collect($adjustments)->firstWhere('adjustment_type', $type);
+                $completeAdjustments[] = $existing ?: [
+                    'adjustment_type' => $type,
+                    'amount' => 0.00
+                ];
+            }
+
+            $taxes = $tx->taxes->map(function ($tax) {
+                return [
+                    'tax_type' => $tax->tax_type,
+                    'amount' => (float) $tax->amount,
+                ];
+            })->toArray();
+
+            // Ensure all tax types are included
+            $requiredTaxTypes = [
+                'VAT',
+                'VATABLE_SALES',
+                'SC_VAT_EXEMPT_SALES',
+                'OTHER_TAX'
+            ];
+
+            $completeTaxes = [];
+            foreach ($requiredTaxTypes as $type) {
+                $existing = collect($taxes)->firstWhere('tax_type', $type);
+                $completeTaxes[] = $existing ?: [
+                    'tax_type' => $type,
+                    'amount' => 0.00
+                ];
+            }
+
             $payloadArr = [
-                'tsms_id'               => $tx->id,
-                'transaction_id'        => $tx->transaction_id,
-                'terminal_serial'       => $tx->terminal?->serial_number,
-                'tenant_code'           => $tx->tenant?->customer_code,
-                'tenant_name'           => $tx->tenant?->name,
+                'tsms_id' => $tx->id,
+                'transaction_id' => $tx->transaction_id,
+                'terminal_serial' => $tx->terminal?->serial_number,
+                'tenant_code' => $tx->tenant?->customer_code,
+                'tenant_name' => $tx->tenant?->name,
                 'transaction_timestamp' => $this->isoTimestamp($tx->transaction_timestamp),
-                'amount'                => (float) $tx->gross_sales,
-                'net_amount'           => (float) $tx->net_sales,
-                'validation_status'     => $tx->validation_status,
-                'processed_at'          => $this->isoTimestamp($tx->created_at),
-                'submission_uuid'       => $tx->submission_uuid,
+                'amount' => (float) $tx->gross_sales,
+                'net_amount' => (float) $tx->net_sales,
+                'validation_status' => $tx->validation_status,
+                'processed_at' => $this->isoTimestamp($tx->created_at),
+                'submission_uuid' => $tx->submission_uuid,
+                'adjustments' => $completeAdjustments,
+                'taxes' => $completeTaxes,
             ];
             // Remove checksum if present, then compute
             unset($payloadArr['checksum']);
@@ -306,12 +359,39 @@ class WebAppForwardingService
 
     private function buildBulkPayload(Collection $records, string $batchId): array
     {
+        // For single transaction forwarding, use the user's specified structure
+        if ($records->count() === 1) {
+            $forwardingRecord = $records->first();
+            $transaction = $forwardingRecord->transaction;
+
+            return [
+                'submission_uuid' => $transaction->submission_uuid,
+                'tenant_id' => $transaction->tenant_id,
+                'terminal_id' => $transaction->terminal_id,
+                'submission_timestamp' => $this->isoTimestamp($transaction->submission_timestamp),
+                'transaction_count' => 1,
+                'payload_checksum' => $forwardingRecord->request_payload['checksum'] ?? '',
+                'transaction' => [
+                    'transaction_id' => $transaction->transaction_id,
+                    'transaction_timestamp' => $this->isoTimestamp($transaction->transaction_timestamp),
+                    'gross_sales' => (float) $transaction->gross_sales,
+                    'net_sales' => (float) $transaction->net_sales,
+                    'promo_status' => $transaction->promo_status,
+                    'customer_code' => $transaction->customer_code,
+                    'payload_checksum' => $forwardingRecord->request_payload['checksum'] ?? '',
+                    'adjustments' => $forwardingRecord->request_payload['adjustments'] ?? [],
+                    'taxes' => $forwardingRecord->request_payload['taxes'] ?? [],
+                ]
+            ];
+        }
+
+        // For multiple transactions, use the original batch structure
         return [
-            'source'            => 'TSMS',
-            'batch_id'          => $batchId,
-            'timestamp'         => Carbon::now()->format('Y-m-d\\TH:i:s.v\\Z'),
+            'source' => 'TSMS',
+            'batch_id' => $batchId,
+            'timestamp' => Carbon::now()->format('Y-m-d\\TH:i:s.v\\Z'),
             'transaction_count' => $records->count(),
-            'transactions'      => $records->pluck('request_payload')->all(),
+            'transactions' => $records->pluck('request_payload')->all(),
         ];
     }
 
@@ -365,5 +445,200 @@ class WebAppForwardingService
                 'last_failure' => Cache::get($this->circuitBreakerKey.'_last_failure'),
             ],
         ];
+    }
+
+    /**
+     * Forward a specific transaction immediately (real-time forwarding)
+     *
+     * @param Transaction $transaction
+     * @return array
+     */
+    public function forwardTransactionImmediately(Transaction $transaction): array
+    {
+        $this->assertEndpoint();
+
+        // Load relationships if not already loaded
+        if (!$transaction->relationLoaded('adjustments')) {
+            $transaction->load('adjustments');
+        }
+        if (!$transaction->relationLoaded('taxes')) {
+            $transaction->load('taxes');
+        }
+
+        // Check if transaction is already forwarded
+        $existing = WebappTransactionForward::where('transaction_id', $transaction->id)
+            ->where('status', WebappTransactionForward::STATUS_COMPLETED)
+            ->first();
+
+        if ($existing) {
+            return [
+                'success' => true,
+                'message' => 'Transaction already forwarded',
+                'forward_id' => $existing->id
+            ];
+        }
+
+        // Build payload for single transaction using user's specified structure
+        $adjustments = $transaction->adjustments->map(function ($adj) {
+            return [
+                'adjustment_type' => $adj->adjustment_type,
+                'amount' => (float) $adj->amount,
+            ];
+        })->toArray();
+
+        // Ensure all adjustment types are included (even if amount is 0)
+        $requiredAdjustmentTypes = [
+            'promo_discount',
+            'senior_discount',
+            'pwd_discount',
+            'vip_card_discount',
+            'service_charge_distributed_to_employees',
+            'service_charge_retained_by_management',
+            'employee_discount'
+        ];
+
+        $completeAdjustments = [];
+        foreach ($requiredAdjustmentTypes as $type) {
+            $existing = collect($adjustments)->firstWhere('adjustment_type', $type);
+            $completeAdjustments[] = $existing ?: [
+                'adjustment_type' => $type,
+                'amount' => 0.00
+            ];
+        }
+
+        $taxes = $transaction->taxes->map(function ($tax) {
+            return [
+                'tax_type' => $tax->tax_type,
+                'amount' => (float) $tax->amount,
+            ];
+        })->toArray();
+
+        // Ensure all tax types are included
+        $requiredTaxTypes = [
+            'VAT',
+            'VATABLE_SALES',
+            'SC_VAT_EXEMPT_SALES',
+            'OTHER_TAX'
+        ];
+
+        $completeTaxes = [];
+        foreach ($requiredTaxTypes as $type) {
+            $existing = collect($taxes)->firstWhere('tax_type', $type);
+            $completeTaxes[] = $existing ?: [
+                'tax_type' => $type,
+                'amount' => 0.00
+            ];
+        }
+
+        $payloadArr = [
+            'tsms_id' => $transaction->id,
+            'transaction_id' => $transaction->transaction_id,
+            'terminal_serial' => $transaction->terminal?->serial_number,
+            'tenant_code' => $transaction->tenant?->customer_code,
+            'tenant_name' => $transaction->tenant?->name,
+            'transaction_timestamp' => $this->isoTimestamp($transaction->transaction_timestamp),
+            'amount' => (float) $transaction->gross_sales,
+            'net_amount' => (float) $transaction->net_sales,
+            'validation_status' => $transaction->validation_status,
+            'processed_at' => $this->isoTimestamp($transaction->created_at),
+            'submission_uuid' => $transaction->submission_uuid,
+            'adjustments' => $completeAdjustments,
+            'taxes' => $completeTaxes,
+        ];
+
+        // Compute checksum
+        unset($payloadArr['checksum']);
+        $payloadArr['checksum'] = $this->checksumService->computeChecksum($payloadArr);
+
+        // Build bulk payload format (even for single transaction)
+        $batchId = 'TSMS_' . now()->format('YmdHis') . '_' . uniqid();
+        $bulkPayload = [
+            'source' => 'TSMS',
+            'batch_id' => $batchId,
+            'timestamp' => Carbon::now()->format('Y-m-d\\TH:i:s.v\\Z'),
+            'transaction_count' => 1,
+            'transactions' => [$payloadArr],
+        ];
+
+        try {
+            $client = Http::timeout($this->timeout)
+                          ->withToken($this->authToken);
+
+            if (!$this->verifySSL) {
+                $client = $client->withoutVerifying();
+            }
+
+            Log::debug('[TSMS] Immediate forwarding payload', $bulkPayload);
+            $response = $client->post($this->webAppEndpoint, $bulkPayload)->throw();
+
+            $data = $response->json();
+
+            // Create forwarding record
+            WebappTransactionForward::create([
+                'transaction_id' => $transaction->id,
+                'batch_id' => $batchId,
+                'status' => WebappTransactionForward::STATUS_COMPLETED,
+                'attempts' => 1,
+                'max_attempts' => 1,
+                'first_attempted_at' => now(),
+                'last_attempted_at' => now(),
+                'completed_at' => now(),
+                'request_payload' => $payloadArr,
+                'response_data' => $data,
+                'response_status_code' => $response->status(),
+            ]);
+
+            Log::info('Transaction forwarded immediately', [
+                'transaction_id' => $transaction->transaction_id,
+                'batch_id' => $batchId
+            ]);
+
+            return [
+                'success' => true,
+                'message' => 'Transaction forwarded successfully',
+                'batch_id' => $batchId,
+                'response_status' => $response->status()
+            ];
+
+        } catch (RequestException $e) {
+            $msg = $e->getMessage();
+            Log::error('Immediate forwarding HTTP error', [
+                'transaction_id' => $transaction->transaction_id,
+                'error' => $msg
+            ]);
+
+            // Create failed forwarding record
+            WebappTransactionForward::create([
+                'transaction_id' => $transaction->id,
+                'batch_id' => $batchId,
+                'status' => WebappTransactionForward::STATUS_FAILED,
+                'attempts' => 1,
+                'max_attempts' => 1,
+                'first_attempted_at' => now(),
+                'last_attempted_at' => now(),
+                'request_payload' => $payloadArr,
+                'error_message' => $msg,
+                'response_status_code' => $e->response?->status(),
+            ]);
+
+            return [
+                'success' => false,
+                'error' => $msg,
+                'batch_id' => $batchId
+            ];
+
+        } catch (\Throwable $e) {
+            $msg = $e->getMessage();
+            Log::error('Immediate forwarding exception', [
+                'transaction_id' => $transaction->transaction_id,
+                'error' => $msg
+            ]);
+
+            return [
+                'success' => false,
+                'error' => $msg,
+                'batch_id' => $batchId
+            ];
+        }
     }
 }

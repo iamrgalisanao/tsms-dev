@@ -144,7 +144,7 @@ class DashboardController extends Controller
     public function apiTransactions(Request $request)
     {
         // include tenant/terminal relations and precompute adjustments sum for efficient rendering
-        $query = Transaction::with(['terminal', 'tenant'])
+        $query = Transaction::with(['terminal', 'tenant', 'adjustments', 'taxes'])
             ->withSum('adjustments as adjustments_sum', 'amount');
         if ($request->has('date')) {
             $query->whereDate('transaction_timestamp', $request->input('date'));
@@ -153,16 +153,54 @@ class DashboardController extends Controller
         return new \App\Http\Resources\TransactionCollection($transactions);
     }
 
-    // API: GET /api/dashboard/audit-logs
-    public function apiAuditLogs(Request $request)
+    // API: POST /api/dashboard/forward-transaction/{id}
+    public function forwardTransaction(Request $request, $transactionId)
     {
-        // RBAC: Only admins/managers
-        if (!auth()->user() || !auth()->user()->hasAnyRole(['admin', 'manager'])) {
-            return response()->json(['error' => 'Forbidden'], 403);
+        try {
+            $transaction = Transaction::with(['adjustments', 'taxes'])->findOrFail($transactionId);
+
+            // Check if user has permission (optional - adjust as needed)
+            // if (!auth()->user() || !auth()->user()->hasAnyRole(['admin', 'manager'])) {
+            //     return response()->json(['error' => 'Forbidden'], 403);
+            // }
+
+            $forwardingService = app(\App\Services\WebAppForwardingService::class);
+            $result = $forwardingService->forwardTransactionImmediately($transaction);
+
+            if ($result['success']) {
+                return response()->json([
+                    'status' => 'success',
+                    'message' => $result['message'],
+                    'batch_id' => $result['batch_id'],
+                    'transaction_id' => $transaction->transaction_id
+                ]);
+            } else {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => $result['error'],
+                    'batch_id' => $result['batch_id'] ?? null,
+                    'transaction_id' => $transaction->transaction_id
+                ], 500);
+            }
+
+        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Transaction not found',
+                'transaction_id' => $transactionId
+            ], 404);
+        } catch (\Exception $e) {
+            \Log::error('Transaction forwarding failed', [
+                'transaction_id' => $transactionId,
+                'error' => $e->getMessage()
+            ]);
+
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Forwarding failed: ' . $e->getMessage(),
+                'transaction_id' => $transactionId
+            ], 500);
         }
-        // Example: fetch from AuditLog model
-        $logs = \App\Models\AuditLog::orderByDesc('created_at')->limit(50)->get();
-        return response()->json($logs);
     }
 
     // protected function getEnrollmentData()
