@@ -145,7 +145,7 @@ class Transaction extends Model
      */
     public function getLatestJobStatusAttribute()
     {
-        $latestJob = $this->jobs()->latest('created_at')->first();
+        $latestJob = $this->jobs()->latest('updated_at')->first();
         return $latestJob ? $latestJob->job_status : self::JOB_STATUS_QUEUED;
     }
 
