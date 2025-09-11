@@ -288,4 +288,32 @@ class DashboardController extends Controller
         $errors = \App\Models\TransactionJob::where('job_status', 'FAILED')->count();
         return round(($errors / $total) * 100, 2);
     }
+
+    // API: GET /api/dashboard/audit-logs
+    public function apiAuditLogs(Request $request)
+    {
+        $query = \App\Models\AuditLog::with('user');
+
+        if ($request->has('date')) {
+            $query->whereDate('created_at', $request->input('date'));
+        }
+
+        if ($request->has('user_id')) {
+            $query->where('user_id', $request->input('user_id'));
+        }
+
+        if ($request->has('action')) {
+            $query->where('action', 'like', '%' . $request->input('action') . '%');
+        }
+
+        $auditLogs = $query->orderByDesc('created_at')->paginate(50);
+
+        return response()->json([
+            'data' => $auditLogs->items(),
+            'current_page' => $auditLogs->currentPage(),
+            'last_page' => $auditLogs->lastPage(),
+            'per_page' => $auditLogs->perPage(),
+            'total' => $auditLogs->total(),
+        ]);
+    }
 }

@@ -321,7 +321,22 @@ class WebAppForwardingService
             Log::debug('[TSMS] Forwarding payload', $payload);
             $response = $client->post($this->webAppEndpoint, $payload)->throw();
 
-            $data = $response->json();
+            // Check if response is JSON or HTML (protection redirect)
+            $contentType = $response->header('Content-Type');
+            if (str_contains($contentType, 'application/json')) {
+                $data = $response->json();
+            } elseif (str_contains($contentType, 'text/html')) {
+                // Handle protection redirect - treat as successful connection but log the issue
+                Log::warning('WebApp returned HTML redirect instead of JSON - likely protection service', [
+                    'endpoint' => $this->webAppEndpoint,
+                    'status' => $response->status(),
+                    'content_type' => $contentType
+                ]);
+                $data = ['protection_redirect' => true, 'status' => $response->status()];
+            } else {
+                $data = ['unknown_response_type' => $contentType, 'status' => $response->status()];
+            }
+
             $records->each(fn ($f) => $f->markAsCompleted($data, $response->status()));
             $this->resetCircuitBreaker();
 
