@@ -131,7 +131,7 @@
               <th>Tenant Code</th>
               <th>Terminal</th>
               <th>Tenant</th>
-              <th>Amount</th>
+              <th>Net Sales</th>
               <th>Date</th>
             </tr>
           </thead>

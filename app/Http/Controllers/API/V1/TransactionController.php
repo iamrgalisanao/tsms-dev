@@ -204,7 +204,7 @@ class TransactionController extends Controller
         array $failedTransactions
     ): void {
         try {
-            if ($terminal->notifications_enabled && $terminal->callback_url) {
+            if (config('notifications.callbacks.enabled') && $terminal->notifications_enabled && $terminal->callback_url) {
                 // Create batch result payload
                 $batchData = [
                     'batch_id' => $batchId,
@@ -1199,7 +1199,7 @@ class TransactionController extends Controller
             ]);
 
             // Send batch notification to terminal if enabled and there's more than one transaction
-            if ($request->transaction_count > 1 && $terminal->notifications_enabled && $terminal->callback_url) {
+            if (config('notifications.callbacks.enabled') && $request->transaction_count > 1 && $terminal->notifications_enabled && $terminal->callback_url) {
                 $this->notifyTerminalOfBatchResult(
                     $request->submission_uuid,
                     $terminal,
@@ -1396,7 +1396,7 @@ class TransactionController extends Controller
             }
 
             // Notify terminal if applicable
-            if ($terminal->notifications_enabled && $terminal->callback_url) {
+            if (config('notifications.callbacks.enabled') && $terminal->notifications_enabled && $terminal->callback_url) {
                 $this->notifyTerminalOfBatchResult(
                     $submission['batch_id'] ?? $submission['submission_uuid'],
                     $terminal,
@@ -1535,7 +1535,7 @@ class TransactionController extends Controller
             $this->processAdjustmentsAndTaxes($transactionModel, $transaction);
 
             // Check if terminal has notifications enabled and has a callback URL
-            if ($terminal->notifications_enabled && $terminal->callback_url) {
+            if (config('notifications.callbacks.enabled') && $terminal->notifications_enabled && $terminal->callback_url) {
                 $this->notifyTerminalOfValidationResult(
                     [
                         'transaction_id' => $transactionModel->transaction_id,
@@ -1565,7 +1565,7 @@ class TransactionController extends Controller
             }
 
             // Try to notify terminal of error if enabled
-            if ($terminal->notifications_enabled && $terminal->callback_url) {
+            if (config('notifications.callbacks.enabled') && $terminal->notifications_enabled && $terminal->callback_url) {
                 $this->notifyTerminalOfValidationResult(
                     [
                         'transaction_id' => $transaction['transaction_id'] ?? 'unknown',

@@ -1,6 +1,11 @@
 <?php
-
 return [
+    'callbacks' => [
+        // Global flag to enable/disable outbound POS callback (webhook) notifications.
+        // Disabled by default per request. Set TSMS_CALLBACKS_ENABLED=true in .env to re-enable.
+        'enabled' => env('TSMS_CALLBACKS_ENABLED', false),
+    ],
+
 
     /*
     |--------------------------------------------------------------------------

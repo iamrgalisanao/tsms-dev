@@ -38,12 +38,20 @@ class TransactionResultNotification extends Notification implements ShouldQueue
      */
     public function via(object $notifiable): array
     {
-        $channels = ['database']; // Always log to database
-        
-        if ($this->terminalCallbackUrl) {
-            $channels[] = 'webhook'; // Custom webhook channel
+        // Always record in database
+        $channels = ['database'];
+
+        // If global callbacks disabled, do NOT add webhook channel
+        if (!config('notifications.callbacks.enabled')) {
+            \Log::info('Callback webhook channel suppressed (global disabled)', [
+                'transaction_id' => $this->transactionData['transaction_id'] ?? null,
+            ]);
+            return $channels;
         }
-        
+
+        if ($this->terminalCallbackUrl) {
+            $channels[] = 'webhook';
+        }
         return $channels;
     }
 
@@ -52,6 +60,13 @@ class TransactionResultNotification extends Notification implements ShouldQueue
      */
     public function toWebhook(object $notifiable): array
     {
+        if (!config('notifications.callbacks.enabled')) {
+            return [
+                'status' => 'skipped',
+                'reason' => 'global_callbacks_disabled',
+                'skipped_at' => now()->toISOString(),
+            ];
+        }
         $payload = [
             'transaction_id' => $this->transactionData['transaction_id'],
             'submission_uuid' => $this->transactionData['submission_uuid'] ?? null,

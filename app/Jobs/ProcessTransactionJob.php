@@ -268,7 +268,19 @@ class ProcessTransactionJob implements ShouldQueue
     protected function dispatchTerminalNotification(Transaction $transaction, string $result, array $errors = []): void
     {
         $terminal = $transaction->terminal; // lazy loads
-        if (!$terminal || !$terminal->notifications_enabled || empty($terminal->callback_url)) {
+        if (
+            !$terminal ||
+            !$terminal->notifications_enabled ||
+            empty($terminal->callback_url) ||
+            !config('notifications.callbacks.enabled')
+        ) {
+            \Illuminate\Support\Facades\Log::info('Callback notification suppressed (global callbacks disabled or terminal config)', [
+                'transaction_id' => $transaction->transaction_id,
+                'terminal_id' => optional($terminal)->id,
+                'global_enabled' => config('notifications.callbacks.enabled'),
+                'terminal_notifications_enabled' => optional($terminal)->notifications_enabled,
+                'has_callback_url' => !empty(optional($terminal)->callback_url),
+            ]);
             return; // notifications disabled
         }
 

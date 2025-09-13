@@ -9,11 +9,22 @@ use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Collection;
 use Carbon\Carbon;
 
 class WebAppForwardingService
 {
+    /**
+     * Failure classification constants for logging & circuit breaker decisions.
+     */
+    private const CLASS_HTTP_422_VALIDATION   = 'HTTP_422_VALIDATION';
+    private const CLASS_HTTP_4XX              = 'HTTP_4XX';
+    private const CLASS_HTTP_5XX_RETRYABLE    = 'HTTP_5XX_RETRYABLE';
+    private const CLASS_NETWORK_DNS           = 'NETWORK_DNS';
+    private const CLASS_NETWORK_OTHER         = 'NETWORK_OTHER';
+    private const CLASS_LOCAL_VALIDATION_FAIL = 'LOCAL_VALIDATION_FAILED';
+
     /**
      * Process automated void transaction forwarding.
      *
@@ -80,6 +91,12 @@ class WebAppForwardingService
     private function notifyPosFailure(WebappTransactionForward $forward)
     {
         $callbackUrl = $forward->transaction->terminal->callback_url ?? null;
+        if (!config('notifications.callbacks.enabled')) {
+            \Log::info('POS failure notification suppressed (global callbacks disabled)', [
+                'transaction_id' => $forward->transaction_id,
+            ]);
+            return;
+        }
         if (!$callbackUrl) {
             \Log::warning('No POS callback URL for failed transaction', ['transaction_id' => $forward->transaction_id]);
             return;
@@ -252,18 +269,18 @@ class WebAppForwardingService
 
             $payloadArr = [
                 'tsms_id' => $tx->id,
-                'transaction_id' => $tx->transaction_id,
-                'terminal_serial' => $tx->terminal?->serial_number,
-                'tenant_code' => $tx->tenant?->customer_code,
-                'tenant_name' => $tx->tenant?->name,
+                'transaction_id' => (string)$tx->transaction_id,
+                'terminal_serial' => $this->s($tx->terminal?->serial_number),
+                'tenant_code' => $this->s($tx->tenant?->customer_code),
+                'tenant_name' => $this->s($tx->tenant?->name),
                 'transaction_timestamp' => $this->isoTimestamp($tx->transaction_timestamp),
                 'amount' => (float) $tx->gross_sales,
                 'net_amount' => (float) $tx->net_sales,
-                'validation_status' => $tx->validation_status,
+                'validation_status' => $this->s($tx->validation_status),
                 'processed_at' => $this->isoTimestamp($tx->created_at),
-                'submission_uuid' => $tx->submission_uuid,
-                'adjustments' => $completeAdjustments,
-                'taxes' => $completeTaxes,
+                'submission_uuid' => $this->s($tx->submission_uuid),
+                'adjustments' => $this->normalizeAdjustments($completeAdjustments),
+                'taxes' => $this->normalizeTaxes($completeTaxes),
             ];
             // Remove checksum if present, then compute
             unset($payloadArr['checksum']);
@@ -310,6 +327,25 @@ class WebAppForwardingService
 
         $payload = $this->buildBulkPayload($records, $batchId);
 
+        // Local outbound contract validation (fail fast before HTTP)
+        $validation = $this->validateBulkPayload($payload);
+        if (!$validation['valid']) {
+            $errorMsg = 'Outbound payload invalid';
+            Log::error('Outbound payload validation failed', [
+                'batch_id' => $batchId,
+                'errors' => $validation['errors'],
+                'classification' => self::CLASS_LOCAL_VALIDATION_FAIL,
+            ]);
+            $this->handleBatchFailure($records, $errorMsg . ': ' . json_encode($validation['errors']), 0);
+            // Do NOT increment circuit breaker for local validation issues
+            return [
+                'success' => false,
+                'error' => $errorMsg,
+                'batch_id' => $batchId,
+                'classification' => self::CLASS_LOCAL_VALIDATION_FAIL,
+            ];
+        }
+
         try {
             $client = Http::timeout($this->timeout)
                           ->withToken($this->authToken);
@@ -340,26 +376,57 @@ class WebAppForwardingService
             $records->each(fn ($f) => $f->markAsCompleted($data, $response->status()));
             $this->resetCircuitBreaker();
 
-            Log::info('Bulk forwarded', ['batch_id' => $batchId, 'count' => $records->count()]);
-            return ['success' => true, 'forwarded_count' => $records->count(), 'batch_id' => $batchId];
+            Log::info('Bulk forwarded', [
+                'batch_id' => $batchId,
+                'count' => $records->count(),
+                'classification' => 'SUCCESS'
+            ]);
+            return [
+                'success' => true,
+                'forwarded_count' => $records->count(),
+                'batch_id' => $batchId,
+                'classification' => 'SUCCESS'
+            ];
 
         } catch (RequestException $e) {
             $msg = $e->getMessage();
-            Log::error('HTTP forwarding error', ['error' => $msg]);
-            $this->recordFailure();
-            $this->handleBatchFailure($records, $msg, $e->response?->status());
-            return ['success' => false, 'error' => $msg, 'batch_id' => $batchId];
+            $status = $e->response?->status();
+            $classification = $this->classifyHttpFailure($status, $msg);
+            Log::error('HTTP forwarding error', [
+                'error' => $msg,
+                'status' => $status,
+                'classification' => $classification,
+                'batch_id' => $batchId,
+            ]);
+            $this->maybeRecordBreakerFailure($classification);
+            $this->handleBatchFailure($records, $msg, $status);
+            return [
+                'success' => false,
+                'error' => $msg,
+                'batch_id' => $batchId,
+                'classification' => $classification,
+            ];
 
         } catch (\Throwable $e) {
             $msg = $e->getMessage();
-            Log::error('Forwarding exception', ['error' => $msg]);
-            $this->recordFailure();
+            $classification = $this->classifyThrowable($msg);
+            Log::error('Forwarding exception', [
+                'error' => $msg,
+                'classification' => $classification,
+                'batch_id' => $batchId,
+            ]);
+            $this->maybeRecordBreakerFailure($classification);
             $this->handleBatchFailure($records, $msg);
-            return ['success' => false, 'error' => $msg, 'batch_id' => $batchId];
+            return [
+                'success' => false,
+                'error' => $msg,
+                'batch_id' => $batchId,
+                'classification' => $classification,
+            ];
         }
     }
 
-    private function handleBatchFailure(Collection $records, string $error, int $statusCode = null): void
+    private function handleBatchFailure(Collection $records, string $error, ?int $statusCode = null): void
     {
         $records->each(function ($f) use ($error, $statusCode) {
             $f->markAsFailed($error, $statusCode);
@@ -434,7 +501,104 @@ class WebAppForwardingService
     private function recordFailure(): void
     {
         Cache::increment($this->circuitBreakerKey.'_failures');
-    Cache::put($this->circuitBreakerKey.'_last_failure', now(), now()->addHours(1));
+        Cache::put($this->circuitBreakerKey.'_last_failure', now(), now()->addHours(1));
+    }
+
+    /**
+     * Decide if a classification should increment breaker.
+     */
+    private function maybeRecordBreakerFailure(string $classification): void
+    {
+        // Only retryable failures impact breaker.
+        if (in_array($classification, [
+            self::CLASS_HTTP_5XX_RETRYABLE,
+            self::CLASS_NETWORK_DNS,
+            self::CLASS_NETWORK_OTHER,
+        ], true)) {
+            $this->recordFailure();
+        }
+    }
+
+    private function classifyHttpFailure(?int $status, string $message): string
+    {
+        if ($status === 422) {
+            return self::CLASS_HTTP_422_VALIDATION; // non-retryable contract mismatch
+        }
+        if ($status && $status >= 500) {
+            return self::CLASS_HTTP_5XX_RETRYABLE;
+        }
+        if ($status && $status >= 400) {
+            return self::CLASS_HTTP_4XX; // treat as non-retryable unless policy says otherwise
+        }
+        if (str_contains(strtolower($message), 'could not resolve host')) {
+            return self::CLASS_NETWORK_DNS;
+        }
+        return self::CLASS_NETWORK_OTHER;
+    }
+
+    private function classifyThrowable(string $message): string
+    {
+        $lower = strtolower($message);
+        if (str_contains($lower, 'could not resolve host')) {
+            return self::CLASS_NETWORK_DNS;
+        }
+        return self::CLASS_NETWORK_OTHER;
+    }
+
+    /** String normalization: never return null; trim whitespace. */
+    private function s($v): string { return is_string($v) ? trim($v) : ''; }
+    /** Float normalization */
+    private function f($v): float { return (float)($v ?? 0); }
+    /** Normalize adjustments array */
+    private function normalizeAdjustments(array $arr): array
+    {
+        return array_map(fn($a) => [
+            'adjustment_type' => $this->s($a['adjustment_type'] ?? null),
+            'amount' => $this->f($a['amount'] ?? 0),
+        ], $arr);
+    }
+    /** Normalize taxes array */
+    private function normalizeTaxes(array $arr): array
+    {
+        return array_map(fn($t) => [
+            'tax_type' => $this->s($t['tax_type'] ?? null),
+            'amount' => $this->f($t['amount'] ?? 0),
+        ], $arr);
+    }
+
+    /** Validate outbound bulk payload shape */
+    private function validateBulkPayload(array $payload): array
+    {
+        // If legacy single-transaction structure, skip (handled elsewhere)
+        if (!isset($payload['transactions'])) {
+            return ['valid' => true];
+        }
+        $rules = [
+            'source' => ['required','string'],
+            'batch_id' => ['required','string'],
+            'timestamp' => ['required','date'],
+            'transaction_count' => ['required','integer','gte:1'],
+            'transactions' => ['required','array','min:1'],
+            'transactions.*.transaction_id' => ['required','string'],
+            'transactions.*.terminal_serial' => ['required','string'],
+            'transactions.*.tenant_code' => ['required','string'],
+            'transactions.*.tenant_name' => ['string'], // optional but must be string
+            'transactions.*.transaction_timestamp' => ['required','string'],
+            'transactions.*.amount' => ['required','numeric','gte:0'],
+            'transactions.*.net_amount' => ['required','numeric','gte:0'],
+            'transactions.*.adjustments' => ['array'],
+            'transactions.*.adjustments.*.adjustment_type' => ['required','string'],
+            'transactions.*.adjustments.*.amount' => ['required','numeric'],
+            'transactions.*.taxes' => ['array'],
+            'transactions.*.taxes.*.tax_type' => ['required','string'],
+            'transactions.*.taxes.*.amount' => ['required','numeric'],
+            'transactions.*.checksum' => ['required','string','size:64'],
+        ];
+        $validator = Validator::make($payload, $rules);
+        if ($validator->fails()) {
+            return ['valid' => false, 'errors' => $validator->errors()->toArray()];
+        }
+        return ['valid' => true];
     }
 
     private function resetCircuitBreaker(): void
@@ -547,18 +711,18 @@ class WebAppForwardingService
 
         $payloadArr = [
             'tsms_id' => $transaction->id,
-            'transaction_id' => $transaction->transaction_id,
-            'terminal_serial' => $transaction->terminal?->serial_number,
-            'tenant_code' => $transaction->tenant?->customer_code,
-            'tenant_name' => $transaction->tenant?->name,
+            'transaction_id' => (string)$transaction->transaction_id,
+            'terminal_serial' => $this->s($transaction->terminal?->serial_number),
+            'tenant_code' => $this->s($transaction->tenant?->customer_code),
+            'tenant_name' => $this->s($transaction->tenant?->name),
             'transaction_timestamp' => $this->isoTimestamp($transaction->transaction_timestamp),
             'amount' => (float) $transaction->gross_sales,
             'net_amount' => (float) $transaction->net_sales,
-            'validation_status' => $transaction->validation_status,
+            'validation_status' => $this->s($transaction->validation_status),
             'processed_at' => $this->isoTimestamp($transaction->created_at),
-            'submission_uuid' => $transaction->submission_uuid,
-            'adjustments' => $completeAdjustments,
-            'taxes' => $completeTaxes,
+            'submission_uuid' => $this->s($transaction->submission_uuid),
+            'adjustments' => $this->normalizeAdjustments($completeAdjustments),
+            'taxes' => $this->normalizeTaxes($completeTaxes),
         ];
 
         // Compute checksum
@@ -584,6 +748,22 @@ class WebAppForwardingService
             }
 
             Log::debug('[TSMS] Immediate forwarding payload', $bulkPayload);
+            // Local validation for immediate single forward (converted to bulk format)
+            $validation = $this->validateBulkPayload($bulkPayload);
+            if (!$validation['valid']) {
+                Log::error('Immediate forwarding validation failed', [
+                    'transaction_id' => $transaction->transaction_id,
+                    'errors' => $validation['errors'],
+                    'classification' => self::CLASS_LOCAL_VALIDATION_FAIL,
+                ]);
+                return [
+                    'success' => false,
+                    'error' => 'Outbound payload invalid',
+                    'batch_id' => $batchId,
+                    'classification' => self::CLASS_LOCAL_VALIDATION_FAIL,
+                ];
+            }
+
             $response = $client->post($this->webAppEndpoint, $bulkPayload)->throw();
 
             $data = $response->json();
@@ -617,10 +797,15 @@ class WebAppForwardingService
 
         } catch (RequestException $e) {
             $msg = $e->getMessage();
+            $status = $e->response?->status();
+            $classification = $this->classifyHttpFailure($status, $msg);
             Log::error('Immediate forwarding HTTP error', [
                 'transaction_id' => $transaction->transaction_id,
-                'error' => $msg
+                'error' => $msg,
+                'status' => $status,
+                'classification' => $classification,
             ]);
+            $this->maybeRecordBreakerFailure($classification);
 
             // Create failed forwarding record
             WebappTransactionForward::create([
@@ -644,10 +829,13 @@ class WebAppForwardingService
 
         } catch (\Throwable $e) {
             $msg = $e->getMessage();
+            $classification = $this->classifyThrowable($msg);
             Log::error('Immediate forwarding exception', [
                 'transaction_id' => $transaction->transaction_id,
-                'error' => $msg
+                'error' => $msg,
+                'classification' => $classification,
             ]);
+            $this->maybeRecordBreakerFailure($classification);
 
             return [
                 'success' => false,
