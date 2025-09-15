@@ -42,7 +42,7 @@
                     <td>{{ $terminal->tenant_id }}</td>
                     <td>{{ $terminal->id }}</td>
                     <td>{{ $terminal->serial_number }}</td>
-                    <td>{{ $terminal->created_at ? $terminal->created_at->format('Y-m-d H:i') : 'N/A' }}</td>
+                    <td>{{ $terminal->created_at?->format('Y-m-d H:i') ?? 'N/A' }}</td>
                     <td>
                       @if(isset($terminal->expires_at) && $terminal->expires_at)
                         {{ \Carbon\Carbon::parse($terminal->expires_at)->format('Y-m-d H:i') }}
@@ -65,7 +65,7 @@
                       @endphp
                       <div class="input-group">
                         <input type="text" class="form-control" value="{{ $latestToken ? $latestToken->name : '' }}" readonly style="max-width: 180px;">
-                        <span class="input-group-text" title="Token Created">{{ $latestToken ? $latestToken->created_at->format('Y-m-d H:i') : '' }}</span>
+                        <span class="input-group-text" title="Token Created">{{ $latestToken?->created_at?->format('Y-m-d H:i') }}</span>
                       </div>
                     </td>
 @if(session('bearer_token'))
@@ -276,10 +276,10 @@ $(function () {
           <tr>
             <td>{{ $terminal->terminal_uid }}</td>
             <td>{{ $terminal->tenant->name ?? 'Unknown' }}</td>
-            <td>{{ $terminal->created_at->format('Y-m-d H:i') }}</td>
+            <td>{{ $terminal->created_at?->format('Y-m-d H:i') ?? 'N/A' }}</td>
             <td>
               @if($terminal->expires_at)
-                {{ $terminal->expires_at->format('Y-m-d H:i') }}
+                {{ $terminal->expires_at?->format('Y-m-d H:i') }}
               @else
                 Never
               @endif
