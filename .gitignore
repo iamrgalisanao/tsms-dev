@@ -23,3 +23,12 @@ yarn-error.log
 /memAgent/data/
 /memAgent/logs/
 /memAgent/*.pid
+
+# Cipher additional local state and secrets
+/memAgent/.env.local
+/memAgent/.state/
+
+# Cipher session sqlite databases (do not commit)
+data/cipher-sessions.db
+data/cipher-sessions.db-shm
+data/cipher-sessions.db-wal

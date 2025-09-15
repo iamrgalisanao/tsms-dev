@@ -100,4 +100,16 @@ return [
             'max_requeue_attempts' => (int) env('TX_WATCHDOG_MAX_REQUEUE_ATTEMPTS', 2),
         ],
     ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Testing Utilities
+    |--------------------------------------------------------------------------
+    | Utilities to facilitate deterministic test assertions without performing
+    | real outbound HTTP calls. capture_only short-circuits forwarding paths
+    | and returns the constructed bulk envelope for inspection.
+    */
+    'testing' => [
+        'capture_only' => (bool) env('TSMS_TESTING_CAPTURE_ONLY', false),
+    ],
 ];

@@ -24,6 +24,13 @@ class WebAppForwardingService
     private const CLASS_NETWORK_DNS           = 'NETWORK_DNS';
     private const CLASS_NETWORK_OTHER         = 'NETWORK_OTHER';
     private const CLASS_LOCAL_VALIDATION_FAIL = 'LOCAL_VALIDATION_FAILED';
+    private const CLASS_LOCAL_BATCH_CONTRACT_FAIL = 'LOCAL_BATCH_CONTRACT_FAILED';
+
+    /**
+     * Outbound payload schema version for bulk (multi-transaction) forwarding envelopes.
+     * Increment when making backward-incompatible changes to the bulk envelope structure.
+     */
+    private const BULK_SCHEMA_VERSION = '2.0';
 
     /**
      * Process automated void transaction forwarding.
@@ -139,9 +146,10 @@ class WebAppForwardingService
         $this->batchSize                = config('tsms.web_app.batch_size', 50);
         $this->authToken                = config('tsms.web_app.auth_token', '');
         $this->verifySSL                = config('tsms.web_app.verify_ssl', false);
+        // Updated to leverage new config naming (fallback to legacy keys if present)
         $this->circuitBreakerEnabled    = config('tsms.circuit_breaker.enabled', true);
-        $this->circuitBreakerThreshold  = config('tsms.circuit_breaker.threshold', 5);
-        $this->circuitBreakerCooldown   = config('tsms.circuit_breaker.cooldown', 10);
+        $this->circuitBreakerThreshold  = config('tsms.circuit_breaker.failure_threshold', config('tsms.circuit_breaker.threshold', 5));
+        $this->circuitBreakerCooldown   = config('tsms.circuit_breaker.recovery_timeout_minutes', config('tsms.circuit_breaker.cooldown', 10));
         $this->checksumService          = app(PayloadChecksumService::class);
     }
 
@@ -325,15 +333,53 @@ class WebAppForwardingService
         $batchId = $records->first()->batch_id;
         $records->each(fn ($f) => $f->markAsInProgress());
 
-        $payload = $this->buildBulkPayload($records, $batchId);
+        // Fast feature flag gate: allow immediate safe disable of forwarding without code deploy
+        if (!config('tsms.web_app.enabled', true)) {
+            \Log::warning('WebApp forwarding globally disabled via config flag');
+            // Mark as failed with explicit status but do NOT increment breaker
+            $this->handleBatchFailure($records, 'Forwarding disabled by feature flag', 0);
+            return [
+                'success' => false,
+                'error' => 'forwarding_disabled',
+                'batch_id' => $batchId,
+                'classification' => self::CLASS_LOCAL_VALIDATION_FAIL,
+            ];
+        }
+
+        try {
+            $payload = $this->buildBulkPayload($records, $batchId);
+        } catch (\RuntimeException $e) {
+            // Likely homogeneity violation (mixed tenant / terminal) or similar batch contract issue
+            $msg = $e->getMessage();
+            $classification = self::CLASS_LOCAL_BATCH_CONTRACT_FAIL;
+            Log::error('Batch contract failure during payload build', [
+                'batch_id' => $batchId,
+                'error' => $msg,
+                'classification' => $classification,
+            ]);
+            // Mark records failed (do not increment breaker)
+            $this->handleBatchFailure($records, $msg, 0);
+            return [
+                'success' => false,
+                'error' => $msg,
+                'batch_id' => $batchId,
+                'classification' => $classification,
+            ];
+        }
 
         // Local outbound contract validation (fail fast before HTTP)
         $validation = $this->validateBulkPayload($payload);
         if (!$validation['valid']) {
             $errorMsg = 'Outbound payload invalid';
+            $errors = $validation['errors'];
+            $missingIds = [];
+            if (isset($errors['tenant_id'])) { $missingIds[] = 'tenant_id'; }
+            if (isset($errors['terminal_id'])) { $missingIds[] = 'terminal_id'; }
             Log::error('Outbound payload validation failed', [
                 'batch_id' => $batchId,
-                'errors' => $validation['errors'],
+                'errors' => $errors,
+                'missing_ids' => $missingIds,
+                'missing_id_metric' => !empty($missingIds),
                 'classification' => self::CLASS_LOCAL_VALIDATION_FAIL,
             ]);
             $this->handleBatchFailure($records, $errorMsg . ': ' . json_encode($validation['errors']), 0);
@@ -343,6 +389,18 @@ class WebAppForwardingService
                 'error' => $errorMsg,
                 'batch_id' => $batchId,
                 'classification' => self::CLASS_LOCAL_VALIDATION_FAIL,
+            ];
+        }
+
+        // Capture-only (test) mode for batch path
+        if (config('tsms.testing.capture_only')) {
+            $records->each(fn ($f) => $f->markAsCompleted(['captured' => true], 200));
+            return [
+                'success' => true,
+                'forwarded_count' => $records->count(),
+                'batch_id' => $batchId,
+                'classification' => 'SUCCESS',
+                'captured_payload' => $payload,
             ];
         }
 
@@ -441,40 +499,52 @@ class WebAppForwardingService
 
     private function buildBulkPayload(Collection $records, string $batchId): array
     {
-        // For single transaction forwarding, use the user's specified structure
-        if ($records->count() === 1) {
-            $forwardingRecord = $records->first();
-            $transaction = $forwardingRecord->transaction;
+        // Unified envelope for single or multiple transactions (schema v2.0)
+        $first = $records->first();
+        $tenantId = $first->transaction->tenant_id ?? null;
+        $terminalId = $first->transaction->terminal_id ?? null;
 
-            return [
-                'submission_uuid' => $transaction->submission_uuid,
-                'tenant_id' => $transaction->tenant_id,
-                'terminal_id' => $transaction->terminal_id,
-                'submission_timestamp' => $this->isoTimestamp($transaction->submission_timestamp),
-                'transaction_count' => 1,
-                'payload_checksum' => $forwardingRecord->request_payload['checksum'] ?? '',
-                'transaction' => [
-                    'transaction_id' => $transaction->transaction_id,
-                    'transaction_timestamp' => $this->isoTimestamp($transaction->transaction_timestamp),
-                    'gross_sales' => (float) $transaction->gross_sales,
-                    'net_sales' => (float) $transaction->net_sales,
-                    'promo_status' => $transaction->promo_status,
-                    'customer_code' => $transaction->customer_code,
-                    'payload_checksum' => $forwardingRecord->request_payload['checksum'] ?? '',
-                    'adjustments' => $forwardingRecord->request_payload['adjustments'] ?? [],
-                    'taxes' => $forwardingRecord->request_payload['taxes'] ?? [],
-                ]
-            ];
+        // Basic homogeneity assertion (industry best practice: a batch should represent a single tenant & terminal)
+        $mismatch = $records->contains(function ($r) use ($tenantId, $terminalId) {
+            return ($r->transaction->tenant_id ?? null) !== $tenantId || ($r->transaction->terminal_id ?? null) !== $terminalId;
+        });
+        if ($mismatch) {
+            Log::warning('Bulk payload homogeneity violation: mixed tenant_id / terminal_id detected', [
+                'batch_id' => $batchId,
+            ]);
+            throw new \RuntimeException('Mixed tenant / terminal batch not supported');
         }
 
-        // For multiple transactions, use the original batch structure
-        return [
+        $transactions = $records->pluck('request_payload')->all();
+        $transactionChecksums = array_map(fn ($t) => $t['checksum'] ?? '', $transactions);
+        $batchChecksum = $this->computeBatchChecksum(
+            self::BULK_SCHEMA_VERSION,
+            'TSMS',
+            $batchId,
+            (string)$tenantId,
+            (string)$terminalId,
+            $records->count(),
+            $transactionChecksums
+        );
+        $envelope = [
             'source' => 'TSMS',
+            'schema_version' => self::BULK_SCHEMA_VERSION,
             'batch_id' => $batchId,
             'timestamp' => Carbon::now()->format('Y-m-d\\TH:i:s.v\\Z'),
+            'tenant_id' => $tenantId,
+            'terminal_id' => $terminalId,
             'transaction_count' => $records->count(),
-            'transactions' => $records->pluck('request_payload')->all(),
+            'batch_checksum' => $batchChecksum,
+            'transactions' => $transactions,
         ];
+        // If capture-only mode active for tests on batch path, attach envelope directly for assertions
+        if (config('tsms.testing.capture_only')) {
+            // Persist envelope snapshot JSON on each record for debugging / test introspection
+            $records->each(function($f) use ($envelope) {
+                $f->update(['response_data' => ['captured' => true, 'envelope' => $envelope]]);
+            });
+        }
+        return $envelope;
     }
 
     private function isoTimestamp(?Carbon $dt): ?string
@@ -575,15 +645,20 @@ class WebAppForwardingService
         }
         $rules = [
             'source' => ['required','string'],
+            'schema_version' => ['required','in:2.0'],
             'batch_id' => ['required','string'],
-            'timestamp' => ['required','date'],
+            'timestamp' => ['required','date_format:Y-m-d\\TH:i:s.v\\Z'],
             'transaction_count' => ['required','integer','gte:1'],
+            'tenant_id' => ['required','integer','gte:1'],
+            'terminal_id' => ['required','integer','gte:1'],
+            'batch_checksum' => ['required','string','size:64'],
             'transactions' => ['required','array','min:1'],
             'transactions.*.transaction_id' => ['required','string'],
+            // Allow empty strings for terminal_serial / tenant_code in test contexts; still require key presence
             'transactions.*.terminal_serial' => ['required','string'],
             'transactions.*.tenant_code' => ['required','string'],
             'transactions.*.tenant_name' => ['string'], // optional but must be string
-            'transactions.*.transaction_timestamp' => ['required','string'],
+            'transactions.*.transaction_timestamp' => ['required','date_format:Y-m-d\\TH:i:s.v\\Z'],
             'transactions.*.amount' => ['required','numeric','gte:0'],
             'transactions.*.net_amount' => ['required','numeric','gte:0'],
             'transactions.*.adjustments' => ['array'],
@@ -599,6 +674,31 @@ class WebAppForwardingService
             return ['valid' => false, 'errors' => $validator->errors()->toArray()];
         }
         return ['valid' => true];
+    }
+
+    /**
+     * Compute deterministic batch checksum from envelope identifying fields and per-transaction checksums.
+     * @param string $batchId
+     * @param string $tenantId
+     * @param string $terminalId
+     * @param array $transactionChecksums
+     * @return string 64-char hex SHA-256
+     */
+    private function computeBatchChecksum(string $schemaVersion, string $source, string $batchId, string $tenantId, string $terminalId, int $transactionCount, array $transactionChecksums): string
+    {
+        // Stable ordering: sort checksums ascending to avoid order-based variation, then concatenate with key envelope fields.
+        $filtered = array_filter($transactionChecksums, fn ($c) => is_string($c) && $c !== '');
+        sort($filtered, SORT_STRING);
+        $concat = implode('|', [
+            $schemaVersion,
+            $source,
+            $batchId,
+            $tenantId,
+            $terminalId,
+            $transactionCount,
+            implode(',', $filtered)
+        ]);
+        return hash('sha256', $concat);
     }
 
     private function resetCircuitBreaker(): void
@@ -709,12 +809,19 @@ class WebAppForwardingService
             ];
         }
 
+        $tenantCode = $this->s($transaction->tenant?->customer_code);
+        $tenantName = $this->s($transaction->tenant?->name);
+        if ($tenantCode === '') { $tenantCode = 'UNKNOWN_TENANT'; }
+        if ($tenantName === '') { $tenantName = 'Unknown Tenant'; }
+        $terminalSerial = $this->s($transaction->terminal?->serial_number);
+        if ($terminalSerial === '') { $terminalSerial = 'UNKNOWN_TERMINAL'; }
+
         $payloadArr = [
             'tsms_id' => $transaction->id,
             'transaction_id' => (string)$transaction->transaction_id,
-            'terminal_serial' => $this->s($transaction->terminal?->serial_number),
-            'tenant_code' => $this->s($transaction->tenant?->customer_code),
-            'tenant_name' => $this->s($transaction->tenant?->name),
+            'terminal_serial' => $terminalSerial,
+            'tenant_code' => $tenantCode,
+            'tenant_name' => $tenantName,
             'transaction_timestamp' => $this->isoTimestamp($transaction->transaction_timestamp),
             'amount' => (float) $transaction->gross_sales,
             'net_amount' => (float) $transaction->net_sales,
@@ -731,11 +838,26 @@ class WebAppForwardingService
 
         // Build bulk payload format (even for single transaction)
         $batchId = 'TSMS_' . now()->format('YmdHis') . '_' . uniqid();
+        $tenantId = $transaction->tenant_id;
+        $terminalId = $transaction->terminal_id;
+        $batchChecksum = $this->computeBatchChecksum(
+            self::BULK_SCHEMA_VERSION,
+            'TSMS',
+            $batchId,
+            (string)$tenantId,
+            (string)$terminalId,
+            1,
+            [$payloadArr['checksum']]
+        );
         $bulkPayload = [
             'source' => 'TSMS',
+            'schema_version' => self::BULK_SCHEMA_VERSION,
             'batch_id' => $batchId,
             'timestamp' => Carbon::now()->format('Y-m-d\\TH:i:s.v\\Z'),
+            'tenant_id' => $tenantId,
+            'terminal_id' => $terminalId,
             'transaction_count' => 1,
+            'batch_checksum' => $batchChecksum,
             'transactions' => [$payloadArr],
         ];
 
@@ -764,6 +886,28 @@ class WebAppForwardingService
                 ];
             }
 
+            if (config('tsms.testing.capture_only')) {
+                // Simulate successful response and create forwarding record for test assertions
+                WebappTransactionForward::create([
+                    'transaction_id' => $transaction->id,
+                    'batch_id' => $batchId,
+                    'status' => WebappTransactionForward::STATUS_COMPLETED,
+                    'attempts' => 1,
+                    'max_attempts' => 1,
+                    'first_attempted_at' => now(),
+                    'last_attempted_at' => now(),
+                    'completed_at' => now(),
+                    'request_payload' => $payloadArr,
+                    'response_data' => ['captured' => true],
+                    'response_status_code' => 200,
+                ]);
+                return [
+                    'success' => true,
+                    'message' => 'Captured only (test mode)',
+                    'batch_id' => $batchId,
+                    'captured_payload' => $bulkPayload,
+                ];
+            }
             $response = $client->post($this->webAppEndpoint, $bulkPayload)->throw();
 
             $data = $response->json();
