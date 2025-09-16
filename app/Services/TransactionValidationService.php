@@ -806,11 +806,33 @@ class TransactionValidationService
             );
         }
         if ($txTime->gt($now)) {
-            $errors[] = sprintf(
-                'Transaction timestamp (%s) cannot be in the future (current time: %s).',
-                $txTime->format('Y-m-d H:i:s'),
-                $now->format('Y-m-d H:i:s')
-            );
+            // Configurable tolerance (seconds) to allow slight POS clock drift without hard rejection.
+            $toleranceSeconds = (int) config('tsms.validation.future_timestamp_tolerance_seconds', 0);
+            $driftSeconds = $txTime->diffInSeconds($now);
+            if ($toleranceSeconds > 0 && $driftSeconds <= $toleranceSeconds) {
+                // Log informational drift event; do not reject.
+                \Log::info('Transaction timestamp drift within tolerance', [
+                    'transaction_id' => $transaction->id,
+                    'tx_timestamp' => $txTime->format('Y-m-d H:i:s'),
+                    'server_time' => $now->format('Y-m-d H:i:s'),
+                    'drift_seconds' => $driftSeconds,
+                    'tolerance_seconds' => $toleranceSeconds,
+                ]);
+            } else {
+                $errors[] = sprintf(
+                    'Transaction timestamp (%s) cannot be in the future (current time: %s).',
+                    $txTime->format('Y-m-d H:i:s'),
+                    $now->format('Y-m-d H:i:s')
+                );
+                // Emit structured log for monitoring future timestamp rejections
+                \Log::warning('Transaction timestamp future beyond tolerance', [
+                    'transaction_id' => $transaction->id,
+                    'tx_timestamp' => $txTime->format('Y-m-d H:i:s'),
+                    'server_time' => $now->format('Y-m-d H:i:s'),
+                    'drift_seconds' => $driftSeconds,
+                    'tolerance_seconds' => $toleranceSeconds,
+                ]);
+            }
         }
 
         // 4) Validate transaction_id format against a set of regex patterns

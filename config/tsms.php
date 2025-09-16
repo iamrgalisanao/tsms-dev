@@ -112,4 +112,16 @@ return [
     'testing' => [
         'capture_only' => (bool) env('TSMS_TESTING_CAPTURE_ONLY', false),
     ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Validation Tuning
+    |--------------------------------------------------------------------------
+    | Adjustable validation parameters. The future timestamp tolerance allows
+    | acceptance of transactions that are slightly ahead of server time due to
+    | POS clock drift. Set to 0 (default) in production for strict behavior.
+    */
+    'validation' => [
+        'future_timestamp_tolerance_seconds' => (int) env('TSMS_FUTURE_TIMESTAMP_TOLERANCE_SECONDS', 0),
+    ],
 ];
