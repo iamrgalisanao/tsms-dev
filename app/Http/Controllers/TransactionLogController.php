@@ -12,6 +12,7 @@ use Illuminate\Support\Facades\Gate;
 use Maatwebsite\Excel\Facades\Excel;
 use App\Models\PosProvider;
 use App\Models\PosTerminal;
+use App\Models\Tenant;
 
 class TransactionLogController extends Controller
 {
@@ -30,10 +31,18 @@ class TransactionLogController extends Controller
             'status',
             'date_from',
             'date_to',
+            'tenant_id',
             'terminal_id',
             'amount_min',
             'amount_max'
         ]);
+
+        // Determine pagination size. If a date filter is applied and per_page is not explicitly set,
+        // load a larger page (e.g., 1000) to reflect all transactions for that range (e.g., today's 289).
+        $perPage = (int) $request->input('per_page', 15);
+        if (($request->filled('date_from') || $request->filled('date_to')) && !$request->has('per_page')) {
+            $perPage = 1000;
+        }
 
         // Add transaction_id search handling
         if ($request->filled('transaction_id')) {
@@ -46,7 +55,8 @@ class TransactionLogController extends Controller
             'terminal_id',
             'gross_sales as amount',
             'validation_status',
-            'created_at'
+            'created_at',
+            'completed_at'
             ])
             ->with(['terminal:id,serial_number,tenant_id,machine_number', 'terminal.tenant:id,trade_name'])
             ->when(isset($filters['transaction_id']), function ($query) use ($filters) {
@@ -62,6 +72,9 @@ class TransactionLogController extends Controller
             ->when(isset($filters['date_to']), function ($query) use ($filters) {
             return $query->where('created_at', '<=', $filters['date_to'] . ' 23:59:59');
             })
+            ->when(isset($filters['tenant_id']), function ($query) use ($filters) {
+            return $query->where('tenant_id', $filters['tenant_id']);
+            })
             ->when(isset($filters['terminal_id']), function ($query) use ($filters) {
             return $query->where('terminal_id', $filters['terminal_id']);
             })
@@ -72,7 +85,8 @@ class TransactionLogController extends Controller
             return $query->where('gross_sales', '<=', $filters['amount_max']);
             })
             ->latest()
-            ->paginate(15);
+            ->paginate($perPage)
+            ->appends($request->all());
 
         if ($request->wantsJson()) {
             return response()->json($logs);
@@ -82,11 +96,13 @@ class TransactionLogController extends Controller
         $terminals = PosTerminal::with('tenant:id,trade_name')
             ->get(['id','serial_number','tenant_id','machine_number']);
 
+        $tenants = Tenant::orderBy('trade_name')->get(['id','trade_name']);
+
     $activeTab = 'detailed';
     $summary = null; // populated by summary() route
 
     // return view('transactions.logs.index', compact('logs', 'providers', 'terminals', 'filters'));
-     return view('transactions.logs.index', compact('logs', 'terminals', 'filters', 'activeTab', 'summary'));
+         return view('transactions.logs.index', compact('logs', 'terminals', 'tenants', 'filters', 'activeTab', 'summary'));
     }
 
     public function show($id)
@@ -146,6 +162,7 @@ class TransactionLogController extends Controller
             'status',
             'date_from',
             'date_to',
+            'tenant_id',
             'terminal_id',
         ]);
 
@@ -160,6 +177,9 @@ class TransactionLogController extends Controller
             })
             ->when(isset($filters['date_to']), function ($q) use ($filters) {
                 $q->where('t.created_at', '<=', $filters['date_to'] . ' 23:59:59');
+            })
+            ->when(isset($filters['tenant_id']), function ($q) use ($filters) {
+                $q->where('t.tenant_id', $filters['tenant_id']);
             })
             ->when(isset($filters['terminal_id']), function ($q) use ($filters) {
                 $q->where('t.terminal_id', $filters['terminal_id']);
@@ -180,6 +200,7 @@ class TransactionLogController extends Controller
 
         $terminals = PosTerminal::with('tenant:id,trade_name')
             ->get(['id','serial_number','tenant_id','machine_number']);
+        $tenants = Tenant::orderBy('trade_name')->get(['id','trade_name']);
 
         $activeTab = 'summary';
         $logs = collect(); // not needed on summary route
@@ -188,6 +209,6 @@ class TransactionLogController extends Controller
             return response()->json($summary);
         }
 
-        return view('transactions.logs.index', compact('logs', 'terminals', 'filters', 'activeTab', 'summary'));
+        return view('transactions.logs.index', compact('logs', 'terminals', 'tenants', 'filters', 'activeTab', 'summary'));
     }
 }
