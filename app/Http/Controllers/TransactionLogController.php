@@ -95,11 +95,9 @@ class TransactionLogController extends Controller
             $transaction = Transaction::with([
                 'terminal',
                 'tenant',
-                'processingHistory',
                 'adjustments',
                 'taxes'
             ])->findOrFail($id);
-
             if (!$transaction) {
                 return redirect()
                     ->route('transactions.logs.index')

@@ -1,4 +1,4 @@
-@extends('layouts.app')
+@extends('layouts.master')
 
 @section('content')
 <div class="container-fluid py-4">
@@ -73,8 +73,12 @@
         <div class="card-body">
           <h6 class="text-muted mb-2">Terminal</h6>
           <div class="mt-3">
-            <p class="mb-1 text-dark">{{ $transaction->terminal->identifier }}</p>
-            <small class="text-muted">{{ $transaction->terminal->provider->name }}</small>
+            <p class="mb-1 text-dark">{{ optional($transaction->terminal)->identifier ?? 'N/A' }}</p>
+            @php
+              $sn = optional($transaction->terminal)->serial_number;
+              $mn = optional($transaction->terminal)->machine_number;
+            @endphp
+            <small class="text-muted">SN: {{ $sn ?? 'N/A' }} • Machine: {{ $mn ?? 'N/A' }}</small>
           </div>
         </div>
       </div>

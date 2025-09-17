@@ -10,32 +10,44 @@ class TransactionDetailService
     public function getTransactionDetails($id)
     {
         return Cache::remember("transaction.{$id}.details", 300, function() use ($id) {
-            return Transaction::with([
-                'terminal.provider', 
-                'tenant',
-                'processingHistory',
-                'retryHistory',
-                'logs'
-            ])->findOrFail($id);
+            try {
+                return Transaction::with([
+                    'terminal.provider', 
+                    'tenant',
+                    // 'processingHistory', // optional
+                ])->findOrFail($id);
+            } catch (\Throwable $e) {
+                return Transaction::with([
+                    'terminal.provider',
+                    'tenant',
+                ])->findOrFail($id);
+            }
         });
     }
 
     public function getProcessingTimeline($transaction)
     {
-        return $transaction->processingHistory()
-            ->orderBy('created_at', 'asc')
-            ->get()
-            ->map(function($history) {
-                return [
-                    'status' => $history->status,
-                    'message' => $history->message,
-                    'timestamp' => $history->created_at->format('Y-m-d H:i:s'),
-                    'attempt' => $history->attempt_number,
-                    'metadata' => $history->metadata,
-                    'duration' => $history->duration,
-                    'status_color' => $this->getStatusColor($history->status)
-                ];
-            });
+        try {
+            if (method_exists($transaction, 'processingHistory')) {
+                return $transaction->processingHistory()
+                    ->orderBy('created_at', 'asc')
+                    ->get()
+                    ->map(function($history) {
+                        return [
+                            'status' => $history->status,
+                            'message' => $history->message,
+                            'timestamp' => $history->created_at->format('Y-m-d H:i:s'),
+                            'attempt' => $history->attempt_number,
+                            'metadata' => $history->metadata ?? [],
+                            'duration' => $history->duration ?? null,
+                            'status_color' => $this->getStatusColor($history->status)
+                        ];
+                    });
+            }
+        } catch (\Throwable $e) {
+            // no-op fallback
+        }
+        return collect([]);
     }
 
     private function getStatusColor($status)
@@ -54,17 +66,21 @@ class TransactionDetailService
     {
         return [
             'processing_time' => $this->calculateProcessingTime($transaction),
-            'retry_count' => $transaction->job_attempts,
-            'first_attempt' => $transaction->created_at->format('Y-m-d H:i:s'),
-            'last_attempt' => $transaction->updated_at->format('Y-m-d H:i:s'),
+            'retry_count' => (int) ($transaction->job_attempts ?? 0),
+            'first_attempt' => optional($transaction->created_at)->format('Y-m-d H:i:s'),
+            'last_attempt' => optional($transaction->updated_at)->format('Y-m-d H:i:s'),
             'success_rate' => $this->calculateSuccessRate($transaction->terminal_id)
         ];
     }
 
     private function calculateProcessingTime($transaction)
     {
-        if (!$transaction->completed_at) return null;
-        return $transaction->completed_at->diffInSeconds($transaction->created_at);
+        if (!$transaction->completed_at || !$transaction->created_at) return null;
+        try {
+            return $transaction->completed_at->diffInSeconds($transaction->created_at);
+        } catch (\Throwable $e) {
+            return null;
+        }
     }
 
     private function calculateSuccessRate($terminalId)
@@ -85,20 +101,27 @@ class TransactionDetailService
 
     public function getTransactionTimeline($transaction)
     {
-        return $transaction->processingHistory()
-            ->with('user')
-            ->orderBy('created_at', 'desc')
-            ->get()
-            ->map(function($history) {
-                return [
-                    'status' => $history->status,
-                    'message' => $history->message,
-                    'timestamp' => $history->created_at,
-                    'attempt' => $history->attempt_number,
-                    'user' => $history->user ? $history->user->name : 'System',
-                    'metadata' => $history->metadata ?? []
-                ];
-            });
+        try {
+            if (method_exists($transaction, 'processingHistory')) {
+                return $transaction->processingHistory()
+                    ->with('user')
+                    ->orderBy('created_at', 'desc')
+                    ->get()
+                    ->map(function($history) {
+                        return [
+                            'status' => $history->status,
+                            'message' => $history->message,
+                            'timestamp' => $history->created_at,
+                            'attempt' => $history->attempt_number,
+                            'user' => $history->user ? $history->user->name : 'System',
+                            'metadata' => $history->metadata ?? []
+                        ];
+                    });
+            }
+        } catch (\Throwable $e) {
+            // no-op
+        }
+        return collect([]);
     }
 
     public function getRelatedTransactions($transaction)
@@ -126,8 +149,7 @@ class TransactionDetailService
         
         return Transaction::where('terminal_id', $terminalId)
             ->where('created_at', '>=', $thirtyDaysAgo)
-            ->selectRaw('DATE(created_at) as date, COUNT(*) as total, 
-                        SUM(CASE WHEN validation_status = "ERROR" THEN 1 ELSE 0 END) as errors')
+            ->selectRaw('DATE(created_at) as date, COUNT(*) as total, SUM(CASE WHEN validation_status = "ERROR" THEN 1 ELSE 0 END) as errors')
             ->groupBy('date')
             ->orderBy('date', 'desc')
             ->get();
