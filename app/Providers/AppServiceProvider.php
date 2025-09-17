@@ -54,5 +54,19 @@ class AppServiceProvider extends ServiceProvider
         View::share('StatusHelper', \App\Helpers\StatusHelper::class);
         View::share('BadgeHelper', \App\Helpers\BadgeHelper::class);
         View::share('LogHelper', \App\Helpers\LogHelper::class);
+
+        // Prod-only: warn if legacy auth flags accidentally enabled
+        try {
+            if (app()->environment('production')) {
+                if (env('TSMS_ENABLE_LEGACY_JWT', false) || env('TSMS_ENABLE_LEGACY_API', false)) {
+                    \Log::warning('Legacy auth flags enabled in production', [
+                        'TSMS_ENABLE_LEGACY_JWT' => (bool) env('TSMS_ENABLE_LEGACY_JWT', false),
+                        'TSMS_ENABLE_LEGACY_API' => (bool) env('TSMS_ENABLE_LEGACY_API', false),
+                    ]);
+                }
+            }
+        } catch (\Throwable $e) {
+            // no-op
+        }
     }
 }

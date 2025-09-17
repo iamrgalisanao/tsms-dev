@@ -7,6 +7,7 @@ use App\Services\TransactionValidationService;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
@@ -14,7 +15,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Arr;
 use Exception;
 
-class ProcessTransactionJob implements ShouldQueue
+class ProcessTransactionJob implements ShouldQueue, ShouldBeUnique
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
@@ -42,6 +43,14 @@ class ProcessTransactionJob implements ShouldQueue
         $this->transactionId = $transactionId;
         // Ensure critical processing queue
         $this->onQueue('transaction-processing');
+    }
+
+    /**
+     * Ensure only one job per transaction ID is on the queue at a time.
+     */
+    public function uniqueId(): string
+    {
+        return 'txn:' . (string) $this->transactionId;
     }
 
     /**

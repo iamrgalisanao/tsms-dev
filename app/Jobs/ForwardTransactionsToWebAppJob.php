@@ -5,12 +5,13 @@ namespace App\Jobs;
 use App\Services\WebAppForwardingService;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Contracts\Queue\ShouldBeUnique;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
 
-class ForwardTransactionsToWebAppJob implements ShouldQueue
+class ForwardTransactionsToWebAppJob implements ShouldQueue, ShouldBeUnique
 {
     use Dispatchable, InteractsWithQueue, Queueable, SerializesModels;
 
@@ -25,6 +26,14 @@ class ForwardTransactionsToWebAppJob implements ShouldQueue
     {
     // Standardized queue name
     $this->onQueue('forwarding');
+    }
+
+    /**
+     * Ensure only one forwarder job runs at a time.
+     */
+    public function uniqueId(): string
+    {
+        return 'forwarder:singleton';
     }
 
     /**
