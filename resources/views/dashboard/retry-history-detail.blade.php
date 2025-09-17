@@ -25,7 +25,7 @@
               <dd class="col-sm-8">{{ $log->posTerminal->terminal_uid ?? 'Unknown' }}</dd>
 
               <dt class="col-sm-4">Tenant</dt>
-              <dd class="col-sm-8">{{ $log->tenant->name ?? 'Unknown' }}</dd>
+              <dd class="col-sm-8">{{ $log->tenant->trade_name ?? 'Unknown' }}</dd>
 
               <dt class="col-sm-4">Status</dt>
               <dd class="col-sm-8">

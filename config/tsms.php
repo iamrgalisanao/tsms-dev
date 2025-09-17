@@ -34,6 +34,30 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Per-Tenant Circuit Breaker (Observation Phase)
+    |--------------------------------------------------------------------------
+    | Phase 1 (observation) introduces lightweight per-tenant failure ratio
+    | tracking WITHOUT enforcement. Counts and ratios are logged when a tenant
+    | crosses configured thresholds so we can tune before enabling shadow or
+    | enforcement phases.
+    | - enabled: master toggle for Phase 1 instrumentation
+    | - min_requests: do not evaluate ratio until at least this many attempts
+    | - failure_ratio_threshold: retryable_failures / attempts required to log
+    | - time_window_minutes: sliding window reset interval for counters
+    | NOTE: Only retryable (network / 5xx) classifications count as failures.
+    */
+    'tenant_breaker' => [
+        'observation' => [
+            'enabled' => (bool) env('WEBAPP_TENANT_BREAKER_OBS_ENABLED', true),
+            'min_requests' => (int) env('WEBAPP_TENANT_BREAKER_OBS_MIN_REQUESTS', 20),
+            'failure_ratio_threshold' => (float) env('WEBAPP_TENANT_BREAKER_OBS_FAILURE_RATIO', 0.5),
+            'time_window_minutes' => (int) env('WEBAPP_TENANT_BREAKER_OBS_WINDOW', 10),
+        ],
+        // Future phases (shadow / enforce) intentionally omitted in Phase 1
+    ],
+
+    /*
+    |--------------------------------------------------------------------------
     | Retry Configuration
     |--------------------------------------------------------------------------
     |
@@ -111,6 +135,8 @@ return [
     */
     'testing' => [
         'capture_only' => (bool) env('TSMS_TESTING_CAPTURE_ONLY', false),
+        // Safety valve: require explicit opt-in if ever needed in production (default deny)
+        'allow_capture_only_in_production' => (bool) env('TSMS_ALLOW_CAPTURE_ONLY_IN_PROD', false),
     ],
 
     /*

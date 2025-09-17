@@ -70,7 +70,7 @@
             <dd class="col-sm-8">{{ $log->user ? ($log->user->name . ' (' . $log->user->email . ')') : 'N/A' }}</dd>
 
             <dt class="col-sm-4">Tenant</dt>
-            <dd class="col-sm-8">{{ $log->tenant->name ?? 'N/A' }}</dd>
+            <dd class="col-sm-8">{{ $log->tenant->trade_name ?? 'N/A' }}</dd>
           </dl>
         </div>
       </div>

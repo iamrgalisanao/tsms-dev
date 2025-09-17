@@ -185,7 +185,7 @@ class SecurityAlertManagementService implements SecurityAlertManagementInterface
             'resolved_at' => optional($alert->resolved_at)->toIso8601String(),
             'tenant' => $tenant ? [
                 'id' => $tenant->id,
-                'name' => $tenant->name
+                'name' => $tenant->trade_name
             ] : null,
             'notes' => $notes
         ];

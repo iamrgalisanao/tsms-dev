@@ -86,7 +86,7 @@ class TestMultiTenantCircuitBreaker extends Command
             
             if (!$circuitBreaker) {
                 $this->line(sprintf("%-30s %-15s %-15s", 
-                    $tenant->name, 'NOT FOUND', 'N/A'));
+                    $tenant->trade_name, 'NOT FOUND', 'N/A'));
                 continue;
             }
             
@@ -105,7 +105,7 @@ class TestMultiTenantCircuitBreaker extends Command
             
             // Display status
             $this->line(sprintf("%-30s %-15s %-15s %s", 
-                $tenant->name, 
+                $tenant->trade_name, 
                 $statusFormatted, 
                 $circuitBreaker->trip_count,
                 $isIsolated ? '✅' : '❌'

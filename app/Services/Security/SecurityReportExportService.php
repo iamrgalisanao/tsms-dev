@@ -85,7 +85,7 @@ class SecurityReportExportService
                         ? $report->generatedBy->name
                         : 'System',
                     'tenant' => $report->tenant
-                        ? $report->tenant->name
+                        ? $report->tenant->trade_name
                         : 'System',
                     'date_range' => ['from' => $fromDate, 'to' => $toDate],
                 ],

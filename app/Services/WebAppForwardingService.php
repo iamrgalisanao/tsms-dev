@@ -12,6 +12,10 @@ use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Collection;
 use Carbon\Carbon;
+use App\Support\LogContext;
+use App\Support\Metrics;
+use App\Support\RejectionPlaybook;
+use App\Support\TenantBreakerObserver;
 
 class WebAppForwardingService
 {
@@ -31,6 +35,33 @@ class WebAppForwardingService
      * Increment when making backward-incompatible changes to the bulk envelope structure.
      */
     private const BULK_SCHEMA_VERSION = '2.0';
+
+    /**
+     * Centralized structured logging helper to enforce consistent context ("stamp").
+     * Accepts optional Transaction or WebappTransactionForward to enrich context automatically.
+     */
+    private function log(string $level, string $message, array $context = [], ?\App\Models\Transaction $transaction = null, ?WebappTransactionForward $forward = null): void
+    {
+        $base = [];
+        if ($forward) {
+            $base = \App\Support\LogContext::fromForward($forward);
+        } elseif ($transaction) {
+            $base = \App\Support\LogContext::fromTransaction($transaction);
+        } else {
+            $base = \App\Support\LogContext::base();
+        }
+        // Always include schema_version so triage knows envelope generation variant
+        $merged = array_merge($base, ['schema_version' => self::BULK_SCHEMA_VERSION], $context);
+        try {
+            \Log::$level($message, $merged);
+        } catch (\Throwable $e) {
+            // Fallback (should not happen) – ensure we never break primary flow due to logging
+            \Log::error('Structured log failure', [
+                'original_message' => $message,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
 
     /**
      * Process automated void transaction forwarding.
@@ -138,6 +169,7 @@ class WebAppForwardingService
     private int    $circuitBreakerThreshold;
     private int    $circuitBreakerCooldown;
     private string $circuitBreakerKey = 'webapp_forwarding_circuit_breaker';
+    private TenantBreakerObserver $tenantObserver; // Phase 1 observational per-tenant metrics
 
     public function __construct()
     {
@@ -151,6 +183,15 @@ class WebAppForwardingService
         $this->circuitBreakerThreshold  = config('tsms.circuit_breaker.failure_threshold', config('tsms.circuit_breaker.threshold', 5));
         $this->circuitBreakerCooldown   = config('tsms.circuit_breaker.recovery_timeout_minutes', config('tsms.circuit_breaker.cooldown', 10));
         $this->checksumService          = app(PayloadChecksumService::class);
+    $this->tenantObserver           = app(TenantBreakerObserver::class);
+
+        // Capture-only production safety guard
+        if (app()->environment('production') && config('tsms.testing.capture_only') && !config('tsms.testing.allow_capture_only_in_production')) {
+            \Log::critical('capture_only mode was ON in production – forcibly disabling', [
+                'schema_version' => self::BULK_SCHEMA_VERSION,
+            ]);
+            config(['tsms.testing.capture_only' => false]);
+        }
     }
 
     public function forwardUnsentTransactions(): array
@@ -163,7 +204,7 @@ class WebAppForwardingService
         $this->assertEndpoint();
 
         if ($this->circuitBreakerEnabled && $this->isCircuitBreakerOpen()) {
-            Log::warning('WebApp forwarding skipped – circuit breaker OPEN');
+            $this->log('warning', 'WebApp forwarding skipped – circuit breaker OPEN');
             return ['success' => false, 'reason' => 'circuit_breaker_open'];
         }
 
@@ -179,7 +220,9 @@ class WebAppForwardingService
                 ->where('status', WebappTransactionForward::STATUS_COMPLETED)
                 ->get();
             if ($existing->count() > 0) {
-                Log::info('Idempotent forwarding: submission already processed', ['submission_uuid' => $submissionUuid]);
+                $this->log('info', 'Idempotent forwarding: submission already processed', [
+                    'submission_uuid' => $submissionUuid,
+                ]);
                 return [
                     'success' => true,
                     'forwarded_count' => $existing->count(),
@@ -190,7 +233,12 @@ class WebAppForwardingService
         }
 
         $forwarding = $this->createForwardingRecords($records);
-        return $this->processBatchForwarding($forwarding);
+
+        // Phase 1: record attempt for tenant (observation only)
+        $tenantId = $forwarding->first()?->transaction?->tenant_id;
+        $this->tenantObserver->recordAttempt($tenantId);
+
+        return $this->processBatchForwarding($forwarding, $tenantId);
     }
 
     private function assertEndpoint(): void
@@ -328,14 +376,14 @@ class WebAppForwardingService
      *               - 'error' (string, optional): Error message (on failure).
      *               - 'batch_id' (mixed): The batch ID associated with the records.
      */
-    private function processBatchForwarding(Collection $records): array
+    private function processBatchForwarding(Collection $records, ?int $tenantId = null): array
     {
         $batchId = $records->first()->batch_id;
         $records->each(fn ($f) => $f->markAsInProgress());
 
         // Fast feature flag gate: allow immediate safe disable of forwarding without code deploy
         if (!config('tsms.web_app.enabled', true)) {
-            \Log::warning('WebApp forwarding globally disabled via config flag');
+            $this->log('warning', 'WebApp forwarding globally disabled via config flag');
             // Mark as failed with explicit status but do NOT increment breaker
             $this->handleBatchFailure($records, 'Forwarding disabled by feature flag', 0);
             return [
@@ -352,10 +400,11 @@ class WebAppForwardingService
             // Likely homogeneity violation (mixed tenant / terminal) or similar batch contract issue
             $msg = $e->getMessage();
             $classification = self::CLASS_LOCAL_BATCH_CONTRACT_FAIL;
-            Log::error('Batch contract failure during payload build', [
+            $this->log('error', 'Batch contract failure during payload build', [
                 'batch_id' => $batchId,
                 'error' => $msg,
                 'classification' => $classification,
+                'remediation' => RejectionPlaybook::explain($msg),
             ]);
             // Mark records failed (do not increment breaker)
             $this->handleBatchFailure($records, $msg, 0);
@@ -375,12 +424,13 @@ class WebAppForwardingService
             $missingIds = [];
             if (isset($errors['tenant_id'])) { $missingIds[] = 'tenant_id'; }
             if (isset($errors['terminal_id'])) { $missingIds[] = 'terminal_id'; }
-            Log::error('Outbound payload validation failed', [
+            $this->log('error', 'Outbound payload validation failed', [
                 'batch_id' => $batchId,
                 'errors' => $errors,
                 'missing_ids' => $missingIds,
                 'missing_id_metric' => !empty($missingIds),
                 'classification' => self::CLASS_LOCAL_VALIDATION_FAIL,
+                'remediation' => RejectionPlaybook::explain($errorMsg),
             ]);
             $this->handleBatchFailure($records, $errorMsg . ': ' . json_encode($validation['errors']), 0);
             // Do NOT increment circuit breaker for local validation issues
@@ -395,6 +445,7 @@ class WebAppForwardingService
         // Capture-only (test) mode for batch path
         if (config('tsms.testing.capture_only')) {
             $records->each(fn ($f) => $f->markAsCompleted(['captured' => true], 200));
+            Metrics::incr('forwarding.captured', $records->count());
             return [
                 'success' => true,
                 'forwarded_count' => $records->count(),
@@ -412,7 +463,7 @@ class WebAppForwardingService
                 $client = $client->withoutVerifying();
             }
 
-            Log::debug('[TSMS] Forwarding payload', $payload);
+            $this->log('debug', '[TSMS] Forwarding payload', $payload);
             $response = $client->post($this->webAppEndpoint, $payload)->throw();
 
             // Check if response is JSON or HTML (protection redirect)
@@ -434,10 +485,28 @@ class WebAppForwardingService
             $records->each(fn ($f) => $f->markAsCompleted($data, $response->status()));
             $this->resetCircuitBreaker();
 
-            Log::info('Bulk forwarded', [
+            // Evaluate tenant breaker observation window post-success (attempt accounted earlier)
+            if ($tenantId) {
+                $eval = $this->tenantObserver->evaluate($tenantId);
+                if ($eval && ($eval['eligible'] ?? false) && ($eval['over_threshold'] ?? false)) {
+                    $this->log('warning', 'Tenant breaker observation threshold crossed (success path)', [
+                        'tenant_id' => $tenantId,
+                        'attempts' => $eval['attempts'],
+                        'failures' => $eval['failures'],
+                        'failure_ratio' => $eval['failure_ratio'],
+                        'threshold_ratio' => $eval['failure_ratio_threshold'],
+                        'window_minutes' => $eval['window_minutes'],
+                        'phase' => 'observation',
+                        'enforced' => false,
+                    ]);
+                }
+            }
+
+            Metrics::incr('forwarding.success', $records->count());
+            $this->log('info', 'Bulk forwarded', [
                 'batch_id' => $batchId,
                 'count' => $records->count(),
-                'classification' => 'SUCCESS'
+                'classification' => 'SUCCESS',
             ]);
             return [
                 'success' => true,
@@ -450,7 +519,11 @@ class WebAppForwardingService
             $msg = $e->getMessage();
             $status = $e->response?->status();
             $classification = $this->classifyHttpFailure($status, $msg);
-            Log::error('HTTP forwarding error', [
+            Metrics::incr('forwarding.failure');
+            if (in_array($classification, [self::CLASS_HTTP_5XX_RETRYABLE, self::CLASS_NETWORK_DNS, self::CLASS_NETWORK_OTHER], true)) {
+                $this->tenantObserver->recordRetryableFailure($tenantId ?? ($records->first()?->transaction?->tenant_id));
+            }
+            $this->log('error', 'HTTP forwarding error', [
                 'error' => $msg,
                 'status' => $status,
                 'classification' => $classification,
@@ -458,6 +531,21 @@ class WebAppForwardingService
             ]);
             $this->maybeRecordBreakerFailure($classification);
             $this->handleBatchFailure($records, $msg, $status);
+            if ($tenantId) {
+                $eval = $this->tenantObserver->evaluate($tenantId);
+                if ($eval && ($eval['eligible'] ?? false) && ($eval['over_threshold'] ?? false)) {
+                    $this->log('warning', 'Tenant breaker observation threshold crossed (failure path)', [
+                        'tenant_id' => $tenantId,
+                        'attempts' => $eval['attempts'],
+                        'failures' => $eval['failures'],
+                        'failure_ratio' => $eval['failure_ratio'],
+                        'threshold_ratio' => $eval['failure_ratio_threshold'],
+                        'window_minutes' => $eval['window_minutes'],
+                        'phase' => 'observation',
+                        'enforced' => false,
+                    ]);
+                }
+            }
             return [
                 'success' => false,
                 'error' => $msg,
@@ -468,13 +556,32 @@ class WebAppForwardingService
         } catch (\Throwable $e) {
             $msg = $e->getMessage();
             $classification = $this->classifyThrowable($msg);
-            Log::error('Forwarding exception', [
+            Metrics::incr('forwarding.failure');
+            if (in_array($classification, [self::CLASS_HTTP_5XX_RETRYABLE, self::CLASS_NETWORK_DNS, self::CLASS_NETWORK_OTHER], true)) {
+                $this->tenantObserver->recordRetryableFailure($tenantId ?? ($records->first()?->transaction?->tenant_id));
+            }
+            $this->log('error', 'Forwarding exception', [
                 'error' => $msg,
                 'classification' => $classification,
                 'batch_id' => $batchId,
             ]);
             $this->maybeRecordBreakerFailure($classification);
             $this->handleBatchFailure($records, $msg);
+            if ($tenantId) {
+                $eval = $this->tenantObserver->evaluate($tenantId);
+                if ($eval && ($eval['eligible'] ?? false) && ($eval['over_threshold'] ?? false)) {
+                    $this->log('warning', 'Tenant breaker observation threshold crossed (exception path)', [
+                        'tenant_id' => $tenantId,
+                        'attempts' => $eval['attempts'],
+                        'failures' => $eval['failures'],
+                        'failure_ratio' => $eval['failure_ratio'],
+                        'threshold_ratio' => $eval['failure_ratio_threshold'],
+                        'window_minutes' => $eval['window_minutes'],
+                        'phase' => 'observation',
+                        'enforced' => false,
+                    ]);
+                }
+            }
             return [
                 'success' => false,
                 'error' => $msg,
@@ -509,7 +616,7 @@ class WebAppForwardingService
             return ($r->transaction->tenant_id ?? null) !== $tenantId || ($r->transaction->terminal_id ?? null) !== $terminalId;
         });
         if ($mismatch) {
-            Log::warning('Bulk payload homogeneity violation: mixed tenant_id / terminal_id detected', [
+            $this->log('warning', 'Bulk payload homogeneity violation: mixed tenant_id / terminal_id detected', [
                 'batch_id' => $batchId,
             ]);
             throw new \RuntimeException('Mixed tenant / terminal batch not supported');
@@ -869,15 +976,16 @@ class WebAppForwardingService
                 $client = $client->withoutVerifying();
             }
 
-            Log::debug('[TSMS] Immediate forwarding payload', $bulkPayload);
+            $this->log('debug', '[TSMS] Immediate forwarding payload', $bulkPayload, $transaction);
             // Local validation for immediate single forward (converted to bulk format)
             $validation = $this->validateBulkPayload($bulkPayload);
             if (!$validation['valid']) {
-                Log::error('Immediate forwarding validation failed', [
+                $this->log('error', 'Immediate forwarding validation failed', [
                     'transaction_id' => $transaction->transaction_id,
                     'errors' => $validation['errors'],
                     'classification' => self::CLASS_LOCAL_VALIDATION_FAIL,
-                ]);
+                    'remediation' => RejectionPlaybook::explain('Outbound payload invalid'),
+                ], $transaction);
                 return [
                     'success' => false,
                     'error' => 'Outbound payload invalid',
@@ -901,6 +1009,7 @@ class WebAppForwardingService
                     'response_data' => ['captured' => true],
                     'response_status_code' => 200,
                 ]);
+                Metrics::incr('forwarding.captured');
                 return [
                     'success' => true,
                     'message' => 'Captured only (test mode)',
@@ -927,10 +1036,11 @@ class WebAppForwardingService
                 'response_status_code' => $response->status(),
             ]);
 
-            Log::info('Transaction forwarded immediately', [
+            Metrics::incr('forwarding.success');
+            $this->log('info', 'Transaction forwarded immediately', [
                 'transaction_id' => $transaction->transaction_id,
-                'batch_id' => $batchId
-            ]);
+                'batch_id' => $batchId,
+            ], $transaction);
 
             return [
                 'success' => true,
@@ -943,12 +1053,13 @@ class WebAppForwardingService
             $msg = $e->getMessage();
             $status = $e->response?->status();
             $classification = $this->classifyHttpFailure($status, $msg);
-            Log::error('Immediate forwarding HTTP error', [
+            Metrics::incr('forwarding.failure');
+            $this->log('error', 'Immediate forwarding HTTP error', [
                 'transaction_id' => $transaction->transaction_id,
                 'error' => $msg,
                 'status' => $status,
                 'classification' => $classification,
-            ]);
+            ], $transaction);
             $this->maybeRecordBreakerFailure($classification);
 
             // Create failed forwarding record
@@ -974,11 +1085,12 @@ class WebAppForwardingService
         } catch (\Throwable $e) {
             $msg = $e->getMessage();
             $classification = $this->classifyThrowable($msg);
-            Log::error('Immediate forwarding exception', [
+            Metrics::incr('forwarding.failure');
+            $this->log('error', 'Immediate forwarding exception', [
                 'transaction_id' => $transaction->transaction_id,
                 'error' => $msg,
                 'classification' => $classification,
-            ]);
+            ], $transaction);
             $this->maybeRecordBreakerFailure($classification);
 
             return [

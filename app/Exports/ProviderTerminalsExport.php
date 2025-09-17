@@ -20,7 +20,7 @@ class ProviderTerminalsExport implements FromQuery, WithHeadings, WithMapping
     {
         return PosTerminal::query()
             ->where('provider_id', $this->providerId)
-            ->with(['tenant:id,name']);
+            ->with(['tenant:id,trade_name']);
     }
     
     public function headings(): array
@@ -38,7 +38,7 @@ class ProviderTerminalsExport implements FromQuery, WithHeadings, WithMapping
     {
         return [
             $terminal->terminal_uid,
-            $terminal->tenant->name ?? 'Unknown',
+            $terminal->tenant->trade_name ?? 'Unknown',
             ucfirst($terminal->status),
             $terminal->registered_at->format('Y-m-d'),
             $terminal->enrolled_at->format('Y-m-d')

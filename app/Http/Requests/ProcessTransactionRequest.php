@@ -16,7 +16,7 @@ class ProcessTransactionRequest extends FormRequest
             // Enforce RFC 4122 UUID format & uniqueness in transactions table
             'transaction_id' => 'required|string|uuid|unique:transactions,transaction_id',
             'transaction_timestamp' => 'required|date',
-            'base_amount' => 'required|numeric|min:0',
+            'gross_sales' => 'required|numeric|min:0',
 
             // Optional/Related Fields
             'payload_checksum' => 'required|string',

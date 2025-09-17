@@ -80,13 +80,13 @@ class ProviderStatisticsController extends Controller
         // Get terminals per tenant
         $terminalsByTenant = PosTerminal::where('provider_id', $id)
             ->select('tenant_id', DB::raw('count(*) as terminal_count'))
-            ->with('tenant:id,name')
+            ->with('tenant:id,trade_name')
             ->groupBy('tenant_id')
             ->get()
             ->map(function($item) {
                 return [
                     'tenant_id' => $item->tenant_id,
-                    'tenant_name' => $item->tenant->name ?? 'Unknown',
+                    'tenant_name' => $item->tenant->trade_name ?? 'Unknown',
                     'terminal_count' => $item->terminal_count
                 ];
             });

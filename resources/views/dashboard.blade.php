@@ -100,7 +100,7 @@
             <tr>
               <td>{{ $terminal->terminal_uid }}</td>
               <td>{{ $terminal->provider->name ?? 'Unknown' }}</td>
-              <td>{{ $terminal->tenant->name ?? 'Unknown' }}</td>
+              <td>{{ $terminal->tenant->trade_name ?? 'Unknown' }}</td>
               <td>{{ $terminal->enrolled_at->format('Y-m-d H:i') }}</td>
               <td>
                 <span class="badge {{ $terminal->status === 'active' ? 'bg-success' : 'bg-secondary' }}">

@@ -96,7 +96,7 @@ class TransactionDetailResource extends JsonResource
             'tenant' => $this->whenLoaded('tenant', function () {
                 return [
                     'id' => $this->tenant->id,
-                    'name' => $this->tenant->name,
+                    'name' => $this->tenant->trade_name,
                     'trade_name' => $this->tenant->trade_name,
                     'customer_code' => $this->tenant->customer_code,
                     'address' => $this->tenant->address,

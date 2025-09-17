@@ -7,6 +7,7 @@ use App\Models\Transaction;
 use App\Models\PosTerminal;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use App\Jobs\ProcessTransactionJob;
 use App\Jobs\CheckTransactionFailureThresholdsJob;
@@ -1001,16 +1002,72 @@ class TransactionController extends Controller
 
             Log::info('storeOfficial: All validations passed, creating submission envelope');
 
+            // Cache guard to reduce in-flight duplicates (best-effort; DB unique key remains source of truth)
+            $cacheKey = sprintf('submission:lock:%s:%s', $request->terminal_id, $request->submission_uuid);
+            $lockAcquired = Cache::add($cacheKey, 1, now()->addSeconds(60));
+            if (!$lockAcquired) {
+                Log::info('storeOfficial: Duplicate submission lock detected (treating as idempotent)', [
+                    'submission_uuid' => $request->submission_uuid,
+                    'terminal_id' => $request->terminal_id,
+                ]);
+                $existing = \App\Models\TransactionSubmission::where('terminal_id', $request->terminal_id)
+                    ->where('submission_uuid', $request->submission_uuid)
+                    ->first();
+                $existingTransactions = \App\Models\Transaction::where('submission_uuid', $request->submission_uuid)->get();
+                try { \DB::commit(); } catch (\Throwable $t) {}
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Submission already processed (idempotent)',
+                    'data' => [
+                        'submission_uuid' => $request->submission_uuid,
+                        'transaction_count' => $existing ? $existing->transaction_count : $existingTransactions->count(),
+                        'status' => $existing ? $existing->status : 'COMPLETED',
+                        'transactions' => $existingTransactions->pluck('transaction_id'),
+                    ]
+                ], 200);
+            }
+
             // NOW create submission envelope (status RECEIVED) - after all validations pass
-            $submission = \App\Models\TransactionSubmission::create([
-                'tenant_id' => $request->tenant_id,
-                'terminal_id' => $request->terminal_id,
-                'submission_uuid' => $request->submission_uuid,
-                'submission_timestamp' => $request->submission_timestamp,
-                'transaction_count' => $request->transaction_count,
-                'payload_checksum' => $request->payload_checksum,
-                'status' => \App\Models\TransactionSubmission::STATUS_RECEIVED,
-            ]);
+            try {
+                $submission = \App\Models\TransactionSubmission::create([
+                    'tenant_id' => $request->tenant_id,
+                    'terminal_id' => $request->terminal_id,
+                    'submission_uuid' => $request->submission_uuid,
+                    'submission_timestamp' => $request->submission_timestamp,
+                    'transaction_count' => $request->transaction_count,
+                    'payload_checksum' => $request->payload_checksum,
+                    'status' => \App\Models\TransactionSubmission::STATUS_RECEIVED,
+                ]);
+            } catch (\Illuminate\Database\QueryException $e) {
+                // Handle concurrent duplicate submission insertion gracefully (idempotent replay)
+                $sqlState = $e->getCode();
+                $isDuplicate = $sqlState == '23000' || str_contains(strtolower($e->getMessage()), 'duplicate entry');
+                if ($isDuplicate) {
+                    \Log::info('storeOfficial: Duplicate submission detected at insert (treating as idempotent)', [
+                        'submission_uuid' => $request->submission_uuid,
+                        'terminal_id' => $request->terminal_id,
+                        'error' => $e->getMessage(),
+                    ]);
+                    $existing = \App\Models\TransactionSubmission::where('terminal_id', $request->terminal_id)
+                        ->where('submission_uuid', $request->submission_uuid)
+                        ->first();
+                    $existingTransactions = \App\Models\Transaction::where('submission_uuid', $request->submission_uuid)->get();
+
+                    // Commit open transaction (if any) and return idempotent success
+                    try { \DB::commit(); } catch (\Throwable $t) {}
+                    return response()->json([
+                        'success' => true,
+                        'message' => 'Submission already processed (idempotent)',
+                        'data' => [
+                            'submission_uuid' => $request->submission_uuid,
+                            'transaction_count' => $existing ? $existing->transaction_count : $existingTransactions->count(),
+                            'status' => $existing ? $existing->status : 'COMPLETED',
+                            'transactions' => $existingTransactions->pluck('transaction_id'),
+                        ]
+                    ], 200);
+                }
+                throw $e; // non-duplicate DB error
+            }
             
             Log::info('storeOfficial: Submission envelope created', [
                 'submission_uuid' => $submission->submission_uuid,
@@ -1084,7 +1141,7 @@ class TransactionController extends Controller
                         'transaction_id' => $transactionData['transaction_id'],
                         'hardware_id' => $terminal->serial_number ?? 'UNKNOWN',
                         'transaction_timestamp' => $transactionData['transaction_timestamp'],
-                        'gross_sales' => $transactionData['gross_sales'] ?? $transactionData['base_amount'],
+                        'gross_sales' => $transactionData['gross_sales'] ?? 0,
                         'net_sales' => $transactionData['net_sales'] ?? 0,
                         'vatable_sales' => $vatableSales,
                         'vat_amount' => $vatAmount,
@@ -1309,7 +1366,6 @@ class TransactionController extends Controller
                 'transaction' => 'required|array',
                 'transaction.transaction_id' => 'required|string|uuid',
                 'transaction.transaction_timestamp' => 'required|date_format:Y-m-d\TH:i:s\Z',
-                'transaction.base_amount' => 'nullable|numeric|min:0',
                 'transaction.gross_sales' => 'required|numeric|min:0',
                 'transaction.net_sales' => 'required|numeric|min:0',
                 'transaction.promo_status' => 'required|string',
@@ -1327,7 +1383,6 @@ class TransactionController extends Controller
                 'transactions' => 'required|array|min:1',
                 'transactions.*.transaction_id' => 'required|string|uuid',
                 'transactions.*.transaction_timestamp' => 'required|date_format:Y-m-d\TH:i:s\Z',
-                'transactions.*.base_amount' => 'nullable|numeric|min:0',
                 'transactions.*.gross_sales' => 'required|numeric|min:0',
                 'transactions.*.net_sales' => 'required|numeric|min:0',
                 'transactions.*.promo_status' => 'required|string',
@@ -1520,8 +1575,7 @@ class TransactionController extends Controller
                 'terminal_id' => $terminal->id,
                 'transaction_id' => $transaction['transaction_id'],
                 'transaction_timestamp' => $transaction['transaction_timestamp'],
-                'base_amount' => $transaction['gross_sales'] ?? $transaction['base_amount'],
-                'gross_sales' => $transaction['gross_sales'] ?? $transaction['base_amount'],
+                'gross_sales' => $transaction['gross_sales'] ?? 0,
                 'net_sales' => $transaction['net_sales'] ?? 0,
                 'customer_code' => $transaction['customer_code'] ?? ($terminal->tenant->company->customer_code ?? 'UNKNOWN'),
                 'promo_status' => $transaction['promo_status'],

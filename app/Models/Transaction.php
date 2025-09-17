@@ -364,4 +364,5 @@ class Transaction extends Model
     {
         return $this->belongsTo(TransactionSubmission::class, 'submission_uuid', 'submission_uuid');
     }
+
 }

@@ -9,6 +9,9 @@ use Carbon\Carbon;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 use InvalidArgumentException;
+use App\Support\Metrics;
+use App\Support\RejectionPlaybook;
+use App\Support\LogContext;
 
 class TransactionValidationService
 {
@@ -99,10 +102,13 @@ class TransactionValidationService
         }
         catch (\Exception $e) {
             // Any “unexpected” exception is logged and returned as a validation error.
-            Log::error('Validation error in TransactionValidationService', [
-                'message' => $e->getMessage(),
-                'trace'   => $e->getTraceAsString(),
-            ]);
+            Log::error('Validation error in TransactionValidationService', array_merge(
+                LogContext::base(),
+                [
+                    'message' => $e->getMessage(),
+                    'trace'   => $e->getTraceAsString(),
+                ]
+            ));
 
             return [
                 'valid'  => false,
@@ -291,7 +297,10 @@ class TransactionValidationService
         $lines = preg_split('/\r\n|\r|\n/', $content);
         $raw   = [];
 
-        Log::info('Parsing free‐form text format (length=' . strlen($content) . ')');
+        Log::info('Parsing free‐form text format', array_merge(
+            LogContext::base(),
+            ['content_length' => strlen($content)]
+        ));
 
         foreach ($lines as $line) {
             $line = trim($line);
@@ -322,10 +331,13 @@ class TransactionValidationService
 
         $normalized = $this->normalizeFieldNames($raw);
 
-        Log::info('Parsed text format: '
-            . count($raw) . ' raw fields → '
-            . count($normalized) . ' normalized fields'
-        );
+        Log::info('Parsed text format normalization summary', array_merge(
+            LogContext::base(),
+            [
+                'raw_field_count' => count($raw),
+                'normalized_field_count' => count($normalized)
+            ]
+        ));
 
         return $normalized;
     }
@@ -385,6 +397,11 @@ class TransactionValidationService
             'PAYLOAD_CHECKSUM'       => 'payload_checksum',
             'CHECKSUM'               => 'payload_checksum',
             'HASH'                   => 'payload_checksum',
+
+            // * Store/Tenant display name standardization
+            'STORE_NAME'             => 'trade_name',
+            'TRADE_NAME'             => 'trade_name',
+            'NAME'                   => 'trade_name',
         ];
 
         $normalized = [];
@@ -490,9 +507,7 @@ class TransactionValidationService
      */
     public function validateTransaction(Transaction $transaction): array
     {
-        Log::info('Starting transaction validation', [
-            'transaction_id' => $transaction->id,
-        ]);
+        Log::info('Starting transaction validation', LogContext::fromTransaction($transaction));
 
         $errors = [];
 
@@ -532,11 +547,13 @@ class TransactionValidationService
             $errors = array_merge($errors, $discountErrors);
         }
 
-        Log::info('Validation complete', [
-            'transaction_id' => $transaction->id,
-            'has_errors'     => ! empty($errors),
-            'error_count'    => count($errors),
-        ]);
+        Log::info('Validation complete', array_merge(
+            LogContext::fromTransaction($transaction),
+            [
+                'has_errors'  => ! empty($errors),
+                'error_count' => count($errors),
+            ]
+        ));
 
         return [
             'valid'  => empty($errors),
@@ -746,6 +763,7 @@ class TransactionValidationService
     protected function validateTransactionIntegrity(Transaction $transaction): array
     {
         $errors = [];
+        static $toleranceAnnounced = false; // one-time activation log
 
         // 1) Check for duplicate (same tenant & transaction ID, different record ID)
         $duplicate = Transaction::where('tenant_id', $transaction->tenant_id)
@@ -809,15 +827,27 @@ class TransactionValidationService
             // Configurable tolerance (seconds) to allow slight POS clock drift without hard rejection.
             $toleranceSeconds = (int) config('tsms.validation.future_timestamp_tolerance_seconds', 0);
             $driftSeconds = $txTime->diffInSeconds($now);
+            if ($toleranceSeconds > 0 && !$toleranceAnnounced) {
+                $toleranceAnnounced = true;
+                Log::info('Future timestamp tolerance active', array_merge(
+                    LogContext::fromTransaction($transaction),
+                    [
+                        'tolerance_seconds' => $toleranceSeconds,
+                    ]
+                ));
+            }
             if ($toleranceSeconds > 0 && $driftSeconds <= $toleranceSeconds) {
                 // Log informational drift event; do not reject.
-                \Log::info('Transaction timestamp drift within tolerance', [
-                    'transaction_id' => $transaction->id,
-                    'tx_timestamp' => $txTime->format('Y-m-d H:i:s'),
-                    'server_time' => $now->format('Y-m-d H:i:s'),
-                    'drift_seconds' => $driftSeconds,
-                    'tolerance_seconds' => $toleranceSeconds,
-                ]);
+                \Log::info('Transaction timestamp drift within tolerance', array_merge(
+                    LogContext::fromTransaction($transaction),
+                    [
+                        'tx_timestamp' => $txTime->format('Y-m-d H:i:s'),
+                        'server_time' => $now->format('Y-m-d H:i:s'),
+                        'drift_seconds' => $driftSeconds,
+                        'tolerance_seconds' => $toleranceSeconds,
+                    ]
+                ));
+                Metrics::incr('validation.future_drift_within_tolerance');
             } else {
                 $errors[] = sprintf(
                     'Transaction timestamp (%s) cannot be in the future (current time: %s).',
@@ -825,13 +855,17 @@ class TransactionValidationService
                     $now->format('Y-m-d H:i:s')
                 );
                 // Emit structured log for monitoring future timestamp rejections
-                \Log::warning('Transaction timestamp future beyond tolerance', [
-                    'transaction_id' => $transaction->id,
-                    'tx_timestamp' => $txTime->format('Y-m-d H:i:s'),
-                    'server_time' => $now->format('Y-m-d H:i:s'),
-                    'drift_seconds' => $driftSeconds,
-                    'tolerance_seconds' => $toleranceSeconds,
-                ]);
+                \Log::warning('Transaction timestamp future beyond tolerance', array_merge(
+                    LogContext::fromTransaction($transaction),
+                    [
+                        'tx_timestamp' => $txTime->format('Y-m-d H:i:s'),
+                        'server_time' => $now->format('Y-m-d H:i:s'),
+                        'drift_seconds' => $driftSeconds,
+                        'tolerance_seconds' => $toleranceSeconds,
+                        'remediation' => RejectionPlaybook::explain('cannot be in the future'),
+                    ]
+                ));
+                Metrics::incr('validation.future_drift_beyond_tolerance');
             }
         }
 

@@ -10,7 +10,7 @@ class Transactions extends Model
         'tenant_id',
         'terminal_id',
         'transaction_id',
-        'store_name',
+    'trade_name',
         'hardware_id',
         'machine_number',
         'transaction_timestamp',

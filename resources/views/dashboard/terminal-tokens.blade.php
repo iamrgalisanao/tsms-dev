@@ -275,7 +275,7 @@ $(function () {
           @forelse($terminals as $terminal)
           <tr>
             <td>{{ $terminal->terminal_uid }}</td>
-            <td>{{ $terminal->tenant->name ?? 'Unknown' }}</td>
+            <td>{{ $terminal->tenant->trade_name ?? 'Unknown' }}</td>
             <td>{{ $terminal->created_at?->format('Y-m-d H:i') ?? 'N/A' }}</td>
             <td>
               @if($terminal->expires_at)
