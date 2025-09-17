@@ -37,53 +37,23 @@ use App\Helpers\FormatHelper;
     <div class="card-body">
     <div id="filtersCollapse" class="collapse show">
         <form method="GET" action="{{ route('transactions.logs.index') }}">
-            <div class="form-row">
-                <div class="form-group col-sm-6 col-md-2">
-                    <label class="small text-muted mb-1">Status</label>
-                    <select name="status" class="form-control form-control-sm">
+            <div class="form-row align-items-end">
+                <div class="form-group col-sm-6 col-md-4 col-lg-3">
+                    <label class="small text-muted mb-1">Tenant</label>
+                    <select name="tenant_id" class="form-control form-control-sm">
                         <option value="">Any</option>
-                        <option value="VALID" {{ request('status')==='VALID'?'selected':'' }}>VALID</option>
-                        <option value="ERROR" {{ request('status')==='ERROR'?'selected':'' }}>ERROR</option>
-                        <option value="PENDING" {{ request('status')==='PENDING'?'selected':'' }}>PENDING</option>
-                    </select>
-                </div>
-                <div class="form-group col-sm-6 col-md-2">
-                    <label class="small text-muted mb-1">Date From</label>
-                    <input type="date" name="date_from" class="form-control form-control-sm" value="{{ request('date_from') }}" />
-                </div>
-                <div class="form-group col-sm-6 col-md-2">
-                    <label class="small text-muted mb-1">Date To</label>
-                    <input type="date" name="date_to" class="form-control form-control-sm" value="{{ request('date_to') }}" />
-                </div>
-                <div class="form-group col-sm-6 col-md-3">
-                    <label class="small text-muted mb-1">Terminal</label>
-                    <select name="terminal_id" class="form-control form-control-sm">
-                        <option value="">Any</option>
-                        @foreach($terminals as $t)
-                            @php $label = trim(($t->tenant->trade_name ?? 'Unknown'). ' • SN: '.($t->serial_number ?? 'N/A'). ' • M: '.($t->machine_number ?? 'N/A')); @endphp
-                            <option value="{{ $t->id }}" {{ (string)request('terminal_id') === (string)$t->id ? 'selected' : '' }}>
-                                {{ $label }}
+                        @isset($tenants)
+                        @foreach($tenants as $tenant)
+                            <option value="{{ $tenant->id }}" {{ (string)request('tenant_id') === (string)$tenant->id ? 'selected' : '' }}>
+                                {{ $tenant->trade_name }}
                             </option>
                         @endforeach
+                        @endisset
                     </select>
                 </div>
-                <div class="form-group col-sm-6 col-md-1">
-                    <label class="small text-muted mb-1">Amt Min</label>
-                    <input type="number" step="0.01" name="amount_min" class="form-control form-control-sm" value="{{ request('amount_min') }}" />
-                </div>
-                <div class="form-group col-sm-6 col-md-1">
-                    <label class="small text-muted mb-1">Amt Max</label>
-                    <input type="number" step="0.01" name="amount_max" class="form-control form-control-sm" value="{{ request('amount_max') }}" />
-                </div>
-                <div class="form-group col-sm-8 col-md-4">
-                    <label class="small text-muted mb-1">Transaction ID</label>
-                    <div class="input-group input-group-sm">
-                        <input type="text" name="transaction_id" class="form-control" value="{{ request('transaction_id') }}" placeholder="Full or partial" />
-                        <div class="input-group-append">
-                            <button class="btn btn-primary" type="submit"><i class="fas fa-check mr-1"></i> Apply</button>
-                            <a href="{{ route('transactions.logs.index') }}" class="btn btn-outline-secondary"><i class="fas fa-undo mr-1"></i> Reset</a>
-                        </div>
-                    </div>
+                <div class="form-group col-sm-6 col-md-3 col-lg-2">
+                    <button class="btn btn-primary btn-sm mr-2" type="submit"><i class="fas fa-check mr-1"></i> Apply</button>
+                    <a href="{{ route('transactions.logs.index') }}" class="btn btn-outline-secondary btn-sm"><i class="fas fa-undo mr-1"></i> Reset</a>
                 </div>
             </div>
         </form>
