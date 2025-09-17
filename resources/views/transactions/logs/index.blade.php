@@ -38,7 +38,7 @@ use App\Helpers\FormatHelper;
     <div id="filtersCollapse" class="collapse show">
         <form method="GET" action="{{ route('transactions.logs.index') }}">
             <div class="form-row align-items-end">
-                <div class="form-group col-sm-6 col-md-4 col-lg-3">
+                <div class="form-group col-sm-6 col-md-3 col-lg-3">
                     <label class="small text-muted mb-1">Tenant</label>
                     <select name="tenant_id" class="form-control form-control-sm">
                         <option value="">Any</option>
@@ -51,7 +51,15 @@ use App\Helpers\FormatHelper;
                         @endisset
                     </select>
                 </div>
-                <div class="form-group col-sm-6 col-md-3 col-lg-2">
+                <div class="form-group col-sm-6 col-md-2 col-lg-2">
+                    <label class="small text-muted mb-1">Date From</label>
+                    <input type="date" name="date_from" class="form-control form-control-sm" value="{{ request('date_from') }}" />
+                </div>
+                <div class="form-group col-sm-6 col-md-2 col-lg-2">
+                    <label class="small text-muted mb-1">Date To</label>
+                    <input type="date" name="date_to" class="form-control form-control-sm" value="{{ request('date_to') }}" />
+                </div>
+                <div class="form-group col-sm-6 col-md-3 col-lg-3">
                     <button class="btn btn-primary btn-sm mr-2" type="submit"><i class="fas fa-check mr-1"></i> Apply</button>
                     <a href="{{ route('transactions.logs.index') }}" class="btn btn-outline-secondary btn-sm"><i class="fas fa-undo mr-1"></i> Reset</a>
                 </div>
