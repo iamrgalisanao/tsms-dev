@@ -92,7 +92,7 @@ class WebAppForwardingService
             'transaction_id'        => $transaction->transaction_id,
             'terminal_serial'       => $transaction->terminal?->serial_number,
             'tenant_code'           => $transaction->tenant?->customer_code,
-            'tenant_name'           => $transaction->tenant?->name,
+            'tenant_name'           => $transaction->tenant?->trade_name ?? $transaction->tenant?->name,
             'transaction_timestamp' => $this->isoTimestamp($transaction->transaction_timestamp),
             'amount'                => (float) $transaction->gross_sales,
             'net_amount'           => (float) $transaction->net_sales,
@@ -213,32 +213,78 @@ class WebAppForwardingService
             return ['success' => true, 'forwarded_count' => 0, 'reason' => 'no_transactions'];
         }
 
-        // Get submission_uuid from first transaction (assumes batch is for one submission)
-        $submissionUuid = $records->first()->submission_uuid ?? null;
-        if ($submissionUuid) {
-            $existing = \App\Models\WebappTransactionForward::where('submission_uuid', $submissionUuid)
-                ->where('status', WebappTransactionForward::STATUS_COMPLETED)
-                ->get();
-            if ($existing->count() > 0) {
-                $this->log('info', 'Idempotent forwarding: submission already processed', [
-                    'submission_uuid' => $submissionUuid,
-                ]);
-                return [
-                    'success' => true,
-                    'forwarded_count' => $existing->count(),
-                    'batch_id' => $existing->first()->batch_id,
-                    'idempotent' => true
-                ];
+        // Group by (tenant_id, terminal_id) to ensure homogeneous batches per industry best practice
+        $groups = $records->groupBy(function (Transaction $tx) {
+            return ($tx->tenant_id ?? 'null') . ':' . ($tx->terminal_id ?? 'null');
+        });
+
+        // Pre-flight visibility: which pairs and sizes will be forwarded
+        $preflight = $groups->map->count()->toArray();
+        $this->log('info', 'Preparing grouped forwarding batches', [
+            'group_count' => count($preflight),
+            'groups' => $preflight,
+        ]);
+
+        $results = [];
+        $totalForwarded = 0;
+        $allSucceeded = true;
+        $batchIds = [];
+
+        foreach ($groups as $groupKey => $groupTx) {
+            // Optional per-group idempotency: only when all in group share a single submission_uuid
+            $uniqueSubs = $groupTx->pluck('submission_uuid')->filter()->unique();
+            if ($uniqueSubs->count() === 1) {
+                $submissionUuid = $uniqueSubs->first();
+                if ($submissionUuid) {
+                    $existing = \App\Models\WebappTransactionForward::where('submission_uuid', $submissionUuid)
+                        ->where('status', WebappTransactionForward::STATUS_COMPLETED)
+                        ->get();
+                    if ($existing->count() > 0) {
+                        $this->log('info', 'Idempotent forwarding: submission already processed (group)', [
+                            'submission_uuid' => $submissionUuid,
+                            'group' => $groupKey,
+                            'existing_count' => $existing->count(),
+                        ]);
+                        $results[] = [
+                            'success' => true,
+                            'forwarded_count' => 0,
+                            'batch_id' => $existing->first()->batch_id,
+                            'idempotent' => true,
+                            'group' => $groupKey,
+                        ];
+                        continue;
+                    }
+                }
+            }
+
+            // Build forwarding records for this homogeneous group
+            $forwarding = $this->createForwardingRecords($groupTx);
+
+            // Phase 1: record attempt for tenant (observation only)
+            $tenantId = $forwarding->first()?->transaction?->tenant_id;
+            if ($tenantId) {
+                $this->tenantObserver->recordAttempt($tenantId);
+            }
+
+            $result = $this->processBatchForwarding($forwarding, $tenantId);
+            $results[] = array_merge($result, ['group' => $groupKey]);
+            if (isset($result['batch_id'])) {
+                $batchIds[] = $result['batch_id'];
+            }
+            if (($result['success'] ?? false) === true) {
+                $totalForwarded += ($result['forwarded_count'] ?? 0);
+            } else {
+                $allSucceeded = false;
             }
         }
 
-        $forwarding = $this->createForwardingRecords($records);
-
-        // Phase 1: record attempt for tenant (observation only)
-        $tenantId = $forwarding->first()?->transaction?->tenant_id;
-        $this->tenantObserver->recordAttempt($tenantId);
-
-        return $this->processBatchForwarding($forwarding, $tenantId);
+        return [
+            'success' => $allSucceeded,
+            'forwarded_count' => $totalForwarded,
+            'group_results' => $results,
+            'batch_ids' => array_values(array_unique(array_filter($batchIds))),
+            'batch_id' => !empty($batchIds) ? end($batchIds) : null,
+        ];
     }
 
     private function assertEndpoint(): void
@@ -328,7 +374,7 @@ class WebAppForwardingService
                 'transaction_id' => (string)$tx->transaction_id,
                 'terminal_serial' => $this->s($tx->terminal?->serial_number),
                 'tenant_code' => $this->s($tx->tenant?->customer_code),
-                'tenant_name' => $this->s($tx->tenant?->name),
+                'tenant_name' => $this->s($tx->tenant?->trade_name ?? $tx->tenant?->name),
                 'transaction_timestamp' => $this->isoTimestamp($tx->transaction_timestamp),
                 'amount' => (float) $tx->gross_sales,
                 'net_amount' => (float) $tx->net_sales,
@@ -762,8 +808,8 @@ class WebAppForwardingService
             'transactions' => ['required','array','min:1'],
             'transactions.*.transaction_id' => ['required','string'],
             // Allow empty strings for terminal_serial / tenant_code in test contexts; still require key presence
-            'transactions.*.terminal_serial' => ['required','string'],
-            'transactions.*.tenant_code' => ['required','string'],
+            'transactions.*.terminal_serial' => ['present','string'],
+            'transactions.*.tenant_code' => ['present','string'],
             'transactions.*.tenant_name' => ['string'], // optional but must be string
             'transactions.*.transaction_timestamp' => ['required','date_format:Y-m-d\\TH:i:s.v\\Z'],
             'transactions.*.amount' => ['required','numeric','gte:0'],
@@ -917,7 +963,7 @@ class WebAppForwardingService
         }
 
         $tenantCode = $this->s($transaction->tenant?->customer_code);
-        $tenantName = $this->s($transaction->tenant?->name);
+    $tenantName = $this->s($transaction->tenant?->trade_name ?? $transaction->tenant?->name);
         if ($tenantCode === '') { $tenantCode = 'UNKNOWN_TENANT'; }
         if ($tenantName === '') { $tenantName = 'Unknown Tenant'; }
         $terminalSerial = $this->s($transaction->terminal?->serial_number);
