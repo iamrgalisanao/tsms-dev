@@ -80,6 +80,7 @@ Route::middleware(['auth'])->group(function () {
         // Transaction logs routes (admin/manager only)
         Route::middleware(['role:admin|manager'])->prefix('logs')->name('logs.')->group(function () {
             Route::get('/', [TransactionLogController::class, 'index'])->name('index');
+            Route::get('/summary', [TransactionLogController::class, 'summary'])->name('summary');
             Route::get('/{id}', [TransactionLogController::class, 'show'])->name('show');
             Route::post('/export', [TransactionLogController::class, 'export'])->name('export');
             Route::get('/updates', [TransactionLogController::class, 'getUpdates'])->name('updates');

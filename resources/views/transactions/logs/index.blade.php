@@ -23,7 +23,7 @@ use App\Helpers\FormatHelper;
 
 <div class="card card-primary card-outline">
     <div class="card-header">
-        <h3 class="card-title">List of Transactions</h3>
+    <h3 class="card-title">Transaction Logs</h3>
         <div class="card-tools">
             <button type="button" class="btn btn-tool" data-toggle="collapse" data-target="#filtersCollapse" aria-expanded="false" aria-controls="filtersCollapse" title="Toggle Filters">
                 <i class="fas fa-filter"></i>
@@ -91,8 +91,47 @@ use App\Helpers\FormatHelper;
     </div>
 
         <div class="card-body pt-0">
+            <ul class="nav nav-tabs mb-3" role="tablist">
+                <li class="nav-item">
+                    <a class="nav-link {{ ($activeTab ?? 'detailed') === 'detailed' ? 'active' : '' }}" href="{{ route('transactions.logs.index', request()->all()) }}">Detailed</a>
+                </li>
+                <li class="nav-item">
+                    <a class="nav-link {{ ($activeTab ?? 'detailed') === 'summary' ? 'active' : '' }}" href="{{ route('transactions.logs.summary', request()->all()) }}">Summary</a>
+                </li>
+            </ul>
             <div id="dtBtnContainer" class="mb-2"></div>
             <div class="table-responsive p-0">
+        @if(($activeTab ?? 'detailed') === 'summary')
+        <table id="transactionSummaryTable" class="table table-striped table-hover table-head-fixed text-sm">
+            <thead>
+                <tr>
+                    <th>Date</th>
+                    <th>Tenant</th>
+                    <th>Terminal</th>
+                    <th>Tx Count</th>
+                    <th>Gross</th>
+                    <th>VAT</th>
+                    <th>Net</th>
+                    <th>Refund</th>
+                </tr>
+            </thead>
+            <tbody>
+                @forelse(($summary ?? []) as $row)
+                <tr>
+                    <td>{{ $row->date }}</td>
+                    <td>{{ $row->trade_name }}</td>
+                    <td>SN: {{ $row->serial_number ?? 'N/A' }} • M: {{ $row->machine_number ?? 'N/A' }}</td>
+                    <td class="text-end">{{ number_format($row->tx_count) }}</td>
+                    <td class="text-end">₱{{ number_format($row->gross, 2) }}</td>
+                    <td class="text-end">₱{{ number_format($row->vat, 2) }}</td>
+                    <td class="text-end">₱{{ number_format($row->net, 2) }}</td>
+                    <td class="text-end">₱{{ number_format($row->refund, 2) }}</td>
+                </tr>
+                @empty
+                @endforelse
+            </tbody>
+        </table>
+        @else
         <table id="transactionLogsTable" class="table table-striped table-hover table-head-fixed text-sm">
             <thead>
                 <tr>
@@ -161,6 +200,7 @@ use App\Helpers\FormatHelper;
                 @endforelse
             </tbody>
                 </table>
+        @endif
             </div>
         </div>
 </div>
@@ -185,10 +225,10 @@ use App\Helpers\FormatHelper;
 
 <script>
 $(function () {
-    const selector = '#transactionLogsTable';
-    if ($.fn.DataTable.isDataTable(selector)) {
-        return;
-    }
+    const isSummary = {{ json_encode(($activeTab ?? 'detailed') === 'summary') }};
+    const selector = isSummary ? '#transactionSummaryTable' : '#transactionLogsTable';
+    if (!$(selector).length) return;
+    if ($.fn.DataTable.isDataTable(selector)) return;
     const canExport = {!! json_encode(Gate::check('export-transaction-logs')) !!};
     const dt = $(selector).DataTable({
         "responsive": true, 
