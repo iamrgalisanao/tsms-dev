@@ -87,12 +87,20 @@ Route::prefix('v1')->middleware(['auth:sanctum'])->group(function () {
 });
 
 // Legacy V1 API Routes with rate limiting (for backward compatibility)
-Route::prefix('v1')->middleware(['rate.limit'])->group(function () {
-    // Legacy basic ingestion endpoint disabled
-    // Route::post('/transactions', [TransactionController::class, 'store']);
-    Route::post('/transactions/batch', [TransactionController::class, 'batchStore']);
-    Route::get('/transactions/{id}/status', [TransactionController::class, 'status']);
-});
+// Disabled by default. Enable temporarily via TSMS_ENABLE_LEGACY_API=true if you must
+// support older POS clients while migrating to Sanctum-protected endpoints.
+if (env('TSMS_ENABLE_LEGACY_API', false)) {
+    Log::warning('Legacy API routes enabled (unauthenticated v1 endpoints)', [
+        'flag' => 'TSMS_ENABLE_LEGACY_API',
+    ]);
+
+    Route::prefix('v1')->middleware(['rate.limit'])->group(function () {
+        // Legacy basic ingestion endpoint disabled
+        // Route::post('/transactions', [TransactionController::class, 'store']);
+        Route::post('/transactions/batch', [TransactionController::class, 'batchStore']);
+        Route::get('/transactions/{id}/status', [TransactionController::class, 'status']);
+    });
+}
 
 // Public transaction endpoints for testing (legacy)
 Route::middleware('api')->group(function () {

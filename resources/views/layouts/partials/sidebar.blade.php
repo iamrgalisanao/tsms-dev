@@ -50,6 +50,16 @@
             </a>
         </li>
 
+    @if(auth()->user() && auth()->user()->hasAnyRole(['admin', 'manager']))
+    <li class="nav-item">
+      <a href="{{ route('transactions.logs.index') }}"
+      class="nav-link {{ Request::routeIs('transactions.logs.*') ? 'active' : '' }}">
+      <i class="nav-icon fas fa-exchange-alt text-white"></i> 
+      <p class="text-white">Transaction Logs</p>
+      </a>
+    </li>
+    @endif
+
         {{-- <li class="nav-item">
             <a href="{{ route('transactions.logs.index') }}"
             class="nav-link {{ Request::routeIs('transactions.logs.*') ? 'active' : '' }}">

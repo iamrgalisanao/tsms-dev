@@ -48,7 +48,7 @@ class TransactionLogController extends Controller
             'validation_status',
             'created_at'
             ])
-            ->with(['terminal:id,serial_number,tenant_id,machine_number'])
+            ->with(['terminal:id,serial_number,tenant_id,machine_number', 'terminal.tenant:id,trade_name'])
             ->when(isset($filters['transaction_id']), function ($query) use ($filters) {
             $search = str_replace('TX-', '', $filters['transaction_id']);
             return $query->where('transaction_id', 'like', "%{$search}%");
@@ -79,7 +79,8 @@ class TransactionLogController extends Controller
         }
 
         // $providers = PosProvider::all();
-        $terminals = PosTerminal::all();
+        $terminals = PosTerminal::with('tenant:id,trade_name')
+            ->get(['id','serial_number','tenant_id','machine_number']);
 
         // return view('transactions.logs.index', compact('logs', 'providers', 'terminals', 'filters'));
          return view('transactions.logs.index', compact('logs', 'terminals', 'filters'));

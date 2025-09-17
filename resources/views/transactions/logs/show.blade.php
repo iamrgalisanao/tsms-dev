@@ -9,10 +9,12 @@
       <p class="text-muted mb-0">{{ $transaction->transaction_id }}</p>
     </div>
     <div class="d-flex gap-2">
-      @if($transaction->validation_status === 'ERROR')
+      @if($transaction->validation_status === 'ERROR' && Gate::check('retry-transactions'))
       <button class="btn btn-warning" id="retryBtn">
         <i class="fas fa-sync-alt me-2"></i> Retry Transaction
       </button>
+      @elseif($transaction->validation_status === 'ERROR')
+      <span class="text-muted small">You don’t have permission to retry transactions.</span>
       @endif
       <a href="{{ route('transactions.logs.index') }}" class="btn btn-outline-secondary">
         <i class="fas fa-arrow-left me-2"></i> Back to Logs

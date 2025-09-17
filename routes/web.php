@@ -77,8 +77,8 @@ Route::middleware(['auth'])->group(function () {
         
         Route::get('/', [TransactionController::class, 'index'])->name('index');
         
-        // Transaction logs routes
-        Route::prefix('logs')->name('logs.')->group(function () {
+        // Transaction logs routes (admin/manager only)
+        Route::middleware(['role:admin|manager'])->prefix('logs')->name('logs.')->group(function () {
             Route::get('/', [TransactionLogController::class, 'index'])->name('index');
             Route::get('/{id}', [TransactionLogController::class, 'show'])->name('show');
             Route::post('/export', [TransactionLogController::class, 'export'])->name('export');
@@ -86,7 +86,9 @@ Route::middleware(['auth'])->group(function () {
         });
 
         Route::get('/{id}', [TransactionController::class, 'show'])->name('show');
-        Route::post('/{id}/retry', [TransactionController::class, 'retry'])->name('retry');
+        Route::post('/{id}/retry', [TransactionController::class, 'retry'])
+            ->middleware(['role:admin|manager'])
+            ->name('retry');
     });
 
     // Bulk generate and retry routes

@@ -21,16 +21,83 @@ use App\Helpers\BadgeHelper;
 use App\Helpers\FormatHelper;
 @endphp
 
-<div class="card">
-    <div class="card-header bg-primary">
-        <h3 class="card-title text-white">List of Transactions</h3>
+<div class="card card-primary card-outline">
+    <div class="card-header">
+        <h3 class="card-title">List of Transactions</h3>
+        <div class="card-tools">
+            <button type="button" class="btn btn-tool" data-toggle="collapse" data-target="#filtersCollapse" aria-expanded="false" aria-controls="filtersCollapse" title="Toggle Filters">
+                <i class="fas fa-filter"></i>
+            </button>
+            <button type="button" class="btn btn-tool" data-card-widget="collapse" title="Collapse Card">
+                <i class="fas fa-minus"></i>
+            </button>
+        </div>
     </div>
+
     <div class="card-body">
-    <table id="transactionLogsTable" class="table table-bordered table-striped">
+    <div id="filtersCollapse" class="collapse show">
+        <form method="GET" action="{{ route('transactions.logs.index') }}">
+            <div class="form-row">
+                <div class="form-group col-sm-6 col-md-2">
+                    <label class="small text-muted mb-1">Status</label>
+                    <select name="status" class="form-control form-control-sm">
+                        <option value="">Any</option>
+                        <option value="VALID" {{ request('status')==='VALID'?'selected':'' }}>VALID</option>
+                        <option value="ERROR" {{ request('status')==='ERROR'?'selected':'' }}>ERROR</option>
+                        <option value="PENDING" {{ request('status')==='PENDING'?'selected':'' }}>PENDING</option>
+                    </select>
+                </div>
+                <div class="form-group col-sm-6 col-md-2">
+                    <label class="small text-muted mb-1">Date From</label>
+                    <input type="date" name="date_from" class="form-control form-control-sm" value="{{ request('date_from') }}" />
+                </div>
+                <div class="form-group col-sm-6 col-md-2">
+                    <label class="small text-muted mb-1">Date To</label>
+                    <input type="date" name="date_to" class="form-control form-control-sm" value="{{ request('date_to') }}" />
+                </div>
+                <div class="form-group col-sm-6 col-md-3">
+                    <label class="small text-muted mb-1">Terminal</label>
+                    <select name="terminal_id" class="form-control form-control-sm">
+                        <option value="">Any</option>
+                        @foreach($terminals as $t)
+                            @php $label = trim(($t->tenant->trade_name ?? 'Unknown'). ' • SN: '.($t->serial_number ?? 'N/A'). ' • M: '.($t->machine_number ?? 'N/A')); @endphp
+                            <option value="{{ $t->id }}" {{ (string)request('terminal_id') === (string)$t->id ? 'selected' : '' }}>
+                                {{ $label }}
+                            </option>
+                        @endforeach
+                    </select>
+                </div>
+                <div class="form-group col-sm-6 col-md-1">
+                    <label class="small text-muted mb-1">Amt Min</label>
+                    <input type="number" step="0.01" name="amount_min" class="form-control form-control-sm" value="{{ request('amount_min') }}" />
+                </div>
+                <div class="form-group col-sm-6 col-md-1">
+                    <label class="small text-muted mb-1">Amt Max</label>
+                    <input type="number" step="0.01" name="amount_max" class="form-control form-control-sm" value="{{ request('amount_max') }}" />
+                </div>
+                <div class="form-group col-sm-8 col-md-4">
+                    <label class="small text-muted mb-1">Transaction ID</label>
+                    <div class="input-group input-group-sm">
+                        <input type="text" name="transaction_id" class="form-control" value="{{ request('transaction_id') }}" placeholder="Full or partial" />
+                        <div class="input-group-append">
+                            <button class="btn btn-primary" type="submit"><i class="fas fa-check mr-1"></i> Apply</button>
+                            <a href="{{ route('transactions.logs.index') }}" class="btn btn-outline-secondary"><i class="fas fa-undo mr-1"></i> Reset</a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </form>
+        </div>
+    </div>
+
+        <div class="card-body pt-0">
+            <div id="dtBtnContainer" class="mb-2"></div>
+            <div class="table-responsive p-0">
+        <table id="transactionLogsTable" class="table table-striped table-hover table-head-fixed text-sm">
             <thead>
                 <tr>
                     <th>Transaction ID</th>
-                    <th>Machine Number</th>
+                    <th>Tenant / Terminal</th>
                     <th>Amount</th>
                     <th>Status</th>
                     {{-- <th>Job Status</th> --}}
@@ -38,6 +105,7 @@ use App\Helpers\FormatHelper;
                     <!-- <th>Transaction Count</th> -->
                     <th>Completed At</th>
                     <th>Created At</th>
+                    <th>Actions</th>
                 </tr>
             </thead>
             <tbody>
@@ -47,15 +115,19 @@ use App\Helpers\FormatHelper;
                     {{-- <td>{{ $log->terminal->identifier ?? 'N/A' }}</td>
                     <td> --}}
                     <td>
-                            @php
-                                $customerCode = $log->customer->code ?? ($log->terminal->tenant->customer_code ?? null);
-                            @endphp
-                            {{-- <small style="color:gray;">[customer: {{ $log->customer->code ?? 'null' }} | tenant: {{ $log->terminal->tenant->customer_code ?? 'null' }}]</small> --}}
-                            @if($customerCode)
-                                {{ $customerCode . ' - ' . ($log->terminal->machine_number ?? 'N/A') }}
-                            @else
-                                <span class="text-danger">Unknown</span> - {{ $log->terminal->machine_number ?? 'N/A' }}
-                            @endif
+                        @php
+                            $tenantName = optional(optional($log->terminal)->tenant)->trade_name;
+                            $serial = optional($log->terminal)->serial_number;
+                            $machine = optional($log->terminal)->machine_number;
+                        @endphp
+                        @if($tenantName)
+                            <strong>{{ $tenantName }}</strong>
+                        @else
+                            <span class="text-danger">Unknown Tenant</span>
+                        @endif
+                        <div class="small text-muted">
+                            SN: {{ $serial ?? 'N/A' }} • Machine: {{ $machine ?? 'N/A' }}
+                        </div>
                     </td>
                     <!-- {{-- <td>{{ $log->terminal->terminal_uid ?? 'N/A' }}</td> --}} -->
                     <td class="text-end">₱{{ number_format($log->amount, 2) }}</td>
@@ -72,6 +144,15 @@ use App\Helpers\FormatHelper;
                     <!-- <td class="text-center">{{ $log->transaction_count }}</td> -->
                     <td class="text-center">{{ \Carbon\Carbon::parse($log->completed_at)->format('Y-m-d H:i:s') }}</td>
                     <td class="text-center">{{ \Carbon\Carbon::parse($log->created_at)->format('Y-m-d H:i:s') }}</td>
+                    <td class="text-center">
+                        <a href="{{ route('transactions.logs.show', $log->id) }}" class="btn btn-sm btn-outline-primary">View</a>
+                        @if($log->validation_status === 'ERROR' && Gate::check('retry-transactions'))
+                            <form action="{{ route('transactions.retry', $log->id) }}" method="POST" class="d-inline">
+                                @csrf
+                                <button type="submit" class="btn btn-sm btn-warning">Retry</button>
+                            </form>
+                        @endif
+                    </td>
                 </tr>
                 @empty
                 {{-- <tr>
@@ -79,8 +160,9 @@ use App\Helpers\FormatHelper;
                 </tr> --}}
                 @endforelse
             </tbody>
-        </table>
-    </div>
+                </table>
+            </div>
+        </div>
 </div>
 @endsection
 
@@ -107,7 +189,8 @@ $(function () {
     if ($.fn.DataTable.isDataTable(selector)) {
         return;
     }
-    $(selector).DataTable({
+    const canExport = {!! json_encode(Gate::check('export-transaction-logs')) !!};
+    const dt = $(selector).DataTable({
         "responsive": true, 
         "lengthChange": false, 
         "autoWidth": false,
@@ -129,14 +212,16 @@ $(function () {
                 "previous": "Previous"
             }
         },
-        "buttons": [
-            { extend: "csv",   text: "CSV",   className: "btn btn-danger" },
-              { extend: "excel", text: "Excel", className: "btn btn-danger" },
-              { extend: "pdf",   text: "PDF",   className: "btn btn-danger" },
-              // { extend: "print", text: "Print", className: "btn btn-sm btn-danger" },
-              { extend: "colvis",text: "Cols",  className: "btn btn-lg btn-danger" }
-        ]
-    }).buttons().container().appendTo('#transactionLogsTable_wrapper .col-md-6:eq(0)');
+        "buttons": (canExport ? [
+            { extend: "csv",   text: '<i class="fas fa-file-csv mr-1"></i> CSV',   className: "btn btn-primary btn-sm" },
+            { extend: "excel", text: '<i class="far fa-file-excel mr-1"></i> Excel', className: "btn btn-success btn-sm" },
+            { extend: "pdf",   text: '<i class="far fa-file-pdf mr-1"></i> PDF',   className: "btn btn-danger btn-sm" },
+            { extend: "colvis",text: '<i class="fas fa-columns mr-1"></i> Cols',  className: "btn btn-secondary btn-sm" }
+        ] : [{ extend: "colvis", text: '<i class="fas fa-columns mr-1"></i> Cols', className: "btn btn-secondary btn-sm" }])
+     });
+
+    // Move DataTables buttons into our container for AdminLTE layout
+    dt.buttons().container().appendTo('#dtBtnContainer');
 
     // Toastr notifications
     @if(session('success'))
