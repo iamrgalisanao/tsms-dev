@@ -9,6 +9,14 @@
 <link rel="stylesheet" href="{{ asset('plugins/datatables-buttons/css/buttons.bootstrap4.min.css') }}">
 <link rel="stylesheet" href="{{ asset('plugins/toastr/toastr.min.css') }}">
 
+<style>
+/* Ensure we only show Laravel paginator, not DataTables pager/info on this page */
+.dataTables_wrapper .dataTables_paginate,
+.dataTables_wrapper .dataTables_info { display: none !important; }
+/* Tidy up paginator alignment under AdminLTE */
+.pagination { margin-bottom: 0; }
+</style>
+
 @endpush
 
 @push('scripts')
@@ -238,11 +246,11 @@ use App\Helpers\FormatHelper;
                 <div>
                     @if(($activeTab ?? 'detailed') === 'summary')
                         @if(isset($summary) && method_exists($summary, 'links'))
-                            {{ $summary->onEachSide(1)->links() }}
+                            {{ $summary->onEachSide(1)->links('pagination::bootstrap-4') }}
                         @endif
                     @else
                         @if(isset($logs) && method_exists($logs, 'links'))
-                            {{ $logs->onEachSide(1)->links() }}
+                            {{ $logs->onEachSide(1)->links('pagination::bootstrap-4') }}
                         @endif
                     @endif
                 </div>
