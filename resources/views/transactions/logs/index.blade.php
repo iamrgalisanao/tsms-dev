@@ -278,20 +278,23 @@ $(function () {
     // Align DataTables page size with server-side Laravel pagination (per_page)
     const serverPerPage = {{ (int) (request('per_page') ?? ((request('date_from') || request('date_to')) ? 1000 : 15)) }};
     const dt = $(selector).DataTable({
-        "responsive": true, 
+        "responsive": true,
         "lengthChange": false, // keep length control in the top filter instead of DataTables dropdown
         "autoWidth": false,
         "ordering": true,
-        "info": true,
-        "paging": true,
+        // Use Laravel's server-side paginator; disable DataTables paging + info to avoid duplicate UI
+        "info": false,
+        "paging": false,
+        // Keep configured for completeness; not used when paging=false
         "pageLength": serverPerPage,
         "searching": true,
         "language": {
             "emptyTable": "No transaction logs available",
             "zeroRecords": "No matching records found",
-            "info": "Showing _START_ to _END_ of _TOTAL_ entries",
-            "infoEmpty": "Showing 0 to 0 of 0 entries",
-            "infoFiltered": "(filtered from _MAX_ total entries)",
+            // info strings suppressed by info:false
+            "info": "",
+            "infoEmpty": "",
+            "infoFiltered": "",
             "search": "Search:",
             "paginate": {
                 "first": "First",
