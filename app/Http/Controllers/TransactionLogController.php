@@ -49,6 +49,9 @@ class TransactionLogController extends Controller
             $filters['transaction_id'] = trim($request->transaction_id);
         }
 
+        $basis = in_array($request->input('date_basis'), ['created','completed']) ? $request->input('date_basis') : 'completed';
+        $dateColumn = $basis === 'completed' ? 'completed_at' : 'created_at';
+
         $logs = Transaction::select([
             'id',
             'transaction_id',
@@ -66,11 +69,11 @@ class TransactionLogController extends Controller
             ->when(isset($filters['status']), function ($query) use ($filters) {
             return $query->where('validation_status', $filters['status']);
             })
-            ->when(isset($filters['date_from']), function ($query) use ($filters) {
-            return $query->where('created_at', '>=', $filters['date_from'] . ' 00:00:00');
+            ->when(isset($filters['date_from']), function ($query) use ($filters, $dateColumn) {
+            return $query->where($dateColumn, '>=', $filters['date_from'] . ' 00:00:00');
             })
-            ->when(isset($filters['date_to']), function ($query) use ($filters) {
-            return $query->where('created_at', '<=', $filters['date_to'] . ' 23:59:59');
+            ->when(isset($filters['date_to']), function ($query) use ($filters, $dateColumn) {
+            return $query->where($dateColumn, '<=', $filters['date_to'] . ' 23:59:59');
             })
             ->when(isset($filters['tenant_id']), function ($query) use ($filters) {
             return $query->where('tenant_id', $filters['tenant_id']);
@@ -84,7 +87,7 @@ class TransactionLogController extends Controller
             ->when(isset($filters['amount_max']), function ($query) use ($filters) {
             return $query->where('gross_sales', '<=', $filters['amount_max']);
             })
-            ->latest()
+            ->orderBy($dateColumn, 'desc')
             ->paginate($perPage)
             ->appends($request->all());
 
@@ -166,6 +169,9 @@ class TransactionLogController extends Controller
             'terminal_id',
         ]);
 
+        $basis = in_array($request->input('date_basis'), ['created','completed']) ? $request->input('date_basis') : 'completed';
+        $dateColumn = $basis === 'completed' ? 't.completed_at' : 't.created_at';
+
         // Determine pagination size like index(): if date filter provided and no per_page set, use 1000
         $perPage = (int) $request->input('per_page', 15);
         if (($request->filled('date_from') || $request->filled('date_to')) && !$request->has('per_page')) {
@@ -178,11 +184,11 @@ class TransactionLogController extends Controller
             ->when(isset($filters['status']), function ($q) use ($filters) {
                 $q->where('t.validation_status', $filters['status']);
             })
-            ->when(isset($filters['date_from']), function ($q) use ($filters) {
-                $q->where('t.created_at', '>=', $filters['date_from'] . ' 00:00:00');
+            ->when(isset($filters['date_from']), function ($q) use ($filters, $dateColumn) {
+                $q->where($dateColumn, '>=', $filters['date_from'] . ' 00:00:00');
             })
-            ->when(isset($filters['date_to']), function ($q) use ($filters) {
-                $q->where('t.created_at', '<=', $filters['date_to'] . ' 23:59:59');
+            ->when(isset($filters['date_to']), function ($q) use ($filters, $dateColumn) {
+                $q->where($dateColumn, '<=', $filters['date_to'] . ' 23:59:59');
             })
             ->when(isset($filters['tenant_id']), function ($q) use ($filters) {
                 $q->where('t.tenant_id', $filters['tenant_id']);
@@ -190,7 +196,7 @@ class TransactionLogController extends Controller
             ->when(isset($filters['terminal_id']), function ($q) use ($filters) {
                 $q->where('t.terminal_id', $filters['terminal_id']);
             })
-            ->selectRaw('DATE(t.created_at) as date')
+            ->selectRaw('DATE(' . $dateColumn . ') as date')
             ->selectRaw('t.tenant_id, t.terminal_id')
             ->selectRaw('COALESCE(tn.trade_name, "Unknown") as trade_name')
             ->selectRaw('term.serial_number, term.machine_number')
