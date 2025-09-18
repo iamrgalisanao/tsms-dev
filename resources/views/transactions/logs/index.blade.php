@@ -11,6 +11,31 @@
 
 @endpush
 
+@push('scripts')
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const btn = document.getElementById('btnToday');
+    if (!btn) return;
+    btn.addEventListener('click', function() {
+        const form = btn.closest('form');
+        if (!form) return;
+        const today = new Date();
+        const yyyy = today.getFullYear();
+        const mm = String(today.getMonth() + 1).padStart(2, '0');
+        const dd = String(today.getDate()).padStart(2, '0');
+        const iso = `${yyyy}-${mm}-${dd}`;
+        const df = form.querySelector('input[name="date_from"]');
+        const dt = form.querySelector('input[name="date_to"]');
+        const pp = form.querySelector('select[name="per_page"]');
+        if (df) df.value = iso;
+        if (dt) dt.value = iso;
+        if (pp) pp.value = '1000';
+        form.submit();
+    });
+});
+</script>
+@endpush
+
 
 
 @section('content')
@@ -70,6 +95,7 @@ use App\Helpers\FormatHelper;
                 </div>
                 <div class="form-group col-sm-6 col-md-3 col-lg-3">
                     <button class="btn btn-primary btn-sm mr-2" type="submit"><i class="fas fa-check mr-1"></i> Apply</button>
+                    <button class="btn btn-outline-primary btn-sm mr-2" type="button" id="btnToday"><i class="far fa-calendar-day mr-1"></i> Today</button>
                     <a href="{{ route('transactions.logs.index') }}" class="btn btn-outline-secondary btn-sm"><i class="fas fa-undo mr-1"></i> Reset</a>
                 </div>
             </div>
