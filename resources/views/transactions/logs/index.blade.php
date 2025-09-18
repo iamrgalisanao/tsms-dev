@@ -225,6 +225,28 @@ use App\Helpers\FormatHelper;
                 </table>
         @endif
             </div>
+            <!-- Server-side pagination links -->
+            <div class="mt-2 d-flex justify-content-between align-items-center">
+                <div class="small text-muted">
+                    @php
+                        $paginator = (($activeTab ?? 'detailed') === 'summary') ? ($summary ?? null) : ($logs ?? null);
+                    @endphp
+                    @if($paginator instanceof \Illuminate\Contracts\Pagination\LengthAwarePaginator)
+                        Showing {{ $paginator->firstItem() ?? 0 }} to {{ $paginator->lastItem() ?? 0 }} of {{ $paginator->total() }} entries
+                    @endif
+                </div>
+                <div>
+                    @if(($activeTab ?? 'detailed') === 'summary')
+                        @if(isset($summary) && method_exists($summary, 'links'))
+                            {{ $summary->onEachSide(1)->links() }}
+                        @endif
+                    @else
+                        @if(isset($logs) && method_exists($logs, 'links'))
+                            {{ $logs->onEachSide(1)->links() }}
+                        @endif
+                    @endif
+                </div>
+            </div>
         </div>
 </div>
 @endsection
@@ -253,13 +275,16 @@ $(function () {
     if (!$(selector).length) return;
     if ($.fn.DataTable.isDataTable(selector)) return;
     const canExport = {!! json_encode(Gate::check('export-transaction-logs')) !!};
+    // Align DataTables page size with server-side Laravel pagination (per_page)
+    const serverPerPage = {{ (int) (request('per_page') ?? ((request('date_from') || request('date_to')) ? 1000 : 15)) }};
     const dt = $(selector).DataTable({
         "responsive": true, 
-        "lengthChange": false, 
+        "lengthChange": false, // keep length control in the top filter instead of DataTables dropdown
         "autoWidth": false,
         "ordering": true,
         "info": true,
         "paging": true,
+        "pageLength": serverPerPage,
         "searching": true,
         "language": {
             "emptyTable": "No transaction logs available",

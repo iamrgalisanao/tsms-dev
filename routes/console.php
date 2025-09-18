@@ -4,6 +4,7 @@ use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
 use Illuminate\Support\Facades\Log;
+use App\Models\WebappTransactionForward;
 use App\Services\WebAppForwardingService;
 
 Artisan::command('inspire', function () {
@@ -54,12 +55,24 @@ Schedule::call(function () {
         ]);
     }
 
-    // Metric-style log (counts post-prune)
+    // Metric-style log (counts post-prune) with breakdown
     $pendingNow = \App\Models\Transaction::where('validation_status','PENDING')->count();
     $failedNow = \App\Models\Transaction::where('validation_status','FAILED')->count();
+
+    // Pending forwarding: VALID transactions that have not been COMPLETED in WebApp forwarding
+    $pendingForwarding = \App\Models\Transaction::where('validation_status', 'VALID')
+        ->whereDoesntHave('webappForward', function ($q) {
+            $q->where('status', WebappTransactionForward::STATUS_COMPLETED);
+        })
+        ->count();
+
     Log::info('[Prune] Transaction inventory snapshot', [
-        'pending_remaining' => $pendingNow,
-        'failed_remaining' => $failedNow,
+        'pending_remaining'       => $pendingNow,            // validation_status=PENDING
+        'failed_remaining'        => $failedNow,             // validation_status=FAILED
+        'pending_forwarding'      => $pendingForwarding,     // VALID but not yet forwarded
+        'forwarding_pending'      => WebappTransactionForward::pending()->count(),
+        'forwarding_completed'    => WebappTransactionForward::completed()->count(),
+        'forwarding_failed'       => WebappTransactionForward::failed()->count(),
     ]);
 })->hourly()->name('transactions-prune')->withoutOverlapping()->onOneServer();
 
