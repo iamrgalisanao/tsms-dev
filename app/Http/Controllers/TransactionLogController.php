@@ -166,6 +166,12 @@ class TransactionLogController extends Controller
             'terminal_id',
         ]);
 
+        // Determine pagination size like index(): if date filter provided and no per_page set, use 1000
+        $perPage = (int) $request->input('per_page', 15);
+        if (($request->filled('date_from') || $request->filled('date_to')) && !$request->has('per_page')) {
+            $perPage = 1000;
+        }
+
         $query = \DB::table('transactions as t')
             ->leftJoin('tenants as tn', 'tn.id', '=', 't.tenant_id')
             ->leftJoin('pos_terminals as term', 'term.id', '=', 't.terminal_id')
@@ -196,7 +202,7 @@ class TransactionLogController extends Controller
             ->groupBy('date', 't.tenant_id', 't.terminal_id', 'trade_name', 'term.serial_number', 'term.machine_number')
             ->orderBy('date', 'desc');
 
-        $summary = $query->paginate(15);
+    $summary = $query->paginate($perPage)->appends($request->all());
 
         $terminals = PosTerminal::with('tenant:id,trade_name')
             ->get(['id','serial_number','tenant_id','machine_number']);

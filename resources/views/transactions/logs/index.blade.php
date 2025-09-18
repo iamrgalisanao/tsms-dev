@@ -59,6 +59,15 @@ use App\Helpers\FormatHelper;
                     <label class="small text-muted mb-1">Date To</label>
                     <input type="date" name="date_to" class="form-control form-control-sm" value="{{ request('date_to') }}" />
                 </div>
+                <div class="form-group col-sm-6 col-md-2 col-lg-2">
+                    <label class="small text-muted mb-1">Per Page</label>
+                    @php $effectivePerPage = request('per_page') ?? ((request('date_from') || request('date_to')) ? 1000 : 15); @endphp
+                    <select name="per_page" class="form-control form-control-sm">
+                        @foreach([15,50,100,200,500,1000] as $opt)
+                            <option value="{{ $opt }}" {{ (string)$effectivePerPage === (string)$opt ? 'selected' : '' }}>{{ $opt }}</option>
+                        @endforeach
+                    </select>
+                </div>
                 <div class="form-group col-sm-6 col-md-3 col-lg-3">
                     <button class="btn btn-primary btn-sm mr-2" type="submit"><i class="fas fa-check mr-1"></i> Apply</button>
                     <a href="{{ route('transactions.logs.index') }}" class="btn btn-outline-secondary btn-sm"><i class="fas fa-undo mr-1"></i> Reset</a>
