@@ -42,6 +42,8 @@ class RouteServiceProvider extends ServiceProvider
     // Register Sanctum abilities middleware aliases using Route facade
     Route::aliasMiddleware('abilities', \Laravel\Sanctum\Http\Middleware\CheckAbilities::class);
     Route::aliasMiddleware('ability', \Laravel\Sanctum\Http\Middleware\CheckForAnyAbility::class);
+        // Register route middleware aliases here (Laravel 11 style also supported via providers)
+        \Illuminate\Support\Facades\Route::aliasMiddleware('capture.terminal.ip', \App\Http\Middleware\CaptureTerminalIp::class);
     }
 
     /**
