@@ -8,11 +8,65 @@ use App\Models\Tenant;
 use App\Models\PosProvider;
 use App\Models\ProviderStatistics;
 use Illuminate\Http\Request;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Log;
 use Carbon\Carbon;
 
 class TerminalAuthController extends Controller
 {
+    /**
+     * POS heartbeat endpoint
+     *
+     * Auth: Sanctum Bearer token with ability 'heartbeat:send'.
+     * Side effect: updates terminal.last_seen_at to server time.
+     * Response includes server_time and next_heartbeat_due (server_time + heartbeat_threshold seconds).
+     */
+    public function heartbeat(Request $request): JsonResponse
+    {
+        try {
+            $terminal = $request->user();
+
+            if (!$terminal) {
+                return response()->json([
+                    'error' => 'Unauthenticated'
+                ], 401);
+            }
+
+            // Ensure token has heartbeat ability when Sanctum abilities are enforced
+            if (method_exists($terminal, 'tokenCan') && !$terminal->tokenCan('heartbeat:send')) {
+                return response()->json([
+                    'error' => 'Insufficient permissions'
+                ], 403);
+            }
+
+            // Update liveness timestamp
+            $terminal->last_seen_at = now();
+            $terminal->save();
+
+            $serverTime = Carbon::now();
+            $threshold = (int)($terminal->heartbeat_threshold ?? 300); // default 5 minutes if unset
+            $nextDue = (clone $serverTime)->addSeconds($threshold);
+
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'message' => 'Heartbeat received',
+                    'server_time' => $serverTime->toISOString(),
+                    'next_heartbeat_due' => $nextDue->toISOString(),
+                ]
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('Heartbeat failed', [
+                'error' => $e->getMessage(),
+                'terminal_id' => isset($terminal) && $terminal instanceof PosTerminal ? $terminal->id : null,
+            ]);
+            return response()->json([
+                'error' => 'Heartbeat failed',
+                'message' => 'Unable to process heartbeat'
+            ], 500);
+        }
+    }
+
     public function register(Request $request)
     {
         try {

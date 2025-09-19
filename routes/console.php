@@ -4,8 +4,10 @@ use Illuminate\Foundation\Inspiring;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Cache;
 use App\Models\WebappTransactionForward;
 use App\Services\WebAppForwardingService;
+use App\Models\PosTerminal;
 
 Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
@@ -225,3 +227,101 @@ Schedule::call(function () {
         ]);
     }
 })->dailyAt('02:00')->name('webapp-forwarding-cleanup')->onOneServer();
+
+// --------------------------------------------------------------------------
+// POS Terminal Idle Monitor (log-only phase)
+// Runs every N minutes when enabled. Detects terminals that have been idle
+// beyond configured thresholds, logs idle and recovery events with dedupe.
+// --------------------------------------------------------------------------
+Schedule::call(function () {
+    $cfg = config('tsms.terminals.idle_monitor');
+    if (!$cfg || !($cfg['enabled'] ?? false)) { return; }
+
+    $now = now();
+    $dedupeTtl = (int) ($cfg['dedupe_ttl_seconds'] ?? 1800);
+    $defaultIdle = (int) ($cfg['idle_after_seconds_default'] ?? 3600);
+    $multiplier = (int) ($cfg['multiplier_of_heartbeat'] ?? 3);
+
+    // Consider only active terminals
+    PosTerminal::query()
+        ->where(function($q) {
+            // is_active or status_id active; tolerate either schema variant
+            $q->where('is_active', true)->orWhere('status_id', 1);
+        })
+        ->orderBy('id')
+        ->chunk(500, function($chunk) use ($now, $dedupeTtl, $defaultIdle, $multiplier) {
+            foreach ($chunk as $terminal) {
+                try {
+                    // Determine idle threshold
+                    $hb = (int) ($terminal->heartbeat_threshold ?? 300);
+                    $idleAfter = max($defaultIdle, $hb * $multiplier);
+
+                    // Determine last activity
+                    $lastSeen = $terminal->last_seen_at ?? $terminal->registered_at ?? $terminal->created_at;
+                    if (!$lastSeen) { continue; }
+
+                    $idleSeconds = $now->diffInSeconds($lastSeen);
+                    $isIdle = $idleSeconds >= $idleAfter;
+
+                    $cacheKeyIdle = sprintf('terminal:idle:%s', $terminal->id);
+                    $wasIdle = Cache::get($cacheKeyIdle, false) ? true : false;
+
+                    if ($isIdle && !$wasIdle) {
+                        // Mark as idle and log
+                        Cache::put($cacheKeyIdle, 1, $dedupeTtl);
+                        \App\Models\SystemLog::create([
+                            'type' => 'terminal_heartbeat',
+                            'log_type' => 'TERMINAL_IDLE_DETECTED',
+                            'severity' => 'warning',
+                            'terminal_uid' => $terminal->serial_number ?? $terminal->id,
+                            'transaction_id' => null,
+                            'message' => 'Terminal idle detected',
+                            'context' => json_encode([
+                                'terminal_id' => $terminal->id,
+                                'tenant_id' => $terminal->tenant_id ?? null,
+                                'serial_number' => $terminal->serial_number ?? null,
+                                'last_seen_at' => optional($terminal->last_seen_at)->toIso8601String(),
+                                'idle_seconds' => $idleSeconds,
+                                'idle_after_seconds' => $idleAfter,
+                                'heartbeat_threshold' => $terminal->heartbeat_threshold ?? null,
+                                'scan_time' => $now->toIso8601String(),
+                            ])
+                        ]);
+                    }
+
+                    if (!$isIdle && $wasIdle) {
+                        // Recovery detected; clear idle and log once
+                        Cache::forget($cacheKeyIdle);
+                        \App\Models\SystemLog::create([
+                            'type' => 'terminal_heartbeat',
+                            'log_type' => 'TERMINAL_RECOVERED',
+                            'severity' => 'info',
+                            'terminal_uid' => $terminal->serial_number ?? $terminal->id,
+                            'transaction_id' => null,
+                            'message' => 'Terminal recovered from idle',
+                            'context' => json_encode([
+                                'terminal_id' => $terminal->id,
+                                'tenant_id' => $terminal->tenant_id ?? null,
+                                'serial_number' => $terminal->serial_number ?? null,
+                                'last_seen_at' => optional($terminal->last_seen_at)->toIso8601String(),
+                                'idle_seconds' => $idleSeconds,
+                                'idle_after_seconds' => $idleAfter,
+                                'heartbeat_threshold' => $terminal->heartbeat_threshold ?? null,
+                                'scan_time' => $now->toIso8601String(),
+                            ])
+                        ]);
+                    }
+
+                } catch (\Throwable $e) {
+                    Log::error('[IdleMonitor] Error processing terminal', [
+                        'terminal_id' => $terminal->id ?? null,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
+            }
+        });
+})->name('terminals-idle-monitor')
+  ->withoutOverlapping()
+  ->onOneServer()
+  ->when(fn () => (bool) (config('tsms.terminals.idle_monitor.enabled') ?? false))
+  ->everyFiveMinutes(); // actual cadence governed by config; default every 5m

@@ -338,6 +338,16 @@ class TransactionController extends Controller
                             'status' => 'duplicate',
                             'message' => 'Transaction already exists'
                         ];
+                        // Update terminal liveness on duplicate to reflect recent activity
+                        try {
+                            $terminal->last_seen_at = now();
+                            $terminal->save();
+                        } catch (\Throwable $te) {
+                            Log::warning('Failed to update terminal last_seen_at on duplicate transaction', [
+                                'terminal_id' => $terminal->id,
+                                'error' => $te->getMessage(),
+                            ]);
+                        }
                         continue;
                     }
 
@@ -379,6 +389,18 @@ class TransactionController extends Controller
                         'message' => 'Transaction queued for processing'
                     ];
                     $processedCount++;
+
+                    // Update terminal liveness on successful creation
+                    try {
+                        $terminal->last_seen_at = now();
+                        $terminal->save();
+                    } catch (\Throwable $te) {
+                        Log::warning('Failed to update terminal last_seen_at after transaction creation', [
+                            'terminal_id' => $terminal->id,
+                            'transaction_id' => $transaction->transaction_id,
+                            'error' => $te->getMessage(),
+                        ]);
+                    }
 
                 } catch (\Exception $e) {
                     Log::error('Failed to process transaction in batch', [
@@ -925,6 +947,18 @@ class TransactionController extends Controller
                     'submission_exists' => $submission ? true : false,
                     'transaction_rows' => $existingTransactions->count(),
                 ]);
+                // Update terminal liveness on idempotent replay
+                try {
+                    if ($terminalFromToken instanceof \App\Models\PosTerminal) {
+                        $terminalFromToken->last_seen_at = now();
+                        $terminalFromToken->save();
+                    }
+                } catch (\Throwable $te) {
+                    Log::warning('Failed to update terminal last_seen_at on idempotent replay', [
+                        'terminal_id' => $request->terminal_id,
+                        'error' => $te->getMessage(),
+                    ]);
+                }
                 
                 DB::commit();
                 return response()->json([
@@ -1014,6 +1048,18 @@ class TransactionController extends Controller
                     ->where('submission_uuid', $request->submission_uuid)
                     ->first();
                 $existingTransactions = \App\Models\Transaction::where('submission_uuid', $request->submission_uuid)->get();
+                // Touch terminal liveness on idempotent duplicate via cache lock
+                try {
+                    if ($terminalFromToken instanceof \App\Models\PosTerminal) {
+                        $terminalFromToken->last_seen_at = now();
+                        $terminalFromToken->save();
+                    }
+                } catch (\Throwable $te) {
+                    Log::warning('Failed to update terminal last_seen_at on cache-lock idempotent replay', [
+                        'terminal_id' => $request->terminal_id,
+                        'error' => $te->getMessage(),
+                    ]);
+                }
                 try { \DB::commit(); } catch (\Throwable $t) {}
                 return response()->json([
                     'success' => true,
@@ -1052,6 +1098,19 @@ class TransactionController extends Controller
                         ->where('submission_uuid', $request->submission_uuid)
                         ->first();
                     $existingTransactions = \App\Models\Transaction::where('submission_uuid', $request->submission_uuid)->get();
+
+                    // Touch terminal liveness on duplicate submission insert
+                    try {
+                        if ($terminalFromToken instanceof \App\Models\PosTerminal) {
+                            $terminalFromToken->last_seen_at = now();
+                            $terminalFromToken->save();
+                        }
+                    } catch (\Throwable $te) {
+                        Log::warning('Failed to update terminal last_seen_at on duplicate submission insert', [
+                            'terminal_id' => $request->terminal_id,
+                            'error' => $te->getMessage(),
+                        ]);
+                    }
 
                     // Commit open transaction (if any) and return idempotent success
                     try { \DB::commit(); } catch (\Throwable $t) {}
@@ -1115,6 +1174,17 @@ class TransactionController extends Controller
                             'status' => 'success', // ✅ Fixed: Return success for idempotency
                             'message' => 'Transaction already processed'
                         ];
+                        // Update terminal liveness for idempotent transaction replay
+                        try {
+                            $terminal->last_seen_at = now();
+                            $terminal->save();
+                        } catch (\Throwable $te) {
+                            Log::warning('Failed to update terminal last_seen_at on idempotent transaction', [
+                                'terminal_id' => $terminal->id,
+                                'transaction_id' => $existingTransaction->transaction_id,
+                                'error' => $te->getMessage(),
+                            ]);
+                        }
                         continue;
                     }
                     Log::info('storeOfficial: Creating transaction record', ['transaction_id' => $transactionData['transaction_id']]);
@@ -1179,6 +1249,18 @@ class TransactionController extends Controller
                     Log::info('storeOfficial: Dispatching ProcessTransactionJob', ['transaction_id' => $transaction->transaction_id]);
                     ProcessTransactionJob::dispatch($transaction->id)->afterCommit();
                     Log::info('storeOfficial: ProcessTransactionJob dispatched', ['transaction_id' => $transaction->transaction_id]);
+
+                    // Update terminal liveness on successful transaction creation
+                    try {
+                        $terminal->last_seen_at = now();
+                        $terminal->save();
+                    } catch (\Throwable $te) {
+                        Log::warning('Failed to update terminal last_seen_at after official transaction creation', [
+                            'terminal_id' => $terminal->id,
+                            'transaction_id' => $transaction->transaction_id,
+                            'error' => $te->getMessage(),
+                        ]);
+                    }
 
                     // (Notification suppressed here; final status notification sent by ProcessTransactionJob after validation)
 

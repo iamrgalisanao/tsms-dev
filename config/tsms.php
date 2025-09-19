@@ -150,4 +150,33 @@ return [
     'validation' => [
         'future_timestamp_tolerance_seconds' => (int) env('TSMS_FUTURE_TIMESTAMP_TOLERANCE_SECONDS', 0),
     ],
+
+    /*
+    |--------------------------------------------------------------------------
+    | Terminals: Idle Monitor
+    |--------------------------------------------------------------------------
+    | Controls the background scheduler that detects idle POS terminals based on
+    | last_seen_at and per-terminal heartbeat thresholds. Starts in log-only
+    | mode. When enabled later, notifications can be turned on behind flags.
+    */
+    'terminals' => [
+        'idle_monitor' => [
+            // Master toggle for the scheduler; default off (observation opt-in)
+            'enabled' => (bool) env('TSMS_IDLE_MONITOR_ENABLED', false),
+            // How often the job runs (minutes); used to build cron expression
+            'scan_interval_minutes' => (int) env('TSMS_IDLE_MONITOR_SCAN_MIN', 5),
+            // Default idle window if terminal has no heartbeat_threshold set
+            'idle_after_seconds_default' => (int) env('TSMS_IDLE_MONITOR_IDLE_DEFAULT', 3600),
+            // Idle threshold multiplier relative to heartbeat_threshold
+            'multiplier_of_heartbeat' => (int) env('TSMS_IDLE_MONITOR_MULTIPLIER', 3),
+            // Prevent duplicate idle logs/alerts within this TTL
+            'dedupe_ttl_seconds' => (int) env('TSMS_IDLE_MONITOR_DEDUPE_TTL', 1800),
+            // Optional notifications (kept disabled until validated in logs)
+            'notify' => [
+                'enabled' => (bool) env('TSMS_IDLE_MONITOR_NOTIFY_ENABLED', false),
+                // e.g., ["webapp", "mail", "database"] — not used until enabled
+                'channels' => explode(',', env('TSMS_IDLE_MONITOR_NOTIFY_CHANNELS', '')),
+            ],
+        ],
+    ],
 ];
