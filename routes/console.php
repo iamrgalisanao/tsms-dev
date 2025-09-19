@@ -238,20 +238,37 @@ Schedule::call(function () {
     if (!$cfg || !($cfg['enabled'] ?? false)) { return; }
 
     $now = now();
+    $scanInterval = (int) ($cfg['scan_interval_minutes'] ?? 5);
+    if ($scanInterval > 1) {
+        // Honor env-configured scan interval by skipping non-matching minutes
+        if (($now->minute % $scanInterval) !== 0) {
+            return; // not our tick
+        }
+    }
     $dedupeTtl = (int) ($cfg['dedupe_ttl_seconds'] ?? 1800);
     $defaultIdle = (int) ($cfg['idle_after_seconds_default'] ?? 3600);
     $multiplier = (int) ($cfg['multiplier_of_heartbeat'] ?? 3);
 
+    $scanned = 0; $idleNew = 0; $recovered = 0; $errors = 0;
+    // Track per-tenant aggregates if feature is enabled
+    $perTenantCfg = $cfg['per_tenant_summary'] ?? [];
+    $perTenantEnabled = (bool) ($perTenantCfg['enabled'] ?? false);
+    $perTenantOnlyNonzero = (bool) ($perTenantCfg['only_nonzero'] ?? true);
+    $tenantAgg = $perTenantEnabled ? [] : null;
+
     // Consider only active terminals
     PosTerminal::query()
         ->where(function($q) {
-            // is_active or status_id active; tolerate either schema variant
-            $q->where('is_active', true)->orWhere('status_id', 1);
+            // is_active or status_id active; also support status string 'active'
+            $q->where('is_active', true)
+              ->orWhere('status_id', 1)
+              ->orWhere('status', 'active');
         })
         ->orderBy('id')
-        ->chunk(500, function($chunk) use ($now, $dedupeTtl, $defaultIdle, $multiplier) {
+        ->chunk(500, function($chunk) use ($now, $dedupeTtl, $defaultIdle, $multiplier, &$scanned, &$idleNew, &$recovered, &$errors, $perTenantEnabled, &$tenantAgg) {
             foreach ($chunk as $terminal) {
                 try {
+                    $scanned++;
                     // Determine idle threshold
                     $hb = (int) ($terminal->heartbeat_threshold ?? 300);
                     $idleAfter = max($defaultIdle, $hb * $multiplier);
@@ -265,6 +282,19 @@ Schedule::call(function () {
 
                     $cacheKeyIdle = sprintf('terminal:idle:%s', $terminal->id);
                     $wasIdle = Cache::get($cacheKeyIdle, false) ? true : false;
+
+                    // Initialize per-tenant bucket if needed
+                    if ($perTenantEnabled) {
+                        $tid = $terminal->tenant_id ?? 'unassigned';
+                        if (!isset($tenantAgg[$tid])) {
+                            $tenantAgg[$tid] = [
+                                'scanned' => 0,
+                                'idle_detected' => 0,
+                                'recovered' => 0,
+                            ];
+                        }
+                        $tenantAgg[$tid]['scanned']++;
+                    }
 
                     if ($isIdle && !$wasIdle) {
                         // Mark as idle and log
@@ -287,6 +317,11 @@ Schedule::call(function () {
                                 'scan_time' => $now->toIso8601String(),
                             ])
                         ]);
+                        $idleNew++;
+                        if ($perTenantEnabled) {
+                            $tid = $terminal->tenant_id ?? 'unassigned';
+                            $tenantAgg[$tid]['idle_detected']++;
+                        }
                     }
 
                     if (!$isIdle && $wasIdle) {
@@ -310,6 +345,11 @@ Schedule::call(function () {
                                 'scan_time' => $now->toIso8601String(),
                             ])
                         ]);
+                        $recovered++;
+                        if ($perTenantEnabled) {
+                            $tid = $terminal->tenant_id ?? 'unassigned';
+                            $tenantAgg[$tid]['recovered']++;
+                        }
                     }
 
                 } catch (\Throwable $e) {
@@ -317,11 +357,87 @@ Schedule::call(function () {
                         'terminal_id' => $terminal->id ?? null,
                         'error' => $e->getMessage(),
                     ]);
+                    $errors++;
                 }
             }
         });
+
+    // Run summary to ensure visibility in dashboard logs
+    try {
+        \App\Models\SystemLog::create([
+            'type' => 'terminal_heartbeat',
+            'log_type' => 'IDLE_MONITOR_SUMMARY',
+            'severity' => ($idleNew > 0 || $errors > 0) ? 'info' : 'debug',
+            'terminal_uid' => 'scheduler',
+            'transaction_id' => null,
+            'message' => 'Idle monitor run summary',
+            'context' => json_encode([
+                'scan_time' => $now->toIso8601String(),
+                'scan_interval_minutes' => $scanInterval,
+                'scanned' => $scanned,
+                'idle_detected' => $idleNew,
+                'recovered' => $recovered,
+                'errors' => $errors,
+            ])
+        ]);
+
+        // Mirror summary into AuditLog for dashboard visibility
+        try {
+            \App\Models\AuditLog::create([
+                'user_id' => null,
+                'ip_address' => null,
+                'action' => 'IDLE_MONITOR_SUMMARY',
+                'action_type' => 'IDLE_MONITOR_SUMMARY',
+                'resource_type' => 'terminal_heartbeat_monitor',
+                'resource_id' => 'scheduler',
+                'auditable_type' => 'system',
+                'auditable_id' => null,
+                'message' => 'Idle monitor run summary',
+                'metadata' => [
+                    'scan_time' => $now->toIso8601String(),
+                    'scan_interval_minutes' => $scanInterval,
+                    'scanned' => $scanned,
+                    'idle_detected' => $idleNew,
+                    'recovered' => $recovered,
+                    'errors' => $errors,
+                ],
+            ]);
+
+            // Optional lightweight per-tenant summaries
+            if ($perTenantEnabled && is_array($tenantAgg)) {
+                foreach ($tenantAgg as $tenantId => $agg) {
+                    if ($perTenantOnlyNonzero && ($agg['idle_detected'] === 0 && $agg['recovered'] === 0)) {
+                        continue; // keep concise
+                    }
+                    \App\Models\AuditLog::create([
+                        'user_id' => null,
+                        'ip_address' => null,
+                        'action' => 'IDLE_MONITOR_TENANT_SUMMARY',
+                        'action_type' => 'IDLE_MONITOR_TENANT_SUMMARY',
+                        'resource_type' => 'tenant',
+                        'resource_id' => (string) $tenantId,
+                        'auditable_type' => 'tenant',
+                        'auditable_id' => is_numeric($tenantId) ? (int) $tenantId : null,
+                        'message' => 'Idle monitor tenant summary',
+                        'metadata' => [
+                            'tenant_id' => $tenantId,
+                            'scan_time' => $now->toIso8601String(),
+                            'scan_interval_minutes' => $scanInterval,
+                            'scanned' => $agg['scanned'] ?? 0,
+                            'idle_detected' => $agg['idle_detected'] ?? 0,
+                            'recovered' => $agg['recovered'] ?? 0,
+                        ],
+                    ]);
+                }
+            }
+        } catch (\Throwable $e) {
+            Log::error('[IdleMonitor] Failed to write audit summary', ['error' => $e->getMessage()]);
+        }
+    } catch (\Throwable $e) {
+        Log::error('[IdleMonitor] Failed to write summary log', ['error' => $e->getMessage()]);
+    }
 })->name('terminals-idle-monitor')
   ->withoutOverlapping()
   ->onOneServer()
   ->when(fn () => (bool) (config('tsms.terminals.idle_monitor.enabled') ?? false))
-  ->everyFiveMinutes(); // actual cadence governed by config; default every 5m
+  ->everyMinute(); // cadence governed by env via modulo; default every 5m

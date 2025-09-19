@@ -177,6 +177,12 @@ return [
                 // e.g., ["webapp", "mail", "database"] — not used until enabled
                 'channels' => explode(',', env('TSMS_IDLE_MONITOR_NOTIFY_CHANNELS', '')),
             ],
+            // Optional per-tenant summaries into AuditLog (lightweight)
+            'per_tenant_summary' => [
+                'enabled' => (bool) env('TSMS_IDLE_MONITOR_TENANT_SUMMARY', false),
+                // When true, only write entries for tenants with any activity (idle or recovered)
+                'only_nonzero' => (bool) env('TSMS_IDLE_MONITOR_TENANT_SUMMARY_ONLY_NONZERO', true),
+            ],
         ],
     ],
 ];
