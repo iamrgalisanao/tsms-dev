@@ -5,6 +5,7 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Schedule;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Schema;
 use App\Models\WebappTransactionForward;
 use App\Services\WebAppForwardingService;
 use App\Models\PosTerminal;
@@ -256,13 +257,26 @@ Schedule::call(function () {
     $perTenantOnlyNonzero = (bool) ($perTenantCfg['only_nonzero'] ?? true);
     $tenantAgg = $perTenantEnabled ? [] : null;
 
-    // Consider only active terminals
+    // Consider only active terminals; guard by schema to avoid missing columns
+    $hasIsActive = Schema::hasColumn('pos_terminals', 'is_active');
+    $hasStatusId = Schema::hasColumn('pos_terminals', 'status_id');
+    $hasStatus = Schema::hasColumn('pos_terminals', 'status');
+
     PosTerminal::query()
-        ->where(function($q) {
-            // is_active or status_id active; also support status string 'active'
-            $q->where('is_active', true)
-              ->orWhere('status_id', 1)
-              ->orWhere('status', 'active');
+        ->when($hasIsActive || $hasStatusId || $hasStatus, function ($query) use ($hasIsActive, $hasStatusId, $hasStatus) {
+            $query->where(function ($q) use ($hasIsActive, $hasStatusId, $hasStatus) {
+                if ($hasIsActive) {
+                    $q->where('is_active', true);
+                }
+                if ($hasStatusId) {
+                    // Assuming 1 == active in status_id
+                    $q->orWhere('status_id', 1);
+                }
+                if ($hasStatus) {
+                    // Some schemas may use a textual status column
+                    $q->orWhere('status', 'active');
+                }
+            });
         })
         ->orderBy('id')
         ->chunk(500, function($chunk) use ($now, $dedupeTtl, $defaultIdle, $multiplier, &$scanned, &$idleNew, &$recovered, &$errors, $perTenantEnabled, &$tenantAgg) {
