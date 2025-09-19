@@ -251,6 +251,11 @@ Schedule::call(function () {
     $multiplier = (int) ($cfg['multiplier_of_heartbeat'] ?? 3);
 
     $scanned = 0; $idleNew = 0; $recovered = 0; $errors = 0;
+    $summaryCfg = $cfg['summary_details'] ?? [];
+    $includeChanged = (bool) ($summaryCfg['include_terminals'] ?? true);
+    $terminalsCap = (int) ($summaryCfg['terminals_cap'] ?? 25);
+    $hasIpColumn = Schema::hasColumn('pos_terminals', 'ip_address');
+    $changedTerminals = [];
     // Track per-tenant aggregates if feature is enabled
     $perTenantCfg = $cfg['per_tenant_summary'] ?? [];
     $perTenantEnabled = (bool) ($perTenantCfg['enabled'] ?? false);
@@ -332,6 +337,15 @@ Schedule::call(function () {
                             ])
                         ]);
                         $idleNew++;
+                        if ($includeChanged && count($changedTerminals) < $terminalsCap) {
+                            $changedTerminals[] = [
+                                'event' => 'idle_detected',
+                                'terminal_id' => $terminal->id,
+                                'tenant_id' => $terminal->tenant_id ?? null,
+                                'serial' => $terminal->serial_number ?? null,
+                                'ip' => $hasIpColumn ? ($terminal->ip_address ?? null) : null,
+                            ];
+                        }
                         if ($perTenantEnabled) {
                             $tid = $terminal->tenant_id ?? 'unassigned';
                             $tenantAgg[$tid]['idle_detected']++;
@@ -360,6 +374,15 @@ Schedule::call(function () {
                             ])
                         ]);
                         $recovered++;
+                        if ($includeChanged && count($changedTerminals) < $terminalsCap) {
+                            $changedTerminals[] = [
+                                'event' => 'recovered',
+                                'terminal_id' => $terminal->id,
+                                'tenant_id' => $terminal->tenant_id ?? null,
+                                'serial' => $terminal->serial_number ?? null,
+                                'ip' => $hasIpColumn ? ($terminal->ip_address ?? null) : null,
+                            ];
+                        }
                         if ($perTenantEnabled) {
                             $tid = $terminal->tenant_id ?? 'unassigned';
                             $tenantAgg[$tid]['recovered']++;
@@ -392,6 +415,7 @@ Schedule::call(function () {
                 'idle_detected' => $idleNew,
                 'recovered' => $recovered,
                 'errors' => $errors,
+                'changed_terminals' => $includeChanged ? $changedTerminals : [],
             ])
         ]);
 
@@ -414,6 +438,7 @@ Schedule::call(function () {
                     'idle_detected' => $idleNew,
                     'recovered' => $recovered,
                     'errors' => $errors,
+                    'changed_terminals' => $includeChanged ? $changedTerminals : [],
                 ],
             ]);
 

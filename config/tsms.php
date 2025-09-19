@@ -183,6 +183,11 @@ return [
                 // When true, only write entries for tenants with any activity (idle or recovered)
                 'only_nonzero' => (bool) env('TSMS_IDLE_MONITOR_TENANT_SUMMARY_ONLY_NONZERO', true),
             ],
+            // Summary details: optionally include a compact list of changed terminals in each run
+            'summary_details' => [
+                'include_terminals' => (bool) env('TSMS_IDLE_MONITOR_SUMMARY_TERMINALS', true),
+                'terminals_cap' => (int) env('TSMS_IDLE_MONITOR_SUMMARY_TERMINALS_CAP', 25),
+            ],
         ],
     ],
 ];
