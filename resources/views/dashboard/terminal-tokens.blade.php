@@ -1,6 +1,6 @@
 @extends('layouts.master')
 @section('title', 'Terminal Tokens')
-@section('content')
+{{-- Removed redundant opening of content section; actual content section starts below --}}
 
 @push('styles')
 <!-- DataTables -->
@@ -19,6 +19,34 @@
         <h3 class="card-title text-white">List of Tokens</h3>
     </div>
     <div class="card-body">
+        <!-- Controls: token presence filter + per-page selector -->
+        <form method="GET" action="{{ route('terminal-tokens') }}" class="row g-2 align-items-end mb-3">
+          <div class="col-md-4">
+            <label for="status" class="form-label mb-0">Show</label>
+            <select name="status" id="status" class="form-control">
+              <option value="" {{ request('status') === null || request('status') === '' ? 'selected' : '' }}>All terminals</option>
+              <option value="has_tokens" {{ request('status') === 'has_tokens' ? 'selected' : '' }}>Only terminals with tokens</option>
+              <option value="no_tokens" {{ request('status') === 'no_tokens' ? 'selected' : '' }}>Only terminals without tokens</option>
+            </select>
+          </div>
+          <div class="col-md-3">
+            <label for="per_page" class="form-label mb-0">Per page (server)</label>
+            @php $pp = (int) request('per_page', 1000); @endphp
+            <select name="per_page" id="per_page" class="form-control">
+              @foreach([25,50,100,500,1000,2000] as $opt)
+                <option value="{{ $opt }}" {{ $pp === $opt ? 'selected' : '' }}>{{ $opt }}</option>
+              @endforeach
+            </select>
+          </div>
+          <div class="col-md-3">
+            <label class="form-label mb-0">&nbsp;</label>
+            <div>
+              <button type="submit" class="btn btn-outline-primary me-2">Apply</button>
+              <a href="{{ route('terminal-tokens') }}" class="btn btn-outline-secondary">Reset</a>
+            </div>
+          </div>
+        </form>
+
         <table id="example3" class="table table-bordered table-striped">
             <thead>
                 <tr>
@@ -60,13 +88,17 @@
                       @endif
                     </td>
                     <td>
-                      @php
-                        $latestToken = $terminal->tokens->last();
-                      @endphp
-                      <div class="input-group">
-                        <input type="text" class="form-control" value="{{ $latestToken ? $latestToken->name : '' }}" readonly style="max-width: 180px;">
-                        <span class="input-group-text" title="Token Created">{{ $latestToken?->created_at?->format('Y-m-d H:i') }}</span>
-                      </div>
+                        @php
+                          $latestToken = $terminal->tokens->last();
+                        @endphp
+                        @if($latestToken)
+                          <div class="input-group">
+                            <input type="text" class="form-control" value="{{ $latestToken->name }}" readonly style="max-width: 180px;">
+                            <span class="input-group-text" title="Token Created">{{ $latestToken?->created_at?->format('Y-m-d H:i') }}</span>
+                          </div>
+                        @else
+                          <span class="badge bg-secondary">No token yet</span>
+                        @endif
                     </td>
 @if(session('bearer_token'))
   <div class="modal fade" id="newTokenModal" tabindex="-1" aria-labelledby="newTokenModalLabel" role="dialog" aria-modal="true">
@@ -125,14 +157,19 @@
   </script>
 @endif
                     <td>
+                      @php $hasToken = (bool) $latestToken; @endphp
                       <form method="POST" action="{{ route('terminal-tokens.regenerate', $terminal->id) }}" class="d-inline">
                         @csrf
-                        <button type="submit" class="btn btn-sm btn-warning">Regenerate API Key</button>
+                        <button type="submit" class="btn btn-sm {{ $hasToken ? 'btn-warning' : 'btn-success' }}">
+                          {{ $hasToken ? 'Regenerate API Key' : 'Generate API Key' }}
+                        </button>
                       </form>
-                      <form method="POST" action="{{ route('terminal-tokens.revoke', $terminal->id) }}" class="d-inline ms-1">
-                        @csrf
-                        <button type="submit" class="btn btn-sm btn-danger" onclick="return confirm('Are you sure you want to revoke this API key?')">Revoke API Key</button>
-                      </form>
+                      @if($hasToken)
+                        <form method="POST" action="{{ route('terminal-tokens.revoke', $terminal->id) }}" class="d-inline ms-1">
+                          @csrf
+                          <button type="submit" class="btn btn-sm btn-danger" onclick="return confirm('Are you sure you want to revoke this API key?')">Revoke API Key</button>
+                        </form>
+                      @endif
                     </td>
                   </tr>
                   @empty
