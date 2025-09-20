@@ -172,6 +172,15 @@ use App\Helpers\BadgeHelper;
               </select>
             </div>
             <div class="col-md-3">
+              <label for="filterTenant" class="form-label">Tenant</label>
+              <select class="form-select" id="filterTenant" name="tenant_id" aria-label="Tenant">
+                <option value="">All Tenants</option>
+                @foreach(($tenants ?? []) as $t)
+                  <option value="{{ $t->id }}">{{ $t->trade_name }}</option>
+                @endforeach
+              </select>
+            </div>
+            <div class="col-md-3">
               <label for="filterUser" class="form-label">User</label>
               <input type="text" class="form-control" id="filterUser" name="user" placeholder="Username or ID" aria-label="User">
             </div>
@@ -264,6 +273,7 @@ function applyFilters() {
     date_range: $('#filterDateRange').val(),
     event_type: $('#filterEventType').val(),
     severity: $('#filterSeverity').val(),
+    tenant_id: $('#filterTenant').val(),
     user: $('#filterUser').val(),
     tab: $('.nav-link.active').attr('href').replace('#','')
   };

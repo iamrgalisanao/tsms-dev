@@ -22,14 +22,28 @@ class LogViewerController extends Controller
 
     public function index(Request $request)
     {
-        $auditLogs = \App\Models\AuditLog::with(['user'])
+        // Prepare base query for audit logs
+        $auditQuery = \App\Models\AuditLog::with(['user'])
             ->when($request->filled('action_type'), fn($q) => $q->where('action_type', $request->action_type))
             ->when($request->filled('user_id'), fn($q) => $q->where('user_id', $request->user_id))
             ->when($request->filled('resource_type'), fn($q) => $q->where('resource_type', $request->resource_type))
             ->when($request->filled('date_from'), fn($q) => $q->whereDate('created_at', '>=', $request->date_from))
             ->when($request->filled('date_to'), fn($q) => $q->whereDate('created_at', '<=', $request->date_to))
-            ->latest('created_at')
-            ->paginate(25);
+            ->when($request->filled('tenant_id'), function ($q) use ($request) {
+                $tenantId = (int) $request->input('tenant_id');
+                $q->where(function ($w) use ($tenantId) {
+                    $w->where('metadata->tenant_id', $tenantId)
+                      ->orWhere(function ($qq) use ($tenantId) {
+                          $qq->where('resource_type', 'tenant')->where('resource_id', (string) $tenantId);
+                      })
+                      ->orWhere(function ($qq) use ($tenantId) {
+                          $qq->where('auditable_type', 'tenant')->where('auditable_id', $tenantId);
+                      });
+                });
+            })
+            ->latest('created_at');
+
+        $auditLogs = $auditQuery->paginate(25)->appends($request->query());
 
         // Attach tenant trade_name to each audit log where possible without N+1 queries
         $logs = $auditLogs->getCollection();
@@ -112,7 +126,10 @@ class LogViewerController extends Controller
             'system_events' => \App\Models\AuditLog::where('action_type', 'SYSTEM')->count(),
         ];
 
-        return view('logs.index', compact('auditLogs', 'webhookLogs', 'stats', 'auditStats'));
+    // Tenant list for filters
+    $tenants = Tenant::orderBy('trade_name')->get(['id', 'trade_name']);
+
+    return view('logs.index', compact('auditLogs', 'webhookLogs', 'stats', 'auditStats', 'tenants'));
     }
 
     public function getFilteredLogs(Request $request)
