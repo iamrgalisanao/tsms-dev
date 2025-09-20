@@ -196,16 +196,33 @@
 @push('scripts')
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 <script>
-   
+// Dashboard logs filter submitter – tolerant of optional fields/IDs
 function applyFilters() {
-  const filters = {
-    search: document.getElementById('searchLogs').value,
-    type: document.getElementById('logType').value,
-    severity: document.getElementById('severity').value,
-    date_from: document.getElementById('dateFrom').value,
-    date_to: document.getElementById('dateTo').value,
-    terminal: document.getElementById('terminalFilter').value
+  const getVal = (id) => {
+    const el = document.getElementById(id);
+    return el ? el.value : '';
   };
+
+  const filters = {};
+  const put = (k, v) => { if (v !== '' && v != null) filters[k] = v; };
+
+  // Common fields
+  put('search', getVal('searchLogs'));
+  put('type', getVal('logType'));
+  put('severity', getVal('severity'));
+
+  // Date handling: support either single date (dateFilter) or from/to (dateFrom/dateTo)
+  const singleDate = getVal('dateFilter');
+  if (singleDate) {
+    put('date', singleDate);
+  } else {
+    put('date_from', getVal('dateFrom'));
+    put('date_to', getVal('dateTo'));
+  }
+
+  // Optional terminal selector if present on some pages
+  const terminal = getVal('terminalFilter');
+  if (terminal) put('terminal', terminal);
 
   const params = new URLSearchParams(filters);
   window.location.href = `${window.location.pathname}?${params.toString()}`;
