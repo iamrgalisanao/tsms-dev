@@ -165,6 +165,8 @@ return [
             'enabled' => (bool) env('TSMS_IDLE_MONITOR_ENABLED', false),
             // How often the job runs (minutes); used to build cron expression
             'scan_interval_minutes' => (int) env('TSMS_IDLE_MONITOR_SCAN_MIN', 5),
+            // Which activity source determines idleness: last_seen (health) or last_sale (business)
+            'activity_basis' => env('TSMS_IDLE_MONITOR_ACTIVITY_BASIS', 'last_seen'), // last_seen|last_sale|composite
             // Default idle window if terminal has no heartbeat_threshold set
             'idle_after_seconds_default' => (int) env('TSMS_IDLE_MONITOR_IDLE_DEFAULT', 3600),
             // Idle threshold multiplier relative to heartbeat_threshold
@@ -187,6 +189,9 @@ return [
             'summary_details' => [
                 'include_terminals' => (bool) env('TSMS_IDLE_MONITOR_SUMMARY_TERMINALS', true),
                 'terminals_cap' => (int) env('TSMS_IDLE_MONITOR_SUMMARY_TERMINALS_CAP', 25),
+                // Optionally include a "currently idle" compact list and count
+                'include_currently_idle' => (bool) env('TSMS_IDLE_MONITOR_SUMMARY_CURRENTLY_IDLE', false),
+                'currently_idle_cap' => (int) env('TSMS_IDLE_MONITOR_SUMMARY_CURRENTLY_IDLE_CAP', 25),
             ],
         ],
     ],

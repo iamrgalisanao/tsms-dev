@@ -338,9 +338,12 @@ class TransactionController extends Controller
                             'status' => 'duplicate',
                             'message' => 'Transaction already exists'
                         ];
-                        // Update terminal liveness on duplicate to reflect recent activity
+                        // Update terminal activity on duplicate to reflect recent sales interaction
                         try {
                             $terminal->last_seen_at = now();
+                            if (Schema::hasColumn('pos_terminals', 'last_sale_at')) {
+                                $terminal->last_sale_at = now();
+                            }
                             $terminal->save();
                         } catch (\Throwable $te) {
                             Log::warning('Failed to update terminal last_seen_at on duplicate transaction', [
@@ -390,9 +393,12 @@ class TransactionController extends Controller
                     ];
                     $processedCount++;
 
-                    // Update terminal liveness on successful creation
+                    // Update terminal activity on successful creation
                     try {
                         $terminal->last_seen_at = now();
+                        if (Schema::hasColumn('pos_terminals', 'last_sale_at')) {
+                            $terminal->last_sale_at = now();
+                        }
                         $terminal->save();
                     } catch (\Throwable $te) {
                         Log::warning('Failed to update terminal last_seen_at after transaction creation', [
@@ -1174,9 +1180,12 @@ class TransactionController extends Controller
                             'status' => 'success', // ✅ Fixed: Return success for idempotency
                             'message' => 'Transaction already processed'
                         ];
-                        // Update terminal liveness for idempotent transaction replay
+                        // Update terminal activity for idempotent transaction replay
                         try {
                             $terminal->last_seen_at = now();
+                            if (Schema::hasColumn('pos_terminals', 'last_sale_at')) {
+                                $terminal->last_sale_at = now();
+                            }
                             $terminal->save();
                         } catch (\Throwable $te) {
                             Log::warning('Failed to update terminal last_seen_at on idempotent transaction', [
@@ -1250,9 +1259,12 @@ class TransactionController extends Controller
                     ProcessTransactionJob::dispatch($transaction->id)->afterCommit();
                     Log::info('storeOfficial: ProcessTransactionJob dispatched', ['transaction_id' => $transaction->transaction_id]);
 
-                    // Update terminal liveness on successful transaction creation
+                    // Update terminal activity on successful transaction creation
                     try {
                         $terminal->last_seen_at = now();
+                        if (Schema::hasColumn('pos_terminals', 'last_sale_at')) {
+                            $terminal->last_sale_at = now();
+                        }
                         $terminal->save();
                     } catch (\Throwable $te) {
                         Log::warning('Failed to update terminal last_seen_at after official transaction creation', [

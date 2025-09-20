@@ -254,8 +254,12 @@ Schedule::call(function () {
     $summaryCfg = $cfg['summary_details'] ?? [];
     $includeChanged = (bool) ($summaryCfg['include_terminals'] ?? true);
     $terminalsCap = (int) ($summaryCfg['terminals_cap'] ?? 25);
+    $includeCurrent = (bool) ($summaryCfg['include_currently_idle'] ?? false);
+    $currentCap = (int) ($summaryCfg['currently_idle_cap'] ?? 25);
     $hasIpColumn = Schema::hasColumn('pos_terminals', 'ip_address');
     $changedTerminals = [];
+    $currentIdleList = [];
+    $activityBasis = ($cfg['activity_basis'] ?? 'last_seen'); // last_seen|last_sale|composite
     // Track per-tenant aggregates if feature is enabled
     $perTenantCfg = $cfg['per_tenant_summary'] ?? [];
     $perTenantEnabled = (bool) ($perTenantCfg['enabled'] ?? false);
@@ -284,7 +288,7 @@ Schedule::call(function () {
             });
         })
         ->orderBy('id')
-        ->chunk(500, function($chunk) use ($now, $dedupeTtl, $defaultIdle, $multiplier, &$scanned, &$idleNew, &$recovered, &$errors, $perTenantEnabled, &$tenantAgg) {
+        ->chunk(500, function($chunk) use ($now, $dedupeTtl, $defaultIdle, $multiplier, &$scanned, &$idleNew, &$recovered, &$errors, $perTenantEnabled, &$tenantAgg, $hasIpColumn, $includeChanged, $terminalsCap, $includeCurrent, $currentCap, &$currentIdleList, $activityBasis) {
             foreach ($chunk as $terminal) {
                 try {
                     $scanned++;
@@ -292,11 +296,26 @@ Schedule::call(function () {
                     $hb = (int) ($terminal->heartbeat_threshold ?? 300);
                     $idleAfter = max($defaultIdle, $hb * $multiplier);
 
-                    // Determine last activity
-                    $lastSeen = $terminal->last_seen_at ?? $terminal->registered_at ?? $terminal->created_at;
-                    if (!$lastSeen) { continue; }
+                    // Determine last activity based on configured basis
+                    $candidate = null;
+                    if ($activityBasis === 'last_sale') {
+                        $candidate = $terminal->last_sale_at ?? null;
+                    } elseif ($activityBasis === 'composite') {
+                        // Use the most recent of sale vs seen; if both null, fallback to registered/created
+                        $sale = $terminal->last_sale_at ?? null;
+                        $seen = $terminal->last_seen_at ?? null;
+                        if ($sale && $seen) {
+                            $candidate = $sale->greaterThan($seen) ? $sale : $seen;
+                        } else {
+                            $candidate = $sale ?: $seen;
+                        }
+                    } else { // last_seen
+                        $candidate = $terminal->last_seen_at ?? null;
+                    }
+                    $lastActivity = $candidate ?? $terminal->registered_at ?? $terminal->created_at;
+                    if (!$lastActivity) { continue; }
 
-                    $idleSeconds = $now->diffInSeconds($lastSeen);
+                    $idleSeconds = $now->diffInSeconds($lastActivity);
                     $isIdle = $idleSeconds >= $idleAfter;
 
                     $cacheKeyIdle = sprintf('terminal:idle:%s', $terminal->id);
@@ -315,6 +334,16 @@ Schedule::call(function () {
                         $tenantAgg[$tid]['scanned']++;
                     }
 
+                    if ($includeCurrent && $isIdle && count($currentIdleList) < $currentCap) {
+                        $currentIdleList[] = [
+                            'terminal_id' => $terminal->id,
+                            'tenant_id' => $terminal->tenant_id ?? null,
+                            'serial' => $terminal->serial_number ?? null,
+                            'ip' => $hasIpColumn ? ($terminal->ip_address ?? null) : null,
+                            'idle_seconds' => $idleSeconds,
+                        ];
+                    }
+
                     if ($isIdle && !$wasIdle) {
                         // Mark as idle and log
                         Cache::put($cacheKeyIdle, 1, $dedupeTtl);
@@ -330,6 +359,7 @@ Schedule::call(function () {
                                 'tenant_id' => $terminal->tenant_id ?? null,
                                 'serial_number' => $terminal->serial_number ?? null,
                                 'last_seen_at' => optional($terminal->last_seen_at)->toIso8601String(),
+                                'last_sale_at' => optional($terminal->last_sale_at)->toIso8601String(),
                                 'idle_seconds' => $idleSeconds,
                                 'idle_after_seconds' => $idleAfter,
                                 'heartbeat_threshold' => $terminal->heartbeat_threshold ?? null,
@@ -367,6 +397,7 @@ Schedule::call(function () {
                                 'tenant_id' => $terminal->tenant_id ?? null,
                                 'serial_number' => $terminal->serial_number ?? null,
                                 'last_seen_at' => optional($terminal->last_seen_at)->toIso8601String(),
+                                'last_sale_at' => optional($terminal->last_sale_at)->toIso8601String(),
                                 'idle_seconds' => $idleSeconds,
                                 'idle_after_seconds' => $idleAfter,
                                 'heartbeat_threshold' => $terminal->heartbeat_threshold ?? null,
@@ -416,6 +447,7 @@ Schedule::call(function () {
                 'recovered' => $recovered,
                 'errors' => $errors,
                 'changed_terminals' => $includeChanged ? $changedTerminals : [],
+                'currently_idle' => $includeCurrent ? $currentIdleList : [],
             ])
         ]);
 
@@ -439,6 +471,7 @@ Schedule::call(function () {
                     'recovered' => $recovered,
                     'errors' => $errors,
                     'changed_terminals' => $includeChanged ? $changedTerminals : [],
+                    'currently_idle' => $includeCurrent ? $currentIdleList : [],
                 ],
             ]);
 
