@@ -175,66 +175,7 @@
     </div>
 
     <div class="card-body p-4">
-      <!-- Search and Filters -->
-      {{-- <div class="row g-3 mb-4">
-        <div class="col-md-6">
-          <div class="input-group">
-            <span class="input-group-text bg-white border-end-0">
-              <i class="fas fa-search "></i>
-            </span>
-            <input type="text" class="form-control border-start-0 ps-0" id="searchLogs" placeholder="Search logs...">
-          </div>
-        </div>
-        <div class="col-md-6 text-end">
-          <button class="btn btn-light" type="button" data-bs-toggle="collapse" data-bs-target="#advancedFilters">
-            <i class="fas fa-filter me-2"></i>Advanced Filters
-          </button>
-        </div>
-      </div> --}}
-
-      <!-- Advanced Filters -->
-      {{-- <div class="collapse mb-4" id="advancedFilters">
-        <div class="card card-body bg-light">
-          <div class="row g-3">
-            <div class="col-md-3">
-              <label class="form-label">Log Type</label>
-              <select class="form-select" id="logType">
-                <option value="">All Types</option>
-                <option value="system">System</option>
-                <option value="audit">Audit</option>
-                <option value="webhook">Webhook</option>
-                <option value="error">Error</option>
-              </select>
-            </div>
-            <div class="col-md-3">
-              <label class="form-label">Severity</label>
-              <select class="form-select" id="severity">
-                <option value="">All Severities</option>
-                <option value="error">Error</option>
-                <option value="warning">Warning</option>
-                <option value="info">Info</option>
-                <option value="debug">Debug</option>
-              </select>
-            </div>
-            <div class="col-md-3">
-              <label class="form-label">Date Range</label>
-              <div class="input-group">
-                <input type="date" class="form-control" id="dateFrom">
-                <input type="date" class="form-control" id="dateTo">
-              </div>
-            </div>
-            <div class="col-md-3">
-              <label class="form-label">Terminal</label>
-              <select class="form-select" id="terminalFilter">
-                <option value="">All Terminals</option>
-                @foreach($terminals ?? [] as $terminal)
-                <option value="{{ $terminal->id }}">{{ $terminal->terminal_uid }}</option>
-                @endforeach
-              </select>
-            </div>
-          </div>
-        </div>
-      </div> --}}
+      @include('logs.partials.filters')
 
       <!-- Tab Content -->
       <div class="tab-content">

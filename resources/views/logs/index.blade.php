@@ -130,7 +130,7 @@ use App\Helpers\BadgeHelper;
       <div class="row g-3 mb-4">
         <div class="col-md-6">
           <div class="input-group">
-            <input type="text" class="form-control" id="searchLogs" placeholder="Search logs..." aria-label="Search logs">
+            <input type="text" class="form-control" id="searchLogs" placeholder="Search audit logs..." aria-label="Search logs">
             <button class="btn btn-outline-secondary" type="button" id="clearSearch" aria-label="Clear search" tabindex="0"><i class="fas fa-times"></i></button>
             <button class="btn btn-primary px-4" onclick="applyFilters()" aria-label="Search logs">
               <i class="fas fa-search me-2" aria-hidden="true"></i>Search
@@ -153,17 +153,19 @@ use App\Helpers\BadgeHelper;
               <input type="text" class="form-control" id="filterDateRange" name="date_range" placeholder="YYYY-MM-DD to YYYY-MM-DD" aria-label="Date range">
             </div>
             <div class="col-md-3">
-              <label for="filterEventType" class="form-label">Event Type</label>
-              <select class="form-select" id="filterEventType" name="event_type" aria-label="Event type">
+              <label for="filterEventType" class="form-label">Action Type</label>
+              <select class="form-select" id="filterEventType" name="event_type" aria-label="Action type">
                 <option value="">All</option>
-                <option value="system">System</option>
-                <option value="success">Success</option>
-                <option value="error">Error</option>
-                <option value="pending">Pending</option>
+                <option value="AUTH">Auth</option>
+                <option value="SYSTEM">System</option>
+                <option value="TRANSACTION_RECEIVED">Transaction Received</option>
+                <option value="TRANSACTION_PROCESSED">Transaction Processed</option>
+                <option value="TRANSACTION_VOID_POS">Transaction Voided</option>
+                <option value="AUDIT_ACCESS">Audit Access</option>
               </select>
             </div>
             <div class="col-md-3">
-              <label for="filterSeverity" class="form-label">Severity</label>
+              <label for="filterSeverity" class="form-label">Severity (System logs)</label>
               <select class="form-select" id="filterSeverity" name="severity" aria-label="Severity">
                 <option value="">All</option>
                 <option value="info">Info</option>
@@ -278,13 +280,16 @@ function applyFilters() {
     tab: $('.nav-link.active').attr('href').replace('#','')
   };
   $.ajax({
-    url: '/logs/ajax',
+    url: '{{ route('log-viewer.filtered') }}',
     method: 'GET',
     data: data,
+    headers: { 'X-Requested-With': 'XMLHttpRequest' },
     success: function(response) {
       // Replace table partials with new data
       if (data.tab === 'audit') {
         $('#audit').html(response.auditHtml);
+        // Re-initialize DataTable after DOM replacement
+        initAuditDataTable();
       } else {
         $('#webhook').html(response.webhookHtml);
       }
@@ -315,6 +320,39 @@ function stopLiveUpdates() {
     liveUpdateInterval = null;
   }
   $('#liveUpdateSpinner').hide();
+}
+
+// Safe (idempotent) initializer for the audit table DataTable
+function initAuditDataTable() {
+  const selector = '#auditTable';
+  if (!$.fn.DataTable) return; // plugins not loaded yet
+  if ($.fn.DataTable.isDataTable(selector)) {
+    return;
+  }
+  $(selector).DataTable({
+    responsive: true,
+    lengthChange: false,
+    autoWidth: false,
+    ordering: true,
+    info: true,
+    paging: true,
+    searching: true,
+    pageLength: 10,
+    order: [[0, 'desc']],
+    columnDefs: [
+      { targets: -1, orderable: false, searchable: false },
+      { targets: '_all', defaultContent: '' }
+    ],
+    language: {
+      emptyTable: 'No audit logs available',
+      zeroRecords: 'No matching audit records found',
+      info: 'Showing _START_ to _END_ of _TOTAL_ audit entries',
+      infoEmpty: 'Showing 0 to 0 of 0 audit entries',
+      infoFiltered: '(filtered from _MAX_ total audit entries)',
+      search: 'Search audit logs:',
+      paginate: { first: 'First', last: 'Last', next: 'Next', previous: 'Previous' }
+    }
+  });
 }
 </script>
 <style>

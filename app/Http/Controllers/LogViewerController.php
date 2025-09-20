@@ -134,7 +134,134 @@ class LogViewerController extends Controller
 
     public function getFilteredLogs(Request $request)
     {
-        return $this->logService->getFilteredLogs($request->all());
+        // AJAX endpoint to return filtered table HTML for the requested tab
+        $tab = $request->input('tab', 'audit');
+
+        // Normalize date range input: "YYYY-MM-DD to YYYY-MM-DD"
+        $dateRange = trim((string) $request->input('date_range'));
+        $dateFrom = $request->input('date_from');
+        $dateTo = $request->input('date_to');
+        if ($dateRange && preg_match('/^(\d{4}-\d{2}-\d{2})\s+to\s+(\d{4}-\d{2}-\d{2})$/i', $dateRange, $m)) {
+            $dateFrom = $m[1];
+            $dateTo = $m[2];
+        }
+
+        $search = trim((string) $request->input('search')) ?: null;
+        $tenantId = $request->filled('tenant_id') ? (int) $request->input('tenant_id') : null;
+        $actionType = $request->filled('event_type') ? (string) $request->input('event_type') : null; // mapped from UI
+        $userInput = trim((string) $request->input('user')) ?: null; // id or name
+
+        $auditHtml = '';
+        $webhookHtml = '';
+
+        if ($tab === 'webhook') {
+            // Basic webhook filtering (extend as needed)
+            $webhookQuery = SystemLog::with(['terminal'])
+                ->where('type', 'webhook')
+                ->when($search, fn($q) => $q->where('message', 'like', "%$search%"))
+                ->when($dateFrom, fn($q) => $q->whereDate('created_at', '>=', $dateFrom))
+                ->when($dateTo, fn($q) => $q->whereDate('created_at', '<=', $dateTo))
+                ->latest('created_at');
+
+            $webhookLogs = $webhookQuery->limit(100)->get();
+            $webhookHtml = view('logs.partials.webhook-table', compact('webhookLogs'))->render();
+        } else {
+            // Audit Trail filtering
+            $auditQuery = \App\Models\AuditLog::with(['user'])
+                ->when($search, function ($q) use ($search) {
+                    $q->where(function($qq) use ($search) {
+                        $qq->where('action', 'like', "%$search%")
+                           ->orWhere('message', 'like', "%$search%")
+                           ->orWhere('resource_type', 'like', "%$search%");
+                    });
+                })
+                ->when($actionType, fn($q) => $q->where('action_type', $actionType))
+                ->when($tenantId, function ($q) use ($tenantId) {
+                    $q->where(function ($w) use ($tenantId) {
+                        $w->where('metadata->tenant_id', $tenantId)
+                          ->orWhere(function ($qq) use ($tenantId) {
+                              $qq->where('resource_type', 'tenant')->where('resource_id', (string) $tenantId);
+                          })
+                          ->orWhere(function ($qq) use ($tenantId) {
+                              $qq->where('auditable_type', 'tenant')->where('auditable_id', $tenantId);
+                          });
+                    });
+                })
+                ->when($dateFrom, fn($q) => $q->whereDate('created_at', '>=', $dateFrom))
+                ->when($dateTo, fn($q) => $q->whereDate('created_at', '<=', $dateTo))
+                ->when($userInput, function ($q) use ($userInput) {
+                    if (is_numeric($userInput)) {
+                        $q->where('user_id', (int) $userInput);
+                    } else {
+                        // Join users to search by name without heavy select
+                        $q->whereHas('user', function($uq) use ($userInput) {
+                            $uq->where('name', 'like', "%$userInput%");
+                        });
+                    }
+                })
+                ->latest('created_at');
+
+            $auditLogs = $auditQuery->limit(200)->get();
+
+            // Reuse tenant enrichment logic to populate tenant_name for the table
+            if ($auditLogs->isNotEmpty()) {
+                $logs = $auditLogs; // alias
+                $tenantIds = [];
+                foreach ($logs as $log) {
+                    $meta = $log->metadata ?? [];
+                    if (is_string($meta)) {
+                        $decoded = json_decode($meta, true);
+                        $meta = json_last_error() === JSON_ERROR_NONE && is_array($decoded) ? $decoded : [];
+                    }
+                    if (is_array($meta) && !empty($meta['tenant_id']) && is_numeric($meta['tenant_id'])) {
+                        $tenantIds[(int) $meta['tenant_id']] = true;
+                        continue;
+                    }
+                    if (($log->resource_type ?? null) === 'tenant' && is_numeric($log->resource_id)) {
+                        $tenantIds[(int) $log->resource_id] = true;
+                        continue;
+                    }
+                    if (($log->auditable_type ?? null) === 'tenant' && is_numeric($log->auditable_id)) {
+                        $tenantIds[(int) $log->auditable_id] = true;
+                    }
+                }
+                if (!empty($tenantIds)) {
+                    $tenantMap = Tenant::whereIn('id', array_keys($tenantIds))
+                        ->get(['id', 'trade_name'])
+                        ->keyBy('id');
+                    foreach ($logs as $log) {
+                        $tenantIdX = null;
+                        $meta = $log->metadata ?? [];
+                        if (is_string($meta)) {
+                            $decoded = json_decode($meta, true);
+                            $meta = json_last_error() === JSON_ERROR_NONE && is_array($decoded) ? $decoded : [];
+                        }
+                        if (is_array($meta) && !empty($meta['tenant_id']) && is_numeric($meta['tenant_id'])) {
+                            $tenantIdX = (int) $meta['tenant_id'];
+                        } elseif (($log->resource_type ?? null) === 'tenant' && is_numeric($log->resource_id)) {
+                            $tenantIdX = (int) $log->resource_id;
+                        } elseif (($log->auditable_type ?? null) === 'tenant' && is_numeric($log->auditable_id)) {
+                            $tenantIdX = (int) $log->auditable_id;
+                        }
+                        if ($tenantIdX && isset($tenantMap[$tenantIdX])) {
+                            $log->setAttribute('tenant_name', $tenantMap[$tenantIdX]->trade_name ?? ('Tenant #' . $tenantIdX));
+                        } elseif ($tenantIdX) {
+                            $log->setAttribute('tenant_name', 'Tenant #' . $tenantIdX);
+                        } else {
+                            $log->setAttribute('tenant_name', null);
+                        }
+                    }
+                }
+            }
+
+            $auditHtml = view('logs.partials.audit-table', compact('auditLogs'))->render();
+        }
+
+        return response()->json([
+            'auditHtml' => $auditHtml,
+            'webhookHtml' => $webhookHtml,
+            'isEmpty' => empty($auditHtml) && empty($webhookHtml),
+        ]);
     }
 
     public function getContext($id)
