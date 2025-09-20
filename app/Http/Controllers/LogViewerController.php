@@ -35,8 +35,16 @@ class LogViewerController extends Controller
         $logs = $auditLogs->getCollection();
         $tenantIds = [];
         foreach ($logs as $log) {
-            // Prefer explicit metadata tenant_id
+            // Prefer explicit metadata tenant_id (handle array or JSON string)
             $meta = $log->metadata ?? [];
+            if (is_string($meta)) {
+                $decoded = json_decode($meta, true);
+                if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+                    $meta = $decoded;
+                } else {
+                    $meta = [];
+                }
+            }
             if (is_array($meta) && !empty($meta['tenant_id']) && is_numeric($meta['tenant_id'])) {
                 $tenantIds[(int) $meta['tenant_id']] = true;
                 continue;
@@ -58,6 +66,14 @@ class LogViewerController extends Controller
             foreach ($logs as $log) {
                 $tenantId = null;
                 $meta = $log->metadata ?? [];
+                if (is_string($meta)) {
+                    $decoded = json_decode($meta, true);
+                    if (json_last_error() === JSON_ERROR_NONE && is_array($decoded)) {
+                        $meta = $decoded;
+                    } else {
+                        $meta = [];
+                    }
+                }
                 if (is_array($meta) && !empty($meta['tenant_id']) && is_numeric($meta['tenant_id'])) {
                     $tenantId = (int) $meta['tenant_id'];
                 } elseif (($log->resource_type ?? null) === 'tenant' && is_numeric($log->resource_id)) {
@@ -74,6 +90,8 @@ class LogViewerController extends Controller
                     $log->setAttribute('tenant_name', null);
                 }
             }
+            // Ensure the paginator reflects our mutated collection
+            $auditLogs->setCollection($logs);
         }
 
         $webhookLogs = SystemLog::with(['terminal'])

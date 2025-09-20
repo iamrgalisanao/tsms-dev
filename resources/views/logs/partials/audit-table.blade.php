@@ -66,7 +66,7 @@ use App\Helpers\BadgeHelper;
                                 @endif
                             </td>
                             <td>
-                                @php $tenantName = $log->trade_name ?? null; @endphp
+                                @php $tenantName = $log->tenant_name ?? null; @endphp
                                 @if($tenantName)
                                     <span class="badge bg-secondary">{{ $tenantName }}</span>
                                 @else
