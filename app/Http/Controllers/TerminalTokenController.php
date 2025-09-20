@@ -96,9 +96,9 @@ class TerminalTokenController extends Controller
             }
         }
         
-    // Get paginated results with configurable page size (default large so DataTables can show all)
-    $perPage = (int) ($request->input('per_page', 1000));
-    if ($perPage <= 0) { $perPage = 1000; }
+    // Get paginated results with configurable page size (default 10 to match UI)
+    $perPage = (int) ($request->input('per_page', 10));
+    if ($perPage <= 0) { $perPage = 10; }
     $terminals = $query->paginate($perPage)->appends($request->all());
         
         return view('dashboard.terminal-tokens', compact('terminals'));

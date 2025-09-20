@@ -30,10 +30,10 @@
             </select>
           </div>
           <div class="col-md-3">
-            <label for="per_page" class="form-label mb-0">Per page (server)</label>
-            @php $pp = (int) request('per_page', 1000); @endphp
+            <label for="per_page" class="form-label mb-0">Per page (table)</label>
+            @php $pp = (int) request('per_page', 10); @endphp
             <select name="per_page" id="per_page" class="form-control">
-              @foreach([25,50,100,500,1000,2000] as $opt)
+              @foreach([10,25,50,100,500,1000,2000] as $opt)
                 <option value="{{ $opt }}" {{ $pp === $opt ? 'selected' : '' }}>{{ $opt }}</option>
               @endforeach
             </select>
@@ -174,7 +174,7 @@
                   </tr>
                   @empty
                   <tr>
-                    <td colspan="7" class="text-center">No terminals found</td>
+                    <td colspan="9" class="text-center">No terminals found</td>
                   </tr>
                 @endforelse
             </tbody>
@@ -204,17 +204,22 @@
 
 <script>
 $(function () {
-    $("#example3").DataTable({
+  var initialLen = parseInt($('#per_page').val(), 10);
+  if (isNaN(initialLen) || initialLen <= 0) { initialLen = 10; }
+  var table = $("#example3").DataTable({
         "responsive": true, 
-        "lengthChange": false, 
+    "lengthChange": false,
+    "pageLength": initialLen,
+    // Keep a consistent menu even if hidden; allows programmatic changes
+    "lengthMenu": [[10, 25, 50, 100, 500, 1000, 2000], [10, 25, 50, 100, 500, 1000, 2000]],
         "autoWidth": false,
         "ordering": true,
         "info": true,
         "paging": true,
         "searching": true,
-        "language": {
-            "emptyTable": "No transaction logs available",
-            "zeroRecords": "No matching records found",
+    "language": {
+      "emptyTable": "No terminals available",
+      "zeroRecords": "No matching terminals found",
             "info": "Showing _START_ to _END_ of _TOTAL_ entries",
             "infoEmpty": "Showing 0 to 0 of 0 entries",
             "infoFiltered": "(filtered from _MAX_ total entries)",
@@ -234,6 +239,14 @@ $(function () {
               { extend: "colvis",text: "Cols",  className: "btn btn-lg btn-danger" }
         ]
     }).buttons().container().appendTo('#example3_wrapper .col-md-6:eq(0)');
+
+    // Tie the custom per-page dropdown to DataTables page length
+    $(document).on('change', '#per_page', function () {
+      var val = parseInt(this.value, 10);
+      if (!isNaN(val) && val > 0) {
+        table.page.len(val).draw();
+      }
+    });
 
     // Toastr notifications
     @if(session('success'))
