@@ -126,18 +126,6 @@ use App\Helpers\BadgeHelper;
     </div>
 
     <div class="card-body p-4">
-      <!-- Search -->
-      <div class="row g-3 mb-4">
-        <div class="col-md-8 col-lg-6">
-          <div class="input-group">
-            <input type="text" class="form-control" id="searchLogs" placeholder="Search audit logs..." aria-label="Search logs">
-            <button class="btn btn-outline-secondary" type="button" id="clearSearch" aria-label="Clear search" tabindex="0"><i class="fas fa-times"></i></button>
-            <button class="btn btn-primary px-4" onclick="applyFilters()" aria-label="Search logs">
-              <i class="fas fa-search me-2" aria-hidden="true"></i>Search
-            </button>
-          </div>
-        </div>
-      </div>
 
       <!-- Tab Content -->
       <div class="tab-content">
@@ -163,19 +151,6 @@ use App\Helpers\BadgeHelper;
 @push('scripts')
 <script>
 $(document).ready(function() {
-  // Clear search input
-  $('#clearSearch').on('click', function() {
-    $('#searchLogs').val('');
-    applyFilters();
-  });
-
-  // Main search button
-  $('#searchLogs').on('keypress', function(e) {
-    if (e.which === 13) {
-      applyFilters();
-    }
-  });
-
   // Live update toggle
   $('#liveUpdate').on('change', function() {
     if ($(this).is(':checked')) {
@@ -211,9 +186,13 @@ function applyFilters() {
   $('#liveUpdateSpinner').show();
   // Gather filter values
   const data = {
-    search: $('#searchLogs').val(),
     tab: $('.nav-link.active').attr('href').replace('#','')
   };
+  // Preserve current DataTables search term across refreshes for the Audit tab
+  let currentSearch = '';
+  if (data.tab === 'audit' && $.fn.DataTable && $.fn.DataTable.isDataTable('#auditTable')) {
+    try { currentSearch = $('#auditTable').DataTable().search(); } catch (e) {}
+  }
   $.ajax({
     url: '{{ route('log-viewer.filtered') }}',
     method: 'GET',
@@ -225,6 +204,10 @@ function applyFilters() {
         $('#audit').html(response.auditHtml);
         // Re-initialize DataTable after DOM replacement
         initAuditDataTable();
+        // Re-apply previous search term if any
+        if (currentSearch) {
+          try { $('#auditTable').DataTable().search(currentSearch).draw(); } catch (e) {}
+        }
       } else {
         $('#webhook').html(response.webhookHtml);
       }
