@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\SystemLog;
+use App\Models\Tenant;
 use App\Services\SystemLogService;
 use App\Services\LogExportService;
 use Illuminate\Http\Request;
@@ -29,6 +30,51 @@ class LogViewerController extends Controller
             ->when($request->filled('date_to'), fn($q) => $q->whereDate('created_at', '<=', $request->date_to))
             ->latest('created_at')
             ->paginate(25);
+
+        // Attach tenant trade_name to each audit log where possible without N+1 queries
+        $logs = $auditLogs->getCollection();
+        $tenantIds = [];
+        foreach ($logs as $log) {
+            // Prefer explicit metadata tenant_id
+            $meta = $log->metadata ?? [];
+            if (is_array($meta) && !empty($meta['tenant_id']) && is_numeric($meta['tenant_id'])) {
+                $tenantIds[(int) $meta['tenant_id']] = true;
+                continue;
+            }
+            // Resource points to tenant
+            if (($log->resource_type ?? null) === 'tenant' && is_numeric($log->resource_id)) {
+                $tenantIds[(int) $log->resource_id] = true;
+                continue;
+            }
+            // Auditable points to tenant
+            if (($log->auditable_type ?? null) === 'tenant' && is_numeric($log->auditable_id)) {
+                $tenantIds[(int) $log->auditable_id] = true;
+            }
+        }
+        if (!empty($tenantIds)) {
+            $tenantMap = Tenant::whereIn('id', array_keys($tenantIds))
+                ->get(['id', 'trade_name'])
+                ->keyBy('id');
+            foreach ($logs as $log) {
+                $tenantId = null;
+                $meta = $log->metadata ?? [];
+                if (is_array($meta) && !empty($meta['tenant_id']) && is_numeric($meta['tenant_id'])) {
+                    $tenantId = (int) $meta['tenant_id'];
+                } elseif (($log->resource_type ?? null) === 'tenant' && is_numeric($log->resource_id)) {
+                    $tenantId = (int) $log->resource_id;
+                } elseif (($log->auditable_type ?? null) === 'tenant' && is_numeric($log->auditable_id)) {
+                    $tenantId = (int) $log->auditable_id;
+                }
+                if ($tenantId && isset($tenantMap[$tenantId])) {
+                    $log->setAttribute('tenant_name', $tenantMap[$tenantId]->trade_name ?? ('Tenant #'.$tenantId));
+                } elseif ($tenantId) {
+                    // Unknown tenant record, still show the ID
+                    $log->setAttribute('tenant_name', 'Tenant #'.$tenantId);
+                } else {
+                    $log->setAttribute('tenant_name', null);
+                }
+            }
+        }
 
         $webhookLogs = SystemLog::with(['terminal'])
             ->where('type', 'webhook')
@@ -154,6 +200,25 @@ public function getAuditContext($id)
             }
         }
 
+        // Resolve tenant for context view
+        $tenantId = null;
+        $meta = $metadata;
+        if (is_array($meta) && !empty($meta['tenant_id']) && is_numeric($meta['tenant_id'])) {
+            $tenantId = (int) $meta['tenant_id'];
+        } elseif (($auditLog->resource_type ?? null) === 'tenant' && is_numeric($auditLog->resource_id)) {
+            $tenantId = (int) $auditLog->resource_id;
+        } elseif (($auditLog->auditable_type ?? null) === 'tenant' && is_numeric($auditLog->auditable_id)) {
+            $tenantId = (int) $auditLog->auditable_id;
+        }
+        $tenantPayload = null;
+        if ($tenantId) {
+            $tenant = Tenant::find($tenantId);
+            $tenantPayload = [
+                'id' => $tenantId,
+                'trade_name' => $tenant->trade_name ?? null,
+            ];
+        }
+
         return response()->json([
             'id' => $auditLog->id,
             'created_at' => $auditLog->created_at,
@@ -166,7 +231,8 @@ public function getAuditContext($id)
             'ip_address' => $ip,
             'old_values' => $oldValues,
             'new_values' => $newValues,
-            'metadata' => $metadata
+            'metadata' => $metadata,
+            'tenant' => $tenantPayload,
         ]);
     } catch (\Exception $e) {
         return response()->json([

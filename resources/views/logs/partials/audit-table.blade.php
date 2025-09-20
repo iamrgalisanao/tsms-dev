@@ -13,6 +13,7 @@ use App\Helpers\BadgeHelper;
                 <th>User</th>
                 <th>Action</th>
                 <th>Resource</th>
+                <th>Tenant</th>
                 <th>Details</th>
                 <th class="text-center">IP Address</th>
                 <th class="text-center">Actions</th>
@@ -64,6 +65,14 @@ use App\Helpers\BadgeHelper;
                                     <br><small class="text-muted">{{ $log->resource_id }}</small>
                                 @endif
                             </td>
+                            <td>
+                                @php $tenantName = $log->tenant_name ?? null; @endphp
+                                @if($tenantName)
+                                    <span class="badge bg-secondary">{{ $tenantName }}</span>
+                                @else
+                                    <span class="text-muted">N/A</span>
+                                @endif
+                            </td>
                             <td class="text-wrap" style="max-width: 300px;">
                                 <small class="text-muted">{{ $log->message }}</small>
                                 @if($log->old_values || $log->new_values)
@@ -81,7 +90,7 @@ use App\Helpers\BadgeHelper;
                         </tr>
             @empty
             <tr>
-              <td colspan="7" class="text-center py-4">
+                            <td colspan="8" class="text-center py-4">
                 <div class="text-muted">
                   <i class="fas fa-info-circle me-1"></i>No audit logs found
                 </div>
@@ -113,6 +122,7 @@ use App\Helpers\BadgeHelper;
                             <tr><td><strong>User:</strong></td><td id="audit-user"></td></tr>
                             <tr><td><strong>Action:</strong></td><td id="audit-action"></td></tr>
                             <tr><td><strong>Resource:</strong></td><td id="audit-resource"></td></tr>
+                            <tr><td><strong>Tenant:</strong></td><td id="audit-tenant"></td></tr>
                             <tr><td><strong>IP Address:</strong></td><td id="audit-ip"></td></tr>
                         </table>
                     </div>
@@ -181,7 +191,7 @@ $(function () {
   const selector = '#auditTable';
   if ($.fn.DataTable.isDataTable(selector)) return;
 
-  $(selector).DataTable({
+    $(selector).DataTable({
     responsive: true,
     lengthChange: false,
     autoWidth: false,
@@ -191,12 +201,13 @@ $(function () {
     searching: true,
     order: [[0, 'desc']],
 
-    // EXPLICIT: 7 columns to match <thead>
+        // EXPLICIT: 8 columns to match <thead>
     columns: [
       { defaultContent: '' }, // Time
       { defaultContent: '' }, // User
       { defaultContent: '' }, // Action
       { defaultContent: '' }, // Resource
+            { defaultContent: '' }, // Tenant
       { defaultContent: '' }, // Details
       { defaultContent: '' }, // IP Address
       { defaultContent: '' }  // Actions
@@ -233,6 +244,7 @@ function showAuditContext(auditId) {
     $('#audit-user').text('Loading…');
     $('#audit-action').html('<span class="badge bg-secondary">Loading…</span>');
     $('#audit-resource').html('<span class="badge bg-info">Loading…</span><br><small class="text-muted">N/A</small>');
+    $('#audit-tenant').text('Loading…');
     $('#audit-ip').text('Loading…');
     $('#audit-message').text('Loading…');
     $('#dataChangesSection').hide();
@@ -259,6 +271,8 @@ function showAuditContext(auditId) {
         $('#audit-action').html('<span class="badge bg-primary">' + (data.action || 'N/A') + '</span>');
         $('#audit-resource').html('<span class="badge bg-info">' + (data.resource_type || 'N/A') + '</span>' +
             (data.resource_id ? '<br><small class="text-muted">' + data.resource_id + '</small>' : '<br><small class="text-muted">N/A</small>'));
+        const tn = data.tenant && (data.tenant.trade_name || data.tenant.id) ? (data.tenant.trade_name || ('Tenant #' + data.tenant.id)) : 'N/A';
+        $('#audit-tenant').text(tn);
         $('#audit-ip').text(data.ip_address ? data.ip_address : 'N/A');
         $('#audit-message').text(data.message ? data.message : 'No message available');
 
