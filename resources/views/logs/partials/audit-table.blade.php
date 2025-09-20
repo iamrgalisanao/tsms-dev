@@ -227,73 +227,90 @@ $(function () {
 
 // Show audit context with data changes
 function showAuditContext(auditId) {
-    // Show loading state
-    $('#auditContextModal .modal-body').html('<div class="text-center"><i class="fas fa-spinner fa-spin"></i> Loading audit details...</div>');
+    // Open modal and initialize placeholders without removing the DOM structure
     $('#auditContextModal').modal('show');
+    $('#audit-time').text('Loading…');
+    $('#audit-user').text('Loading…');
+    $('#audit-action').html('<span class="badge bg-secondary">Loading…</span>');
+    $('#audit-resource').html('<span class="badge bg-info">Loading…</span><br><small class="text-muted">N/A</small>');
+    $('#audit-ip').text('Loading…');
+    $('#audit-message').text('Loading…');
+    $('#dataChangesSection').hide();
+    $('#metadataSection').hide();
+    $('#oldValues').text('');
+    $('#newValues').text('');
+    $('#metadataContent').text('');
 
-    // Fetch audit details
-    $.get('/log-viewer/audit-context/' + auditId)
-        .done(function(data) {
-            // Populate basic info
-            $('#audit-time').text(data.created_at ? new Date(data.created_at).toLocaleString() : 'N/A');
-            $('#audit-user').text((data.user && data.user.name) ? data.user.name : 'System');
-            $('#audit-action').html('<span class="badge bg-primary">' + (data.action || 'N/A') + '</span>');
-            $('#audit-resource').html('<span class="badge bg-info">' + (data.resource_type || 'N/A') + '</span>' + 
-                (data.resource_id ? '<br><small class="text-muted">' + data.resource_id + '</small>' : '<br><small class="text-muted">N/A</small>'));
-            $('#audit-ip').text(data.ip_address ? data.ip_address : 'N/A');
-            $('#audit-message').text(data.message ? data.message : 'No message available');
+    // Fetch audit details (expect JSON; redirects or HTML will go to fail)
+    $.ajax({
+        url: '/log-viewer/audit-context/' + auditId,
+        method: 'GET',
+        dataType: 'json'
+    })
+    .done(function(data) {
+        // Basic type guard in case middleware returned unexpected content
+        if (!data || typeof data !== 'object') {
+            throw new Error('Invalid response format');
+        }
 
-            // Show/hide data changes section with fallback
-            let oldValuesText = 'No old values';
-            let newValuesText = 'No new values';
-            if (data.old_values) {
-                try {
-                    oldValuesText = JSON.stringify(JSON.parse(data.old_values), null, 2);
-                } catch (e) {
-                    oldValuesText = data.old_values;
-                }
-            }
-            if (data.new_values) {
-                try {
-                    newValuesText = JSON.stringify(JSON.parse(data.new_values), null, 2);
-                } catch (e) {
-                    newValuesText = data.new_values;
-                }
-            }
-            if (data.old_values || data.new_values) {
-                $('#dataChangesSection').show();
-                $('#oldValues').text(oldValuesText);
-                $('#newValues').text(newValuesText);
-            } else {
-                $('#dataChangesSection').show();
-                $('#oldValues').text('No old values available');
-                $('#newValues').text('No new values available');
-            }
+        // Populate basic info
+        $('#audit-time').text(data.created_at ? new Date(data.created_at).toLocaleString() : 'N/A');
+        $('#audit-user').text((data.user && data.user.name) ? data.user.name : 'System');
+        $('#audit-action').html('<span class="badge bg-primary">' + (data.action || 'N/A') + '</span>');
+        $('#audit-resource').html('<span class="badge bg-info">' + (data.resource_type || 'N/A') + '</span>' +
+            (data.resource_id ? '<br><small class="text-muted">' + data.resource_id + '</small>' : '<br><small class="text-muted">N/A</small>'));
+        $('#audit-ip').text(data.ip_address ? data.ip_address : 'N/A');
+        $('#audit-message').text(data.message ? data.message : 'No message available');
 
-            // Show/hide metadata section with fallback
-            let metadataText = '';
-            if (data.metadata) {
-                try {
-                    metadataText = typeof data.metadata === 'string' ? JSON.stringify(JSON.parse(data.metadata), null, 2) : JSON.stringify(data.metadata, null, 2);
-                } catch (e) {
-                    metadataText = data.metadata;
+        // Data changes section
+        let oldValuesText = 'No old values available';
+        let newValuesText = 'No new values available';
+        if (data.old_values) {
+            try {
+                oldValuesText = JSON.stringify(JSON.parse(data.old_values), null, 2);
+            } catch (e) {
+                oldValuesText = typeof data.old_values === 'object' ? JSON.stringify(data.old_values, null, 2) : String(data.old_values);
+            }
+        }
+        if (data.new_values) {
+            try {
+                newValuesText = JSON.stringify(JSON.parse(data.new_values), null, 2);
+            } catch (e) {
+                newValuesText = typeof data.new_values === 'object' ? JSON.stringify(data.new_values, null, 2) : String(data.new_values);
+            }
+        }
+        $('#dataChangesSection').show();
+        $('#oldValues').text(oldValuesText);
+        $('#newValues').text(newValuesText);
+
+        // Metadata section
+        let metadataText = 'No metadata available';
+        if (data.metadata) {
+            try {
+                if (typeof data.metadata === 'string') {
+                    metadataText = JSON.stringify(JSON.parse(data.metadata), null, 2);
+                } else {
+                    metadataText = JSON.stringify(data.metadata, null, 2);
                 }
-                $('#metadataSection').show();
-                $('#metadataContent').text(metadataText);
-            } else {
-                $('#metadataSection').show();
-                $('#metadataContent').text('No metadata available');
+            } catch (e) {
+                metadataText = typeof data.metadata === 'object' ? JSON.stringify(data.metadata, null, 2) : String(data.metadata);
             }
-        })
-        .fail(function(xhr) {
-            let errorMessage = 'Failed to load audit details';
-            if (xhr.responseJSON && xhr.responseJSON.message) {
-                errorMessage = xhr.responseJSON.message;
-            }
-            $('#auditContextModal .modal-body').html(
-                '<div class="alert alert-danger"><i class="fas fa-exclamation-triangle me-2"></i>' + errorMessage + '</div>'
-            );
-        });
+        }
+        $('#metadataSection').show();
+        $('#metadataContent').text(metadataText);
+    })
+    .fail(function(xhr) {
+        let errorMessage = 'Failed to load audit details';
+        if (xhr && xhr.responseJSON && xhr.responseJSON.message) {
+            errorMessage = xhr.responseJSON.message;
+        } else if (xhr && xhr.status === 401) {
+            errorMessage = 'Your session has expired. Please sign in again.';
+        }
+        // Show error in a stable location
+        $('#audit-message').text(errorMessage);
+        $('#dataChangesSection').hide();
+        $('#metadataSection').hide();
+    });
 }
 
 // Export audit detail function
