@@ -126,9 +126,9 @@ use App\Helpers\BadgeHelper;
     </div>
 
     <div class="card-body p-4">
-      <!-- Search and Filters -->
+      <!-- Search -->
       <div class="row g-3 mb-4">
-        <div class="col-md-6">
+        <div class="col-md-8 col-lg-6">
           <div class="input-group">
             <input type="text" class="form-control" id="searchLogs" placeholder="Search audit logs..." aria-label="Search logs">
             <button class="btn btn-outline-secondary" type="button" id="clearSearch" aria-label="Clear search" tabindex="0"><i class="fas fa-times"></i></button>
@@ -136,60 +136,6 @@ use App\Helpers\BadgeHelper;
               <i class="fas fa-search me-2" aria-hidden="true"></i>Search
             </button>
           </div>
-        </div>
-        <div class="col-md-6 text-end">
-          <button class="btn btn-outline-secondary" type="button" data-bs-toggle="collapse"
-            data-bs-target="#advancedFilters" aria-controls="advancedFilters" aria-expanded="false" aria-label="Show advanced filters">
-            <i class="fas fa-filter me-2" aria-hidden="true"></i>Advanced Filters
-          </button>
-        </div>
-      </div>
-      <!-- Advanced Filters Panel -->
-      <div class="collapse mb-4" id="advancedFilters">
-        <div class="card card-body bg-light">
-          <form id="advancedFiltersForm" class="row g-3" aria-label="Advanced log filters">
-            <div class="col-md-3">
-              <label for="filterDateRange" class="form-label">Date Range</label>
-              <input type="text" class="form-control" id="filterDateRange" name="date_range" placeholder="YYYY-MM-DD to YYYY-MM-DD" aria-label="Date range">
-            </div>
-            <div class="col-md-3">
-              <label for="filterEventType" class="form-label">Action Type</label>
-              <select class="form-select" id="filterEventType" name="event_type" aria-label="Action type">
-                <option value="">All</option>
-                <option value="AUTH">Auth</option>
-                <option value="SYSTEM">System</option>
-                <option value="TRANSACTION_RECEIVED">Transaction Received</option>
-                <option value="TRANSACTION_PROCESSED">Transaction Processed</option>
-                <option value="TRANSACTION_VOID_POS">Transaction Voided</option>
-                <option value="AUDIT_ACCESS">Audit Access</option>
-              </select>
-            </div>
-            <div class="col-md-3">
-              <label for="filterSeverity" class="form-label">Severity (System logs)</label>
-              <select class="form-select" id="filterSeverity" name="severity" aria-label="Severity">
-                <option value="">All</option>
-                <option value="info">Info</option>
-                <option value="warning">Warning</option>
-                <option value="critical">Critical</option>
-              </select>
-            </div>
-            <div class="col-md-3">
-              <label for="filterTenant" class="form-label">Tenant</label>
-              <select class="form-select" id="filterTenant" name="tenant_id" aria-label="Tenant">
-                <option value="">All Tenants</option>
-                @foreach(($tenants ?? []) as $t)
-                  <option value="{{ $t->id }}">{{ $t->trade_name }}</option>
-                @endforeach
-              </select>
-            </div>
-            <div class="col-md-3">
-              <label for="filterUser" class="form-label">User</label>
-              <input type="text" class="form-control" id="filterUser" name="user" placeholder="Username or ID" aria-label="User">
-            </div>
-            <div class="col-12 text-end">
-              <button type="submit" class="btn btn-primary" aria-label="Apply advanced filters">Apply Filters</button>
-            </div>
-          </form>
         </div>
       </div>
 
@@ -220,12 +166,6 @@ $(document).ready(function() {
   // Clear search input
   $('#clearSearch').on('click', function() {
     $('#searchLogs').val('');
-    applyFilters();
-  });
-
-  // Advanced filters submit
-  $('#advancedFiltersForm').on('submit', function(e) {
-    e.preventDefault();
     applyFilters();
   });
 
@@ -272,11 +212,6 @@ function applyFilters() {
   // Gather filter values
   const data = {
     search: $('#searchLogs').val(),
-    date_range: $('#filterDateRange').val(),
-    event_type: $('#filterEventType').val(),
-    severity: $('#filterSeverity').val(),
-    tenant_id: $('#filterTenant').val(),
-    user: $('#filterUser').val(),
     tab: $('.nav-link.active').attr('href').replace('#','')
   };
   $.ajax({
@@ -326,8 +261,9 @@ function stopLiveUpdates() {
 function initAuditDataTable() {
   const selector = '#auditTable';
   if (!$.fn.DataTable) return; // plugins not loaded yet
+  // If a previous instance exists (edge: re-attach), destroy before re-init
   if ($.fn.DataTable.isDataTable(selector)) {
-    return;
+    try { $(selector).DataTable().clear().destroy(); } catch (e) {}
   }
   $(selector).DataTable({
     responsive: true,
@@ -339,8 +275,18 @@ function initAuditDataTable() {
     searching: true,
     pageLength: 10,
     order: [[0, 'desc']],
+    // Explicitly declare 8 columns to match <thead>
+    columns: [
+      { defaultContent: '' }, // Time
+      { defaultContent: '' }, // User
+      { defaultContent: '' }, // Action
+      { defaultContent: '' }, // Resource
+      { defaultContent: '' }, // Tenant
+      { defaultContent: '' }, // Details
+      { defaultContent: '' }, // IP Address
+      { defaultContent: '', orderable: false, searchable: false } // Actions
+    ],
     columnDefs: [
-      { targets: -1, orderable: false, searchable: false },
       { targets: '_all', defaultContent: '' }
     ],
     language: {

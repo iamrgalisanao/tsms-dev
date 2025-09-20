@@ -126,10 +126,7 @@ class LogViewerController extends Controller
             'system_events' => \App\Models\AuditLog::where('action_type', 'SYSTEM')->count(),
         ];
 
-    // Tenant list for filters
-    $tenants = Tenant::orderBy('trade_name')->get(['id', 'trade_name']);
-
-    return view('logs.index', compact('auditLogs', 'webhookLogs', 'stats', 'auditStats', 'tenants'));
+    return view('logs.index', compact('auditLogs', 'webhookLogs', 'stats', 'auditStats'));
     }
 
     public function getFilteredLogs(Request $request)
@@ -137,19 +134,8 @@ class LogViewerController extends Controller
         // AJAX endpoint to return filtered table HTML for the requested tab
         $tab = $request->input('tab', 'audit');
 
-        // Normalize date range input: "YYYY-MM-DD to YYYY-MM-DD"
-        $dateRange = trim((string) $request->input('date_range'));
-        $dateFrom = $request->input('date_from');
-        $dateTo = $request->input('date_to');
-        if ($dateRange && preg_match('/^(\d{4}-\d{2}-\d{2})\s+to\s+(\d{4}-\d{2}-\d{2})$/i', $dateRange, $m)) {
-            $dateFrom = $m[1];
-            $dateTo = $m[2];
-        }
-
+        // Inputs (advanced filters removed; keep basic search)
         $search = trim((string) $request->input('search')) ?: null;
-        $tenantId = $request->filled('tenant_id') ? (int) $request->input('tenant_id') : null;
-        $actionType = $request->filled('event_type') ? (string) $request->input('event_type') : null; // mapped from UI
-        $userInput = trim((string) $request->input('user')) ?: null; // id or name
 
         $auditHtml = '';
         $webhookHtml = '';
@@ -159,8 +145,6 @@ class LogViewerController extends Controller
             $webhookQuery = SystemLog::with(['terminal'])
                 ->where('type', 'webhook')
                 ->when($search, fn($q) => $q->where('message', 'like', "%$search%"))
-                ->when($dateFrom, fn($q) => $q->whereDate('created_at', '>=', $dateFrom))
-                ->when($dateTo, fn($q) => $q->whereDate('created_at', '<=', $dateTo))
                 ->latest('created_at');
 
             $webhookLogs = $webhookQuery->limit(100)->get();
@@ -174,30 +158,6 @@ class LogViewerController extends Controller
                            ->orWhere('message', 'like', "%$search%")
                            ->orWhere('resource_type', 'like', "%$search%");
                     });
-                })
-                ->when($actionType, fn($q) => $q->where('action_type', $actionType))
-                ->when($tenantId, function ($q) use ($tenantId) {
-                    $q->where(function ($w) use ($tenantId) {
-                        $w->where('metadata->tenant_id', $tenantId)
-                          ->orWhere(function ($qq) use ($tenantId) {
-                              $qq->where('resource_type', 'tenant')->where('resource_id', (string) $tenantId);
-                          })
-                          ->orWhere(function ($qq) use ($tenantId) {
-                              $qq->where('auditable_type', 'tenant')->where('auditable_id', $tenantId);
-                          });
-                    });
-                })
-                ->when($dateFrom, fn($q) => $q->whereDate('created_at', '>=', $dateFrom))
-                ->when($dateTo, fn($q) => $q->whereDate('created_at', '<=', $dateTo))
-                ->when($userInput, function ($q) use ($userInput) {
-                    if (is_numeric($userInput)) {
-                        $q->where('user_id', (int) $userInput);
-                    } else {
-                        // Join users to search by name without heavy select
-                        $q->whereHas('user', function($uq) use ($userInput) {
-                            $uq->where('name', 'like', "%$userInput%");
-                        });
-                    }
                 })
                 ->latest('created_at');
 

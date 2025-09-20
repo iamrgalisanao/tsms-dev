@@ -175,7 +175,16 @@
     </div>
 
     <div class="card-body p-4">
-      @include('logs.partials.filters')
+      <!-- Simple Search -->
+      <div class="row g-3 mb-3">
+        <div class="col-md-8 col-lg-6">
+          <div class="input-group">
+            <input type="text" class="form-control" id="searchLogs" placeholder="Search logs..." aria-label="Search logs">
+            <button class="btn btn-outline-secondary" type="button" onclick="document.getElementById('searchLogs').value=''; applyFilters();" aria-label="Clear search"><i class="fas fa-times"></i></button>
+            <button class="btn btn-primary" type="button" onclick="applyFilters()" aria-label="Search"><i class="fas fa-search me-1"></i>Search</button>
+          </div>
+        </div>
+      </div>
 
       <!-- Tab Content -->
       <div class="tab-content">
@@ -208,8 +217,6 @@ function applyFilters() {
 
   // Common fields
   put('search', getVal('searchLogs'));
-  put('type', getVal('logType'));
-  put('severity', getVal('severity'));
 
   // Date handling: support either single date (dateFilter) or from/to (dateFrom/dateTo)
   const singleDate = getVal('dateFilter');
