@@ -88,15 +88,9 @@ use App\Helpers\BadgeHelper;
                                 @endif
                             </td>
                         </tr>
-            @empty
-            <tr>
-                            <td colspan="8" class="text-center py-4">
-                <div class="text-muted">
-                  <i class="fas fa-info-circle me-1"></i>No audit logs found
-                </div>
-              </td>
-            </tr>
-            @endforelse
+                        @empty
+                        {{-- Intentionally render no rows when empty; DataTables will display its emptyTable message. --}}
+                        @endforelse
           </tbody>
       </table>
     </div>

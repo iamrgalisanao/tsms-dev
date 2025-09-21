@@ -12,6 +12,14 @@ class TransactionFailureThresholdExceeded extends Notification
 {
     use Queueable;
 
+    /**
+     * Route mail notifications to the ADMIN_EMAIL address in .env
+     */
+    public function routeNotificationForMail($notifiable)
+    {
+        return env('ADMIN_EMAIL');
+    }
+
     private array $thresholdData;
     private array $recentFailures;
 
