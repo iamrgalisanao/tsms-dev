@@ -2,15 +2,22 @@
 
 namespace App\Notifications;
 
-use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
+use Illuminate\Bus\Queueable;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
 use Illuminate\Support\Carbon;
 
-class TransactionFailureThresholdExceeded extends Notification
+class TransactionFailureThresholdExceeded extends Notification implements ShouldQueue
 {
     use Queueable;
+
+    /**
+     * Use default queue connection and the configured notifications queue name.
+     */
+    public $connection = null; // use default
+    public $queue = null; // we'll map queues via viaQueues()
+
 
     /**
      * Route mail notifications to the ADMIN_EMAIL address in .env
@@ -27,6 +34,10 @@ class TransactionFailureThresholdExceeded extends Notification
     {
         $this->thresholdData = $thresholdData;
         $this->recentFailures = $recentFailures;
+        // ensure dispatch after DB commit
+        if (method_exists($this, 'afterCommit')) {
+            $this->afterCommit();
+        }
     }
 
     /**
@@ -35,6 +46,26 @@ class TransactionFailureThresholdExceeded extends Notification
     public function via(object $notifiable): array
     {
         return ['mail', 'database'];
+    }
+
+    /**
+     * Route this notification's channels to a consistent queue for observability.
+     */
+    public function viaQueues(): array
+    {
+        $queue = config('notifications.notification_queue', 'notifications');
+        return [
+            'mail' => $queue,
+            'database' => $queue,
+        ];
+    }
+
+    /**
+     * Backoff strategy for queued delivery retries (seconds).
+     */
+    public function backoff(): array
+    {
+        return [10, 60, 300];
     }
 
     /**

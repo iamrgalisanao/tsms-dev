@@ -16,6 +16,7 @@ return [
         'redis:transaction-processing' => 5,
         'redis:forwarding'             => 10,
         'redis:low'                    => 15,
+        'redis:notifications'          => 5,
     ],
 
     // Trim windows (minutes)
@@ -60,11 +61,20 @@ return [
                 'timeout'    => 120,
                 'nice'       => 5,
             ],
+            'notifications-supervisor' => [
+                'connection' => 'redis',
+                'queue'      => ['notifications'],
+                'balance'    => 'simple',
+                'processes'  => 2,
+                'tries'      => 3,
+                'timeout'    => 30,
+                'nice'       => 0,
+            ],
         ],
         'staging' => [
             'default' => [
                 'connection' => 'redis',
-                'queue'      => ['transaction-processing','forwarding','low'],
+                'queue'      => ['transaction-processing','forwarding','low','notifications'],
                 'balance'    => 'auto',
                 'processes'  => 4,
                 'tries'      => 2,
@@ -73,7 +83,7 @@ return [
         'local' => [
             'default' => [
                 'connection' => 'redis',
-                'queue'      => ['default'],
+                'queue'      => ['default','notifications'],
                 'processes'  => 1,
                 'tries'      => 1,
             ],
