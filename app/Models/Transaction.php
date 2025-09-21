@@ -212,6 +212,7 @@ class Transaction extends Model
     protected $appends = [
         'net_amount',
         'calculated_net_sales',
+        'display_tenant_code',
     ];
     
     // Add job status constants
@@ -365,4 +366,33 @@ class Transaction extends Model
         return $this->belongsTo(TransactionSubmission::class, 'submission_uuid', 'submission_uuid');
     }
 
+    /**
+     * Accessor: Display-friendly tenant code.
+     * Priority:
+     *  1) Tenant.customer_code (tenant-level identifier if present)
+     *  2) Transaction.customer_code (legacy company-level code stored on transactions)
+     *  3) Company.customer_code (via tenant relationship)
+     *  4) 'UNKNOWN_TENANT'
+     */
+    public function getDisplayTenantCodeAttribute(): string
+    {
+        // Prefer tenant-level code if present
+        $tenantCode = $this->tenant?->customer_code;
+        if (!empty($tenantCode)) {
+            return $tenantCode;
+        }
+
+        // Fall back to the transaction-level stored code
+        if (!empty($this->customer_code)) {
+            return $this->customer_code;
+        }
+
+        // Try company-level code via tenant relation
+        $companyCode = $this->tenant?->company?->customer_code;
+        if (!empty($companyCode)) {
+            return $companyCode;
+        }
+
+        return 'UNKNOWN_TENANT';
+    }
 }

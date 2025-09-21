@@ -18,6 +18,42 @@
     <!-- Metrics will be loaded here by JS -->
   </div>
 
+  {{-- Admin notifications for excessive failed transactions --}}
+  @if(isset($adminNotifications) && count($adminNotifications) > 0)
+    @foreach($adminNotifications as $notification)
+      @php $data = json_decode($notification->data, true); @endphp
+      <div class="alert alert-danger admin-notification" data-id="{{ $notification->id }}">
+        <strong>Alert:</strong> POS Terminal <b>{{ $data['pos_terminal_id'] ?? 'N/A' }}</b> exceeded failure threshold.<br>
+        Severity: <b>{{ $data['severity'] ?? 'N/A' }}</b><br>
+        Count: <b>{{ $data['threshold_data']['current_count'] ?? 'N/A' }}</b><br>
+        Time: <b>{{ isset($notification->created_at) ? (is_string($notification->created_at) ? $notification->created_at : $notification->created_at->format('Y-m-d H:i:s')) : 'N/A' }}</b>
+        <button type="button" class="btn btn-sm btn-outline-light float-end dismiss-notification">Dismiss</button>
+      </div>
+    @endforeach
+    <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      document.querySelectorAll('.dismiss-notification').forEach(function(btn) {
+        btn.addEventListener('click', function(e) {
+          var parent = e.target.closest('.admin-notification');
+          var id = parent.getAttribute('data-id');
+          fetch("{{ route('dashboard.notifications.dismiss') }}", {
+            method: 'POST',
+            headers: {
+              'X-CSRF-TOKEN': '{{ csrf_token() }}',
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({id: id})
+          }).then(res => res.json()).then(data => {
+            if (data.success) {
+              parent.remove();
+            }
+          });
+        });
+      });
+    });
+    </script>
+  @endif
+
 
   <!-- POS Providers Section -->
   {{-- <div class="card mb-4">
@@ -140,7 +176,7 @@
             <tr>
               <td>{{ $tx->id }}</td>
               <td>{{ $tx->transaction_id }}</td>
-              <td>{{ $tx->customer_code }}</td>
+              <td>{{ $tx->display_tenant_code }}</td>
               <td>{{ $tx->terminal_id }}</td>
               <td>{{ $tx->tenant->trade_name ?? 'Unknown' }}</td>
               <td>{{ number_format($tx->net_sales, 2, '.', ',') }}</td>
