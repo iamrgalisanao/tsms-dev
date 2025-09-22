@@ -1,7 +1,11 @@
 ; Example systemd unit for Laravel Horizon (TSMS)
+; Notes:
+; - Prefer configuring process counts & trims via env (see EnvironmentFile lines)
+; - Use `systemctl reload tsms-horizon` or `php artisan horizon:terminate` for rolling restarts
+; - Adjust WorkingDirectory and PHP binary path to your server layout
 [Unit]
 Description=TSMS Horizon Queue Supervisor
-After=network.target redis.service
+After=network.target redis.service redis-server.service
 StartLimitIntervalSec=0
 
 [Service]
@@ -10,15 +14,24 @@ User=www-data
 Group=www-data
 Restart=always
 RestartSec=5
+; Load optional environment overrides (Debian-based) e.g., HZ_* counts, HORIZON_PREFIX
+EnvironmentFile=-/etc/default/tsms
+; Load optional environment overrides (RHEL-based)
+EnvironmentFile=-/etc/sysconfig/tsms
 Environment=APP_ENV=production
 Environment=QUEUE_CONNECTION=redis
 WorkingDirectory=/var/www/tsms
 ExecStart=/usr/bin/php /var/www/tsms/artisan horizon
 ExecStop=/usr/bin/php /var/www/tsms/artisan horizon:terminate
-KillSignal=SIGCONT
+; Graceful drain is handled by ExecStop above; KillSignal not required
+; KillSignal=SIGCONT
+ExecReload=/usr/bin/php /var/www/tsms/artisan horizon:terminate
 TimeoutStopSec=60
 Nice=0
 LimitNOFILE=65535
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=tsms-horizon
 
 [Install]
 WantedBy=multi-user.target

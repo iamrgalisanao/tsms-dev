@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use App\Models\Tenant;
 
 class Transaction extends Model
 {
@@ -394,5 +395,38 @@ class Transaction extends Model
         }
 
         return 'UNKNOWN_TENANT';
+    }
+
+    /**
+     * Automatically synchronize transactions.customer_code from the related tenant.customer_code
+     * for data hygiene. Applies on create and when tenant_id changes (or when customer_code is empty).
+     */
+    protected static function booted()
+    {
+        $sync = function (Transaction $tx) {
+            // Prefer already-loaded relation to avoid an extra query
+            if ($tx->relationLoaded('tenant') && $tx->tenant && !empty($tx->tenant->customer_code)) {
+                $tx->customer_code = $tx->tenant->customer_code;
+                return;
+            }
+
+            // Otherwise, look up by tenant_id if present
+            if ($tx->tenant_id) {
+                $tenant = Tenant::find($tx->tenant_id);
+                if ($tenant && !empty($tenant->customer_code)) {
+                    $tx->customer_code = $tenant->customer_code;
+                }
+            }
+        };
+
+        static::creating(function (Transaction $tx) use ($sync) {
+            $sync($tx);
+        });
+
+        static::saving(function (Transaction $tx) use ($sync) {
+            if ($tx->isDirty('tenant_id') || empty($tx->customer_code)) {
+                $sync($tx);
+            }
+        });
     }
 }

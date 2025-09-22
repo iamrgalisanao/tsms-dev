@@ -7,8 +7,10 @@ llm:
     model: "gpt-4o-mini"
     temperature: 0.2
     max_tokens: 4000
+    api_key_env: "OPENAI_API_KEY"
 
 embeddings:
     provider: "openai"
     model: "text-embedding-3-small"
     dimensions: 1536
+    api_key_env: "OPENAI_API_KEY"

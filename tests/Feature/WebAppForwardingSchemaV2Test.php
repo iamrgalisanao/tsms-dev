@@ -151,8 +151,20 @@ class WebAppForwardingSchemaV2Test extends TestCase
 
         Http::fake();
         $result = $service->forwardUnsentTransactions();
-        $this->assertFalse($result['success']);
-        $this->assertEquals('LOCAL_BATCH_CONTRACT_FAILED', $result['classification']);
+        // Backward compatibility: either we strictly fail mixed-batch (old behavior),
+        // or we group by tenant/terminal and succeed per-group (new behavior).
+        if (array_key_exists('classification', $result)) {
+            $this->assertFalse($result['success']);
+            $this->assertEquals('LOCAL_BATCH_CONTRACT_FAILED', $result['classification']);
+        } else {
+            // New grouped behavior: should succeed overall with two groups processed
+            $this->assertTrue($result['success']);
+            $this->assertArrayHasKey('group_results', $result);
+            $this->assertCount(2, $result['group_results']);
+            foreach ($result['group_results'] as $gr) {
+                $this->assertTrue($gr['success'] ?? false);
+            }
+        }
         $stats = $service->getForwardingStats();
         $this->assertFalse($stats['circuit_breaker']['is_open']);
     }

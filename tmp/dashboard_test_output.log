@@ -1,0 +1,72 @@
+PHPUnit Started (PHPUnit 12.2.0 using PHP 8.4.11 (cli) on Darwin)
+Test Runner Configured
+Bootstrap Finished (/Users/teamsolo/Projects/PITX/tsms-dev/vendor/autoload.php)
+Event Facade Sealed
+Test Runner Triggered Warning (No tests found in class "Tests\Unit\Security\SecurityAlertManagementServiceTest".)
+Test Runner Triggered Warning (No tests found in class "Tests\Unit\Security\SecurityMonitorServiceTest".)
+Test Runner Triggered Warning (No tests found in class "Tests\Unit\Security\SecurityReportExportServiceTest".)
+Test Runner Triggered Warning (No tests found in class "Tests\Unit\Security\SecurityReportExporterTest".)
+Test Runner Triggered Warning (No tests found in class "Tests\Unit\Security\SecurityReportingServiceTest".)
+Test Runner Triggered Warning (No tests found in class "Tests\Unit\TransactionControllerTest".)
+Test Runner Triggered Warning (No tests found in class "Tests\Feature\CircuitBreakerFeatureTest".)
+Test Runner Triggered Warning (No tests found in class "Tests\Feature\RateLimitingFeatureTest".)
+Test Runner Triggered Warning (No tests found in class "Tests\Feature\RetryHistoryTest".)
+Test Runner Triggered Warning (No tests found in class "Tests\Feature\RetryTransactionWithCircuitBreakerTest".)
+Test Runner Triggered Warning (No tests found in class "Tests\Feature\TransactionCircuitBreakerTest".)
+Test Runner Triggered Warning (No tests found in class "Tests\Feature\TransactionPipeline\TransactionEndToEndTest".)
+Test Runner Triggered Warning (No tests found in class "Tests\Feature\TransactionPipeline\TransactionIngestionTest".)
+Test Runner Triggered Warning (No tests found in class "Tests\Feature\TransactionPipeline\TransactionPerformanceTest".)
+Test Runner Triggered Warning (No tests found in class "Tests\Feature\TransactionPipeline\TransactionQueueProcessingTest".)
+Test Runner Triggered Warning (No tests found in class "Tests\Feature\TransactionPipeline\TransactionValidationTest".)
+Test Suite Loaded (151 tests)
+Test Runner Started
+Test Suite Sorted
+Test Suite Filtered (1 test)
+Test Runner Execution Started (1 test)
+Test Suite Started (/Users/teamsolo/Projects/PITX/tsms-dev/phpunit.xml, 1 test)
+Test Suite Started (Feature, 1 test)
+Test Suite Started (Tests\Feature\DashboardNotificationTest, 1 test)
+Test Preparation Started (Tests\Feature\DashboardNotificationTest::test_admin_sees_excessive_failure_notification_box)
+Before Test Method Called (Tests\Feature\DashboardNotificationTest::setUp)
+Before Test Method Finished:
+- Tests\Feature\DashboardNotificationTest::setUp
+Test Prepared (Tests\Feature\DashboardNotificationTest::test_admin_sees_excessive_failure_notification_box)
+Test Failed (Tests\Feature\DashboardNotificationTest::test_admin_sees_excessive_failure_notification_box)
+Expected response status code [200] but received 500.
+Failed asserting that 500 is identical to 200.
+After Test Method Called (Tests\Feature\DashboardNotificationTest::tearDown)
+After Test Method Finished:
+- Tests\Feature\DashboardNotificationTest::tearDown
+Test Finished (Tests\Feature\DashboardNotificationTest::test_admin_sees_excessive_failure_notification_box)
+After Last Test Method Called (Tests\Feature\DashboardNotificationTest::tearDownAfterClass)
+After Last Test Method Finished:
+- Tests\Feature\DashboardNotificationTest::tearDownAfterClass
+Test Suite Finished (Tests\Feature\DashboardNotificationTest, 1 test)
+Test Suite Finished (Feature, 1 test)
+Test Suite Finished (/Users/teamsolo/Projects/PITX/tsms-dev/phpunit.xml, 1 test)
+Test Runner Execution Finished
+
+   FAIL  Tests\Feature\DashboardNotificationTest
+  ⨯ admin sees excessive failure notification box                        2.21s  
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Feature\DashboardNotificationTest > admin sees excessive fa…   
+  Expected response status code [200] but received 500.
+Failed asserting that 500 is identical to 200.
+
+  at tests/Feature/DashboardNotificationTest.php:48
+     44▕         ]);
+     45▕ 
+     46▕         // Visit dashboard as admin
+     47▕         $response = $this->actingAs($admin)->get('/dashboard');
+  ➜  48▕         $response->assertStatus(200);
+     49▕         $response->assertSee('exceeded failure threshold');
+     50▕         $response->assertSee('Severity:');
+     51▕         $response->assertSee('Count:');
+     52▕         $response->assertSee('Dismiss');
+
+
+  Tests:    1 failed (1 assertions)
+  Duration: 2.33s
+
+Test Runner Finished
+PHPUnit Finished (Shell Exit Code: 1)

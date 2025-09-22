@@ -366,7 +366,7 @@ document.addEventListener('DOMContentLoaded', function() {
           <tr>
             <td>${tx.id}</td>
             <td>${tx.transaction_id}</td>
-            <td>${tx.customer_code}</td>
+            <td>${tx.display_tenant_code ?? tx.customer_code ?? ''}</td>
             <td>${tx.terminal_id}</td>
             <td>${tx.tenant?.trade_name || 'Unknown'}</td>
             <td>${tx.net_sales ? parseFloat(tx.net_sales).toFixed(2) : '0.00'}</td>

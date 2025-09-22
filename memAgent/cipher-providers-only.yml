@@ -1,0 +1,16 @@
+name: "tsms-memory-agent"
+version: "1.0.0"
+description: "Test providers-only config"
+
+providers:
+  - name: "project-static"
+    type: "static"
+    priority: 100
+    enabled: true
+    config:
+      content: |
+        Simple static provider only.
+
+logging:
+  level: "debug"
+  console: true

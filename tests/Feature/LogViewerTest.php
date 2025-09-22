@@ -13,6 +13,58 @@ use Tests\TestCase;
 
 class LogViewerTest extends TestCase
 {
+    public function test_admin_alert_for_excessive_failed_transactions_and_alert_is_visible()
+    {
+        // Lower threshold for test
+        config(['notifications.transaction_failure_threshold' => 3]);
+        config(['notifications.transaction_failure_time_window' => 60]);
+        config(['notifications.admin_emails' => ['admin-logtest@example.com']]);
+
+        // Create admin user
+        $adminUser = $this->adminUser;
+
+        // Create 4 failed transactions for the same terminal
+        for ($i = 1; $i <= 4; $i++) {
+            \App\Models\Transaction::create([
+                'tenant_id' => $this->tenant->id,
+                'terminal_id' => $this->terminal->id,
+                'transaction_id' => "FAILED-TXN-{$i}",
+                'hardware_id' => $this->terminal->serial_number ?? 'HW-LOGTEST',
+                'transaction_timestamp' => now()->subMinutes(rand(1, 30)),
+                'base_amount' => 100.00 + $i,
+                'customer_code' => $this->tenant->company->customer_code ?? 'CUST-LOGTEST',
+                'payload_checksum' => 'test-checksum-' . $i,
+                'validation_status' => 'INVALID',
+                'created_at' => now()->subMinutes(rand(1, 30)),
+            ]);
+        }
+
+        // Trigger notification check
+        $notificationService = app(\App\Services\NotificationService::class);
+        $notificationService->checkTransactionFailureThresholds($this->terminal->id);
+
+        // Assert notification exists in DB
+        $this->assertDatabaseHas('notifications', [
+            'type' => 'App\\Notifications\\TransactionFailureThresholdExceeded',
+        ]);
+
+        // Optionally, check notification content
+        $notification = \DB::table('notifications')
+            ->where('type', 'App\\Notifications\\TransactionFailureThresholdExceeded')
+            ->first();
+        $this->assertNotNull($notification);
+        $data = json_decode($notification->data, true);
+        $this->assertEquals('transaction_failure_threshold_exceeded', $data['type']);
+        $this->assertEquals('high', $data['severity']);
+        $this->assertEquals($this->terminal->id, $data['pos_terminal_id']);
+        $this->assertGreaterThanOrEqual(4, $data['threshold_data']['current_count']);
+
+        // Optionally, check log viewer can display audit logs (if integrated)
+        $response = $this->actingAs($adminUser)
+            ->get(route('log-viewer.index'));
+        $response->assertStatus(200);
+    $response->assertSee('System Logs Dashboard');
+    }
     use RefreshDatabase, WithFaker;
 
     protected $user;
@@ -31,30 +83,31 @@ class LogViewerTest extends TestCase
         
         // Create a tenant
         $this->tenant = Tenant::factory()->create([
-            'name' => 'Test Tenant'
+            'trade_name' => 'Test Tenant'
         ]);
         
-        // Create a regular user
+        // Remove user creation; only terminal and tenant are used for transaction creation
+        // If needed for actingAs, create users without tenant_id
         $this->user = User::factory()->create([
-            'tenant_id' => $this->tenant->id,
             'name' => 'Regular User'
         ]);
-        
-        // Create admin user with role
         $this->adminUser = User::factory()->create([
-            'tenant_id' => $this->tenant->id,
-            'name' => 'Admin User',
-            'is_admin' => true
+            'name' => 'Admin User'
         ]);
-        
-        if (method_exists($this->adminUser, 'assignRole')) {
-            $this->adminUser->assignRole('admin');
+        // Ensure 'admin' role exists before assigning
+        if (class_exists('Spatie\\Permission\\Models\\Role')) {
+            $roleClass = \Spatie\Permission\Models\Role::class;
+            if (!$roleClass::where('name', 'admin')->where('guard_name', 'web')->exists()) {
+                $roleClass::create(['name' => 'admin', 'guard_name' => 'web']);
+            }
+            if (method_exists($this->adminUser, 'assignRole')) {
+                $this->adminUser->assignRole('admin');
+            }
         }
         
-        // Create test terminal
+        // Create test terminal (no terminal_uid)
         $this->terminal = PosTerminal::factory()->create([
-            'tenant_id' => $this->tenant->id,
-            'terminal_uid' => 'TERM-TEST-001'
+            'tenant_id' => $this->tenant->id
         ]);
         
         // Create some test logs
@@ -91,7 +144,6 @@ class LogViewerTest extends TestCase
                 'source_ip' => '127.0.0.1',
                 'retry_count' => $i,
                 'response_time' => 100 + $i * 10,
-                'validation_status' => $status == 'SUCCESS' ? 'PASSED' : 'FAILED',
             ]);
             
             // Add new log fields if they exist

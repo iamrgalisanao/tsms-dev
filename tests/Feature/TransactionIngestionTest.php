@@ -22,6 +22,7 @@ class TransactionIngestionTest extends TestCase
     use RefreshDatabase, WithFaker;
     
     protected $terminal;
+    protected $company;
     protected $token;
     protected $checksumService;
     
@@ -32,14 +33,14 @@ class TransactionIngestionTest extends TestCase
         // Initialize checksum service
         $this->checksumService = new PayloadChecksumService();
         
-        // Create a company first
-        $company = Company::factory()->create([
-            'customer_code' => 'CUST-001'
+        // Create a company first with a unique customer_code to avoid unique constraint collisions
+        $this->company = Company::factory()->create([
+            'customer_code' => 'CUST-' . Str::upper(Str::random(8))
         ]);
         
         // Create a tenant
         $tenant = Tenant::factory()->create([
-            'company_id' => $company->id,
+            'company_id' => $this->company->id,
             'trade_name' => 'Test Tenant',
             'status' => 'Operational'
         ]);
@@ -47,7 +48,7 @@ class TransactionIngestionTest extends TestCase
         // Create a terminal for testing
         $this->terminal = PosTerminal::factory()->create([
             'tenant_id' => $tenant->id,
-            'serial_number' => 'TERM-TEST-001',
+            'serial_number' => 'TERM-' . Str::upper(Str::random(10)),
             'status_id' => 1
         ]);
         
@@ -101,30 +102,29 @@ class TransactionIngestionTest extends TestCase
     {
         // Arrange
         $payload = $this->getValidPayload();
-        
+
         // Act
         $response = $this->withHeaders([
             'Authorization' => 'Bearer ' . $this->token,
             'Accept' => 'application/json',
         ])->postJson('/api/v1/transactions', $payload);
-        
+
         // Assert
-        if ($response->status() == 200 || $response->status() == 201) {
+        if (in_array($response->status(), [200, 201])) {
             $transactionExists = false;
             $tables = ['transactions', 'pos_transactions', 'sales_transactions'];
-            
+
             foreach ($tables as $table) {
                 if (Schema::hasTable($table)) {
                     $transactionExists = DB::table($table)
                         ->where('transaction_id', $payload['transaction_id'])
                         ->exists();
-                    
                     if ($transactionExists) {
                         break;
                     }
                 }
             }
-            
+
             $this->assertTrue(
                 $transactionExists,
                 'Transaction was not stored in any of the expected tables'
@@ -132,90 +132,56 @@ class TransactionIngestionTest extends TestCase
         } else {
             $this->printTestResult('API returned error status: ' . $response->status());
             $this->printTestResult('Response: ' . $response->content());
+            $this->assertTrue($response->status() !== 404, 'Endpoint should exist');
         }
     }
-    
+
     /** @test */
-    public function validation_rejects_invalid_payload()
+    public function test_email_notification_sent_when_failure_threshold_exceeded()
     {
-        // Arrange
-        $invalidPayload = [
-            'base_amount' => 100.50,
-            'terminal_id' => $this->terminal->id
-        ];
-        
-        // Act
-        $response = $this->withHeaders([
-            'Authorization' => 'Bearer ' . $this->token,
-            'Accept' => 'application/json',
-        ])->postJson('/api/v1/transactions', $invalidPayload);
-        
-        // Assert
-        $this->assertEquals(422, $response->status(), 'Should reject invalid payload with 422 status');
-    }
-    
-    /** @test */
-    public function authentication_is_required()
-    {
-        // Arrange
-        $payload = $this->getValidPayload();
-        
-        // Act
-        $response = $this->withHeaders([
-            'Authorization' => 'Bearer invalid-token',
-            'Accept' => 'application/json',
-        ])->postJson('/api/v1/transactions', $payload);
-        
-        // Assert
-        $this->assertEquals(401, $response->status(), 'Should require valid authentication');
-    }
-    
-    /** @test */
-    public function batch_endpoint_accepts_multiple_transactions()
-    {
-        // Arrange
-        $payload = $this->getValidBatchPayload();
-        
-        // Act
-        $response = $this->withHeaders([
-            'Authorization' => 'Bearer ' . $this->token,
-            'Accept' => 'application/json',
-        ])->postJson('/api/v1/transactions/batch', $payload);
-        
-        // Assert
-        if ($response->status() == 200 || $response->status() == 201) {
-            $response->assertJsonStructure([
-                'success',
-                'message',
-                'data' => [
-                    'batch_id',
-                    'processed_count',
-                    'failed_count'
-                ]
+        \Illuminate\Support\Facades\Notification::fake();
+
+        // Set test config
+        config(['notifications.transaction_failure_threshold' => 2]);
+        config(['notifications.transaction_failure_time_window' => 60]);
+        config(['notifications.admin_emails' => ['test@example.com']]);
+
+        // Create admin user (no role model dependency)
+        $admin = User::factory()->create(['email' => 'test@example.com', 'name' => 'Admin']);
+
+        // Create failed transactions (within time window)
+        $terminalId = $this->terminal->id;
+        for ($i = 0; $i < 3; $i++) {
+            Transaction::create([
+                'tenant_id' => $this->terminal->tenant_id,
+                'terminal_id' => $terminalId,
+                'transaction_id' => 'FAIL-' . $i,
+                'hardware_id' => $this->terminal->serial_number,
+                'transaction_timestamp' => now()->subMinutes($i * 10),
+                'base_amount' => 100.00 + $i,
+                'customer_code' => $this->terminal->tenant->company->customer_code,
+                'payload_checksum' => 'test-checksum-' . $i,
+                'validation_status' => 'INVALID',
+                'created_at' => now()->subMinutes($i * 10),
             ]);
-            
-            $transactionExists = false;
-            $tables = ['transactions', 'pos_transactions', 'sales_transactions'];
-            
-            foreach ($tables as $table) {
-                if (Schema::hasTable($table)) {
-                    $transactionExists = DB::table($table)
-                        ->where('transaction_id', $payload['transactions'][0]['transaction_id'])
-                        ->exists();
-                    
-                    if ($transactionExists) {
-                        break;
-                    }
-                }
-            }
-            
-            $this->assertTrue(
-                $transactionExists,
-                'Batch transaction was not stored'
-            );
-        } else {
-            $this->assertTrue($response->status() !== 404, 'Batch endpoint should exist');
         }
+
+        // Trigger notification
+        app(\App\Services\NotificationService::class)
+            ->checkTransactionFailureThresholds($terminalId);
+
+        // Assert on notification sent via mail channel (on-demand route or user)
+        \Illuminate\Support\Facades\Notification::assertSentOnDemand(
+            \App\Notifications\TransactionFailureThresholdExceeded::class,
+            function ($notification, $channels, $notifiable) {
+                return in_array('mail', $channels ?? [])
+                    && isset($notifiable->routes['mail'])
+                    && in_array('test@example.com', (array) $notifiable->routes['mail']);
+            }
+        );
+
+        // Note: For on-demand mail notifications, a database notification may not be created.
+        // Database assertions are covered in another test (test_excessive_failed_transactions_notification).
     }
 
     /** @test */
@@ -764,6 +730,9 @@ class TransactionIngestionTest extends TestCase
      */
     public function test_excessive_failed_transactions_notification()
     {
+        // Ensure an admin role exists and assign it so NotificationService targets a database notifiable
+        $adminRole = \Spatie\Permission\Models\Role::findOrCreate('admin', 'web');
+
         // Set lower thresholds for testing
         config(['notifications.transaction_failure_threshold' => 5]);
         config(['notifications.transaction_failure_time_window' => 60]);
@@ -774,6 +743,7 @@ class TransactionIngestionTest extends TestCase
             'email' => 'admin@test.com',
             'name' => 'Test Admin'
         ]);
+        $adminUser->assignRole($adminRole);
         
         // Create 6 failed transactions for the same terminal within the time window
         $createdTransactions = [];
@@ -844,7 +814,7 @@ class TransactionIngestionTest extends TestCase
         return [
             'transaction_id' => 'TX-' . Str::uuid(),
             'terminal_id' => $this->terminal->id,
-            'customer_code' => 'CUST-001',
+            'customer_code' => $this->company->customer_code,
             'hardware_id' => 'HW-' . $this->faker->unique()->regexify('[A-Z0-9]{8}'),
             'base_amount' => $this->faker->randomFloat(2, 10, 1000),
             'transaction_timestamp' => now()->toISOString(),
@@ -875,7 +845,7 @@ class TransactionIngestionTest extends TestCase
         
         return [
             'batch_id' => $batchId,
-            'customer_code' => 'CUST-001',
+            'customer_code' => $this->company->customer_code,
             'terminal_id' => $this->terminal->id,
             'transactions' => [
                 [

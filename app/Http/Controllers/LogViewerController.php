@@ -4,6 +4,8 @@ namespace App\Http\Controllers;
 
 use App\Models\SystemLog;
 use App\Models\Tenant;
+use App\Models\Transaction;
+use App\Models\PosTerminal;
 use App\Services\SystemLogService;
 use App\Services\LogExportService;
 use Illuminate\Http\Request;
@@ -48,6 +50,8 @@ class LogViewerController extends Controller
         // Attach tenant trade_name to each audit log where possible without N+1 queries
         $logs = $auditLogs->getCollection();
         $tenantIds = [];
+        $txnIds = [];
+        $terminalIds = [];
         foreach ($logs as $log) {
             // Prefer explicit metadata tenant_id (handle array or JSON string)
             $meta = $log->metadata ?? [];
@@ -63,16 +67,54 @@ class LogViewerController extends Controller
                 $tenantIds[(int) $meta['tenant_id']] = true;
                 continue;
             }
+            // Alternative nested structure e.g., metadata.tenant.id
+            if (is_array($meta) && isset($meta['tenant']['id']) && is_numeric($meta['tenant']['id'])) {
+                $tenantIds[(int) $meta['tenant']['id']] = true;
+                continue;
+            }
             // Resource points to tenant
-            if (($log->resource_type ?? null) === 'tenant' && is_numeric($log->resource_id)) {
+            $resType = strtolower((string) ($log->resource_type ?? ''));
+            if ((in_array($resType, ['tenant','tenants','app\\models\\tenant'], true)) && is_numeric($log->resource_id)) {
                 $tenantIds[(int) $log->resource_id] = true;
                 continue;
             }
             // Auditable points to tenant
-            if (($log->auditable_type ?? null) === 'tenant' && is_numeric($log->auditable_id)) {
+            $audType = strtolower((string) ($log->auditable_type ?? ''));
+            if ((str_ends_with($audType, 'tenant')) && is_numeric($log->auditable_id)) {
                 $tenantIds[(int) $log->auditable_id] = true;
             }
+
+            // Fallback discovery to resolve tenant later in bulk
+            if (is_array($meta)) {
+                if (!empty($meta['transaction_id'])) {
+                    $txnIds[] = (string) $meta['transaction_id'];
+                }
+                if (!empty($meta['terminal_id']) && is_numeric($meta['terminal_id'])) {
+                    $terminalIds[] = (int) $meta['terminal_id'];
+                }
+            }
         }
+
+        // Resolve tenant ids via transactions and terminals (bulk)
+        $txnToTenant = [];
+        $termToTenant = [];
+        if (!empty($txnIds)) {
+            $txnToTenant = Transaction::whereIn('transaction_id', array_unique($txnIds))
+                ->pluck('tenant_id', 'transaction_id')
+                ->toArray();
+            foreach ($txnToTenant as $tid) {
+                if (!empty($tid)) { $tenantIds[(int) $tid] = true; }
+            }
+        }
+        if (!empty($terminalIds)) {
+            $termToTenant = PosTerminal::whereIn('id', array_unique($terminalIds))
+                ->pluck('tenant_id', 'id')
+                ->toArray();
+            foreach ($termToTenant as $tid) {
+                if (!empty($tid)) { $tenantIds[(int) $tid] = true; }
+            }
+        }
+
         if (!empty($tenantIds)) {
             $tenantMap = Tenant::whereIn('id', array_keys($tenantIds))
                 ->get(['id', 'trade_name'])
@@ -90,10 +132,20 @@ class LogViewerController extends Controller
                 }
                 if (is_array($meta) && !empty($meta['tenant_id']) && is_numeric($meta['tenant_id'])) {
                     $tenantId = (int) $meta['tenant_id'];
-                } elseif (($log->resource_type ?? null) === 'tenant' && is_numeric($log->resource_id)) {
-                    $tenantId = (int) $log->resource_id;
-                } elseif (($log->auditable_type ?? null) === 'tenant' && is_numeric($log->auditable_id)) {
-                    $tenantId = (int) $log->auditable_id;
+                } elseif (is_array($meta) && isset($meta['tenant']['id']) && is_numeric($meta['tenant']['id'])) {
+                    $tenantId = (int) $meta['tenant']['id'];
+                } else {
+                    $resType = strtolower((string) ($log->resource_type ?? ''));
+                    $audType = strtolower((string) ($log->auditable_type ?? ''));
+                    if ((in_array($resType, ['tenant','tenants','app\\models\\tenant'], true)) && is_numeric($log->resource_id)) {
+                        $tenantId = (int) $log->resource_id;
+                    } elseif ((str_ends_with($audType, 'tenant')) && is_numeric($log->auditable_id)) {
+                        $tenantId = (int) $log->auditable_id;
+                    } elseif (is_array($meta) && !empty($meta['transaction_id'])) {
+                        $tenantId = (int) ($txnToTenant[(string) $meta['transaction_id']] ?? 0) ?: null;
+                    } elseif (is_array($meta) && !empty($meta['terminal_id']) && is_numeric($meta['terminal_id'])) {
+                        $tenantId = (int) ($termToTenant[(int) $meta['terminal_id']] ?? 0) ?: null;
+                    }
                 }
                 if ($tenantId && isset($tenantMap[$tenantId])) {
                     $log->setAttribute('tenant_name', $tenantMap[$tenantId]->trade_name ?? ('Tenant #'.$tenantId));
@@ -167,6 +219,8 @@ class LogViewerController extends Controller
             if ($auditLogs->isNotEmpty()) {
                 $logs = $auditLogs; // alias
                 $tenantIds = [];
+                $txnIds = [];
+                $terminalIds = [];
                 foreach ($logs as $log) {
                     $meta = $log->metadata ?? [];
                     if (is_string($meta)) {
@@ -177,13 +231,37 @@ class LogViewerController extends Controller
                         $tenantIds[(int) $meta['tenant_id']] = true;
                         continue;
                     }
-                    if (($log->resource_type ?? null) === 'tenant' && is_numeric($log->resource_id)) {
+                    if (is_array($meta) && isset($meta['tenant']['id']) && is_numeric($meta['tenant']['id'])) {
+                        $tenantIds[(int) $meta['tenant']['id']] = true;
+                        continue;
+                    }
+                    $resType = strtolower((string) ($log->resource_type ?? ''));
+                    if ((in_array($resType, ['tenant','tenants','app\\models\\tenant'], true)) && is_numeric($log->resource_id)) {
                         $tenantIds[(int) $log->resource_id] = true;
                         continue;
                     }
-                    if (($log->auditable_type ?? null) === 'tenant' && is_numeric($log->auditable_id)) {
+                    $audType = strtolower((string) ($log->auditable_type ?? ''));
+                    if ((str_ends_with($audType, 'tenant')) && is_numeric($log->auditable_id)) {
                         $tenantIds[(int) $log->auditable_id] = true;
                     }
+
+                    if (is_array($meta)) {
+                        if (!empty($meta['transaction_id'])) { $txnIds[] = (string) $meta['transaction_id']; }
+                        if (!empty($meta['terminal_id']) && is_numeric($meta['terminal_id'])) { $terminalIds[] = (int) $meta['terminal_id']; }
+                    }
+                }
+                // Build reverse maps via transactions and terminals
+                $txnToTenant = [];
+                $termToTenant = [];
+                if (!empty($txnIds)) {
+                    $txnToTenant = Transaction::whereIn('transaction_id', array_unique($txnIds))
+                        ->pluck('tenant_id', 'transaction_id')->toArray();
+                    foreach ($txnToTenant as $tid) { if (!empty($tid)) { $tenantIds[(int) $tid] = true; } }
+                }
+                if (!empty($terminalIds)) {
+                    $termToTenant = PosTerminal::whereIn('id', array_unique($terminalIds))
+                        ->pluck('tenant_id', 'id')->toArray();
+                    foreach ($termToTenant as $tid) { if (!empty($tid)) { $tenantIds[(int) $tid] = true; } }
                 }
                 if (!empty($tenantIds)) {
                     $tenantMap = Tenant::whereIn('id', array_keys($tenantIds))
@@ -198,10 +276,20 @@ class LogViewerController extends Controller
                         }
                         if (is_array($meta) && !empty($meta['tenant_id']) && is_numeric($meta['tenant_id'])) {
                             $tenantIdX = (int) $meta['tenant_id'];
-                        } elseif (($log->resource_type ?? null) === 'tenant' && is_numeric($log->resource_id)) {
-                            $tenantIdX = (int) $log->resource_id;
-                        } elseif (($log->auditable_type ?? null) === 'tenant' && is_numeric($log->auditable_id)) {
-                            $tenantIdX = (int) $log->auditable_id;
+                        } elseif (is_array($meta) && isset($meta['tenant']['id']) && is_numeric($meta['tenant']['id'])) {
+                            $tenantIdX = (int) $meta['tenant']['id'];
+                        } else {
+                            $resType = strtolower((string) ($log->resource_type ?? ''));
+                            $audType = strtolower((string) ($log->auditable_type ?? ''));
+                            if ((in_array($resType, ['tenant','tenants','app\\models\\tenant'], true)) && is_numeric($log->resource_id)) {
+                                $tenantIdX = (int) $log->resource_id;
+                            } elseif ((str_ends_with($audType, 'tenant')) && is_numeric($log->auditable_id)) {
+                                $tenantIdX = (int) $log->auditable_id;
+                            } elseif (is_array($meta) && !empty($meta['transaction_id'])) {
+                                $tenantIdX = (int) ($txnToTenant[(string) $meta['transaction_id']] ?? 0) ?: null;
+                            } elseif (is_array($meta) && !empty($meta['terminal_id']) && is_numeric($meta['terminal_id'])) {
+                                $tenantIdX = (int) ($termToTenant[(int) $meta['terminal_id']] ?? 0) ?: null;
+                            }
                         }
                         if ($tenantIdX && isset($tenantMap[$tenantIdX])) {
                             $log->setAttribute('tenant_name', $tenantMap[$tenantIdX]->trade_name ?? ('Tenant #' . $tenantIdX));
@@ -327,10 +415,22 @@ public function getAuditContext($id)
         $meta = $metadata;
         if (is_array($meta) && !empty($meta['tenant_id']) && is_numeric($meta['tenant_id'])) {
             $tenantId = (int) $meta['tenant_id'];
-        } elseif (($auditLog->resource_type ?? null) === 'tenant' && is_numeric($auditLog->resource_id)) {
-            $tenantId = (int) $auditLog->resource_id;
-        } elseif (($auditLog->auditable_type ?? null) === 'tenant' && is_numeric($auditLog->auditable_id)) {
-            $tenantId = (int) $auditLog->auditable_id;
+        } elseif (is_array($meta) && isset($meta['tenant']['id']) && is_numeric($meta['tenant']['id'])) {
+            $tenantId = (int) $meta['tenant']['id'];
+        } else {
+            $resType = strtolower((string) ($auditLog->resource_type ?? ''));
+            $audType = strtolower((string) ($auditLog->auditable_type ?? ''));
+            if ((in_array($resType, ['tenant','tenants','app\\models\\tenant'], true)) && is_numeric($auditLog->resource_id)) {
+                $tenantId = (int) $auditLog->resource_id;
+            } elseif ((str_ends_with($audType, 'tenant')) && is_numeric($auditLog->auditable_id)) {
+                $tenantId = (int) $auditLog->auditable_id;
+            } elseif (is_array($meta) && !empty($meta['transaction_id'])) {
+                $tid = Transaction::where('transaction_id', (string) $meta['transaction_id'])->value('tenant_id');
+                if ($tid) { $tenantId = (int) $tid; }
+            } elseif (is_array($meta) && !empty($meta['terminal_id']) && is_numeric($meta['terminal_id'])) {
+                $tid = PosTerminal::where('id', (int) $meta['terminal_id'])->value('tenant_id');
+                if ($tid) { $tenantId = (int) $tid; }
+            }
         }
         $tenantPayload = null;
         if ($tenantId) {

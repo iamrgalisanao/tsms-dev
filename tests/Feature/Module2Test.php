@@ -97,7 +97,7 @@ tenant_id: C-T1005
 hardware_id: 7P589L2
 machine_number: 6
 transaction_id: 8a918a90-7cbd-4b44-adc0-bc3d31cee238
-store_name: ABC Store #102
+trade_name: ABC Store #102
 transaction_timestamp: 2025-03-26T13:45:00Z
 vatable_sales: 12000.0
 net_sales: 18137.0
