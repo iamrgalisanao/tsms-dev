@@ -83,7 +83,8 @@ return [
         'local' => [
             'default' => [
                 'connection' => 'redis',
-                'queue'      => ['default','notifications'],
+                // Include processing queues locally so Horizon runs workers for them
+                'queue'      => ['transaction-processing','forwarding','low','notifications','default'],
                 'processes'  => 1,
                 'tries'      => 1,
             ],
