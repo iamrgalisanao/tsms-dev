@@ -19,6 +19,56 @@ use Tests\TestCase;
 
 class TransactionIngestionTest extends TestCase
 {
+    /** @test */
+    public function non_vat_sale_transaction_is_accepted_and_stored()
+    {
+        $transactionId = (string) \Illuminate\Support\Str::uuid();
+        $submissionId = (string) \Illuminate\Support\Str::uuid();
+        $baseAmount = 500.00;
+        $transaction = [
+            'transaction_id' => $transactionId,
+            'transaction_timestamp' => now()->format('Y-m-d\TH:i:s\Z'),
+            'gross_sales' => $baseAmount,
+            'net_sales' => $baseAmount,
+            'promo_status' => 'NONE',
+            'customer_code' => $this->company->customer_code,
+            'adjustments' => [
+                ['adjustment_type' => 'promo_discount', 'amount' => 0],
+                ['adjustment_type' => 'senior_discount', 'amount' => 0],
+                ['adjustment_type' => 'pwd_discount', 'amount' => 0],
+                ['adjustment_type' => 'vip_card_discount', 'amount' => 0],
+                ['adjustment_type' => 'service_charge_distributed_to_employees', 'amount' => 0],
+                ['adjustment_type' => 'service_charge_retained_by_management', 'amount' => 0],
+                ['adjustment_type' => 'employee_discount', 'amount' => 0],
+            ],
+            'taxes' => [
+                ['tax_type' => 'VAT', 'amount' => 0],
+                ['tax_type' => 'VATABLE_SALES', 'amount' => 0],
+                ['tax_type' => 'SC_VAT_EXEMPT_SALES', 'amount' => 500.00],
+                ['tax_type' => 'OTHER_TAX', 'amount' => 0],
+            ],
+        ];
+        $transaction['payload_checksum'] = $this->checksumService->computeChecksum($transaction);
+        $payload = [
+            'submission_uuid' => $submissionId,
+            'tenant_id' => $this->terminal->tenant_id,
+            'terminal_id' => $this->terminal->id,
+            'submission_timestamp' => now()->format('Y-m-d\TH:i:s\Z'),
+            'transaction_count' => 1,
+            'transaction' => $transaction,
+        ];
+        $payload['payload_checksum'] = $this->checksumService->computeChecksum($payload);
+        $response = $this->withHeaders([
+            'Authorization' => 'Bearer ' . $this->token,
+            'Accept' => 'application/json',
+            'Content-Type' => 'application/json'
+        ])->postJson('/api/v1/transactions/official', $payload);
+        $this->assertTrue(in_array($response->status(), [200, 201]), 'Non-VAT sale should be accepted');
+        $this->assertTrue(
+            \App\Models\Transaction::where('transaction_id', $transactionId)->exists(),
+            'Non-VAT sale transaction should be stored in the database'
+        );
+    }
     use RefreshDatabase, WithFaker;
     
     protected $terminal;

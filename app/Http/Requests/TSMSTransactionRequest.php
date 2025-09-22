@@ -218,16 +218,35 @@ class TSMSTransactionRequest extends FormRequest
             );
         }
 
-        // Validate that required tax types are present
+        // Relaxed validation: allow non-VAT sales if SC_VAT_EXEMPT_SALES is present and VAT/VATABLE_SALES are zero
         $requiredTaxTypes = ['VAT', 'VATABLE_SALES', 'SC_VAT_EXEMPT_SALES'];
         $presentTaxTypes = array_column($taxes, 'tax_type');
         $missingTaxTypes = array_diff($requiredTaxTypes, $presentTaxTypes);
 
+        $vatAmount = 0;
+        $vatableSalesAmount = 0;
+        $scVatExemptAmount = 0;
+        foreach ($taxes as $tax) {
+            if ($tax['tax_type'] === 'VAT') {
+                $vatAmount = $tax['amount'];
+            }
+            if ($tax['tax_type'] === 'VATABLE_SALES') {
+                $vatableSalesAmount = $tax['amount'];
+            }
+            if ($tax['tax_type'] === 'SC_VAT_EXEMPT_SALES') {
+                $scVatExemptAmount = $tax['amount'];
+            }
+        }
+
+        // Only error if missing required tax types AND not a valid non-VAT sale
         if (!empty($missingTaxTypes)) {
-            $validator->errors()->add(
-                "{$prefix}.taxes",
-                "Missing required tax types: " . implode(', ', $missingTaxTypes)
-            );
+            $isNonVat = ($vatAmount == 0 && $vatableSalesAmount == 0 && $scVatExemptAmount > 0);
+            if (!$isNonVat) {
+                $validator->errors()->add(
+                    "{$prefix}.taxes",
+                    "Missing required tax types: " . implode(', ', $missingTaxTypes)
+                );
+            }
         }
     }
 

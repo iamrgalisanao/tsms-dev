@@ -78,6 +78,15 @@ use App\Helpers\BadgeHelper;
                                 @if($log->old_values || $log->new_values)
                                     <br><small class="badge bg-warning">Data Changed</small>
                                 @endif
+                                {{-- Non-VAT Sale Badge --}}
+                                @if(
+                                    isset($log->metadata['taxes']) && is_array($log->metadata['taxes']) &&
+                                    collect($log->metadata['taxes'])->contains(function($tax) { return $tax['tax_type'] === 'SC_VAT_EXEMPT_SALES' && $tax['amount'] > 0; }) &&
+                                    collect($log->metadata['taxes'])->contains(function($tax) { return $tax['tax_type'] === 'VAT' && $tax['amount'] == 0; }) &&
+                                    collect($log->metadata['taxes'])->contains(function($tax) { return $tax['tax_type'] === 'VATABLE_SALES' && $tax['amount'] == 0; })
+                                )
+                                    <br><small class="badge bg-info">Non-VAT Sale</small>
+                                @endif
                             </td>
                             <td class="text-center">{{ $log->ip_address ?? 'N/A' }}</td>
                             <td class="text-center">
