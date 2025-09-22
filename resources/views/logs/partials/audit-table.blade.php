@@ -13,7 +13,7 @@ use App\Helpers\BadgeHelper;
                 <th>User</th>
                 <th>Action</th>
                 <th>Resource</th>
-                <th>Tenant</th>
+                {{-- <th>Tenant</th> --}}
                 <th>Details</th>
                 <th class="text-center">IP Address</th>
                 <th class="text-center">Actions</th>
@@ -65,14 +65,14 @@ use App\Helpers\BadgeHelper;
                                     <br><small class="text-muted">{{ $log->resource_id }}</small>
                                 @endif
                             </td>
-                            <td>
+                            {{-- <td>
                                 @php $tenantName = $log->tenant_name ?? null; @endphp
                                 @if($tenantName)
                                     <span class="badge bg-secondary">{{ $tenantName }}</span>
                                 @else
                                     <span class="text-muted">N/A</span>
                                 @endif
-                            </td>
+                            </td> --}}
                             <td class="text-wrap" style="max-width: 300px;">
                                 <small class="text-muted">{{ $log->message }}</small>
                                 @if($log->old_values || $log->new_values)
