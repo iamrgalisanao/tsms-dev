@@ -35,6 +35,24 @@ return [
             'retry_after' => 90,
             'after_commit' => false,
         ],
+
+        // Redis queue connection: required because Horizon supervisors in
+        // `config/horizon.php` reference the 'redis' connection.
+        // Tune `retry_after` so it is safely greater than the largest
+        // Horizon supervisor `timeout` value to avoid duplicate processing.
+        'redis' => [
+            'driver' => 'redis',
+            // This references the connection name defined in config/redis.php
+            // (e.g. 'default' or a dedicated 'horizon' connection). Laravel
+            // queue worker will use the named Redis connection when processing.
+            'connection' => env('QUEUE_REDIS_CONNECTION', 'default'),
+            // retry_after must be greater than the largest job timeout used
+            // by Horizon supervisors (120s in current config). We use a
+            // conservative default to avoid early re-queueing.
+            'retry_after' => (int) env('QUEUE_REDIS_RETRY_AFTER', 360),
+            'block_for' => null,
+            'after_commit' => false,
+        ],
     ],
 
     /*
