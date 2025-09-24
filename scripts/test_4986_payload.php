@@ -44,7 +44,7 @@ echo "Using transaction_timestamp: $transactionTimestamp\n";
 $payload = [
     "submission_uuid" => generate_uuid_v4(),
     "tenant_id" => 125,
-    "terminal_id" => 1,
+    "terminal_id" => 25,
     "submission_timestamp" => $submissionTimestamp,
     "transaction_count" => 1,
     "payload_checksum" => "d7a287d75aff93e17ff6f70b8552094bafd0301487680d5782e7e4be44eeccf6",

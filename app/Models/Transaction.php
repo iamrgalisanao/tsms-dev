@@ -114,6 +114,7 @@ class Transaction extends Model
         'gross_sales',
         'vatable_sales',
         'vat_amount',
+    'sc_vat_exempt_sales',
         'net_sales',
         'tax_exempt',
         'service_charge',
@@ -158,10 +159,8 @@ class Transaction extends Model
      */
     public function getNetAmountAttribute()
     {
-        // Calculate other_tax sum (excluding VAT) from relationship
-        $otherTaxSum = $this->taxes()
-            ->where('tax_type', '!=', 'VAT')
-            ->sum('amount') ?? 0;
+        // Use otherTaxSum helper which considers both tax rows and sc_vat_exempt_sales column
+        $otherTaxSum = $this->otherTaxSum();
 
         // Simplified formula: net_sales = gross_sales - other_tax
         return round($this->gross_sales - $otherTaxSum, 2);
@@ -174,12 +173,30 @@ class Transaction extends Model
      */
     public function getCalculatedNetSalesAttribute()
     {
-        // Calculate other_tax sum (excluding VAT) from relationship
-        $otherTaxSum = $this->taxes()
-            ->where('tax_type', '!=', 'VAT')
-            ->sum('amount') ?? 0;
+        $otherTaxSum = $this->otherTaxSum();
 
         return round($this->gross_sales - $otherTaxSum, 2);
+    }
+
+    /**
+     * Return the sum of taxes considered 'other' (excluding VAT). This prefers explicit TransactionTax
+     * rows when present; if no SC_VAT_EXEMPT_SALES tax row exists but the transaction has
+     * a non-zero `sc_vat_exempt_sales` column (older ingestion paths), include that value so
+     * calculations remain correct.
+     *
+     * @return float
+     */
+    public function otherTaxSum(): float
+    {
+        $taxRows = $this->taxes()->where('tax_type', '!=', 'VAT')->get();
+        $sum = $taxRows->sum('amount') ?? 0.0;
+
+        // If there's no explicit SC_VAT_EXEMPT_SALES tax row but we have a column value, include it
+        if ($taxRows->where('tax_type', 'SC_VAT_EXEMPT_SALES')->isEmpty() && !empty($this->sc_vat_exempt_sales)) {
+            $sum += (float) $this->sc_vat_exempt_sales;
+        }
+
+        return (float) $sum;
     }
 
     /**
@@ -193,6 +210,7 @@ class Transaction extends Model
         'gross_sales' => 'decimal:2',
         'vatable_sales' => 'decimal:2',
         'vat_amount' => 'decimal:2',
+    'sc_vat_exempt_sales' => 'decimal:2',
         'net_sales' => 'decimal:2',
         'service_charge' => 'decimal:2',
         'management_service_charge' => 'decimal:2',
