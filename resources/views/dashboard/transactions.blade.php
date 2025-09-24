@@ -1,4 +1,4 @@
-git s@extends('layouts.app')
+@extends('layouts.app')
 
 @section('content')
 <div class="card mt-4">
@@ -50,7 +50,7 @@ git s@extends('layouts.app')
 
     <!-- Transactions Table -->
     <div class="table-responsive">
-      <table class="table table-striped">
+  <table class="table table-striped transactions-table">
         <thead>
           <tr>
             <th>ID</th>
@@ -65,7 +65,7 @@ git s@extends('layouts.app')
         <tbody>
           @forelse($transactions as $transaction)
           <tr>
-            <td class="text-break"><code>{{ $transaction->transaction_id }}</code></td>
+            <td class="text-break"><code style="white-space:normal;word-break:break-all;overflow-wrap:anywhere;">{{ $transaction->transaction_id }}</code></td>
             <td>{{ $transaction->serial_number }}</td>
             {{-- <td>{{ $transaction->posTerminal->terminal_uid ?? 'Unknown' }}</td> --}}
             <td>{{ number_format($transaction->gross_sales, 2) }}</td>

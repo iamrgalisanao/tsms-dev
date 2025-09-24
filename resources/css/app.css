@@ -57,6 +57,16 @@
     @apply px-6 py-4 whitespace-nowrap text-sm;
 }
 
+/* Transactions table: allow breaking long IDs and code blocks */
+.transactions-table td {
+    @apply align-top;
+}
+.transactions-table td code {
+    white-space: break-spaces !important;
+    word-break: break-all !important;
+    overflow-wrap: anywhere !important;
+}
+
 .badge {
     @apply px-2 py-1 rounded-full text-xs font-semibold;
 }
