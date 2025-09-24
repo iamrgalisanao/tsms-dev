@@ -181,7 +181,7 @@ use App\Helpers\FormatHelper;
             <tbody>
                 @forelse($logs as $log)
                 <tr>
-                    <td>{{ substr($log->transaction_id, -8) }}</td>
+                    <td class="text-break"><code style="white-space:normal;word-break:break-all;overflow-wrap:anywhere;">{{ $log->transaction_id }}</code></td>
                     {{-- <td>{{ $log->terminal->identifier ?? 'N/A' }}</td>
                     <td> --}}
                     <td>
