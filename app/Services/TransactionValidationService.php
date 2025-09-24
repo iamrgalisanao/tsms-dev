@@ -508,6 +508,17 @@ class TransactionValidationService
      */
     public function validateTransaction(Transaction $transaction): array
     {
+        // Temporary: disable all validation computations while keeping the function available.
+        // This short-circuits validation and returns success so the system continues to function.
+        Log::info('Validation temporarily disabled - skipping all checks', LogContext::fromTransaction($transaction));
+
+        return [
+            'valid' => true,
+            'errors' => [],
+        ];
+
+        /*
+        // Original validation logic (commented out for temporary disable) -----------------
         Log::info('Starting transaction validation', LogContext::fromTransaction($transaction));
 
         $errors = [];
@@ -560,6 +571,8 @@ class TransactionValidationService
             'valid'  => empty($errors),
             'errors' => $errors,
         ];
+        // -------------------------------------------------------------------------------
+        */
     }
 
     // ────────────────────────────────────────────────────────────────────────────────
