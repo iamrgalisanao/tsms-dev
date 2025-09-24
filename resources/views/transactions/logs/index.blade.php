@@ -59,7 +59,10 @@ use App\Helpers\FormatHelper;
 <div class="card card-primary card-outline">
     <div class="card-header">
     <h3 class="card-title">Transaction Logs</h3>
-        <div class="card-tools">
+        <div class="card-tools d-flex align-items-center">
+            @if(auth()->check() && auth()->user()->hasRole('admin'))
+                <a href="{{ route('admin.settings.edit') }}" class="btn btn-sm btn-outline-secondary mr-2">Admin Settings</a>
+            @endif
             <button type="button" class="btn btn-tool" data-toggle="collapse" data-target="#filtersCollapse" aria-expanded="false" aria-controls="filtersCollapse" title="Toggle Filters">
                 <i class="fas fa-filter"></i>
             </button>

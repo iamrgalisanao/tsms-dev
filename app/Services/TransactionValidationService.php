@@ -12,6 +12,7 @@ use InvalidArgumentException;
 use App\Support\Metrics;
 use App\Support\RejectionPlaybook;
 use App\Support\LogContext;
+use App\Support\Settings;
 
 class TransactionValidationService
 {
@@ -812,16 +813,23 @@ class TransactionValidationService
             }
         }
 
-        // 3) Timestamp must be for the current day only
-        $now = Carbon::now();
-        $txTime = Carbon::parse($transaction->transaction_timestamp);
+        // 3) Timestamp rules
+        // Normalize to application timezone to avoid cross-timezone mismatches.
+        $now = Carbon::now(config('app.timezone'));
+        $txTime = Carbon::parse($transaction->transaction_timestamp)->setTimezone(config('app.timezone'));
 
-        if (!$txTime->isSameDay($now)) {
-            $errors[] = sprintf(
-                'Transaction rejected: Only transactions dated today (%s) are accepted. Provided timestamp: %s.',
-                $now->format('Y-m-d'),
-                $txTime->format('Y-m-d')
-            );
+        // Consult runtime admin toggle: when true, allow previous-day transactions (within max age).
+        $allowPreviousDay = (bool) Settings::get('allow_previous_day_transactions', false);
+
+        if (! $allowPreviousDay) {
+            // Default behavior: enforce same-day transactions only.
+            if (! $txTime->isSameDay($now)) {
+                $errors[] = sprintf(
+                    'Transaction rejected: Only transactions dated today (%s) are accepted. Provided timestamp: %s.',
+                    $now->format('Y-m-d'),
+                    $txTime->format('Y-m-d')
+                );
+            }
         }
         if ($txTime->gt($now)) {
             // Configurable tolerance (seconds) to allow slight POS clock drift without hard rejection.

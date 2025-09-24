@@ -46,6 +46,11 @@ return [
             // (e.g. 'default' or a dedicated 'horizon' connection). Laravel
             // queue worker will use the named Redis connection when processing.
             'connection' => env('QUEUE_REDIS_CONNECTION', 'default'),
+            // The default queue name for Redis connections. Horizon expects a
+            // 'queue' key to be present when constructing its RedisQueue.
+            // Use QUEUE_REDIS_QUEUE to override if needed (e.g. 'default' or
+            // 'transaction-processing').
+            'queue' => env('QUEUE_REDIS_QUEUE', 'default'),
             // retry_after must be greater than the largest job timeout used
             // by Horizon supervisors (120s in current config). We use a
             // conservative default to avoid early re-queueing.

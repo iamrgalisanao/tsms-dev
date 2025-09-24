@@ -171,4 +171,10 @@ Route::middleware(['auth'])->group(function () {
     Route::middleware(['role:admin|manager'])->group(function () {
         Route::resource('users', UserController::class);
     });
+
+    // Admin System Settings
+    Route::middleware(['role:admin'])->prefix('admin')->name('admin.')->group(function () {
+        Route::get('/settings', [\App\Http\Controllers\Admin\SystemSettingsController::class, 'edit'])->name('settings.edit');
+        Route::post('/settings', [\App\Http\Controllers\Admin\SystemSettingsController::class, 'update'])->name('settings.update');
+    });
 });
