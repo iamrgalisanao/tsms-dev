@@ -1,4 +1,4 @@
-@extends('layouts.app')
+git s@extends('layouts.app')
 
 @section('content')
 <div class="card mt-4">
@@ -65,7 +65,7 @@
         <tbody>
           @forelse($transactions as $transaction)
           <tr>
-            <td>{{ $transaction->transaction_id }}</td>
+            <td class="text-break"><code>{{ $transaction->transaction_id }}</code></td>
             <td>{{ $transaction->serial_number }}</td>
             {{-- <td>{{ $transaction->posTerminal->terminal_uid ?? 'Unknown' }}</td> --}}
             <td>{{ number_format($transaction->gross_sales, 2) }}</td>
@@ -83,7 +83,7 @@
           </tr>
           @empty
           <tr>
-            <td colspan="6" class="text-center">No transactions found</td>
+            <td colspan="7" class="text-center">No transactions found</td>
           </tr>
           @endforelse
         </tbody>
