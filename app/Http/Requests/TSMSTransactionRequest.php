@@ -166,7 +166,10 @@ class TSMSTransactionRequest extends FormRequest
 
         $otherTaxSum = 0;
         foreach ($taxes as $tax) {
-            if (isset($tax['tax_type']) && $tax['tax_type'] !== 'VATABLE_SALES' && isset($tax['amount'])) {
+            // Exclude VAT/VATABLE_SALES and SC_VAT_EXEMPT_SALES from "other tax" when computing
+            // expected net sales. SC_VAT_EXEMPT_SALES represents non-VAT composition and should
+            // not be treated as an "other tax" that reduces net_sales.
+            if (isset($tax['tax_type']) && !in_array($tax['tax_type'], ['VAT', 'VATABLE_SALES', 'SC_VAT_EXEMPT_SALES']) && isset($tax['amount'])) {
                 $otherTaxSum += $tax['amount'];
             }
         }

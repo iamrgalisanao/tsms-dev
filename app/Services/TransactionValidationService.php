@@ -704,11 +704,29 @@ class TransactionValidationService
      */
     private function validateAmountReconciliation(Transaction $transaction, array &$errors): void
     {
-        // Use Transaction helper to compute other tax sum
-        $otherTaxSum = method_exists($transaction, 'otherTaxSum') ? $transaction->otherTaxSum() : 0;
+        // Compute adjustments (service charges minus discounts)
+        $adjustments = $this->calculateAdjustments($transaction);
 
-        // Validate net_sales = gross_sales - other_tax
-        $expectedNetSales = $transaction->gross_sales - $otherTaxSum;
+        // Use Transaction helper to compute other tax sum, but exclude SC_VAT_EXEMPT_SALES
+        // because that field represents non-VAT sales composition, not a tax that reduces net sales.
+        $otherTaxSum = 0;
+        if (method_exists($transaction, 'taxes')) {
+            foreach ($transaction->taxes as $t) {
+                $type = strtoupper(trim($t['tax_type'] ?? ($t->tax_type ?? '')));
+                if ($type !== 'VAT' && $type !== 'VATABLE_SALES' && $type !== 'SC_VAT_EXEMPT_SALES') {
+                    $otherTaxSum += (float) ($t['amount'] ?? 0);
+                }
+            }
+        } else {
+            // Fallback: use otherTaxSum() helper but subtract sc_vat_exempt_sales if present
+            $otherTaxSum = method_exists($transaction, 'otherTaxSum') ? $transaction->otherTaxSum() : 0;
+            if (!empty($transaction->sc_vat_exempt_sales)) {
+                $otherTaxSum -= (float) $transaction->sc_vat_exempt_sales;
+            }
+        }
+
+        // Validate net_sales = gross_sales - adjustments - other_tax
+        $expectedNetSales = $transaction->gross_sales - $adjustments - $otherTaxSum;
         if (abs($transaction->net_sales - $expectedNetSales) > self::MAX_ROUNDING_DIFFERENCE) {
             $errors[] = sprintf(
                 'Amount reconciliation failed: net_sales (%.2f) should equal gross_sales - other_tax (%.2f - %.2f = %.2f).',
