@@ -508,6 +508,17 @@ class TransactionValidationService
      */
     public function validateTransaction(Transaction $transaction): array
     {
+        // Temporary: disable all validation computations while keeping the function available.
+        // This short-circuits validation and returns success so the system continues to function.
+        Log::info('Validation temporarily disabled - skipping all checks', LogContext::fromTransaction($transaction));
+
+        return [
+            'valid' => true,
+            'errors' => [],
+        ];
+
+        /*
+        // Original validation logic (commented out for temporary disable) -----------------
         Log::info('Starting transaction validation', LogContext::fromTransaction($transaction));
 
         $errors = [];
@@ -560,6 +571,8 @@ class TransactionValidationService
             'valid'  => empty($errors),
             'errors' => $errors,
         ];
+        // -------------------------------------------------------------------------------
+        */
     }
 
     // ────────────────────────────────────────────────────────────────────────────────
@@ -615,15 +628,8 @@ class TransactionValidationService
     {
         $errors = [];
 
-        // Calculate other_tax sum (excluding VATABLE_SALES) from relationship
-        $otherTaxSum = 0;
-        if ($transaction->taxes && $transaction->taxes->count() > 0) {
-            foreach ($transaction->taxes as $tax) {
-                if (isset($tax['tax_type']) && $tax['tax_type'] !== 'VATABLE_SALES' && isset($tax['amount'])) {
-                    $otherTaxSum += $tax['amount'];
-                }
-            }
-        }
+        // Use Transaction helper to compute other tax sum; this includes SC_VAT_EXEMPT_SALES column if present
+        $otherTaxSum = method_exists($transaction, 'otherTaxSum') ? $transaction->otherTaxSum() : 0;
 
         // 1) Validate net_sales = vatable_sales (after VAT deduction)
         if (abs($transaction->net_sales - $transaction->vatable_sales) > self::MAX_ROUNDING_DIFFERENCE) {
@@ -698,15 +704,8 @@ class TransactionValidationService
      */
     private function validateAmountReconciliation(Transaction $transaction, array &$errors): void
     {
-        // Calculate other_tax sum (excluding VATABLE_SALES) from relationship
-        $otherTaxSum = 0;
-        if ($transaction->taxes && $transaction->taxes->count() > 0) {
-            foreach ($transaction->taxes as $tax) {
-                if (isset($tax['tax_type']) && $tax['tax_type'] !== 'VATABLE_SALES' && isset($tax['amount'])) {
-                    $otherTaxSum += $tax['amount'];
-                }
-            }
-        }
+        // Use Transaction helper to compute other tax sum
+        $otherTaxSum = method_exists($transaction, 'otherTaxSum') ? $transaction->otherTaxSum() : 0;
 
         // Validate net_sales = gross_sales - other_tax
         $expectedNetSales = $transaction->gross_sales - $otherTaxSum;

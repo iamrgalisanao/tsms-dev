@@ -1202,6 +1202,7 @@ class TransactionController extends Controller
                     // Extract vatable_sales and vat_amount from taxes if present
                     $vatableSales = 0;
                     $vatAmount = 0;
+                    $scVatExemptSales = 0;
                     if (isset($transactionData['taxes']) && is_array($transactionData['taxes'])) {
                         foreach ($transactionData['taxes'] as $tax) {
                             if (isset($tax['tax_type'])) {
@@ -1210,6 +1211,8 @@ class TransactionController extends Controller
                                     $vatableSales = $tax['amount'] ?? 0;
                                 } elseif ($taxType === 'VAT' || $taxType === 'VAT_AMOUNT') {
                                     $vatAmount = $tax['amount'] ?? 0;
+                                } elseif ($taxType === 'SC_VAT_EXEMPT_SALES') {
+                                    $scVatExemptSales = $tax['amount'] ?? 0;
                                 }
                             }
                         }
@@ -1225,6 +1228,7 @@ class TransactionController extends Controller
                         'net_sales' => $transactionData['net_sales'] ?? 0,
                         'vatable_sales' => $vatableSales,
                         'vat_amount' => $vatAmount,
+                        'sc_vat_exempt_sales' => $scVatExemptSales,
                         'customer_code' => $transactionData['customer_code'] ?? ($terminal->tenant->company->customer_code ?? 'UNKNOWN'),
                         'promo_status' => $transactionData['promo_status'],
                         'payload_checksum' => $transactionData['payload_checksum'],
