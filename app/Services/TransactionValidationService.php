@@ -704,12 +704,23 @@ class TransactionValidationService
      */
     private function validateAmountReconciliation(Transaction $transaction, array &$errors): void
     {
-        // Compute adjustments (service charges minus discounts)
-        $adjustments = $this->calculateAdjustments($transaction);
+        // Compute adjustment sum as service charges + sum(adjustment amounts).
+        // This matches the request-side validation which computes adjustments as
+        // the simple sum of adjustment entries (discounts are positive values in that sum)
+        $adjustmentSum = 0.0;
+        $adjustmentSum += $transaction->service_charge ?? 0.0;
+        $adjustmentSum += $transaction->management_service_charge ?? 0.0;
+        if ($transaction->adjustments && $transaction->adjustments->count() > 0) {
+            foreach ($transaction->adjustments as $adj) {
+                if (isset($adj['amount'])) {
+                    $adjustmentSum += (float) $adj['amount'];
+                }
+            }
+        }
 
         // Use Transaction helper to compute other tax sum, but exclude SC_VAT_EXEMPT_SALES
         // because that field represents non-VAT sales composition, not a tax that reduces net sales.
-        $otherTaxSum = 0;
+        $otherTaxSum = 0.0;
         if (method_exists($transaction, 'taxes')) {
             foreach ($transaction->taxes as $t) {
                 $type = strtoupper(trim($t['tax_type'] ?? ($t->tax_type ?? '')));
@@ -725,13 +736,14 @@ class TransactionValidationService
             }
         }
 
-        // Validate net_sales = gross_sales - adjustments - other_tax
-        $expectedNetSales = $transaction->gross_sales - $adjustments - $otherTaxSum;
+        // Validate net_sales = gross_sales - adjustmentSum - other_tax
+        $expectedNetSales = $transaction->gross_sales - $adjustmentSum - $otherTaxSum;
         if (abs($transaction->net_sales - $expectedNetSales) > self::MAX_ROUNDING_DIFFERENCE) {
             $errors[] = sprintf(
-                'Amount reconciliation failed: net_sales (%.2f) should equal gross_sales - other_tax (%.2f - %.2f = %.2f).',
+                'Amount reconciliation failed: net_sales (%.2f) should equal gross_sales - adjustments - other_tax (%.2f - %.2f - %.2f = %.2f).',
                 $transaction->net_sales,
                 $transaction->gross_sales,
+                $adjustmentSum,
                 $otherTaxSum,
                 $expectedNetSales
             );
