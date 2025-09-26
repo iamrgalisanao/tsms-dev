@@ -92,8 +92,8 @@ class TransactionController extends Controller
         // Process adjustments if present
         if (isset($transaction['adjustments']) && is_array($transaction['adjustments'])) {
             foreach ($transaction['adjustments'] as $adjustment) {
-                \App\Models\TransactionAdjustment::create([
-                    'transaction_id' => $transactionModel->transaction_id,
+                // Use relation create to ensure the child record is linked by transaction_pk
+                $transactionModel->adjustments()->create([
                     'adjustment_type' => $adjustment['adjustment_type'],
                     'amount' => $adjustment['amount'],
                 ]);
@@ -103,8 +103,8 @@ class TransactionController extends Controller
         // Process taxes if present
         if (isset($transaction['taxes']) && is_array($transaction['taxes'])) {
             foreach ($transaction['taxes'] as $tax) {
-                \App\Models\TransactionTax::create([
-                    'transaction_id' => $transactionModel->transaction_id,
+                // Use relation create to ensure the child record is linked by transaction_pk
+                $transactionModel->taxes()->create([
                     'tax_type' => $tax['tax_type'],
                     'amount' => $tax['amount'],
                 ]);
@@ -1240,8 +1240,8 @@ class TransactionController extends Controller
                     // Process adjustments if present
                     if (isset($transactionData['adjustments']) && is_array($transactionData['adjustments'])) {
                         foreach ($transactionData['adjustments'] as $adjustment) {
-                            \App\Models\TransactionAdjustment::create([
-                                'transaction_id' => $transaction->transaction_id,
+                            // create via relation so transaction_pk is set correctly
+                            $transaction->adjustments()->create([
                                 'adjustment_type' => $adjustment['adjustment_type'],
                                 'amount' => $adjustment['amount'],
                             ]);
@@ -1251,8 +1251,8 @@ class TransactionController extends Controller
                     // Process taxes if present
                     if (isset($transactionData['taxes']) && is_array($transactionData['taxes'])) {
                         foreach ($transactionData['taxes'] as $tax) {
-                            \App\Models\TransactionTax::create([
-                                'transaction_id' => $transaction->transaction_id,
+                            // create via relation so transaction_pk is set correctly
+                            $transaction->taxes()->create([
                                 'tax_type' => $tax['tax_type'],
                                 'amount' => $tax['amount'],
                             ]);
