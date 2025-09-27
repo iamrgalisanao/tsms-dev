@@ -111,6 +111,9 @@ class Transaction extends Model
         'transaction_id',
         'hardware_id',
         'transaction_timestamp',
+        // Legacy compatibility: some tests/seeders still mass-assign `base_amount`.
+        // Mutator `setBaseAmountAttribute` maps this into `gross_sales`.
+        'base_amount',
         'gross_sales',
         'vatable_sales',
         'vat_amount',
@@ -197,6 +200,16 @@ class Transaction extends Model
         }
 
         return (float) $sum;
+    }
+
+    /**
+     * Compatibility mutator: accept legacy `vat_exempt_sales` when tests or
+     * older ingestion paths set that attribute. Map it into the canonical
+     * `sc_vat_exempt_sales` column used by current calculations.
+     */
+    public function setVatExemptSalesAttribute($value)
+    {
+        $this->attributes['sc_vat_exempt_sales'] = $value;
     }
 
     /**
@@ -413,6 +426,38 @@ class Transaction extends Model
         }
 
         return 'UNKNOWN_TENANT';
+    }
+
+    /**
+     * Compatibility accessor for legacy "base_amount" field.
+     * Some older code/tests still reference $transaction->base_amount.
+     * Map reads to the canonical gross_sales value so callers keep working.
+     *
+     * @return float|null
+     */
+    public function getBaseAmountAttribute()
+    {
+        return isset($this->gross_sales) ? (float) $this->gross_sales : null;
+    }
+
+    /**
+     * Compatibility mutator for legacy "base_amount" input.
+     * Maps mass-assigned base_amount => gross_sales so factories/tests that
+     * still provide base_amount won't trigger SQL errors when the column
+     * has been removed from the schema.
+     *
+     * @param mixed $value
+     * @return void
+     */
+    public function setBaseAmountAttribute($value): void
+    {
+        if ($value === null) {
+            $this->attributes['gross_sales'] = null;
+            return;
+        }
+
+        // Normalize numeric-like inputs and round to 2 decimals to match casts
+        $this->attributes['gross_sales'] = round((float) $value, 2);
     }
 
     /**

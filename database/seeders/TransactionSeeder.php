@@ -29,7 +29,6 @@ class TransactionSeeder extends Seeder
             'machine_number' => 6,
             'transaction_id' => Str::uuid(),
             'transaction_timestamp' => Carbon::parse('2025-03-26T13:45:00Z'),
-            'base_amount' => 12345.67,
             'gross_sales' => 12345.67,
             'net_sales' => 12345.67, // No adjustments/taxes in seeder
             'payload_checksum' => hash('sha256', ''),
@@ -43,7 +42,6 @@ class TransactionSeeder extends Seeder
             'machine_number' => 6,
             'transaction_id' => Str::uuid(),
             'transaction_timestamp' => Carbon::now(),
-            'base_amount' => 9682.50,
             'gross_sales' => 9682.50,
             'net_sales' => 9682.50, // No adjustments/taxes in seeder
             'payload_checksum' => hash('sha256', ''),
@@ -56,7 +54,6 @@ class TransactionSeeder extends Seeder
             'machine_number' => 6,
             'transaction_id' => Str::uuid(),
             'transaction_timestamp' => Carbon::now()->subHours(2),
-            'base_amount' => -100.00, // Invalid negative amount
             'gross_sales' => -100.00,
             'net_sales' => -100.00, // No adjustments/taxes in seeder
             'payload_checksum' => hash('sha256', ''),

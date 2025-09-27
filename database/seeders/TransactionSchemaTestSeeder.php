@@ -39,16 +39,17 @@ class TransactionSchemaTestSeeder extends Seeder
 
         // Create sample transactions with related data
         Transaction::factory(10)->create()->each(function ($transaction) {
-            TransactionAdjustment::factory(2)->create(['transaction_id' => $transaction->transaction_id]);
-            TransactionTax::factory(2)->create(['transaction_id' => $transaction->transaction_id]);
+            // Use the canonical transaction_pk on child factories so created rows link to transactions.id
+            TransactionAdjustment::factory(2)->create(['transaction_pk' => $transaction->id]);
+            TransactionTax::factory(2)->create(['transaction_pk' => $transaction->id]);
             TransactionJob::factory(1)->create([
-                'transaction_id' => $transaction->transaction_id,
+                'transaction_pk' => $transaction->id,
                 'terminal_id' => $transaction->terminal_id,
                 // Optionally assign a random job status code
                 'job_status' => 'QUEUED',
             ]);
             TransactionValidation::factory(1)->create([
-                'transaction_id' => $transaction->transaction_id,
+                'transaction_pk' => $transaction->id,
                 // Optionally assign a random validation status code
                 'status_code' => 'PENDING',
             ]);

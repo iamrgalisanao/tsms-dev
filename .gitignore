@@ -32,3 +32,21 @@ yarn-error.log
 data/cipher-sessions.db
 data/cipher-sessions.db-shm
 data/cipher-sessions.db-wal
+
+# Local debug, temp, and generated test/report artifacts (do not commit)
+debug_*.php
+debug*.php
+tmp/
+tmp/**
+tmp/*
+
+# Test output and generated test reports
+/storage/test-results.*
+/.phpunit.result.cache
+
+# Daily generated activity digests (produced by cipher scripts)
+docs/DAILY_ACTIVITY_*.md
+
+# Local test dumps
+tmp_valid_tx_errors.json
+

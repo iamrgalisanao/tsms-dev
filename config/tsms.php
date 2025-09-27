@@ -1,14 +1,19 @@
 <?php
 
 return [
-    /*
-    |--------------------------------------------------------------------------
-    | WebApp Integration Settings
-    |--------------------------------------------------------------------------
-    |
-    | Configuration for forwarding validated transactions to the web application
-    |
-    */
+    'validation' => [
+        'strict_mode' => env('TSMS_VALIDATION_STRICT_MODE', false),
+        'net_includes_vat' => env('TSMS_NET_INCLUDES_VAT', true),
+        'max_vat_difference' => env('TSMS_MAX_VAT_DIFFERENCE', 0.02),
+        'max_rounding_difference' => env('TSMS_MAX_ROUNDING_DIFFERENCE', 0.05),
+        'future_timestamp_tolerance_seconds' => (int) env('TSMS_FUTURE_TIMESTAMP_TOLERANCE_SECONDS', 0),
+    ],
+
+    'testing' => [
+        'capture_only' => (bool) env('TSMS_TESTING_CAPTURE_ONLY', false),
+        'allow_capture_only_in_production' => (bool) env('TSMS_ALLOW_CAPTURE_ONLY_IN_PROD', false),
+    ],
+
     'web_app' => [
         'endpoint' => env('WEBAPP_FORWARDING_ENDPOINT'),
         'timeout' => (int) env('WEBAPP_FORWARDING_TIMEOUT', 30),
@@ -18,181 +23,9 @@ return [
         'enabled' => (bool) env('WEBAPP_FORWARDING_ENABLED', false),
     ],
 
-    /*
-    |--------------------------------------------------------------------------
-    | Circuit Breaker Settings
-    |--------------------------------------------------------------------------
-    |
-    | Settings for the circuit breaker pattern to prevent cascading failures
-    |
-    */
-    'circuit_breaker' => [
-        'failure_threshold' => (int) env('WEBAPP_CB_FAILURE_THRESHOLD', 5),
-        'recovery_timeout_minutes' => (int) env('WEBAPP_CB_RECOVERY_TIMEOUT', 10),
-        'enabled' => false, // Disabled for secured API token integration
-    ],
-
-    /*
-    |--------------------------------------------------------------------------
-    | Per-Tenant Circuit Breaker (Observation Phase)
-    |--------------------------------------------------------------------------
-    | Phase 1 (observation) introduces lightweight per-tenant failure ratio
-    | tracking WITHOUT enforcement. Counts and ratios are logged when a tenant
-    | crosses configured thresholds so we can tune before enabling shadow or
-    | enforcement phases.
-    | - enabled: master toggle for Phase 1 instrumentation
-    | - min_requests: do not evaluate ratio until at least this many attempts
-    | - failure_ratio_threshold: retryable_failures / attempts required to log
-    | - time_window_minutes: sliding window reset interval for counters
-    | NOTE: Only retryable (network / 5xx) classifications count as failures.
-    */
-    'tenant_breaker' => [
-        'observation' => [
-            'enabled' => (bool) env('WEBAPP_TENANT_BREAKER_OBS_ENABLED', true),
-            'min_requests' => (int) env('WEBAPP_TENANT_BREAKER_OBS_MIN_REQUESTS', 20),
-            'failure_ratio_threshold' => (float) env('WEBAPP_TENANT_BREAKER_OBS_FAILURE_RATIO', 0.5),
-            'time_window_minutes' => (int) env('WEBAPP_TENANT_BREAKER_OBS_WINDOW', 10),
-        ],
-        // Future phases (shadow / enforce) intentionally omitted in Phase 1
-    ],
-
-    /*
-    |--------------------------------------------------------------------------
-    | Retry Configuration
-    |--------------------------------------------------------------------------
-    |
-    | Settings for retry logic when forwarding fails
-    |
-    */
-    'retry' => [
-        'max_attempts' => (int) env('WEBAPP_RETRY_MAX_ATTEMPTS', 3),
-        'base_delay_minutes' => (int) env('WEBAPP_RETRY_BASE_DELAY', 5),
-        'max_delay_minutes' => (int) env('WEBAPP_RETRY_MAX_DELAY', 120),
-        'exponential_base' => (int) env('WEBAPP_RETRY_EXPONENTIAL_BASE', 2),
-    ],
-
-    /*
-    |--------------------------------------------------------------------------
-    | Monitoring & Logging
-    |--------------------------------------------------------------------------
-    |
-    | Settings for monitoring and logging webapp forwarding activity
-    |
-    */
-    'monitoring' => [
-        'log_channel' => env('WEBAPP_LOG_CHANNEL', 'single'),
-        'log_successful_forwards' => (bool) env('WEBAPP_LOG_SUCCESS', true),
-        'log_failed_forwards' => (bool) env('WEBAPP_LOG_FAILURES', true),
-        'alert_on_circuit_breaker' => (bool) env('WEBAPP_ALERT_ON_CB', true),
-    ],
-
-    /*
-    |--------------------------------------------------------------------------
-    | Performance Settings
-    |--------------------------------------------------------------------------
-    |
-    | Settings to control performance and resource usage
-    |
-    */
-    'performance' => [
-        'cleanup_completed_after_days' => (int) env('WEBAPP_CLEANUP_COMPLETED_DAYS', 30),
-        'cleanup_failed_after_days' => (int) env('WEBAPP_CLEANUP_FAILED_DAYS', 7),
-        'enable_auto_cleanup' => (bool) env('WEBAPP_AUTO_CLEANUP', true),
-    ],
-
-    /*
-    |--------------------------------------------------------------------------
-    | Transaction Pruning & Retention
-    |--------------------------------------------------------------------------
-    | Settings to prune stale or failed transaction records while keeping audit
-    | value. PENDING max age protects against stuck jobs. FAILED retention keeps
-    | recent diagnostics.
-    */
     'transactions' => [
         'prune_failed_after_days' => (int) env('TX_PRUNE_FAILED_AFTER_DAYS', 14),
-        'prune_pending_after_minutes' => (int) env('TX_PRUNE_PENDING_AFTER_MIN', 180), // treat as stale
+        'prune_pending_after_minutes' => (int) env('TX_PRUNE_PENDING_AFTER_MIN', 180),
         'enable_pruning' => (bool) env('TX_ENABLE_PRUNING', true),
-        'log_channel' => env('TX_PRUNE_LOG_CHANNEL', 'single'),
-        // Watchdog settings for stuck / slow transactions
-        'watchdog' => [
-            'enabled' => (bool) env('TX_WATCHDOG_ENABLED', true),
-            // If a transaction stays PENDING this long, mark as FAILED (terminal timeout)
-            'max_pending_minutes' => (int) env('TX_WATCHDOG_MAX_PENDING_MIN', 60),
-            // Re-dispatch (requeue) PENDING+QUEUED transactions older than this age
-            'requeue_after_minutes' => (int) env('TX_WATCHDOG_REQUEUE_AFTER_MIN', 10),
-            // Maximum re-dispatch attempts before forcing failure (uses transaction.job_attempts)
-            'max_requeue_attempts' => (int) env('TX_WATCHDOG_MAX_REQUEUE_ATTEMPTS', 2),
-        ],
-    ],
-
-    /*
-    |--------------------------------------------------------------------------
-    | Testing Utilities
-    |--------------------------------------------------------------------------
-    | Utilities to facilitate deterministic test assertions without performing
-    | real outbound HTTP calls. capture_only short-circuits forwarding paths
-    | and returns the constructed bulk envelope for inspection.
-    */
-    'testing' => [
-        'capture_only' => (bool) env('TSMS_TESTING_CAPTURE_ONLY', false),
-        // Safety valve: require explicit opt-in if ever needed in production (default deny)
-        'allow_capture_only_in_production' => (bool) env('TSMS_ALLOW_CAPTURE_ONLY_IN_PROD', false),
-    ],
-
-    /*
-    |--------------------------------------------------------------------------
-    | Validation Tuning
-    |--------------------------------------------------------------------------
-    | Adjustable validation parameters. The future timestamp tolerance allows
-    | acceptance of transactions that are slightly ahead of server time due to
-    | POS clock drift. Set to 0 (default) in production for strict behavior.
-    */
-    'validation' => [
-        'future_timestamp_tolerance_seconds' => (int) env('TSMS_FUTURE_TIMESTAMP_TOLERANCE_SECONDS', 0),
-    ],
-
-    /*
-    |--------------------------------------------------------------------------
-    | Terminals: Idle Monitor
-    |--------------------------------------------------------------------------
-    | Controls the background scheduler that detects idle POS terminals based on
-    | last_seen_at and per-terminal heartbeat thresholds. Starts in log-only
-    | mode. When enabled later, notifications can be turned on behind flags.
-    */
-    'terminals' => [
-        'idle_monitor' => [
-            // Master toggle for the scheduler; default off (observation opt-in)
-            'enabled' => (bool) env('TSMS_IDLE_MONITOR_ENABLED', false),
-            // How often the job runs (minutes); used to build cron expression
-            'scan_interval_minutes' => (int) env('TSMS_IDLE_MONITOR_SCAN_MIN', 5),
-            // Which activity source determines idleness: last_seen (health) or last_sale (business)
-            'activity_basis' => env('TSMS_IDLE_MONITOR_ACTIVITY_BASIS', 'last_seen'), // last_seen|last_sale|composite
-            // Default idle window if terminal has no heartbeat_threshold set
-            'idle_after_seconds_default' => (int) env('TSMS_IDLE_MONITOR_IDLE_DEFAULT', 3600),
-            // Idle threshold multiplier relative to heartbeat_threshold
-            'multiplier_of_heartbeat' => (int) env('TSMS_IDLE_MONITOR_MULTIPLIER', 3),
-            // Prevent duplicate idle logs/alerts within this TTL
-            'dedupe_ttl_seconds' => (int) env('TSMS_IDLE_MONITOR_DEDUPE_TTL', 1800),
-            // Optional notifications (kept disabled until validated in logs)
-            'notify' => [
-                'enabled' => (bool) env('TSMS_IDLE_MONITOR_NOTIFY_ENABLED', false),
-                // e.g., ["webapp", "mail", "database"] — not used until enabled
-                'channels' => explode(',', env('TSMS_IDLE_MONITOR_NOTIFY_CHANNELS', '')),
-            ],
-            // Optional per-tenant summaries into AuditLog (lightweight)
-            'per_tenant_summary' => [
-                'enabled' => (bool) env('TSMS_IDLE_MONITOR_TENANT_SUMMARY', false),
-                // When true, only write entries for tenants with any activity (idle or recovered)
-                'only_nonzero' => (bool) env('TSMS_IDLE_MONITOR_TENANT_SUMMARY_ONLY_NONZERO', true),
-            ],
-            // Summary details: optionally include a compact list of changed terminals in each run
-            'summary_details' => [
-                'include_terminals' => (bool) env('TSMS_IDLE_MONITOR_SUMMARY_TERMINALS', true),
-                'terminals_cap' => (int) env('TSMS_IDLE_MONITOR_SUMMARY_TERMINALS_CAP', 25),
-                // Optionally include a "currently idle" compact list and count
-                'include_currently_idle' => (bool) env('TSMS_IDLE_MONITOR_SUMMARY_CURRENTLY_IDLE', false),
-                'currently_idle_cap' => (int) env('TSMS_IDLE_MONITOR_SUMMARY_CURRENTLY_IDLE_CAP', 25),
-            ],
-        ],
     ],
 ];
