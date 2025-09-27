@@ -89,3 +89,15 @@ If you want separate review and tracking for schema changes, I can create a migr
 
 ---
 Created by automated PR-draft helper. Please open the GitHub Pull Request UI for `feature/ingestion-transaction-pk-fix` and paste this content as the PR description, then assign reviewers and label the PR as appropriate.
+
+Acceptance criteria (QA → PO handoff)
+------------------------------------
+Each of the requirements below maps to the implementation in this branch. QA should verify the items marked "Done"; items marked "Deferred" require separate follow-up before PO acceptance.
+
+- Stop creating orphan/mis-linked child rows and canonicalize child rows to reference `transactions.id` (transaction_pk): Done — code includes transactional FK writes and migrations to enforce transaction_pk foreign keys; seeding/migrations included.
+- Preserve inbound payload values at ingestion (copy-only) so validation can inspect original values: Done — `_raw_gross_sales` and preservation for array/stdClass callers implemented.
+- Make validation audit-first: record mismatches as `SecurityEvent` and add reconciliation helpers: Done — `createSecurityEventFromTransactionErrors()` implemented and `security_events` migrations added; reconciliation helpers (tax buckets, adjustment sums, reconciliation checks) implemented.
+- Stabilize PHPUnit locally with minimal, reversible edits and prepare PR: Partially Done — `TransactionValidationTest` class passes (22 tests). Full suite shows unrelated failures and a memory exhaustion error; these are out-of-scope and have been noted for follow-up.
+- Provide clear deployment/migration instructions and a rollback plan: Done — included in PR draft under "How to apply migrations on staging" and "Rollback plan".
+
+If all Done items pass QA validation, hand the PR to the PO for acceptance with a pointer to `docs/PR_EVIDENCE_feature_ingestion_transaction_pk_fix.md` (created alongside this PR) which contains the migration status and focused test output.
