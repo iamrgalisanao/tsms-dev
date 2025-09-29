@@ -1,18 +1,18 @@
 {
-    "submission_uuid": "9a0ac272-b447-45bf-b533-777c5d9d094b",
+    "submission_uuid": "59f6af15-4ec9-40be-92b7-df14ce87cc40",
     "tenant_id": 127,
     "terminal_id": 25,
-    "submission_timestamp": "2025-09-29T00:14:41Z",
+    "submission_timestamp": "2025-09-29T15:49:38Z",
     "transaction_count": 1,
-    "payload_checksum": "71997a3c2017e96323c31fa87e671f44eedb3239d31c99929630bdda84b14a1b",
+    "payload_checksum": "8651e445f7252d505970abf87f61d41c1f6423960dadf5f10bfaaddebe09a3d1",
     "transaction": {
-        "transaction_id": "59e6e851-4307-48f2-bf1a-883b70f3085a",
-        "transaction_timestamp": "2025-09-29T00:14:41Z",
+        "transaction_id": "b0691517-6f26-4b3c-936e-56b4609a7666",
+        "transaction_timestamp": "2025-09-29T15:49:38Z",
         "gross_sales": 100,
         "net_sales": 82.14,
         "promo_status": "WITH_APPROVAL",
         "customer_code": "C-C1045",
-        "payload_checksum": "ca7dfb9814877f2a1545093541eeac1f157f7cb44102cd04b9b1e22e54ab0b59",
+        "payload_checksum": "5447a9acdd23aeccd121f63f9ad84865b914ffcc3ad4c6f923cc66da7491691d",
         "adjustments": [
             {
                 "adjustment_type": "promo_discount",
