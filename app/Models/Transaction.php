@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use App\Models\Tenant;
+use Illuminate\Support\Facades\Schema;
 
 class Transaction extends Model
 {
@@ -398,6 +399,8 @@ class Transaction extends Model
         return $this->belongsTo(TransactionSubmission::class, 'submission_uuid', 'submission_uuid');
     }
 
+    
+
     /**
      * Accessor: Display-friendly tenant code.
      * Priority:
@@ -483,6 +486,34 @@ class Transaction extends Model
         };
 
         static::creating(function (Transaction $tx) use ($sync) {
+            // Defensive defaults for legacy sales-reporting columns. Some older
+            // staging DB schemas expect these columns to be present and non-null.
+            $legacyCols = [
+                'senior_discount',
+                'pwd_discount',
+                'vip_card_discount',
+                'service_charge_distributed_to_employees',
+                'service_charge_retained_by_management',
+                'employee_discount',
+            ];
+            foreach ($legacyCols as $col) {
+                try {
+                    // If the DB still contains legacy columns and the incoming
+                    // attributes either don't include them or include them as
+                    // explicit null, set a safe default of 0 to avoid inserting
+                    // NULL into non-nullable legacy columns.
+                    $hasCol = Schema::hasColumn((new Transaction)->getTable(), $col);
+                    $attrMissing = ! array_key_exists($col, $tx->attributes);
+                    $attrNull = array_key_exists($col, $tx->attributes) && $tx->attributes[$col] === null;
+
+                    if ($hasCol && ($attrMissing || $attrNull)) {
+                        $tx->attributes[$col] = 0;
+                    }
+                } catch (\Throwable $e) {
+                    // Ignore schema inspection failures in constrained contexts
+                }
+            }
+
             $sync($tx);
         });
 
