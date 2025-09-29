@@ -147,6 +147,12 @@ use App\Helpers\FormatHelper;
                     <th>VAT</th>
                     <th>Net</th>
                     <th>Refund</th>
+                    <th>promo_discount</th>
+                    <th>senior_discount</th>
+                    <th>pwd_discount</th>
+                    <th>VAT</th>
+                    <th>VATABLE_SALES</th>
+                    <th>SC_VAT_EXEMPT_SALES</th>
                 </tr>
             </thead>
             <tbody>
@@ -160,6 +166,33 @@ use App\Helpers\FormatHelper;
                     <td class="text-end">₱{{ number_format($row->vat, 2) }}</td>
                     <td class="text-end">₱{{ number_format($row->net, 2) }}</td>
                     <td class="text-end">₱{{ number_format($row->refund, 2) }}</td>
+                    @php
+                        $promo = null; $senior = null; $pwd = null;
+                        $vat = null; $vatable = null; $sc_vat = null;
+                        if (isset($sampleTransactions) && isset($row->sample_tx_id) && $sampleTransactions->has($row->sample_tx_id)) {
+                            $tx = $sampleTransactions->get($row->sample_tx_id);
+                            // adjustments
+                            $promoRow = $tx->adjustments->firstWhere('adjustment_type', 'promo_discount');
+                            $seniorRow = $tx->adjustments->firstWhere('adjustment_type', 'senior_discount');
+                            $pwdRow = $tx->adjustments->firstWhere('adjustment_type', 'pwd_discount');
+                            $promo = $promoRow ? number_format((float)$promoRow->amount, 2) : null;
+                            $senior = $seniorRow ? number_format((float)$seniorRow->amount, 2) : null;
+                            $pwd = $pwdRow ? number_format((float)$pwdRow->amount, 2) : null;
+                            // taxes
+                            $vatRow = $tx->taxes->firstWhere('tax_type', 'VAT');
+                            $vatableRow = $tx->taxes->firstWhere('tax_type', 'VATABLE_SALES');
+                            $scRow = $tx->taxes->firstWhere('tax_type', 'SC_VAT_EXEMPT_SALES');
+                            $vat = $vatRow ? number_format((float)$vatRow->amount, 2) : null;
+                            $vatable = $vatableRow ? number_format((float)$vatableRow->amount, 2) : null;
+                            $sc_vat = $scRow ? number_format((float)$scRow->amount, 2) : null;
+                        }
+                    @endphp
+                    <td class="text-end">{{ $promo !== null ? '₱' . $promo : '-' }}</td>
+                    <td class="text-end">{{ $senior !== null ? '₱' . $senior : '-' }}</td>
+                    <td class="text-end">{{ $pwd !== null ? '₱' . $pwd : '-' }}</td>
+                    <td class="text-end">{{ $vat !== null ? '₱' . $vat : '-' }}</td>
+                    <td class="text-end">{{ $vatable !== null ? '₱' . $vatable : '-' }}</td>
+                    <td class="text-end">{{ $sc_vat !== null ? '₱' . $sc_vat : '-' }}</td>
                 </tr>
                 @empty
                 @endforelse

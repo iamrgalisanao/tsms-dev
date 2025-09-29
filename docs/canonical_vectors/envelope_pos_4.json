@@ -1,18 +1,18 @@
 {
-    "submission_uuid": "9a0ac272-b447-45bf-b533-777c5d9d094b",
-    "tenant_id": 127,
-    "terminal_id": 25,
-    "submission_timestamp": "2025-09-29T00:14:41Z",
+    "submission_uuid": "49c988b0-3541-40a1-9dc5-42bf42484211",
+    "tenant_id": 104,
+    "terminal_id": 4,
+    "submission_timestamp": "2025-09-28T05:47:41Z",
     "transaction_count": 1,
-    "payload_checksum": "71997a3c2017e96323c31fa87e671f44eedb3239d31c99929630bdda84b14a1b",
+    "payload_checksum": "5360da70903199687876d4e1c288742d3cc225f1085a0475298197900dc23e82",
     "transaction": {
-        "transaction_id": "59e6e851-4307-48f2-bf1a-883b70f3085a",
-        "transaction_timestamp": "2025-09-29T00:14:41Z",
-        "gross_sales": 100,
-        "net_sales": 82.14,
+        "transaction_id": "7eb8bd7b-4e65-4657-94e0-32696791219a",
+        "transaction_timestamp": "2025-09-28T05:47:41Z",
+        "gross_sales": 99.38,
+        "net_sales": 94.38,
         "promo_status": "WITH_APPROVAL",
-        "customer_code": "C-C1045",
-        "payload_checksum": "ca7dfb9814877f2a1545093541eeac1f157f7cb44102cd04b9b1e22e54ab0b59",
+        "customer_code": "C-0004",
+        "payload_checksum": "c3f47708ce039e7bdd4ccef09a8f0b3bc319fd10e663f365273d68caa84c93a0",
         "adjustments": [
             {
                 "adjustment_type": "promo_discount",
@@ -24,7 +24,7 @@
             },
             {
                 "adjustment_type": "senior_discount",
-                "amount": 17.86
+                "amount": 5
             },
             {
                 "adjustment_type": "pwd_discount",
@@ -54,7 +54,7 @@
             },
             {
                 "tax_type": "SC_VAT_EXEMPT_SALES",
-                "amount": 89.29
+                "amount": 94.38
             },
             {
                 "tax_type": "OTHER_TAX",

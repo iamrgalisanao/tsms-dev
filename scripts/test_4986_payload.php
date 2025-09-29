@@ -43,7 +43,7 @@ echo "Using transaction_timestamp: $transactionTimestamp\n";
 
 $payload = [
     "submission_uuid" => generate_uuid_v4(),
-    "tenant_id" => 125,
+    "tenant_id" => 127,
     "terminal_id" => 25,
     "submission_timestamp" => $submissionTimestamp,
     "transaction_count" => 1,
@@ -53,24 +53,24 @@ $payload = [
         "transaction_id" => $generatedTransactionId,
     "transaction_timestamp" => $transactionTimestamp,
     // Removed base_amount; using gross_sales + net_sales per current schema
-    "gross_sales" => 465.0,
-    "net_sales" => 415.18,
+    "gross_sales" => 100.00,
+    "net_sales" => 82.14,
         "promo_status" => "WITH_APPROVAL",
         "customer_code" => "C-C1045",
         "payload_checksum" => "348ff61ab23bf37e7f4160da493b014bf5abd9b75c7e292f093630f3ac3abec6",
         "adjustments" => [
             ["adjustment_type" => "promo_discount", "amount" => 0.0],
             ["adjustment_type" => "employee_discount", "amount" => 0.0],
-            ["adjustment_type" => "senior_discount", "amount" => 0.0],
+            ["adjustment_type" => "senior_discount", "amount" => 17.86],
             ["adjustment_type" => "pwd_discount", "amount" => 0.0],
             ["adjustment_type" => "vip_card_discount", "amount" => 0.0],
             ["adjustment_type" => "service_charge_distributed_to_employees", "amount" => 0.0],
             ["adjustment_type" => "service_charge_retained_by_management", "amount" => 0.0]
         ],
         "taxes" => [
-            ["tax_type" => "VAT", "amount" => 49.82],
-            ["tax_type" => "VATABLE_SALES", "amount" => 415.18],
-            ["tax_type" => "SC_VAT_EXEMPT_SALES", "amount" => 0.0],
+            ["tax_type" => "VAT", "amount" => 0.0],
+            ["tax_type" => "VATABLE_SALES", "amount" => 0.0],
+            ["tax_type" => "SC_VAT_EXEMPT_SALES", "amount" => 89.29],
             ["tax_type" => "OTHER_TAX", "amount" => 0.0]
         ]
     ]

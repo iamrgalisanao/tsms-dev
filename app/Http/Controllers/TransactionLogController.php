@@ -205,10 +205,21 @@ class TransactionLogController extends Controller
             ->selectRaw('COALESCE(SUM(t.vat_amount),0) as vat')
             ->selectRaw('COALESCE(SUM(t.net_sales),0) as net')
             ->selectRaw('COALESCE(SUM(t.refund_amount),0) as refund')
+            ->selectRaw('MIN(t.id) as sample_tx_id')
             ->groupBy('date', 't.tenant_id', 't.terminal_id', 'trade_name', 'term.serial_number', 'term.machine_number')
             ->orderBy('date', 'desc');
 
     $summary = $query->paginate($perPage)->appends($request->all());
+
+        // Fetch one representative transaction per summary row to display full payload details
+        $sampleIds = collect($summary->items())->pluck('sample_tx_id')->filter()->unique()->values()->all();
+        $sampleTransactions = [];
+        if (!empty($sampleIds)) {
+            $sampleTransactions = Transaction::with(['adjustments','taxes','terminal','tenant'])
+                ->whereIn('id', $sampleIds)
+                ->get()
+                ->keyBy('id');
+        }
 
         $terminals = PosTerminal::with('tenant:id,trade_name')
             ->get(['id','serial_number','tenant_id','machine_number']);
@@ -221,6 +232,6 @@ class TransactionLogController extends Controller
             return response()->json($summary);
         }
 
-        return view('transactions.logs.index', compact('logs', 'terminals', 'tenants', 'filters', 'activeTab', 'summary'));
+    return view('transactions.logs.index', compact('logs', 'terminals', 'tenants', 'filters', 'activeTab', 'summary', 'sampleTransactions'));
     }
 }
