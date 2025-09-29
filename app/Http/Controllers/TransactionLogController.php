@@ -13,6 +13,7 @@ use Maatwebsite\Excel\Facades\Excel;
 use App\Models\PosProvider;
 use App\Models\PosTerminal;
 use App\Models\Tenant;
+use Illuminate\Support\Facades\Schema;
 
 class TransactionLogController extends Controller
 {
@@ -205,6 +206,18 @@ class TransactionLogController extends Controller
             ->selectRaw('COALESCE(SUM(t.vat_amount),0) as vat')
             ->selectRaw('COALESCE(SUM(t.net_sales),0) as net')
             ->selectRaw('COALESCE(SUM(t.refund_amount),0) as refund')
+            // Ensure we expose explicit aggregated fields used by the summary blade
+            ->selectRaw('COALESCE(SUM(t.vatable_sales),0) as vatable_sales')
+            ->selectRaw('COALESCE(SUM(t.sc_vat_exempt_sales),0) as sc_vat_exempt_sales')
+            ->when(Schema::hasColumn('transactions', 'promo_discount'), function ($q) {
+                $q->selectRaw('COALESCE(SUM(t.promo_discount),0) as promo_discount');
+            })
+            ->when(Schema::hasColumn('transactions', 'senior_discount'), function ($q) {
+                $q->selectRaw('COALESCE(SUM(t.senior_discount),0) as senior_discount');
+            })
+            ->when(Schema::hasColumn('transactions', 'pwd_discount'), function ($q) {
+                $q->selectRaw('COALESCE(SUM(t.pwd_discount),0) as pwd_discount');
+            })
             ->selectRaw('MIN(t.id) as sample_tx_id')
             ->groupBy('date', 't.tenant_id', 't.terminal_id', 'trade_name', 'term.serial_number', 'term.machine_number')
             ->orderBy('date', 'desc');
