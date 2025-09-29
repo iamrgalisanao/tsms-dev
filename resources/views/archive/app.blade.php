@@ -81,7 +81,7 @@
       <div class="row">
         <div class="col-md-3 col-lg-2 sidebar">
           <a href="/dashboard">Dashboard</a>
-          <a href="{{ route('transactions') }}">Transactions</a> <!-- Keep only this single transactions link -->
+          <a href="{{ route('transactions.index') }}">Transactions</a> <!-- Keep only this single transactions link -->
           <a href="/circuit-breakers">Circuit Breakers</a>
           <a href="/terminal-tokens">Terminal Tokens</a>
           <a href="/dashboard/retry-history">Retry History</a>

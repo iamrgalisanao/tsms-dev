@@ -1,0 +1,2322 @@
+
+   FAIL  Tests\Unit\CircuitBreakerTest
+  ⨯ starts in closed state when created
+  ⨯ increments failure count when failure recorded
+  ⨯ opens circuit when failures reach threshold
+  ⨯ blocks requests when circuit is open
+  ⨯ transitions to half open when cooldown period passes
+  ⨯ allows requests in half open state
+  ⨯ closes circuit after success in half open state
+  ⨯ resets failure count on success
+  ⨯ creates unique circuit breakers per tenant and service
+
+   PASS  Tests\Unit\ExampleTest
+  ✓ that true is true
+
+   FAIL  Tests\Unit\JobProcessingServiceTest
+  ⨯ processes valid transaction
+  ⨯ fails on invalid amounts
+  ⨯ validates vat calculation
+  ⨯ handles missing required fields
+  ⨯ validates gross sales calculation
+  ⨯ handles future transaction date
+  ⨯ updates error status on validation failure
+  ⨯ updates job status during processing
+  ⨯ validates transaction with service charges
+  ⨯ fails on negative service charges
+  ⨯ logs validation errors
+  ⨯ handles retry attempt
+  ⨯ handles null service charges
+  ⨯ tracks completion status
+  ⨯ handles validation tolerance
+  ⨯ validates transaction with discounts
+  ⨯ validates tax exempt transaction
+  ⨯ validates mixed tax transaction
+  ⨯ tracks status transitions
+  ⨯ validates zero amount transaction
+  ⨯ validates payload checksum
+  ⨯ logs invalid checksum
+  ⨯ handles max retry attempts
+  ⨯ handles invalid json in payload
+  ⨯ validates decimal precision
+  ⨯ handles concurrent processing attempts
+  ⨯ handles missing original payload
+  ⨯ validates transaction sequence
+  ⨯ handles database connection failure
+  ⨯ handles queue connection failure
+  ⨯ handles malformed transaction data
+
+Computed transaction checksum: b070b269ab57e4fe9a7d41f3c0281d9bd928959b74225e1cfba90994317a0812
+Expected transaction checksum: b070b269ab57e4fe9a7d41f3c0281d9bd928959b74225e1cfba90994317a0812
+Computed submission checksum: d837847cb1cc1da4455bb8ed83ac8e43305cd4d6cabbce474b6fb9fbe8260408
+Expected submission checksum: d837847cb1cc1da4455bb8ed83ac8e43305cd4d6cabbce474b6fb9fbe8260408
+
+
+   PASS  Tests\Unit\PayloadChecksumServiceTest
+  ✓ valid submission checksums                                           0.05s  
+
+   FAIL  Tests\Unit\Services\Security\ReportAggregationServiceTest
+  ⨯ aggregate data for security events                                   0.06s  
+  ⨯ aggregate data for failed transactions                               0.04s  
+  ⨯ aggregate data for circuit breaker trips                             0.04s  
+  ⨯ aggregate data for login attempts                                    0.05s  
+  ⨯ aggregate data for security alerts                                   0.04s  
+  ⨯ aggregate data for comprehensive report                              0.05s  
+  ⨯ insights generation                                                  0.04s  
+
+   FAIL  Tests\Unit\Services\Security\SecurityReportingServiceTest
+  ⨯ generate report with template                                        0.06s  
+  ⨯ generate report without template                                     0.07s  
+  ⨯ generate report handles errors                                       0.04s  
+  ⨯ get reports list                                                     0.04s  
+  ⨯ export report                                                        0.04s  
+
+   PASS  Tests\Unit\TenantBreakerObserverTest
+  ✓ threshold not triggered before min requests                          0.04s  
+  ✓ threshold triggered after min requests                               0.04s  
+
+   PASS  Tests\Unit\TransactionDisplayTenantCodeTest
+  ✓ prefers tenant customer code over transaction customer code          0.04s  
+  ✓ falls back to transaction customer code when tenant code missing     0.04s  
+  ✓ falls back to company customer code when both missing                0.04s  
+
+   WARN  Tests\Unit\TransactionNetAmountTest
+  - placeholder → Legacy TransactionNetAmountTest removed; placeholder to silence warnings.
+
+   FAIL  Tests\Unit\TransactionProcessingServiceTest
+  ⨯ generates unique transaction id                                      0.04s  
+  ✓ logs processing errors                                               0.04s  
+  ⨯ processes valid transaction                                          0.04s  
+
+   FAIL  Tests\Unit\TransactionValidationAuditTest
+  ⨯ creates security event on amount mismatch and allows when not strict
+
+   FAIL  Tests\Unit\TransactionValidationServiceTest
+  ⨯ validates valid transaction data
+  ⨯ detects duplicate transaction
+
+   FAIL  Tests\Feature\API\SecurityReportControllerTest
+  ⨯ index endpoint                                                       0.04s  
+  ⨯ store endpoint                                                       0.04s  
+  ⨯ show endpoint                                                        0.04s  
+  ⨯ get templates endpoint                                               0.04s  
+  ⨯ store template endpoint                                              0.03s  
+  ⨯ get template endpoint                                                0.03s  
+  ⨯ export endpoint                                                      0.03s  
+  ⨯ export endpoint successfully exports report                          0.04s  
+  ⨯ export endpoint with missing report                                  0.04s  
+  ⨯ export endpoint with export failure                                  0.04s  
+
+   WARN  Tests\Feature\API\V1\OfficialSubmissionTest
+  - placeholder → Legacy OfficialSubmissionTest removed; placeholder to silence warnings.
+
+   PASS  Tests\Feature\API\V1\TransactionControllerTest
+  ✓ placeholder smoke                                                    0.04s  
+
+   FAIL  Tests\Feature\Auth\AuthenticationTest
+  ⨯ user can login with valid credentials                                0.07s  
+  ⨯ user cannot login with invalid credentials                           0.04s  
+  ⨯ user can logout                                                      0.04s  
+  ⨯ can get authenticated user details                                   0.04s  
+  ⨯ unauthenticated user cannot access protected routes                  0.04s  
+  ⨯ invalid token cannot access protected routes                         0.04s  
+
+   FAIL  Tests\Feature\Auth\RateLimitingTest
+  ⨯ login endpoint is rate limited                                       0.04s  
+  ⨯ api endpoints are rate limited                                       0.04s  
+  ⨯ circuit breaker endpoints have separate rate limits                  0.04s  
+
+   FAIL  Tests\Feature\CircuitBreakerTest
+  ⨯ example
+
+   PASS  Tests\Feature\DashboardNotificationTest
+  ✓ admin failure threshold email is sent to admin email                 0.05s  
+  ✓ admin sees excessive failure notification box                        0.07s  
+
+   FAIL  Tests\Feature\DashboardPerformanceTest
+  ⨯ performance page loads                                               0.06s  
+  ⨯ existing routes still work                                           0.07s  
+Terminal created: ID=7, notifications_enabled=true, callback_url=https://webhook-test.tsms.dev/1615d8a6-5f16-4f8b-80bb-5bc13084b472
+Direct notification test passed!
+
+   PASS  Tests\Feature\DebugTerminalNotificationTest
+  ✓ direct notification                                                  0.06s  
+
+   FAIL  Tests\Feature\ExampleTest
+  ⨯ the application returns a successful response                        0.04s  
+
+   WARN  Tests\Feature\FutureTimestampToleranceTest
+  ✓ future timestamp within tolerance is not rejected                    0.05s  
+  - future timestamp beyond tolerance is rejected → Beyond tolerance re… 0.03s  
+
+   PASS  Tests\Feature\HealthCheckTest
+  ✓ health check endpoint                                                0.04s  
+  ✓ health check no auth required                                        0.04s  
+  ✓ health check content type                                            0.03s  
+
+   WARN  Tests\Feature\LogViewerTest
+  ! admin alert for excessive failed transactions and alert is visible…  0.17s  
+
+   FAIL  Tests\Feature\Module2Test
+  ⨯ transaction ingestion a p i
+  ⨯ pos text format parser
+  ⨯ job queues and processing logic
+  ⨯ error handling and retry mechanism
+✅ 2.1.3.1 Transaction Ingestion API: PASS
+✅ 2.1.3.2 POS Text Format Parser: PASS
+✅ 2.1.3.3 Job Queues and Processing Logic: PASS
+✅ 2.1.3.4 Error Handling and Retry Mechanism: PASS
+
+📊 MODULE 2 VERIFICATION SUMMARY
+================================
+Transaction Ingestion API: ✅ PASS
+POS Text Format Parser: ✅ PASS
+Job Queues and Processing: ✅ PASS
+Error Handling and Retry: ✅ PASS
+
+Implementation Status: 4/4 (100%)
+✅ EXCELLENT: Module 2 is fully implemented and ready for production.
+
+   PASS  Tests\Feature\Module2VerificationTest
+  ✓ transaction api exists                                               0.04s  
+  ✓ text format parser exists                                            0.04s  
+  ✓ job queues exist                                                     0.04s  
+  ✓ error handling exists                                                0.03s  
+  ✓ module2 implementation status                                        0.04s  
+
+   FAIL  Tests\Feature\PosTerminalDirectNotificationTest
+  ⨯ terminal receives transaction notification
+  ⨯ terminal receives batch notification
+  ⨯ terminal notification respects disabled setting
+
+   FAIL  Tests\Feature\PosTerminalNotificationTest
+  ⨯ terminal receives transaction notification
+  ⨯ terminal receives batch notification
+  ⨯ terminal notification respects disabled setting
+
+   PASS  Tests\Feature\PreviousDayValidationToggleTest
+  ✓ previous day rejected when toggle off                                0.04s  
+  ✓ previous day allowed when toggle on                                  0.05s  
+
+   PASS  Tests\Feature\SecurityReportControllerTest
+  ✓ placeholder security report                                          0.04s  
+
+   PASS  Tests\Feature\SubmissionIdempotencyTest
+  ✓ duplicate submission is idempotent                                   0.10s  
+
+   PASS  Tests\Feature\TextFormatParserTest
+  ✓ parses key value format                                              0.04s  
+  ✓ parses equals format                                                 0.04s  
+  ✓ parses space format                                                  0.04s  
+  ✓ handles mixed formats                                                0.03s  
+  ✓ handles empty input                                                  0.03s  
+  ✓ handles invalid input                                                0.03s  
+  ✓ handles special characters                                           0.03s  
+  ✓ handles multiline values                                             0.04s  
+  ✓ api endpoint                                                         0.04s  
+
+   FAIL  Tests\Feature\TokenIntrospectionTest
+  ✓ introspection returns active claims                                  0.05s  
+  ⨯ invalid format token                                                 0.04s  
+  ⨯ revoked token is invalid                                             0.04s  
+
+   FAIL  Tests\Feature\TransactionControllerTest
+  ⨯ store transaction success                                            0.05s  
+
+Created transaction IDs: 10, 11, 12, 13, 14, 15
+
+All transactions for terminal: 6
+
+Validation statuses: INVALID, INVALID, INVALID, INVALID, INVALID, INVALID
+
+Total notifications in database: 6
+
+   FAIL  Tests\Feature\TransactionIngestionTest
+  ⨯ email notification sent when failure threshold exceeded              0.04s  
+  ⨯ excessive failed transactions notification                           0.09s  
+
+   FAIL  Tests\Feature\TransactionPipeline\TransactionChildLinkingTest
+  ⨯ adjustments and taxes are linked via transaction pk                  0.09s  
+
+   PASS  Tests\Feature\TransactionPipeline\TransactionValidationTest
+  ✓ smoke discovery                                                      0.04s  
+  ✓ validates valid transaction                                          0.05s  
+  ✓ validates operating hours                                            0.05s  
+  ✓ validates negative amounts                                           0.05s  
+  ✓ validates terminal status                                            0.06s  
+  ✓ validates maximum amount limits                                      0.05s  
+  ✓ validates minimum amount limits                                      0.05s  
+  ✓ validates transaction timestamp format                               0.04s  
+  ✓ validates future timestamps                                          0.05s  
+  ✓ validates old transactions                                           0.06s  
+  ✓ validates customer code format                                       0.04s  
+  ✓ validates terminal belongs to customer                               0.05s  
+  ✓ validates duplicate transaction ids                                  0.05s  
+  ✓ validates required fields                                            0.04s  
+  ✓ validates decimal precision                                          0.05s  
+  ✓ validates concurrent transactions                                    0.06s  
+  ✓ validates transaction items consistency                              0.04s  
+  ✓ validates hardware id format                                         0.04s  
+  ✓ logs validation results                                              0.05s  
+  ✓ validates business rules                                             0.04s  
+  ✓ validates transaction sequence                                       0.06s  
+  ✓ validates multiple validation errors                                 0.04s  
+
+   PASS  Tests\Feature\TransactionPkRelationsTest
+  ✓ child records link via transaction pk relations                      0.05s  
+
+   FAIL  Tests\Feature\TransactionProcessingTest
+  ⨯ transaction submission and queuing
+  ⨯ status tracking
+  ⨯ handles validation errors
+  ⨯ processes text format input
+
+   FAIL  Tests\Feature\TransactionStatusTest
+  ⨯ can retrieve transaction status
+  ⨯ returns 404 for nonexistent transaction
+
+   WARN  Tests\Feature\TransactionSubmissionTest
+  - placeholder → Legacy TransactionSubmissionTest removed; placeholder to silence warnings.
+
+   FAIL  Tests\Feature\TransactionValidationAdvancedTest
+  ⨯ negative zero value transactions rejected                            0.06s  
+  ⨯ precision rounding tolerance enforcement
+
+   FAIL  Tests\Feature\TransactionValidationTest
+  ⨯ validates valid transaction                                          0.04s  
+  ⨯ validates operating hours                                            0.04s  
+
+   PASS  Tests\Feature\VoidTransactionTest
+  ✓ successful void transaction                                          0.06s  
+  ✓ void already voided transaction                                      0.04s  
+  ✓ void with invalid checksum                                           0.04s  
+  ✓ void transaction not owned by terminal                               0.04s  
+
+   WARN  Tests\Feature\WebAppForwardingBatchCaptureTest
+  - batch capture only returns envelope and records completed → Batch c… 0.04s  
+
+   FAIL  Tests\Feature\WebAppForwardingCircuitBreakerTest
+  ⨯ http 422 does not increment circuit breaker                          0.05s  
+  ⨯ http 500 increments circuit breaker                                  0.04s  
+
+   WARN  Tests\Feature\WebAppForwardingNegativeValidationTest
+  - local validation failure classification and no breaker increment →…  0.04s  
+
+   FAIL  Tests\Feature\WebAppForwardingSchemaV2Test
+  ⨯ single transaction forwarding uses v2 envelope                       0.04s  
+  ⨯ batch checksum changes when transaction checksum changes             0.04s  
+  ⨯ homogeneity violation is classified and does not increment breaker   0.05s  
+
+   WARN  Tests\Feature\WebAppForwardingServiceTest
+  - placeholder → Legacy WebAppForwardingServiceTest removed; placeholder to silence warnings.
+
+   PASS  Tests\Feature\WebAppNotificationForwardingTest
+  ✓ forwards notification to webapp                                      0.05s  
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Unit\CircuitBreakerTest > starts in closed…   QueryException   
+  SQLSTATE[42S22]: Column not found: 1054 Unknown column 'code' in 'where clause' (Connection: mysql, SQL: select * from `tenants` where (`code` = TEST1) and `tenants`.`deleted_at` is null limit 1)
+
+  at vendor/laravel/framework/src/Illuminate/Database/Connection.php:825
+    821▕                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    822▕                 );
+    823▕             }
+    824▕ 
+  ➜ 825▕             throw new QueryException(
+    826▕                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    827▕             );
+    828▕         }
+    829▕     }
+
+      [2m+17 vendor frames [22m
+  18  tests/Unit/CircuitBreakerTest.php:21
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Unit\CircuitBreakerTest > increments failur…  QueryException   
+  SQLSTATE[42S22]: Column not found: 1054 Unknown column 'code' in 'where clause' (Connection: mysql, SQL: select * from `tenants` where (`code` = TEST1) and `tenants`.`deleted_at` is null limit 1)
+
+  at vendor/laravel/framework/src/Illuminate/Database/Connection.php:825
+    821▕                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    822▕                 );
+    823▕             }
+    824▕ 
+  ➜ 825▕             throw new QueryException(
+    826▕                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    827▕             );
+    828▕         }
+    829▕     }
+
+      [2m+17 vendor frames [22m
+  18  tests/Unit/CircuitBreakerTest.php:21
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Unit\CircuitBreakerTest > opens circuit whe…  QueryException   
+  SQLSTATE[42S22]: Column not found: 1054 Unknown column 'code' in 'where clause' (Connection: mysql, SQL: select * from `tenants` where (`code` = TEST1) and `tenants`.`deleted_at` is null limit 1)
+
+  at vendor/laravel/framework/src/Illuminate/Database/Connection.php:825
+    821▕                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    822▕                 );
+    823▕             }
+    824▕ 
+  ➜ 825▕             throw new QueryException(
+    826▕                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    827▕             );
+    828▕         }
+    829▕     }
+
+      [2m+17 vendor frames [22m
+  18  tests/Unit/CircuitBreakerTest.php:21
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Unit\CircuitBreakerTest > blocks requests w…  QueryException   
+  SQLSTATE[42S22]: Column not found: 1054 Unknown column 'code' in 'where clause' (Connection: mysql, SQL: select * from `tenants` where (`code` = TEST1) and `tenants`.`deleted_at` is null limit 1)
+
+  at vendor/laravel/framework/src/Illuminate/Database/Connection.php:825
+    821▕                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    822▕                 );
+    823▕             }
+    824▕ 
+  ➜ 825▕             throw new QueryException(
+    826▕                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    827▕             );
+    828▕         }
+    829▕     }
+
+      [2m+17 vendor frames [22m
+  18  tests/Unit/CircuitBreakerTest.php:21
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Unit\CircuitBreakerTest > transitions to ha…  QueryException   
+  SQLSTATE[42S22]: Column not found: 1054 Unknown column 'code' in 'where clause' (Connection: mysql, SQL: select * from `tenants` where (`code` = TEST1) and `tenants`.`deleted_at` is null limit 1)
+
+  at vendor/laravel/framework/src/Illuminate/Database/Connection.php:825
+    821▕                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    822▕                 );
+    823▕             }
+    824▕ 
+  ➜ 825▕             throw new QueryException(
+    826▕                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    827▕             );
+    828▕         }
+    829▕     }
+
+      [2m+17 vendor frames [22m
+  18  tests/Unit/CircuitBreakerTest.php:21
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Unit\CircuitBreakerTest > allows requests i…  QueryException   
+  SQLSTATE[42S22]: Column not found: 1054 Unknown column 'code' in 'where clause' (Connection: mysql, SQL: select * from `tenants` where (`code` = TEST1) and `tenants`.`deleted_at` is null limit 1)
+
+  at vendor/laravel/framework/src/Illuminate/Database/Connection.php:825
+    821▕                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    822▕                 );
+    823▕             }
+    824▕ 
+  ➜ 825▕             throw new QueryException(
+    826▕                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    827▕             );
+    828▕         }
+    829▕     }
+
+      [2m+17 vendor frames [22m
+  18  tests/Unit/CircuitBreakerTest.php:21
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Unit\CircuitBreakerTest > closes circuit af…  QueryException   
+  SQLSTATE[42S22]: Column not found: 1054 Unknown column 'code' in 'where clause' (Connection: mysql, SQL: select * from `tenants` where (`code` = TEST1) and `tenants`.`deleted_at` is null limit 1)
+
+  at vendor/laravel/framework/src/Illuminate/Database/Connection.php:825
+    821▕                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    822▕                 );
+    823▕             }
+    824▕ 
+  ➜ 825▕             throw new QueryException(
+    826▕                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    827▕             );
+    828▕         }
+    829▕     }
+
+      [2m+17 vendor frames [22m
+  18  tests/Unit/CircuitBreakerTest.php:21
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Unit\CircuitBreakerTest > resets failure co…  QueryException   
+  SQLSTATE[42S22]: Column not found: 1054 Unknown column 'code' in 'where clause' (Connection: mysql, SQL: select * from `tenants` where (`code` = TEST1) and `tenants`.`deleted_at` is null limit 1)
+
+  at vendor/laravel/framework/src/Illuminate/Database/Connection.php:825
+    821▕                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    822▕                 );
+    823▕             }
+    824▕ 
+  ➜ 825▕             throw new QueryException(
+    826▕                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    827▕             );
+    828▕         }
+    829▕     }
+
+      [2m+17 vendor frames [22m
+  18  tests/Unit/CircuitBreakerTest.php:21
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Unit\CircuitBreakerTest > creates unique ci…  QueryException   
+  SQLSTATE[42S22]: Column not found: 1054 Unknown column 'code' in 'where clause' (Connection: mysql, SQL: select * from `tenants` where (`code` = TEST1) and `tenants`.`deleted_at` is null limit 1)
+
+  at vendor/laravel/framework/src/Illuminate/Database/Connection.php:825
+    821▕                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    822▕                 );
+    823▕             }
+    824▕ 
+  ➜ 825▕             throw new QueryException(
+    826▕                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    827▕             );
+    828▕         }
+    829▕     }
+
+      [2m+17 vendor frames [22m
+  18  tests/Unit/CircuitBreakerTest.php:21
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Unit\JobProcessingServiceTest > processes v…  QueryException   
+  SQLSTATE[42S22]: Column not found: 1054 Unknown column 'status' in 'field list' (Connection: mysql, SQL: insert into `pos_terminals` (`tenant_id`, `serial_number`, `machine_number`, `supports_guest_count`, `pos_type_id`, `integration_type_id`, `auth_type_id`, `status_id`, `registered_at`, `last_seen_at`, `heartbeat_threshold`, `expires_at`, `callback_url`, `notifications_enabled`, `notification_preferences`, `status`, `updated_at`, `created_at`) values (2, 3AVCVZUP, WUJUHR, 0, ?, ?, ?, 1, 2025-09-27 03:46:13, ?, 300, 2026-08-29 16:58:57, https://kshlerin.org/accusamus-consequatur-corrupti-recusandae-dolores-vel-dicta.html, 1, "{\"receive_validation_results\":true,\"receive_batch_results\":true,\"include_details\":true}", active, 2025-09-27 03:46:13, 2025-09-27 03:46:13))
+
+  at vendor/laravel/framework/src/Illuminate/Database/Connection.php:825
+    821▕                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    822▕                 );
+    823▕             }
+    824▕ 
+  ➜ 825▕             throw new QueryException(
+    826▕                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    827▕             );
+    828▕         }
+    829▕     }
+
+      [2m+17 vendor frames [22m
+  18  tests/Unit/JobProcessingServiceTest.php:30
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Unit\JobProcessingServiceTest > fails on in…  QueryException   
+  SQLSTATE[42S22]: Column not found: 1054 Unknown column 'status' in 'field list' (Connection: mysql, SQL: insert into `pos_terminals` (`tenant_id`, `serial_number`, `machine_number`, `supports_guest_count`, `pos_type_id`, `integration_type_id`, `auth_type_id`, `status_id`, `registered_at`, `last_seen_at`, `heartbeat_threshold`, `expires_at`, `callback_url`, `notifications_enabled`, `notification_preferences`, `status`, `updated_at`, `created_at`) values (3, DO1V3TFT, Q1RD36, 0, ?, ?, ?, 1, 2025-09-27 03:46:14, 2025-09-26 13:39:03, 300, 2026-05-13 13:55:02, https://www.little.net/quidem-consequatur-alias-molestias-rem-molestias-possimus, 1, "{\"receive_validation_results\":true,\"receive_batch_results\":true,\"include_details\":true}", active, 2025-09-27 03:46:14, 2025-09-27 03:46:14))
+
+  at vendor/laravel/framework/src/Illuminate/Database/Connection.php:825
+    821▕                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    822▕                 );
+    823▕             }
+    824▕ 
+  ➜ 825▕             throw new QueryException(
+    826▕                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    827▕             );
+    828▕         }
+    829▕     }
+
+      [2m+17 vendor frames [22m
+  18  tests/Unit/JobProcessingServiceTest.php:30
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Unit\JobProcessingServiceTest > validates v…  QueryException   
+  SQLSTATE[42S22]: Column not found: 1054 Unknown column 'status' in 'field list' (Connection: mysql, SQL: insert into `pos_terminals` (`tenant_id`, `serial_number`, `machine_number`, `supports_guest_count`, `pos_type_id`, `integration_type_id`, `auth_type_id`, `status_id`, `registered_at`, `last_seen_at`, `heartbeat_threshold`, `expires_at`, `callback_url`, `notifications_enabled`, `notification_preferences`, `status`, `updated_at`, `created_at`) values (4, DFF9H4Y8, Q44XFL, 0, ?, ?, ?, 1, 2025-09-27 03:46:14, ?, 300, ?, ?, 0, "{\"receive_validation_results\":true,\"receive_batch_results\":true,\"include_details\":true}", active, 2025-09-27 03:46:14, 2025-09-27 03:46:14))
+
+  at vendor/laravel/framework/src/Illuminate/Database/Connection.php:825
+    821▕                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    822▕                 );
+    823▕             }
+    824▕ 
+  ➜ 825▕             throw new QueryException(
+    826▕                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    827▕             );
+    828▕         }
+    829▕     }
+
+      [2m+17 vendor frames [22m
+  18  tests/Unit/JobProcessingServiceTest.php:30
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Unit\JobProcessingServiceTest > handles mis…  QueryException   
+  SQLSTATE[42S22]: Column not found: 1054 Unknown column 'status' in 'field list' (Connection: mysql, SQL: insert into `pos_terminals` (`tenant_id`, `serial_number`, `machine_number`, `supports_guest_count`, `pos_type_id`, `integration_type_id`, `auth_type_id`, `status_id`, `registered_at`, `last_seen_at`, `heartbeat_threshold`, `expires_at`, `callback_url`, `notifications_enabled`, `notification_preferences`, `status`, `updated_at`, `created_at`) values (5, 8G6EJCWS, SOSWUL, 1, ?, ?, ?, 1, 2025-09-27 03:46:14, ?, 300, ?, http://beahan.com/necessitatibus-ullam-ut-consequatur-reprehenderit-nisi-quia.html, 0, "{\"receive_validation_results\":true,\"receive_batch_results\":true,\"include_details\":true}", active, 2025-09-27 03:46:14, 2025-09-27 03:46:14))
+
+  at vendor/laravel/framework/src/Illuminate/Database/Connection.php:825
+    821▕                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    822▕                 );
+    823▕             }
+    824▕ 
+  ➜ 825▕             throw new QueryException(
+    826▕                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    827▕             );
+    828▕         }
+    829▕     }
+
+      [2m+17 vendor frames [22m
+  18  tests/Unit/JobProcessingServiceTest.php:30
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Unit\JobProcessingServiceTest > validates g…  QueryException   
+  SQLSTATE[42S22]: Column not found: 1054 Unknown column 'status' in 'field list' (Connection: mysql, SQL: insert into `pos_terminals` (`tenant_id`, `serial_number`, `machine_number`, `supports_guest_count`, `pos_type_id`, `integration_type_id`, `auth_type_id`, `status_id`, `registered_at`, `last_seen_at`, `heartbeat_threshold`, `expires_at`, `callback_url`, `notifications_enabled`, `notification_preferences`, `status`, `updated_at`, `created_at`) values (6, 1OX0UZRP, 4OD29W, 1, ?, ?, ?, 1, 2025-09-27 03:46:14, 2025-09-25 08:52:47, 300, 2025-10-15 10:35:14, ?, 1, "{\"receive_validation_results\":true,\"receive_batch_results\":true,\"include_details\":true}", active, 2025-09-27 03:46:14, 2025-09-27 03:46:14))
+
+  at vendor/laravel/framework/src/Illuminate/Database/Connection.php:825
+    821▕                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    822▕                 );
+    823▕             }
+    824▕ 
+  ➜ 825▕             throw new QueryException(
+    826▕                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    827▕             );
+    828▕         }
+    829▕     }
+
+      [2m+17 vendor frames [22m
+  18  tests/Unit/JobProcessingServiceTest.php:30
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Unit\JobProcessingServiceTest > handles fut…  QueryException   
+  SQLSTATE[42S22]: Column not found: 1054 Unknown column 'status' in 'field list' (Connection: mysql, SQL: insert into `pos_terminals` (`tenant_id`, `serial_number`, `machine_number`, `supports_guest_count`, `pos_type_id`, `integration_type_id`, `auth_type_id`, `status_id`, `registered_at`, `last_seen_at`, `heartbeat_threshold`, `expires_at`, `callback_url`, `notifications_enabled`, `notification_preferences`, `status`, `updated_at`, `created_at`) values (7, K4C53EBC, IJDN67, 0, ?, ?, ?, 1, 2025-09-27 03:46:14, ?, 300, ?, ?, 0, "{\"receive_validation_results\":true,\"receive_batch_results\":true,\"include_details\":true}", active, 2025-09-27 03:46:14, 2025-09-27 03:46:14))
+
+  at vendor/laravel/framework/src/Illuminate/Database/Connection.php:825
+    821▕                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    822▕                 );
+    823▕             }
+    824▕ 
+  ➜ 825▕             throw new QueryException(
+    826▕                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    827▕             );
+    828▕         }
+    829▕     }
+
+      [2m+17 vendor frames [22m
+  18  tests/Unit/JobProcessingServiceTest.php:30
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Unit\JobProcessingServiceTest > updates err…  QueryException   
+  SQLSTATE[42S22]: Column not found: 1054 Unknown column 'status' in 'field list' (Connection: mysql, SQL: insert into `pos_terminals` (`tenant_id`, `serial_number`, `machine_number`, `supports_guest_count`, `pos_type_id`, `integration_type_id`, `auth_type_id`, `status_id`, `registered_at`, `last_seen_at`, `heartbeat_threshold`, `expires_at`, `callback_url`, `notifications_enabled`, `notification_preferences`, `status`, `updated_at`, `created_at`) values (8, 6H5805NG, HRZJDQ, 1, ?, ?, ?, 1, 2025-09-27 03:46:14, ?, 300, ?, ?, 0, "{\"receive_validation_results\":true,\"receive_batch_results\":true,\"include_details\":true}", active, 2025-09-27 03:46:14, 2025-09-27 03:46:14))
+
+  at vendor/laravel/framework/src/Illuminate/Database/Connection.php:825
+    821▕                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    822▕                 );
+    823▕             }
+    824▕ 
+  ➜ 825▕             throw new QueryException(
+    826▕                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    827▕             );
+    828▕         }
+    829▕     }
+
+      [2m+17 vendor frames [22m
+  18  tests/Unit/JobProcessingServiceTest.php:30
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Unit\JobProcessingServiceTest > updates job…  QueryException   
+  SQLSTATE[42S22]: Column not found: 1054 Unknown column 'status' in 'field list' (Connection: mysql, SQL: insert into `pos_terminals` (`tenant_id`, `serial_number`, `machine_number`, `supports_guest_count`, `pos_type_id`, `integration_type_id`, `auth_type_id`, `status_id`, `registered_at`, `last_seen_at`, `heartbeat_threshold`, `expires_at`, `callback_url`, `notifications_enabled`, `notification_preferences`, `status`, `updated_at`, `created_at`) values (9, FPC0TJRR, NXFTFR, 1, ?, ?, ?, 1, 2025-09-27 03:46:14, 2025-09-21 01:04:52, 300, ?, http://www.aufderhar.com/, 1, "{\"receive_validation_results\":true,\"receive_batch_results\":true,\"include_details\":true}", active, 2025-09-27 03:46:14, 2025-09-27 03:46:14))
+
+  at vendor/laravel/framework/src/Illuminate/Database/Connection.php:825
+    821▕                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    822▕                 );
+    823▕             }
+    824▕ 
+  ➜ 825▕             throw new QueryException(
+    826▕                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    827▕             );
+    828▕         }
+    829▕     }
+
+      [2m+17 vendor frames [22m
+  18  tests/Unit/JobProcessingServiceTest.php:30
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Unit\JobProcessingServiceTest > validates t…  QueryException   
+  SQLSTATE[42S22]: Column not found: 1054 Unknown column 'status' in 'field list' (Connection: mysql, SQL: insert into `pos_terminals` (`tenant_id`, `serial_number`, `machine_number`, `supports_guest_count`, `pos_type_id`, `integration_type_id`, `auth_type_id`, `status_id`, `registered_at`, `last_seen_at`, `heartbeat_threshold`, `expires_at`, `callback_url`, `notifications_enabled`, `notification_preferences`, `status`, `updated_at`, `created_at`) values (10, CI9BWVVO, GJSXPQ, 0, ?, ?, ?, 1, 2025-09-27 03:46:14, 2025-09-25 03:09:48, 300, 2026-03-14 02:19:05, ?, 0, "{\"receive_validation_results\":true,\"receive_batch_results\":true,\"include_details\":true}", active, 2025-09-27 03:46:14, 2025-09-27 03:46:14))
+
+  at vendor/laravel/framework/src/Illuminate/Database/Connection.php:825
+    821▕                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    822▕                 );
+    823▕             }
+    824▕ 
+  ➜ 825▕             throw new QueryException(
+    826▕                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    827▕             );
+    828▕         }
+    829▕     }
+
+      [2m+17 vendor frames [22m
+  18  tests/Unit/JobProcessingServiceTest.php:30
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Unit\JobProcessingServiceTest > fails on ne…  QueryException   
+  SQLSTATE[42S22]: Column not found: 1054 Unknown column 'status' in 'field list' (Connection: mysql, SQL: insert into `pos_terminals` (`tenant_id`, `serial_number`, `machine_number`, `supports_guest_count`, `pos_type_id`, `integration_type_id`, `auth_type_id`, `status_id`, `registered_at`, `last_seen_at`, `heartbeat_threshold`, `expires_at`, `callback_url`, `notifications_enabled`, `notification_preferences`, `status`, `updated_at`, `created_at`) values (11, KZKNH4FP, VB7DS0, 0, ?, ?, ?, 1, 2025-09-27 03:46:14, ?, 300, 2026-07-06 16:15:56, https://collins.info/est-vel-vero-sed-magni-explicabo.html, 1, "{\"receive_validation_results\":true,\"receive_batch_results\":true,\"include_details\":true}", active, 2025-09-27 03:46:14, 2025-09-27 03:46:14))
+
+  at vendor/laravel/framework/src/Illuminate/Database/Connection.php:825
+    821▕                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    822▕                 );
+    823▕             }
+    824▕ 
+  ➜ 825▕             throw new QueryException(
+    826▕                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    827▕             );
+    828▕         }
+    829▕     }
+
+      [2m+17 vendor frames [22m
+  18  tests/Unit/JobProcessingServiceTest.php:30
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Unit\JobProcessingServiceTest > logs valida…  QueryException   
+  SQLSTATE[42S22]: Column not found: 1054 Unknown column 'status' in 'field list' (Connection: mysql, SQL: insert into `pos_terminals` (`tenant_id`, `serial_number`, `machine_number`, `supports_guest_count`, `pos_type_id`, `integration_type_id`, `auth_type_id`, `status_id`, `registered_at`, `last_seen_at`, `heartbeat_threshold`, `expires_at`, `callback_url`, `notifications_enabled`, `notification_preferences`, `status`, `updated_at`, `created_at`) values (12, THDUVA41, YQ61CR, 1, ?, ?, ?, 1, 2025-09-27 03:46:14, 2025-09-20 15:36:01, 300, 2026-01-28 23:54:09, ?, 1, "{\"receive_validation_results\":true,\"receive_batch_results\":true,\"include_details\":true}", active, 2025-09-27 03:46:14, 2025-09-27 03:46:14))
+
+  at vendor/laravel/framework/src/Illuminate/Database/Connection.php:825
+    821▕                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    822▕                 );
+    823▕             }
+    824▕ 
+  ➜ 825▕             throw new QueryException(
+    826▕                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    827▕             );
+    828▕         }
+    829▕     }
+
+      [2m+17 vendor frames [22m
+  18  tests/Unit/JobProcessingServiceTest.php:30
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Unit\JobProcessingServiceTest > handles ret…  QueryException   
+  SQLSTATE[42S22]: Column not found: 1054 Unknown column 'status' in 'field list' (Connection: mysql, SQL: insert into `pos_terminals` (`tenant_id`, `serial_number`, `machine_number`, `supports_guest_count`, `pos_type_id`, `integration_type_id`, `auth_type_id`, `status_id`, `registered_at`, `last_seen_at`, `heartbeat_threshold`, `expires_at`, `callback_url`, `notifications_enabled`, `notification_preferences`, `status`, `updated_at`, `created_at`) values (13, 1NUKJQEK, 4IOKJS, 1, ?, ?, ?, 1, 2025-09-27 03:46:14, 2025-09-21 11:17:47, 300, 2026-07-18 11:21:33, ?, 0, "{\"receive_validation_results\":true,\"receive_batch_results\":true,\"include_details\":true}", active, 2025-09-27 03:46:14, 2025-09-27 03:46:14))
+
+  at vendor/laravel/framework/src/Illuminate/Database/Connection.php:825
+    821▕                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    822▕                 );
+    823▕             }
+    824▕ 
+  ➜ 825▕             throw new QueryException(
+    826▕                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    827▕             );
+    828▕         }
+    829▕     }
+
+      [2m+17 vendor frames [22m
+  18  tests/Unit/JobProcessingServiceTest.php:30
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Unit\JobProcessingServiceTest > handles nul…  QueryException   
+  SQLSTATE[42S22]: Column not found: 1054 Unknown column 'status' in 'field list' (Connection: mysql, SQL: insert into `pos_terminals` (`tenant_id`, `serial_number`, `machine_number`, `supports_guest_count`, `pos_type_id`, `integration_type_id`, `auth_type_id`, `status_id`, `registered_at`, `last_seen_at`, `heartbeat_threshold`, `expires_at`, `callback_url`, `notifications_enabled`, `notification_preferences`, `status`, `updated_at`, `created_at`) values (14, VZZJGDZ4, 3U9FK3, 1, ?, ?, ?, 1, 2025-09-27 03:46:14, 2025-09-21 20:07:59, 300, 2025-12-10 16:36:40, ?, 0, "{\"receive_validation_results\":true,\"receive_batch_results\":true,\"include_details\":true}", active, 2025-09-27 03:46:14, 2025-09-27 03:46:14))
+
+  at vendor/laravel/framework/src/Illuminate/Database/Connection.php:825
+    821▕                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    822▕                 );
+    823▕             }
+    824▕ 
+  ➜ 825▕             throw new QueryException(
+    826▕                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    827▕             );
+    828▕         }
+    829▕     }
+
+      [2m+17 vendor frames [22m
+  18  tests/Unit/JobProcessingServiceTest.php:30
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Unit\JobProcessingServiceTest > tracks comp…  QueryException   
+  SQLSTATE[42S22]: Column not found: 1054 Unknown column 'status' in 'field list' (Connection: mysql, SQL: insert into `pos_terminals` (`tenant_id`, `serial_number`, `machine_number`, `supports_guest_count`, `pos_type_id`, `integration_type_id`, `auth_type_id`, `status_id`, `registered_at`, `last_seen_at`, `heartbeat_threshold`, `expires_at`, `callback_url`, `notifications_enabled`, `notification_preferences`, `status`, `updated_at`, `created_at`) values (15, E3Y1N1MU, 6Y6JUE, 0, ?, ?, ?, 1, 2025-09-27 03:46:14, 2025-09-24 20:49:01, 300, 2026-09-19 04:58:03, https://www.herman.com/quos-minus-eius-qui-vero-et-amet-aut, 1, "{\"receive_validation_results\":true,\"receive_batch_results\":true,\"include_details\":true}", active, 2025-09-27 03:46:14, 2025-09-27 03:46:14))
+
+  at vendor/laravel/framework/src/Illuminate/Database/Connection.php:825
+    821▕                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    822▕                 );
+    823▕             }
+    824▕ 
+  ➜ 825▕             throw new QueryException(
+    826▕                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    827▕             );
+    828▕         }
+    829▕     }
+
+      [2m+17 vendor frames [22m
+  18  tests/Unit/JobProcessingServiceTest.php:30
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Unit\JobProcessingServiceTest > handles val…  QueryException   
+  SQLSTATE[42S22]: Column not found: 1054 Unknown column 'status' in 'field list' (Connection: mysql, SQL: insert into `pos_terminals` (`tenant_id`, `serial_number`, `machine_number`, `supports_guest_count`, `pos_type_id`, `integration_type_id`, `auth_type_id`, `status_id`, `registered_at`, `last_seen_at`, `heartbeat_threshold`, `expires_at`, `callback_url`, `notifications_enabled`, `notification_preferences`, `status`, `updated_at`, `created_at`) values (16, I2EI8PT3, Q1SF84, 1, ?, ?, ?, 1, 2025-09-27 03:46:14, 2025-09-21 14:32:47, 300, 2026-06-18 21:57:20, ?, 0, "{\"receive_validation_results\":true,\"receive_batch_results\":true,\"include_details\":true}", active, 2025-09-27 03:46:14, 2025-09-27 03:46:14))
+
+  at vendor/laravel/framework/src/Illuminate/Database/Connection.php:825
+    821▕                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    822▕                 );
+    823▕             }
+    824▕ 
+  ➜ 825▕             throw new QueryException(
+    826▕                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    827▕             );
+    828▕         }
+    829▕     }
+
+      [2m+17 vendor frames [22m
+  18  tests/Unit/JobProcessingServiceTest.php:30
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Unit\JobProcessingServiceTest > validates t…  QueryException   
+  SQLSTATE[42S22]: Column not found: 1054 Unknown column 'status' in 'field list' (Connection: mysql, SQL: insert into `pos_terminals` (`tenant_id`, `serial_number`, `machine_number`, `supports_guest_count`, `pos_type_id`, `integration_type_id`, `auth_type_id`, `status_id`, `registered_at`, `last_seen_at`, `heartbeat_threshold`, `expires_at`, `callback_url`, `notifications_enabled`, `notification_preferences`, `status`, `updated_at`, `created_at`) values (17, 7UL88RMP, EZ9V7M, 0, ?, ?, ?, 1, 2025-09-27 03:46:14, ?, 300, ?, http://www.boyle.com/officia-et-reprehenderit-ipsam-repudiandae-impedit, 0, "{\"receive_validation_results\":true,\"receive_batch_results\":true,\"include_details\":true}", active, 2025-09-27 03:46:14, 2025-09-27 03:46:14))
+
+  at vendor/laravel/framework/src/Illuminate/Database/Connection.php:825
+    821▕                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    822▕                 );
+    823▕             }
+    824▕ 
+  ➜ 825▕             throw new QueryException(
+    826▕                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    827▕             );
+    828▕         }
+    829▕     }
+
+      [2m+17 vendor frames [22m
+  18  tests/Unit/JobProcessingServiceTest.php:30
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Unit\JobProcessingServiceTest > validates t…  QueryException   
+  SQLSTATE[42S22]: Column not found: 1054 Unknown column 'status' in 'field list' (Connection: mysql, SQL: insert into `pos_terminals` (`tenant_id`, `serial_number`, `machine_number`, `supports_guest_count`, `pos_type_id`, `integration_type_id`, `auth_type_id`, `status_id`, `registered_at`, `last_seen_at`, `heartbeat_threshold`, `expires_at`, `callback_url`, `notifications_enabled`, `notification_preferences`, `status`, `updated_at`, `created_at`) values (18, 34L3R6L6, ZMH4II, 1, ?, ?, ?, 1, 2025-09-27 03:46:14, ?, 300, 2025-11-14 06:16:01, http://mohr.com/necessitatibus-iure-blanditiis-accusamus-quaerat-non, 0, "{\"receive_validation_results\":true,\"receive_batch_results\":true,\"include_details\":true}", active, 2025-09-27 03:46:14, 2025-09-27 03:46:14))
+
+  at vendor/laravel/framework/src/Illuminate/Database/Connection.php:825
+    821▕                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    822▕                 );
+    823▕             }
+    824▕ 
+  ➜ 825▕             throw new QueryException(
+    826▕                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    827▕             );
+    828▕         }
+    829▕     }
+
+      [2m+17 vendor frames [22m
+  18  tests/Unit/JobProcessingServiceTest.php:30
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Unit\JobProcessingServiceTest > validates m…  QueryException   
+  SQLSTATE[42S22]: Column not found: 1054 Unknown column 'status' in 'field list' (Connection: mysql, SQL: insert into `pos_terminals` (`tenant_id`, `serial_number`, `machine_number`, `supports_guest_count`, `pos_type_id`, `integration_type_id`, `auth_type_id`, `status_id`, `registered_at`, `last_seen_at`, `heartbeat_threshold`, `expires_at`, `callback_url`, `notifications_enabled`, `notification_preferences`, `status`, `updated_at`, `created_at`) values (19, C49KIZMA, PJF2PH, 0, ?, ?, ?, 1, 2025-09-27 03:46:14, 2025-09-20 06:17:34, 300, 2026-08-14 16:24:52, ?, 1, "{\"receive_validation_results\":true,\"receive_batch_results\":true,\"include_details\":true}", active, 2025-09-27 03:46:14, 2025-09-27 03:46:14))
+
+  at vendor/laravel/framework/src/Illuminate/Database/Connection.php:825
+    821▕                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    822▕                 );
+    823▕             }
+    824▕ 
+  ➜ 825▕             throw new QueryException(
+    826▕                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    827▕             );
+    828▕         }
+    829▕     }
+
+      [2m+17 vendor frames [22m
+  18  tests/Unit/JobProcessingServiceTest.php:30
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Unit\JobProcessingServiceTest > tracks stat…  QueryException   
+  SQLSTATE[42S22]: Column not found: 1054 Unknown column 'status' in 'field list' (Connection: mysql, SQL: insert into `pos_terminals` (`tenant_id`, `serial_number`, `machine_number`, `supports_guest_count`, `pos_type_id`, `integration_type_id`, `auth_type_id`, `status_id`, `registered_at`, `last_seen_at`, `heartbeat_threshold`, `expires_at`, `callback_url`, `notifications_enabled`, `notification_preferences`, `status`, `updated_at`, `created_at`) values (20, ZI7UYG7V, 2UMRN9, 1, ?, ?, ?, 1, 2025-09-27 03:46:14, 2025-09-22 00:09:23, 300, ?, ?, 0, "{\"receive_validation_results\":true,\"receive_batch_results\":true,\"include_details\":true}", active, 2025-09-27 03:46:14, 2025-09-27 03:46:14))
+
+  at vendor/laravel/framework/src/Illuminate/Database/Connection.php:825
+    821▕                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    822▕                 );
+    823▕             }
+    824▕ 
+  ➜ 825▕             throw new QueryException(
+    826▕                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    827▕             );
+    828▕         }
+    829▕     }
+
+      [2m+17 vendor frames [22m
+  18  tests/Unit/JobProcessingServiceTest.php:30
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Unit\JobProcessingServiceTest > validates z…  QueryException   
+  SQLSTATE[42S22]: Column not found: 1054 Unknown column 'status' in 'field list' (Connection: mysql, SQL: insert into `pos_terminals` (`tenant_id`, `serial_number`, `machine_number`, `supports_guest_count`, `pos_type_id`, `integration_type_id`, `auth_type_id`, `status_id`, `registered_at`, `last_seen_at`, `heartbeat_threshold`, `expires_at`, `callback_url`, `notifications_enabled`, `notification_preferences`, `status`, `updated_at`, `created_at`) values (21, HDZJFNS4, JSUQ5D, 0, ?, ?, ?, 1, 2025-09-27 03:46:14, ?, 300, 2026-06-14 14:10:34, http://abbott.com/, 0, "{\"receive_validation_results\":true,\"receive_batch_results\":true,\"include_details\":true}", active, 2025-09-27 03:46:14, 2025-09-27 03:46:14))
+
+  at vendor/laravel/framework/src/Illuminate/Database/Connection.php:825
+    821▕                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    822▕                 );
+    823▕             }
+    824▕ 
+  ➜ 825▕             throw new QueryException(
+    826▕                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    827▕             );
+    828▕         }
+    829▕     }
+
+      [2m+17 vendor frames [22m
+  18  tests/Unit/JobProcessingServiceTest.php:30
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Unit\JobProcessingServiceTest > validates p…  QueryException   
+  SQLSTATE[42S22]: Column not found: 1054 Unknown column 'status' in 'field list' (Connection: mysql, SQL: insert into `pos_terminals` (`tenant_id`, `serial_number`, `machine_number`, `supports_guest_count`, `pos_type_id`, `integration_type_id`, `auth_type_id`, `status_id`, `registered_at`, `last_seen_at`, `heartbeat_threshold`, `expires_at`, `callback_url`, `notifications_enabled`, `notification_preferences`, `status`, `updated_at`, `created_at`) values (22, LH7IJARB, DLMUKT, 1, ?, ?, ?, 1, 2025-09-27 03:46:14, ?, 300, 2025-12-31 21:55:57, ?, 1, "{\"receive_validation_results\":true,\"receive_batch_results\":true,\"include_details\":true}", active, 2025-09-27 03:46:14, 2025-09-27 03:46:14))
+
+  at vendor/laravel/framework/src/Illuminate/Database/Connection.php:825
+    821▕                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    822▕                 );
+    823▕             }
+    824▕ 
+  ➜ 825▕             throw new QueryException(
+    826▕                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    827▕             );
+    828▕         }
+    829▕     }
+
+      [2m+17 vendor frames [22m
+  18  tests/Unit/JobProcessingServiceTest.php:30
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Unit\JobProcessingServiceTest > logs invali…  QueryException   
+  SQLSTATE[42S22]: Column not found: 1054 Unknown column 'status' in 'field list' (Connection: mysql, SQL: insert into `pos_terminals` (`tenant_id`, `serial_number`, `machine_number`, `supports_guest_count`, `pos_type_id`, `integration_type_id`, `auth_type_id`, `status_id`, `registered_at`, `last_seen_at`, `heartbeat_threshold`, `expires_at`, `callback_url`, `notifications_enabled`, `notification_preferences`, `status`, `updated_at`, `created_at`) values (23, XV3576GA, 48JIDV, 1, ?, ?, ?, 1, 2025-09-27 03:46:14, 2025-09-20 08:28:28, 300, ?, ?, 0, "{\"receive_validation_results\":true,\"receive_batch_results\":true,\"include_details\":true}", active, 2025-09-27 03:46:14, 2025-09-27 03:46:14))
+
+  at vendor/laravel/framework/src/Illuminate/Database/Connection.php:825
+    821▕                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    822▕                 );
+    823▕             }
+    824▕ 
+  ➜ 825▕             throw new QueryException(
+    826▕                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    827▕             );
+    828▕         }
+    829▕     }
+
+      [2m+17 vendor frames [22m
+  18  tests/Unit/JobProcessingServiceTest.php:30
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Unit\JobProcessingServiceTest > handles max…  QueryException   
+  SQLSTATE[42S22]: Column not found: 1054 Unknown column 'status' in 'field list' (Connection: mysql, SQL: insert into `pos_terminals` (`tenant_id`, `serial_number`, `machine_number`, `supports_guest_count`, `pos_type_id`, `integration_type_id`, `auth_type_id`, `status_id`, `registered_at`, `last_seen_at`, `heartbeat_threshold`, `expires_at`, `callback_url`, `notifications_enabled`, `notification_preferences`, `status`, `updated_at`, `created_at`) values (24, CKWAC106, W3ZFNA, 1, ?, ?, ?, 1, 2025-09-27 03:46:14, ?, 300, ?, http://www.powlowski.biz/eius-fuga-perspiciatis-ad.html, 1, "{\"receive_validation_results\":true,\"receive_batch_results\":true,\"include_details\":true}", active, 2025-09-27 03:46:14, 2025-09-27 03:46:14))
+
+  at vendor/laravel/framework/src/Illuminate/Database/Connection.php:825
+    821▕                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    822▕                 );
+    823▕             }
+    824▕ 
+  ➜ 825▕             throw new QueryException(
+    826▕                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    827▕             );
+    828▕         }
+    829▕     }
+
+      [2m+17 vendor frames [22m
+  18  tests/Unit/JobProcessingServiceTest.php:30
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Unit\JobProcessingServiceTest > handles inv…  QueryException   
+  SQLSTATE[42S22]: Column not found: 1054 Unknown column 'status' in 'field list' (Connection: mysql, SQL: insert into `pos_terminals` (`tenant_id`, `serial_number`, `machine_number`, `supports_guest_count`, `pos_type_id`, `integration_type_id`, `auth_type_id`, `status_id`, `registered_at`, `last_seen_at`, `heartbeat_threshold`, `expires_at`, `callback_url`, `notifications_enabled`, `notification_preferences`, `status`, `updated_at`, `created_at`) values (25, 4D3XDM15, EKNI1Y, 0, ?, ?, ?, 1, 2025-09-27 03:46:14, 2025-09-23 19:05:54, 300, 2026-06-10 15:06:58, ?, 0, "{\"receive_validation_results\":true,\"receive_batch_results\":true,\"include_details\":true}", active, 2025-09-27 03:46:14, 2025-09-27 03:46:14))
+
+  at vendor/laravel/framework/src/Illuminate/Database/Connection.php:825
+    821▕                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    822▕                 );
+    823▕             }
+    824▕ 
+  ➜ 825▕             throw new QueryException(
+    826▕                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    827▕             );
+    828▕         }
+    829▕     }
+
+      [2m+17 vendor frames [22m
+  18  tests/Unit/JobProcessingServiceTest.php:30
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Unit\JobProcessingServiceTest > validates d…  QueryException   
+  SQLSTATE[42S22]: Column not found: 1054 Unknown column 'status' in 'field list' (Connection: mysql, SQL: insert into `pos_terminals` (`tenant_id`, `serial_number`, `machine_number`, `supports_guest_count`, `pos_type_id`, `integration_type_id`, `auth_type_id`, `status_id`, `registered_at`, `last_seen_at`, `heartbeat_threshold`, `expires_at`, `callback_url`, `notifications_enabled`, `notification_preferences`, `status`, `updated_at`, `created_at`) values (26, SLEU3HMU, VU1WH3, 0, ?, ?, ?, 1, 2025-09-27 03:46:14, 2025-09-21 08:51:31, 300, 2025-12-04 15:25:39, http://reichert.com/enim-quia-est-necessitatibus, 1, "{\"receive_validation_results\":true,\"receive_batch_results\":true,\"include_details\":true}", active, 2025-09-27 03:46:14, 2025-09-27 03:46:14))
+
+  at vendor/laravel/framework/src/Illuminate/Database/Connection.php:825
+    821▕                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    822▕                 );
+    823▕             }
+    824▕ 
+  ➜ 825▕             throw new QueryException(
+    826▕                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    827▕             );
+    828▕         }
+    829▕     }
+
+      [2m+17 vendor frames [22m
+  18  tests/Unit/JobProcessingServiceTest.php:30
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Unit\JobProcessingServiceTest > handles con…  QueryException   
+  SQLSTATE[42S22]: Column not found: 1054 Unknown column 'status' in 'field list' (Connection: mysql, SQL: insert into `pos_terminals` (`tenant_id`, `serial_number`, `machine_number`, `supports_guest_count`, `pos_type_id`, `integration_type_id`, `auth_type_id`, `status_id`, `registered_at`, `last_seen_at`, `heartbeat_threshold`, `expires_at`, `callback_url`, `notifications_enabled`, `notification_preferences`, `status`, `updated_at`, `created_at`) values (27, FFZZQMSB, RYIZ7Y, 0, ?, ?, ?, 1, 2025-09-27 03:46:14, ?, 300, ?, http://fay.com/aliquid-quisquam-quia-et-ipsam-eius-dolorum-illum, 1, "{\"receive_validation_results\":true,\"receive_batch_results\":true,\"include_details\":true}", active, 2025-09-27 03:46:14, 2025-09-27 03:46:14))
+
+  at vendor/laravel/framework/src/Illuminate/Database/Connection.php:825
+    821▕                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    822▕                 );
+    823▕             }
+    824▕ 
+  ➜ 825▕             throw new QueryException(
+    826▕                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    827▕             );
+    828▕         }
+    829▕     }
+
+      [2m+17 vendor frames [22m
+  18  tests/Unit/JobProcessingServiceTest.php:30
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Unit\JobProcessingServiceTest > handles mis…  QueryException   
+  SQLSTATE[42S22]: Column not found: 1054 Unknown column 'status' in 'field list' (Connection: mysql, SQL: insert into `pos_terminals` (`tenant_id`, `serial_number`, `machine_number`, `supports_guest_count`, `pos_type_id`, `integration_type_id`, `auth_type_id`, `status_id`, `registered_at`, `last_seen_at`, `heartbeat_threshold`, `expires_at`, `callback_url`, `notifications_enabled`, `notification_preferences`, `status`, `updated_at`, `created_at`) values (28, 7SV23M9V, UJWZBO, 0, ?, ?, ?, 1, 2025-09-27 03:46:15, ?, 300, ?, ?, 0, "{\"receive_validation_results\":true,\"receive_batch_results\":true,\"include_details\":true}", active, 2025-09-27 03:46:15, 2025-09-27 03:46:15))
+
+  at vendor/laravel/framework/src/Illuminate/Database/Connection.php:825
+    821▕                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    822▕                 );
+    823▕             }
+    824▕ 
+  ➜ 825▕             throw new QueryException(
+    826▕                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    827▕             );
+    828▕         }
+    829▕     }
+
+      [2m+17 vendor frames [22m
+  18  tests/Unit/JobProcessingServiceTest.php:30
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Unit\JobProcessingServiceTest > validates t…  QueryException   
+  SQLSTATE[42S22]: Column not found: 1054 Unknown column 'status' in 'field list' (Connection: mysql, SQL: insert into `pos_terminals` (`tenant_id`, `serial_number`, `machine_number`, `supports_guest_count`, `pos_type_id`, `integration_type_id`, `auth_type_id`, `status_id`, `registered_at`, `last_seen_at`, `heartbeat_threshold`, `expires_at`, `callback_url`, `notifications_enabled`, `notification_preferences`, `status`, `updated_at`, `created_at`) values (29, X2YS0A9Y, OS148U, 1, ?, ?, ?, 1, 2025-09-27 03:46:15, 2025-09-25 15:11:04, 300, ?, ?, 0, "{\"receive_validation_results\":true,\"receive_batch_results\":true,\"include_details\":true}", active, 2025-09-27 03:46:15, 2025-09-27 03:46:15))
+
+  at vendor/laravel/framework/src/Illuminate/Database/Connection.php:825
+    821▕                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    822▕                 );
+    823▕             }
+    824▕ 
+  ➜ 825▕             throw new QueryException(
+    826▕                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    827▕             );
+    828▕         }
+    829▕     }
+
+      [2m+17 vendor frames [22m
+  18  tests/Unit/JobProcessingServiceTest.php:30
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Unit\JobProcessingServiceTest > handles dat…  QueryException   
+  SQLSTATE[42S22]: Column not found: 1054 Unknown column 'status' in 'field list' (Connection: mysql, SQL: insert into `pos_terminals` (`tenant_id`, `serial_number`, `machine_number`, `supports_guest_count`, `pos_type_id`, `integration_type_id`, `auth_type_id`, `status_id`, `registered_at`, `last_seen_at`, `heartbeat_threshold`, `expires_at`, `callback_url`, `notifications_enabled`, `notification_preferences`, `status`, `updated_at`, `created_at`) values (30, 061INAJI, O7QLHZ, 1, ?, ?, ?, 1, 2025-09-27 03:46:15, ?, 300, ?, http://www.medhurst.com/ut-ipsum-libero-voluptas, 0, "{\"receive_validation_results\":true,\"receive_batch_results\":true,\"include_details\":true}", active, 2025-09-27 03:46:15, 2025-09-27 03:46:15))
+
+  at vendor/laravel/framework/src/Illuminate/Database/Connection.php:825
+    821▕                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    822▕                 );
+    823▕             }
+    824▕ 
+  ➜ 825▕             throw new QueryException(
+    826▕                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    827▕             );
+    828▕         }
+    829▕     }
+
+      [2m+17 vendor frames [22m
+  18  tests/Unit/JobProcessingServiceTest.php:30
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Unit\JobProcessingServiceTest > handles que…  QueryException   
+  SQLSTATE[42S22]: Column not found: 1054 Unknown column 'status' in 'field list' (Connection: mysql, SQL: insert into `pos_terminals` (`tenant_id`, `serial_number`, `machine_number`, `supports_guest_count`, `pos_type_id`, `integration_type_id`, `auth_type_id`, `status_id`, `registered_at`, `last_seen_at`, `heartbeat_threshold`, `expires_at`, `callback_url`, `notifications_enabled`, `notification_preferences`, `status`, `updated_at`, `created_at`) values (31, 7312TO1A, JA6Z0W, 0, ?, ?, ?, 1, 2025-09-27 03:46:15, 2025-09-26 18:52:28, 300, ?, ?, 0, "{\"receive_validation_results\":true,\"receive_batch_results\":true,\"include_details\":true}", active, 2025-09-27 03:46:15, 2025-09-27 03:46:15))
+
+  at vendor/laravel/framework/src/Illuminate/Database/Connection.php:825
+    821▕                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    822▕                 );
+    823▕             }
+    824▕ 
+  ➜ 825▕             throw new QueryException(
+    826▕                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    827▕             );
+    828▕         }
+    829▕     }
+
+      [2m+17 vendor frames [22m
+  18  tests/Unit/JobProcessingServiceTest.php:30
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Unit\JobProcessingServiceTest > handles mal…  QueryException   
+  SQLSTATE[42S22]: Column not found: 1054 Unknown column 'status' in 'field list' (Connection: mysql, SQL: insert into `pos_terminals` (`tenant_id`, `serial_number`, `machine_number`, `supports_guest_count`, `pos_type_id`, `integration_type_id`, `auth_type_id`, `status_id`, `registered_at`, `last_seen_at`, `heartbeat_threshold`, `expires_at`, `callback_url`, `notifications_enabled`, `notification_preferences`, `status`, `updated_at`, `created_at`) values (32, D3M6ZERS, UH96TC, 0, ?, ?, ?, 1, 2025-09-27 03:46:15, 2025-09-21 06:19:59, 300, ?, ?, 0, "{\"receive_validation_results\":true,\"receive_batch_results\":true,\"include_details\":true}", active, 2025-09-27 03:46:15, 2025-09-27 03:46:15))
+
+  at vendor/laravel/framework/src/Illuminate/Database/Connection.php:825
+    821▕                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    822▕                 );
+    823▕             }
+    824▕ 
+  ➜ 825▕             throw new QueryException(
+    826▕                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    827▕             );
+    828▕         }
+    829▕     }
+
+      [2m+17 vendor frames [22m
+  18  tests/Unit/JobProcessingServiceTest.php:30
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Unit\Services\Security\ReportAggregationServiceTest > aggre…   
+  Failed asserting that 0 matches expected 5.
+
+  at tests/Unit/Services/Security/ReportAggregationServiceTest.php:67
+     63▕         
+     64▕         // Assert the content is filtered correctly - assuming the implementation returns a total count
+     65▕         // Note: The exact key structure might need adjustment based on actual implementation
+     66▕         $eventsCount = $result['summary']['total_events'] ?? ($result['summary']['total'] ?? 0);
+  ➜  67▕         $this->assertEquals(5, $eventsCount);
+     68▕     }
+     69▕ 
+     70▕     /**
+     71▕      * Test that the aggregation service can aggregate data for a failed transactions template
+
+  1   tests/Unit/Services/Security/ReportAggregationServiceTest.php:67
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Unit\Services\Security\ReportAggregationServiceTest > aggre…   
+  Failed asserting that an array has the key 'transactions_summary'.
+
+  at tests/Unit/Services/Security/ReportAggregationServiceTest.php:99
+     95▕         ]);
+     96▕         
+     97▕         // Assert the response structure
+     98▕         $this->assertIsArray($result);
+  ➜  99▕         $this->assertArrayHasKey('transactions_summary', $result);
+    100▕         $this->assertArrayHasKey('generated_at', $result);
+    101▕     }
+    102▕ 
+    103▕     /**
+
+  1   tests/Unit/Services/Security/ReportAggregationServiceTest.php:99
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Unit\Services\Security\ReportAggregationServiceTest > aggre…   
+  Failed asserting that an array has the key 'circuit_breaker_summary'.
+
+  at tests/Unit/Services/Security/ReportAggregationServiceTest.php:129
+    125▕         ]);
+    126▕         
+    127▕         // Assert the response structure
+    128▕         $this->assertIsArray($result);
+  ➜ 129▕         $this->assertArrayHasKey('circuit_breaker_summary', $result);
+    130▕         $this->assertArrayHasKey('generated_at', $result);
+    131▕     }
+    132▕ 
+    133▕     /**
+
+  1   tests/Unit/Services/Security/ReportAggregationServiceTest.php:129
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Unit\Services\Security\ReportAggregationSer…  QueryException   
+  SQLSTATE[42S22]: Column not found: 1054 Unknown column 'action' in 'field list' (Connection: mysql, SQL: insert into `security_events` (`tenant_id`, `event_type`, `severity`, `user_id`, `source_ip`, `context`, `event_timestamp`, `action`, `status`, `updated_at`, `created_at`) values (1, authentication, warning, 9, 134.176.141.220, {"data":"Illo saepe aut ea at necessitatibus nobis porro."}, 2025-09-26 03:46:15, login, failed, 2025-09-27 03:46:15, 2025-09-27 03:46:15))
+
+  at vendor/laravel/framework/src/Illuminate/Database/Connection.php:825
+    821▕                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    822▕                 );
+    823▕             }
+    824▕ 
+  ➜ 825▕             throw new QueryException(
+    826▕                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    827▕             );
+    828▕         }
+    829▕     }
+
+      [2m+17 vendor frames [22m
+  18  tests/Unit/Services/Security/ReportAggregationServiceTest.php:151
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Unit\Services\Security\ReportAggregationSer…  QueryException   
+  SQLSTATE[42S02]: Base table or view not found: 1146 Table 'tsms_dev.security_alerts' doesn't exist (Connection: mysql, SQL: insert into `security_alerts` (`tenant_id`, `title`, `description`, `severity`, `source`, `alert_type`, `context`, `status`, `acknowledged_by`, `acknowledged_at`, `resolved_by`, `resolved_at`, `created_at`, `updated_at`) values (1, Est minus qui., Placeat sit et consequuntur aut. Ut voluptate ducimus tempora eaque quam recusandae., critical, integration, threshold, {"ip_address":"54.135.205.244","user_agent":"Opera\/8.40 (Windows 95; en-US) Presto\/2.9.253 Version\/11.00","location":"East Finnburgh, Honduras","related_entity":null,"entity_id":103}, acknowledged, ?, ?, ?, ?, 2025-09-26 15:46:15, 2025-09-27 03:46:15))
+
+  at vendor/laravel/framework/src/Illuminate/Database/Connection.php:825
+    821▕                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    822▕                 );
+    823▕             }
+    824▕ 
+  ➜ 825▕             throw new QueryException(
+    826▕                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    827▕             );
+    828▕         }
+    829▕     }
+
+      [2m+17 vendor frames [22m
+  18  tests/Unit/Services/Security/ReportAggregationServiceTest.php:204
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Unit\Services\Security\ReportAggregationSer…  QueryException   
+  SQLSTATE[42S02]: Base table or view not found: 1146 Table 'tsms_dev.security_alerts' doesn't exist (Connection: mysql, SQL: insert into `security_alerts` (`tenant_id`, `title`, `description`, `severity`, `source`, `alert_type`, `context`, `status`, `acknowledged_by`, `acknowledged_at`, `resolved_by`, `resolved_at`, `created_at`, `updated_at`) values (1, Libero eveniet ducimus ea., Alias ducimus voluptatem rerum voluptatem cum. Et distinctio voluptatem ut adipisci iure dolore. Ipsum illum alias debitis aperiam et vitae quae., critical, user, pattern, {"ip_address":"33.118.29.36","user_agent":"Mozilla\/5.0 (iPhone; CPU iPhone OS 15_2 like Mac OS X) AppleWebKit\/533.2 (KHTML, like Gecko) Version\/15.0 EdgiOS\/79.01060.99 Mobile\/15E148 Safari\/533.2","location":"Port Daija, Madagascar","related_entity":"transaction","entity_id":232}, dismissed, ?, ?, ?, ?, 2025-09-26 15:46:15, 2025-09-27 03:46:15))
+
+  at vendor/laravel/framework/src/Illuminate/Database/Connection.php:825
+    821▕                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    822▕                 );
+    823▕             }
+    824▕ 
+  ➜ 825▕             throw new QueryException(
+    826▕                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    827▕             );
+    828▕         }
+    829▕     }
+
+      [2m+17 vendor frames [22m
+  18  tests/Unit/Services/Security/ReportAggregationServiceTest.php:270
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Unit\Services\Security…  UniqueConstraintViolationException   
+  SQLSTATE[23000]: Integrity constraint violation: 1062 Duplicate entry '1-Comprehensive Security Report' for key 'security_report_templates.security_report_templates_tenant_id_name_unique' (Connection: mysql, SQL: insert into `security_report_templates` (`tenant_id`, `name`, `description`, `type`, `filters`, `columns`, `format`, `is_scheduled`, `schedule_frequency`, `notification_settings`, `is_system`, `created_at`, `updated_at`) values (1, Comprehensive Security Report, Ex magnam et quasi dolores mollitia molestias., comprehensive, {"event_type":"data_access","severity":"info"}, ["timestamp","event_type","severity","source_ip","user_id","context"], csv, 0, monthly, {"email":false,"recipients":["cara35@kulas.biz"]}, 0, 2025-09-27 03:46:15, 2025-09-27 03:46:15))
+
+  at vendor/laravel/framework/src/Illuminate/Database/Connection.php:820
+    816▕         // message to include the bindings with SQL, which will make this exception a
+    817▕         // lot more helpful to the developer instead of just the database's errors.
+    818▕         catch (Exception $e) {
+    819▕             if ($this->isUniqueConstraintError($e)) {
+  ➜ 820▕                 throw new UniqueConstraintViolationException(
+    821▕                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    822▕                 );
+    823▕             }
+    824▕
+
+      [2m+17 vendor frames [22m
+  18  tests/Unit/Services/Security/ReportAggregationServiceTest.php:315
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Unit\Services\Security\SecurityReportingSer…  QueryException   
+  SQLSTATE[42S22]: Column not found: 1054 Unknown column 'security_report_template_id' in 'field list' (Connection: mysql, SQL: insert into `security_reports` (`tenant_id`, `security_report_template_id`, `name`, `status`, `filters`, `generated_by`, `from_date`, `to_date`, `format`, `updated_at`, `created_at`) values (1, 8, Test Report, generating, {"name":"Test Report","from":"2025-09-20T03:46:15.575819Z","to":"2025-09-27T03:46:15.575952Z"}, 1, 2025-09-20 03:46:15, 2025-09-27 03:46:15, html, 2025-09-27 03:46:15, 2025-09-27 03:46:15))
+
+  at vendor/laravel/framework/src/Illuminate/Database/Connection.php:825
+    821▕                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    822▕                 );
+    823▕             }
+    824▕ 
+  ➜ 825▕             throw new QueryException(
+    826▕                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    827▕             );
+    828▕         }
+    829▕     }
+
+      [2m+18 vendor frames [22m
+  19  app/Services/Security/SecurityReportingService.php:73
+  20  tests/Unit/Services/Security/SecurityReportingServiceTest.php:74
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Unit\Services\Security\SecurityReportingSer…  QueryException   
+  SQLSTATE[42S22]: Column not found: 1054 Unknown column 'security_report_template_id' in 'field list' (Connection: mysql, SQL: insert into `security_reports` (`tenant_id`, `security_report_template_id`, `name`, `status`, `filters`, `generated_by`, `from_date`, `to_date`, `format`, `updated_at`, `created_at`) values (1, ?, Legacy Report, generating, {"name":"Legacy Report","from":"2025-09-20T03:46:15.645152Z","to":"2025-09-27T03:46:15.645192Z"}, ?, 2025-09-20 03:46:15, 2025-09-27 03:46:15, html, 2025-09-27 03:46:15, 2025-09-27 03:46:15))
+
+  at vendor/laravel/framework/src/Illuminate/Database/Connection.php:825
+    821▕                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    822▕                 );
+    823▕             }
+    824▕ 
+  ➜ 825▕             throw new QueryException(
+    826▕                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    827▕             );
+    828▕         }
+    829▕     }
+
+      [2m+18 vendor frames [22m
+  19  app/Services/Security/SecurityReportingService.php:73
+  20  tests/Unit/Services/Security/SecurityReportingServiceTest.php:111
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Unit\Services\Security…  UniqueConstraintViolationException   
+  SQLSTATE[23000]: Integrity constraint violation: 1062 Duplicate entry '1-Test Template' for key 'security_report_templates.security_report_templates_tenant_id_name_unique' (Connection: mysql, SQL: insert into `security_report_templates` (`tenant_id`, `name`, `description`, `type`, `filters`, `columns`, `format`, `is_scheduled`, `schedule_frequency`, `notification_settings`, `is_system`, `created_at`, `updated_at`) values (1, Test Template, Similique optio minus error praesentium voluptatem. Aperiam tempore ratione quo dolorum nihil laudantium ipsa., security_events, {"event_type":"data_access","severity":"warning"}, ["timestamp","event_type","severity","source_ip","user_id","context"], csv, 0, ?, {"email":false,"recipients":["rice.lina@will.biz"]}, 0, 2025-09-27 03:46:15, 2025-09-27 03:46:15))
+
+  at vendor/laravel/framework/src/Illuminate/Database/Connection.php:820
+    816▕         // message to include the bindings with SQL, which will make this exception a
+    817▕         // lot more helpful to the developer instead of just the database's errors.
+    818▕         catch (Exception $e) {
+    819▕             if ($this->isUniqueConstraintError($e)) {
+  ➜ 820▕                 throw new UniqueConstraintViolationException(
+    821▕                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    822▕                 );
+    823▕             }
+    824▕
+
+      [2m+17 vendor frames [22m
+  18  tests/Unit/Services/Security/SecurityReportingServiceTest.php:149
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Unit\Services\Security\SecurityReportingSer…  QueryException   
+  SQLSTATE[42S22]: Column not found: 1054 Unknown column 'security_report_template_id' in 'field list' (Connection: mysql, SQL: insert into `security_reports` (`tenant_id`, `security_report_template_id`, `name`, `status`, `filters`, `generated_by`, `from_date`, `to_date`, `format`, `results`, `error_message`, `created_at`, `updated_at`) values (1, ?, Et non corporis iste., completed, {"event_type":"system","severity":"info","from":"2025-08-28 03:46:15","to":"2025-09-27 03:46:15"}, 1, 2025-08-28 03:46:15, 2025-09-27 03:46:15, html, ?, ?, 2025-09-27 03:46:15, 2025-09-27 03:46:15))
+
+  at vendor/laravel/framework/src/Illuminate/Database/Connection.php:825
+    821▕                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    822▕                 );
+    823▕             }
+    824▕ 
+  ➜ 825▕             throw new QueryException(
+    826▕                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    827▕             );
+    828▕         }
+    829▕     }
+
+      [2m+17 vendor frames [22m
+  18  tests/Unit/Services/Security/SecurityReportingServiceTest.php:189
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Unit\Services\Security\SecurityReportingSer…  QueryException   
+  SQLSTATE[42S22]: Column not found: 1054 Unknown column 'security_report_template_id' in 'field list' (Connection: mysql, SQL: insert into `security_reports` (`tenant_id`, `security_report_template_id`, `name`, `status`, `filters`, `generated_by`, `from_date`, `to_date`, `format`, `results`, `error_message`, `created_at`, `updated_at`) values (1, ?, Id cupiditate voluptatem impedit voluptate., completed, {"event_type":"authentication","severity":"warning","from":"2025-08-28 03:46:15","to":"2025-09-27 03:46:15"}, 1, 2025-08-28 03:46:15, 2025-09-27 03:46:15, pdf, {"total_events":46,"events_by_type":{"authentication":16,"authorization":28,"data_access":7},"events_by_severity":{"info":15,"warning":25,"critical":5},"events_list":[],"generated_at":"2025-09-27T03:46:15+00:00"}, ?, 2025-09-27 03:46:15, 2025-09-27 03:46:15))
+
+  at vendor/laravel/framework/src/Illuminate/Database/Connection.php:825
+    821▕                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    822▕                 );
+    823▕             }
+    824▕ 
+  ➜ 825▕             throw new QueryException(
+    826▕                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    827▕             );
+    828▕         }
+    829▕     }
+
+      [2m+17 vendor frames [22m
+  18  tests/Unit/Services/Security/SecurityReportingServiceTest.php:225
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Unit\TransactionProcessingServiceTest > gen…  ErrorException   
+  Undefined array key "transaction_id"
+
+  at app/Services/TransactionProcessingService.php:18
+     14▕         try {
+     15▕             Log::info('Processing transaction', ['data' => $data]);
+     16▕ 
+     17▕             $transaction = Transaction::create([
+  ➜  18▕                 'transaction_id' => $data['transaction_id'],
+     19▕                 'customer_code' => $data['customer_code'],
+     20▕                 'terminal_id' => $data['terminal_id'],
+     21▕                 'trade_name' => $data['trade_name'] ?? null,
+     22▕                 'hardware_id' => $data['hardware_id'],
+
+  1   tests/Unit/TransactionProcessingServiceTest.php:33
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Unit\TransactionProcessingServiceTest > pro…  ErrorException   
+  Undefined array key "transaction_id"
+
+  at app/Services/TransactionProcessingService.php:18
+     14▕         try {
+     15▕             Log::info('Processing transaction', ['data' => $data]);
+     16▕ 
+     17▕             $transaction = Transaction::create([
+  ➜  18▕                 'transaction_id' => $data['transaction_id'],
+     19▕                 'customer_code' => $data['customer_code'],
+     20▕                 'terminal_id' => $data['terminal_id'],
+     21▕                 'trade_name' => $data['trade_name'] ?? null,
+     22▕                 'hardware_id' => $data['hardware_id'],
+
+  1   tests/Unit/TransactionProcessingServiceTest.php:60
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Unit\TransactionValidationAuditTest > creat…  QueryException   
+  SQLSTATE[42S22]: Column not found: 1054 Unknown column 'status' in 'field list' (Connection: mysql, SQL: insert into `pos_terminals` (`tenant_id`, `serial_number`, `machine_number`, `supports_guest_count`, `pos_type_id`, `integration_type_id`, `auth_type_id`, `status_id`, `registered_at`, `last_seen_at`, `heartbeat_threshold`, `expires_at`, `callback_url`, `notifications_enabled`, `notification_preferences`, `status`, `updated_at`, `created_at`) values (39, EQ57XP0T, 1XK34V, 1, ?, ?, ?, 1, 2025-09-27 03:46:16, 2025-09-26 07:00:36, 300, 2026-07-05 21:13:33, ?, 0, "{\"receive_validation_results\":true,\"receive_batch_results\":true,\"include_details\":true}", active, 2025-09-27 03:46:16, 2025-09-27 03:46:16))
+
+  at vendor/laravel/framework/src/Illuminate/Database/Connection.php:825
+    821▕                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    822▕                 );
+    823▕             }
+    824▕ 
+  ➜ 825▕             throw new QueryException(
+    826▕                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    827▕             );
+    828▕         }
+    829▕     }
+
+      [2m+17 vendor frames [22m
+  18  tests/Unit/TransactionValidationAuditTest.php:29
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Unit\TransactionValidationServiceTest > val…  QueryException   
+  SQLSTATE[42S22]: Column not found: 1054 Unknown column 'status' in 'field list' (Connection: mysql, SQL: insert into `pos_terminals` (`tenant_id`, `serial_number`, `machine_number`, `supports_guest_count`, `pos_type_id`, `integration_type_id`, `auth_type_id`, `status_id`, `registered_at`, `last_seen_at`, `heartbeat_threshold`, `expires_at`, `callback_url`, `notifications_enabled`, `notification_preferences`, `status`, `updated_at`, `created_at`) values (40, XW9UPRQQ, 1R6O0T, 1, ?, ?, ?, 1, 2025-09-27 03:46:16, ?, 300, ?, ?, 1, "{\"receive_validation_results\":true,\"receive_batch_results\":true,\"include_details\":true}", active, 2025-09-27 03:46:16, 2025-09-27 03:46:16))
+
+  at vendor/laravel/framework/src/Illuminate/Database/Connection.php:825
+    821▕                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    822▕                 );
+    823▕             }
+    824▕ 
+  ➜ 825▕             throw new QueryException(
+    826▕                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    827▕             );
+    828▕         }
+    829▕     }
+
+      [2m+17 vendor frames [22m
+  18  tests/Unit/TransactionValidationServiceTest.php:33
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Unit\TransactionValidationServiceTest > det…  QueryException   
+  SQLSTATE[42S22]: Column not found: 1054 Unknown column 'status' in 'field list' (Connection: mysql, SQL: insert into `pos_terminals` (`tenant_id`, `serial_number`, `machine_number`, `supports_guest_count`, `pos_type_id`, `integration_type_id`, `auth_type_id`, `status_id`, `registered_at`, `last_seen_at`, `heartbeat_threshold`, `expires_at`, `callback_url`, `notifications_enabled`, `notification_preferences`, `status`, `updated_at`, `created_at`) values (41, 2FKVTC6I, 0MO2KJ, 1, ?, ?, ?, 1, 2025-09-27 03:46:16, ?, 300, 2026-05-22 12:23:47, http://www.okon.com/voluptatem-omnis-voluptas-iure-et-esse-placeat, 1, "{\"receive_validation_results\":true,\"receive_batch_results\":true,\"include_details\":true}", active, 2025-09-27 03:46:16, 2025-09-27 03:46:16))
+
+  at vendor/laravel/framework/src/Illuminate/Database/Connection.php:825
+    821▕                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    822▕                 );
+    823▕             }
+    824▕ 
+  ➜ 825▕             throw new QueryException(
+    826▕                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    827▕             );
+    828▕         }
+    829▕     }
+
+      [2m+17 vendor frames [22m
+  18  tests/Unit/TransactionValidationServiceTest.php:33
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Feature\API\SecurityReportControl…  InvalidArgumentException   
+  Auth guard [api] is not defined.
+
+  at vendor/laravel/framework/src/Illuminate/Auth/AuthManager.php:86
+     82▕     {
+     83▕         $config = $this->getConfig($name);
+     84▕ 
+     85▕         if (is_null($config)) {
+  ➜  86▕             throw new InvalidArgumentException("Auth guard [{$name}] is not defined.");
+     87▕         }
+     88▕ 
+     89▕         if (isset($this->customCreators[$config['driver']])) {
+     90▕             return $this->callCustomCreator($name, $config);
+
+      [2m+2 vendor frames [22m
+  3   tests/Feature/API/SecurityReportControllerTest.php:76
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Feature\API\SecurityReportControl…  InvalidArgumentException   
+  Auth guard [api] is not defined.
+
+  at vendor/laravel/framework/src/Illuminate/Auth/AuthManager.php:86
+     82▕     {
+     83▕         $config = $this->getConfig($name);
+     84▕ 
+     85▕         if (is_null($config)) {
+  ➜  86▕             throw new InvalidArgumentException("Auth guard [{$name}] is not defined.");
+     87▕         }
+     88▕ 
+     89▕         if (isset($this->customCreators[$config['driver']])) {
+     90▕             return $this->callCustomCreator($name, $config);
+
+      [2m+2 vendor frames [22m
+  3   tests/Feature/API/SecurityReportControllerTest.php:111
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Feature\API\SecurityReportControl…  InvalidArgumentException   
+  Auth guard [api] is not defined.
+
+  at vendor/laravel/framework/src/Illuminate/Auth/AuthManager.php:86
+     82▕     {
+     83▕         $config = $this->getConfig($name);
+     84▕ 
+     85▕         if (is_null($config)) {
+  ➜  86▕             throw new InvalidArgumentException("Auth guard [{$name}] is not defined.");
+     87▕         }
+     88▕ 
+     89▕         if (isset($this->customCreators[$config['driver']])) {
+     90▕             return $this->callCustomCreator($name, $config);
+
+      [2m+2 vendor frames [22m
+  3   tests/Feature/API/SecurityReportControllerTest.php:157
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Feature\API\SecurityReportControl…  InvalidArgumentException   
+  Auth guard [api] is not defined.
+
+  at vendor/laravel/framework/src/Illuminate/Auth/AuthManager.php:86
+     82▕     {
+     83▕         $config = $this->getConfig($name);
+     84▕ 
+     85▕         if (is_null($config)) {
+  ➜  86▕             throw new InvalidArgumentException("Auth guard [{$name}] is not defined.");
+     87▕         }
+     88▕ 
+     89▕         if (isset($this->customCreators[$config['driver']])) {
+     90▕             return $this->callCustomCreator($name, $config);
+
+      [2m+2 vendor frames [22m
+  3   tests/Feature/API/SecurityReportControllerTest.php:203
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Feature\API\SecurityReportControl…  InvalidArgumentException   
+  Auth guard [api] is not defined.
+
+  at vendor/laravel/framework/src/Illuminate/Auth/AuthManager.php:86
+     82▕     {
+     83▕         $config = $this->getConfig($name);
+     84▕ 
+     85▕         if (is_null($config)) {
+  ➜  86▕             throw new InvalidArgumentException("Auth guard [{$name}] is not defined.");
+     87▕         }
+     88▕ 
+     89▕         if (isset($this->customCreators[$config['driver']])) {
+     90▕             return $this->callCustomCreator($name, $config);
+
+      [2m+2 vendor frames [22m
+  3   tests/Feature/API/SecurityReportControllerTest.php:233
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Feature\API\SecurityReportControl…  InvalidArgumentException   
+  Auth guard [api] is not defined.
+
+  at vendor/laravel/framework/src/Illuminate/Auth/AuthManager.php:86
+     82▕     {
+     83▕         $config = $this->getConfig($name);
+     84▕ 
+     85▕         if (is_null($config)) {
+  ➜  86▕             throw new InvalidArgumentException("Auth guard [{$name}] is not defined.");
+     87▕         }
+     88▕ 
+     89▕         if (isset($this->customCreators[$config['driver']])) {
+     90▕             return $this->callCustomCreator($name, $config);
+
+      [2m+2 vendor frames [22m
+  3   tests/Feature/API/SecurityReportControllerTest.php:277
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Feature\API\SecurityReportControllerTest >…   QueryException   
+  SQLSTATE[42S22]: Column not found: 1054 Unknown column 'security_report_template_id' in 'field list' (Connection: mysql, SQL: insert into `security_reports` (`tenant_id`, `security_report_template_id`, `name`, `status`, `filters`, `generated_by`, `from_date`, `to_date`, `format`, `results`, `error_message`, `created_at`, `updated_at`) values (1, ?, Expedita in dolor voluptas., completed, {"event_type":"authorization","severity":"info","from":"2025-08-28 03:46:16","to":"2025-09-27 03:46:16"}, 1, 2025-08-28 03:46:16, 2025-09-27 03:46:16, pdf, {"total_events":76,"events_by_type":{"authentication":30,"authorization":17,"data_access":30},"events_by_severity":{"info":14,"warning":15,"critical":3},"events_list":[],"generated_at":"2025-09-27T03:46:16+00:00"}, ?, 2025-09-27 03:46:16, 2025-09-27 03:46:16))
+
+  at vendor/laravel/framework/src/Illuminate/Database/Connection.php:825
+    821▕                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    822▕                 );
+    823▕             }
+    824▕ 
+  ➜ 825▕             throw new QueryException(
+    826▕                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    827▕             );
+    828▕         }
+    829▕     }
+
+      [2m+17 vendor frames [22m
+  18  tests/Feature/API/SecurityReportControllerTest.php:301
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Feature\API\SecurityReportControllerTest >…   ErrorException   
+  file_put_contents(/Users/teamsolo/Projects/PITX/tsms-dev/storage/app/exports/report-1.pdf): Failed to open stream: No such file or directory
+
+  at tests/Feature/API/SecurityReportControllerTest.php:360
+    356▕ 
+    357▕         $mockExportPath = storage_path('app/exports/report-1.pdf');
+    358▕         
+    359▕         // Create a temporary file for testing
+  ➜ 360▕         file_put_contents($mockExportPath, 'Test PDF content');
+    361▕ 
+    362▕         $this->mockReportingService->shouldReceive('getReport')
+    363▕             ->once()
+    364▕             ->with(1, 1)
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Feature\API\SecurityReportControl…  InvalidArgumentException   
+  Auth guard [api] is not defined.
+
+  at vendor/laravel/framework/src/Illuminate/Auth/AuthManager.php:86
+     82▕     {
+     83▕         $config = $this->getConfig($name);
+     84▕ 
+     85▕         if (is_null($config)) {
+  ➜  86▕             throw new InvalidArgumentException("Auth guard [{$name}] is not defined.");
+     87▕         }
+     88▕ 
+     89▕         if (isset($this->customCreators[$config['driver']])) {
+     90▕             return $this->callCustomCreator($name, $config);
+
+      [2m+2 vendor frames [22m
+  3   tests/Feature/API/SecurityReportControllerTest.php:399
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Feature\API\SecurityReportControl…  InvalidArgumentException   
+  Auth guard [api] is not defined.
+
+  at vendor/laravel/framework/src/Illuminate/Auth/AuthManager.php:86
+     82▕     {
+     83▕         $config = $this->getConfig($name);
+     84▕ 
+     85▕         if (is_null($config)) {
+  ➜  86▕             throw new InvalidArgumentException("Auth guard [{$name}] is not defined.");
+     87▕         }
+     88▕ 
+     89▕         if (isset($this->customCreators[$config['driver']])) {
+     90▕             return $this->callCustomCreator($name, $config);
+
+      [2m+2 vendor frames [22m
+  3   tests/Feature/API/SecurityReportControllerTest.php:439
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Feature\Auth\AuthenticationTest > user can login with valid…   
+  Expected response status code [200] but received 404.
+Failed asserting that 404 is identical to 200.
+
+  at tests/Feature/Auth/AuthenticationTest.php:39
+     35▕             'email' => 'test@example.com',
+     36▕             'password' => 'password123'
+     37▕         ]);
+     38▕ 
+  ➜  39▕         $response->assertStatus(200)
+     40▕             ->assertJsonStructure([
+     41▕                 'token',
+     42▕                 'user' => [
+     43▕                     'id',
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Feature\Auth\Authentica…  UniqueConstraintViolationException   
+  SQLSTATE[23000]: Integrity constraint violation: 1062 Duplicate entry 'test@example.com' for key 'users.users_email_unique' (Connection: mysql, SQL: insert into `users` (`name`, `email`, `password`, `updated_at`, `created_at`) values (Test User, test@example.com, $2y$04$0o40OVaNWLdx4vDEe5eF1Ob87BaS8N6LFDes6/pOfIK7AzmWLQNCe, 2025-09-27 03:46:16, 2025-09-27 03:46:16))
+
+  at vendor/laravel/framework/src/Illuminate/Database/Connection.php:820
+    816▕         // message to include the bindings with SQL, which will make this exception a
+    817▕         // lot more helpful to the developer instead of just the database's errors.
+    818▕         catch (Exception $e) {
+    819▕             if ($this->isUniqueConstraintError($e)) {
+  ➜ 820▕                 throw new UniqueConstraintViolationException(
+    821▕                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    822▕                 );
+    823▕             }
+    824▕
+
+      [2m+18 vendor frames [22m
+  19  tests/Traits/AuthTestHelpers.php:83
+  20  tests/Feature/Auth/AuthenticationTest.php:56
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Feature\Auth\Authentica…  UniqueConstraintViolationException   
+  SQLSTATE[23000]: Integrity constraint violation: 1062 Duplicate entry 'test@example.com' for key 'users.users_email_unique' (Connection: mysql, SQL: insert into `users` (`name`, `email`, `password`, `updated_at`, `created_at`) values (Test User, test@example.com, $2y$04$36nltj3lmTKxBooy/a2SjugGLfxz05WgYKcIMULanZn8TqCce4HIW, 2025-09-27 03:46:16, 2025-09-27 03:46:16))
+
+  at vendor/laravel/framework/src/Illuminate/Database/Connection.php:820
+    816▕         // message to include the bindings with SQL, which will make this exception a
+    817▕         // lot more helpful to the developer instead of just the database's errors.
+    818▕         catch (Exception $e) {
+    819▕             if ($this->isUniqueConstraintError($e)) {
+  ➜ 820▕                 throw new UniqueConstraintViolationException(
+    821▕                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    822▕                 );
+    823▕             }
+    824▕
+
+      [2m+18 vendor frames [22m
+  19  tests/Traits/AuthTestHelpers.php:83
+  20  tests/Traits/AuthTestHelpers.php:94
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Feature\Auth\Authentica…  UniqueConstraintViolationException   
+  SQLSTATE[23000]: Integrity constraint violation: 1062 Duplicate entry 'test@example.com' for key 'users.users_email_unique' (Connection: mysql, SQL: insert into `users` (`name`, `email`, `password`, `updated_at`, `created_at`) values (Test User, test@example.com, $2y$04$JJs0PZXM2Bz9vivi/O7li.UiPo8BwvCOnrHfc9.53xk/CYrFJFX6m, 2025-09-27 03:46:16, 2025-09-27 03:46:16))
+
+  at vendor/laravel/framework/src/Illuminate/Database/Connection.php:820
+    816▕         // message to include the bindings with SQL, which will make this exception a
+    817▕         // lot more helpful to the developer instead of just the database's errors.
+    818▕         catch (Exception $e) {
+    819▕             if ($this->isUniqueConstraintError($e)) {
+  ➜ 820▕                 throw new UniqueConstraintViolationException(
+    821▕                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    822▕                 );
+    823▕             }
+    824▕
+
+      [2m+18 vendor frames [22m
+  19  tests/Traits/AuthTestHelpers.php:83
+  20  tests/Feature/Auth/AuthenticationTest.php:90
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Feature\Auth\AuthenticationTest > unauthenticated user cann…   
+  Expected response status code [401] but received 404.
+Failed asserting that 404 is identical to 401.
+
+  at tests/Feature/Auth/AuthenticationTest.php:111
+    107▕     public function test_unauthenticated_user_cannot_access_protected_routes(): void
+    108▕     {
+    109▕         $response = $this->getJson('/api/web/circuit-breaker/metrics');
+    110▕ 
+  ➜ 111▕         $response->assertUnauthorized();
+    112▕     }
+    113▕ 
+    114▕     public function test_invalid_token_cannot_access_protected_routes(): void
+    115▕     {
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Feature\Auth\AuthenticationTest > invalid token cannot acce…   
+  Expected response status code [401] but received 404.
+Failed asserting that 404 is identical to 401.
+
+  at tests/Feature/Auth/AuthenticationTest.php:119
+    115▕     {
+    116▕         $response = $this->withToken('invalid-token')
+    117▕             ->getJson('/api/web/circuit-breaker/metrics');
+    118▕ 
+  ➜ 119▕         $response->assertUnauthorized();
+    120▕     }
+    121▕     
+    122▕     protected function tearDown(): void
+    123▕     {
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Feature\Auth\RateLimitingTest > login endpoint is rate limi…   
+  Expected response status code [429] but received 404.
+Failed asserting that 404 is identical to 429.
+
+  at tests/Feature/Auth/RateLimitingTest.php:33
+     29▕             ]);
+     30▕         }
+     31▕ 
+     32▕         // The 6th attempt should be rate limited
+  ➜  33▕         $response->assertStatus(429);
+     34▕         $response->assertJsonStructure(['message', 'retry_after_seconds']);
+     35▕     }
+     36▕ 
+     37▕     public function test_api_endpoints_are_rate_limited(): void
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Feature\Auth\RateLimiti…  UniqueConstraintViolationException   
+  SQLSTATE[23000]: Integrity constraint violation: 1062 Duplicate entry 'test@example.com' for key 'users.users_email_unique' (Connection: mysql, SQL: insert into `users` (`name`, `email`, `password`, `updated_at`, `created_at`) values (Test User, test@example.com, $2y$04$DiymtA2V2MrYYpb3P4O42.yoXNKwHBf6559SZRZ1LtZBwEgwB74n6, 2025-09-27 03:46:17, 2025-09-27 03:46:17))
+
+  at vendor/laravel/framework/src/Illuminate/Database/Connection.php:820
+    816▕         // message to include the bindings with SQL, which will make this exception a
+    817▕         // lot more helpful to the developer instead of just the database's errors.
+    818▕         catch (Exception $e) {
+    819▕             if ($this->isUniqueConstraintError($e)) {
+  ➜ 820▕                 throw new UniqueConstraintViolationException(
+    821▕                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    822▕                 );
+    823▕             }
+    824▕
+
+      [2m+18 vendor frames [22m
+  19  tests/Traits/AuthTestHelpers.php:83
+  20  tests/Feature/Auth/RateLimitingTest.php:40
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Feature\Auth\RateLimiti…  UniqueConstraintViolationException   
+  SQLSTATE[23000]: Integrity constraint violation: 1062 Duplicate entry 'test@example.com' for key 'users.users_email_unique' (Connection: mysql, SQL: insert into `users` (`name`, `email`, `password`, `updated_at`, `created_at`) values (Test User, test@example.com, $2y$04$hxuOz9RkTfGHsqkv5WzpcehaYAk6ICL4GOoNdhcZ3.4VsJyO88rZS, 2025-09-27 03:46:17, 2025-09-27 03:46:17))
+
+  at vendor/laravel/framework/src/Illuminate/Database/Connection.php:820
+    816▕         // message to include the bindings with SQL, which will make this exception a
+    817▕         // lot more helpful to the developer instead of just the database's errors.
+    818▕         catch (Exception $e) {
+    819▕             if ($this->isUniqueConstraintError($e)) {
+  ➜ 820▕                 throw new UniqueConstraintViolationException(
+    821▕                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    822▕                 );
+    823▕             }
+    824▕
+
+      [2m+18 vendor frames [22m
+  19  tests/Traits/AuthTestHelpers.php:83
+  20  tests/Feature/Auth/RateLimitingTest.php:56
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Feature\CircuitBreakerTest > example          QueryException   
+  SQLSTATE[42S22]: Column not found: 1054 Unknown column 'tenant_id' in 'field list' (Connection: mysql, SQL: insert into `users` (`name`, `email`, `email_verified_at`, `password`, `remember_token`, `is_active`, `tenant_id`, `updated_at`, `created_at`) values (Emery Kozey, boyle.lenore@example.net, 2025-09-27 03:46:17, $2y$04$cB4F2izCdXdABYaVj4tvKezRswby6AQzxG3vU2bnls4n856f1Izvy, jxtxvMbnOq, 1, 42, 2025-09-27 03:46:17, 2025-09-27 03:46:17))
+
+  at vendor/laravel/framework/src/Illuminate/Database/Connection.php:825
+    821▕                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    822▕                 );
+    823▕             }
+    824▕ 
+  ➜ 825▕             throw new QueryException(
+    826▕                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    827▕             );
+    828▕         }
+    829▕     }
+
+      [2m+17 vendor frames [22m
+  18  tests/Feature/CircuitBreakerTest.php:20
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Feature\DashboardPerformanceTest > performance page…   Error   
+  Call to undefined method Tests\Feature\DashboardPerformanceTest::createUser()
+
+  at tests/Feature/DashboardPerformanceTest.php:14
+     10▕     use RefreshDatabase;
+     11▕ 
+     12▕     public function test_performance_page_loads()
+     13▕     {
+  ➜  14▕         $response = $this->actingAs($this->createUser())
+     15▕             ->get(route('dashboard.performance'));
+     16▕         
+     17▕         $response->assertStatus(200);
+     18▕     }
+
+  1   tests/Feature/DashboardPerformanceTest.php:14
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Feature\DashboardPerformanceTest > existing routes s…  Error   
+  Call to undefined method Tests\Feature\DashboardPerformanceTest::createUser()
+
+  at tests/Feature/DashboardPerformanceTest.php:22
+     18▕     }
+     19▕ 
+     20▕     public function test_existing_routes_still_work()
+     21▕     {
+  ➜  22▕         $response = $this->actingAs($this->createUser())
+     23▕             ->get(route('dashboard'));
+     24▕         
+     25▕         $response->assertStatus(200);
+     26▕     }
+
+  1   tests/Feature/DashboardPerformanceTest.php:22
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Feature\ExampleTest > the application returns a successful…    
+  Expected response status code [200] but received 302.
+Failed asserting that 302 is identical to 200.
+
+  at tests/Feature/ExampleTest.php:17
+     13▕     public function test_the_application_returns_a_successful_response(): void
+     14▕     {
+     15▕         $response = $this->get('/');
+     16▕ 
+  ➜  17▕         $response->assertStatus(200);
+     18▕     }
+     19▕ }
+     20▕
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Feature\Module2Test > transaction ingestion…  QueryException   
+  SQLSTATE[42S22]: Column not found: 1054 Unknown column 'name' in 'field list' (Connection: mysql, SQL: insert into `tenants` (`company_id`, `trade_name`, `location_type`, `location`, `unit_no`, `floor_area`, `status`, `category`, `zone`, `name`, `updated_at`, `created_at`) values (46, Lesch-Hammes, Kiosk, 8645 Morar Walk
+Hartmannhaven, MD 55246-3364, Unit 55, 282.96, active, Services, optio, Test Tenant, 2025-09-27 03:46:17, 2025-09-27 03:46:17))
+
+  at vendor/laravel/framework/src/Illuminate/Database/Connection.php:825
+    821▕                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    822▕                 );
+    823▕             }
+    824▕ 
+  ➜ 825▕             throw new QueryException(
+    826▕                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    827▕             );
+    828▕         }
+    829▕     }
+
+      [2m+17 vendor frames [22m
+  18  tests/Feature/Module2Test.php:31
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Feature\Module2Test > pos text format parse…  QueryException   
+  SQLSTATE[42S22]: Column not found: 1054 Unknown column 'name' in 'field list' (Connection: mysql, SQL: insert into `tenants` (`company_id`, `trade_name`, `location_type`, `location`, `unit_no`, `floor_area`, `status`, `category`, `zone`, `name`, `updated_at`, `created_at`) values (47, Hilpert, Oberbrunner and Dare, Inline, 6721 Krajcik Centers
+North Annabelle, WV 83758, Unit 63, 96.58, active, ?, aperiam, Test Tenant, 2025-09-27 03:46:17, 2025-09-27 03:46:17))
+
+  at vendor/laravel/framework/src/Illuminate/Database/Connection.php:825
+    821▕                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    822▕                 );
+    823▕             }
+    824▕ 
+  ➜ 825▕             throw new QueryException(
+    826▕                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    827▕             );
+    828▕         }
+    829▕     }
+
+      [2m+17 vendor frames [22m
+  18  tests/Feature/Module2Test.php:31
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Feature\Module2Test > job queues and proces…  QueryException   
+  SQLSTATE[42S22]: Column not found: 1054 Unknown column 'name' in 'field list' (Connection: mysql, SQL: insert into `tenants` (`company_id`, `trade_name`, `location_type`, `location`, `unit_no`, `floor_area`, `status`, `category`, `zone`, `name`, `updated_at`, `created_at`) values (48, Bergstrom Ltd, Kiosk, 7649 Lee Underpass Suite 995
+Ansleyport, LA 79296, Unit 39, 438.38, active, ?, minus, Test Tenant, 2025-09-27 03:46:17, 2025-09-27 03:46:17))
+
+  at vendor/laravel/framework/src/Illuminate/Database/Connection.php:825
+    821▕                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    822▕                 );
+    823▕             }
+    824▕ 
+  ➜ 825▕             throw new QueryException(
+    826▕                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    827▕             );
+    828▕         }
+    829▕     }
+
+      [2m+17 vendor frames [22m
+  18  tests/Feature/Module2Test.php:31
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Feature\Module2Test > error handling and re…  QueryException   
+  SQLSTATE[42S22]: Column not found: 1054 Unknown column 'name' in 'field list' (Connection: mysql, SQL: insert into `tenants` (`company_id`, `trade_name`, `location_type`, `location`, `unit_no`, `floor_area`, `status`, `category`, `zone`, `name`, `updated_at`, `created_at`) values (49, Metz LLC, Inline, 968 Douglas Turnpike
+North Ambershire, NE 70287-1779, Unit 62, ?, active, Services, ?, Test Tenant, 2025-09-27 03:46:18, 2025-09-27 03:46:18))
+
+  at vendor/laravel/framework/src/Illuminate/Database/Connection.php:825
+    821▕                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    822▕                 );
+    823▕             }
+    824▕ 
+  ➜ 825▕             throw new QueryException(
+    826▕                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    827▕             );
+    828▕         }
+    829▕     }
+
+      [2m+17 vendor frames [22m
+  18  tests/Feature/Module2Test.php:31
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Feature\PosTerminalDire…  UniqueConstraintViolationException   
+  SQLSTATE[23000]: Integrity constraint violation: 1062 Duplicate entry 'TESTCUST-001' for key 'companies.companies_customer_code_unique' (Connection: mysql, SQL: insert into `companies` (`customer_code`, `company_name`, `tin`, `updated_at`, `created_at`) values (TESTCUST-001, Zieme, Rogahn and Dare, 86529031801, 2025-09-27 03:46:18, 2025-09-27 03:46:18))
+
+  at vendor/laravel/framework/src/Illuminate/Database/Connection.php:820
+    816▕         // message to include the bindings with SQL, which will make this exception a
+    817▕         // lot more helpful to the developer instead of just the database's errors.
+    818▕         catch (Exception $e) {
+    819▕             if ($this->isUniqueConstraintError($e)) {
+  ➜ 820▕                 throw new UniqueConstraintViolationException(
+    821▕                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    822▕                 );
+    823▕             }
+    824▕
+
+      [2m+17 vendor frames [22m
+  18  tests/Feature/PosTerminalDirectNotificationTest.php:39
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Feature\PosTerminalDire…  UniqueConstraintViolationException   
+  SQLSTATE[23000]: Integrity constraint violation: 1062 Duplicate entry 'TESTCUST-001' for key 'companies.companies_customer_code_unique' (Connection: mysql, SQL: insert into `companies` (`customer_code`, `company_name`, `tin`, `updated_at`, `created_at`) values (TESTCUST-001, Kuvalis LLC, 96175779033, 2025-09-27 03:46:18, 2025-09-27 03:46:18))
+
+  at vendor/laravel/framework/src/Illuminate/Database/Connection.php:820
+    816▕         // message to include the bindings with SQL, which will make this exception a
+    817▕         // lot more helpful to the developer instead of just the database's errors.
+    818▕         catch (Exception $e) {
+    819▕             if ($this->isUniqueConstraintError($e)) {
+  ➜ 820▕                 throw new UniqueConstraintViolationException(
+    821▕                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    822▕                 );
+    823▕             }
+    824▕
+
+      [2m+17 vendor frames [22m
+  18  tests/Feature/PosTerminalDirectNotificationTest.php:39
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Feature\PosTerminalDire…  UniqueConstraintViolationException   
+  SQLSTATE[23000]: Integrity constraint violation: 1062 Duplicate entry 'TESTCUST-001' for key 'companies.companies_customer_code_unique' (Connection: mysql, SQL: insert into `companies` (`customer_code`, `company_name`, `tin`, `updated_at`, `created_at`) values (TESTCUST-001, Brekke-Walker, 60188016613, 2025-09-27 03:46:18, 2025-09-27 03:46:18))
+
+  at vendor/laravel/framework/src/Illuminate/Database/Connection.php:820
+    816▕         // message to include the bindings with SQL, which will make this exception a
+    817▕         // lot more helpful to the developer instead of just the database's errors.
+    818▕         catch (Exception $e) {
+    819▕             if ($this->isUniqueConstraintError($e)) {
+  ➜ 820▕                 throw new UniqueConstraintViolationException(
+    821▕                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    822▕                 );
+    823▕             }
+    824▕
+
+      [2m+17 vendor frames [22m
+  18  tests/Feature/PosTerminalDirectNotificationTest.php:39
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Feature\PosTerminalNoti…  UniqueConstraintViolationException   
+  SQLSTATE[23000]: Integrity constraint violation: 1062 Duplicate entry 'TESTCUST-001' for key 'companies.companies_customer_code_unique' (Connection: mysql, SQL: insert into `companies` (`customer_code`, `company_name`, `tin`, `updated_at`, `created_at`) values (TESTCUST-001, Emard-Howe, 95944008986, 2025-09-27 03:46:18, 2025-09-27 03:46:18))
+
+  at vendor/laravel/framework/src/Illuminate/Database/Connection.php:820
+    816▕         // message to include the bindings with SQL, which will make this exception a
+    817▕         // lot more helpful to the developer instead of just the database's errors.
+    818▕         catch (Exception $e) {
+    819▕             if ($this->isUniqueConstraintError($e)) {
+  ➜ 820▕                 throw new UniqueConstraintViolationException(
+    821▕                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    822▕                 );
+    823▕             }
+    824▕
+
+      [2m+17 vendor frames [22m
+  18  tests/Feature/PosTerminalNotificationTest.php:39
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Feature\PosTerminalNoti…  UniqueConstraintViolationException   
+  SQLSTATE[23000]: Integrity constraint violation: 1062 Duplicate entry 'TESTCUST-001' for key 'companies.companies_customer_code_unique' (Connection: mysql, SQL: insert into `companies` (`customer_code`, `company_name`, `tin`, `updated_at`, `created_at`) values (TESTCUST-001, Rodriguez-Will, 47107865926, 2025-09-27 03:46:18, 2025-09-27 03:46:18))
+
+  at vendor/laravel/framework/src/Illuminate/Database/Connection.php:820
+    816▕         // message to include the bindings with SQL, which will make this exception a
+    817▕         // lot more helpful to the developer instead of just the database's errors.
+    818▕         catch (Exception $e) {
+    819▕             if ($this->isUniqueConstraintError($e)) {
+  ➜ 820▕                 throw new UniqueConstraintViolationException(
+    821▕                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    822▕                 );
+    823▕             }
+    824▕
+
+      [2m+17 vendor frames [22m
+  18  tests/Feature/PosTerminalNotificationTest.php:39
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Feature\PosTerminalNoti…  UniqueConstraintViolationException   
+  SQLSTATE[23000]: Integrity constraint violation: 1062 Duplicate entry 'TESTCUST-001' for key 'companies.companies_customer_code_unique' (Connection: mysql, SQL: insert into `companies` (`customer_code`, `company_name`, `tin`, `updated_at`, `created_at`) values (TESTCUST-001, Bailey-Ratke, 32287268695, 2025-09-27 03:46:18, 2025-09-27 03:46:18))
+
+  at vendor/laravel/framework/src/Illuminate/Database/Connection.php:820
+    816▕         // message to include the bindings with SQL, which will make this exception a
+    817▕         // lot more helpful to the developer instead of just the database's errors.
+    818▕         catch (Exception $e) {
+    819▕             if ($this->isUniqueConstraintError($e)) {
+  ➜ 820▕                 throw new UniqueConstraintViolationException(
+    821▕                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    822▕                 );
+    823▕             }
+    824▕
+
+      [2m+17 vendor frames [22m
+  18  tests/Feature/PosTerminalNotificationTest.php:39
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Feature\TokenIntrospectionTest > invalid format token          
+  Failed asserting that null is identical to 'invalid_token'.
+
+  at tests/Feature/TokenIntrospectionTest.php:79
+     75▕             'Accept' => 'application/json'
+     76▕         ])->getJson('/api/v1/tokens/introspect');
+     77▕ 
+     78▕         $response->assertStatus(401)
+  ➜  79▕             ->assertJsonPath('code', 'invalid_token');
+     80▕     }
+     81▕ 
+     82▕     public function test_revoked_token_is_invalid()
+     83▕     {
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Feature\TokenIntrospectionTest > revoked token is invalid      
+  Failed asserting that null is identical to 'invalid_token'.
+
+  at tests/Feature/TokenIntrospectionTest.php:94
+     90▕             'Accept' => 'application/json'
+     91▕         ])->getJson('/api/v1/tokens/introspect');
+     92▕ 
+     93▕         $response->assertStatus(401)
+  ➜  94▕             ->assertJsonPath('code', 'invalid_token');
+     95▕     }
+     96▕ }
+     97▕
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Feature\TransactionControllerTest > store transaction succe…   
+  Expected response status code [200] but received 404.
+Failed asserting that 404 is identical to 200.
+
+  at tests/Feature/TransactionControllerTest.php:45
+     41▕         ];
+     42▕ 
+     43▕         $response = $this->postJson('/api/v1/transaction', $payload);
+     44▕ 
+  ➜  45▕         $response->assertStatus(200)
+     46▕             ->assertJsonStructure([
+     47▕                 'success',
+     48▕                 'message',
+     49▕                 'data' => [
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Feature\TransactionInge…  UniqueConstraintViolationException   
+  SQLSTATE[23000]: Integrity constraint violation: 1062 Duplicate entry 'test@example.com' for key 'users.users_email_unique' (Connection: mysql, SQL: insert into `users` (`name`, `email`, `email_verified_at`, `password`, `remember_token`, `is_active`, `updated_at`, `created_at`) values (Admin, test@example.com, 2025-09-27 03:46:19, $2y$04$cB4F2izCdXdABYaVj4tvKezRswby6AQzxG3vU2bnls4n856f1Izvy, n14D3Fl1Wn, 1, 2025-09-27 03:46:19, 2025-09-27 03:46:19))
+
+  at vendor/laravel/framework/src/Illuminate/Database/Connection.php:820
+    816▕         // message to include the bindings with SQL, which will make this exception a
+    817▕         // lot more helpful to the developer instead of just the database's errors.
+    818▕         catch (Exception $e) {
+    819▕             if ($this->isUniqueConstraintError($e)) {
+  ➜ 820▕                 throw new UniqueConstraintViolationException(
+    821▕                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    822▕                 );
+    823▕             }
+    824▕
+
+      [2m+17 vendor frames [22m
+  18  tests/Feature/TransactionIngestionTest.php:200
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Feature\TransactionIngestionTest > excessive failed transac…   
+  Failed asserting that '9' matches expected 15.
+
+  at tests/Feature/TransactionIngestionTest.php:852
+    848▕         
+    849▕         $data = json_decode($notification->data, true);
+    850▕         $this->assertEquals('transaction_failure_threshold_exceeded', $data['type']);
+    851▕         $this->assertEquals('high', $data['severity']);
+  ➜ 852▕         $this->assertEquals($this->terminal->id, $data['pos_terminal_id']);
+    853▕         $this->assertGreaterThanOrEqual(5, $data['threshold_data']['current_count']);
+    854▕         
+    855▕         // Verify notification is unread
+    856▕         $this->assertNull($notification->read_at);
+
+  1   tests/Feature/TransactionIngestionTest.php:852
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Feature\TransactionPipeline\TransactionChildLinkingTest > a…   
+  Expected response status code [200] but received 500.
+Failed asserting that 500 is identical to 200.
+
+  at tests/Feature/TransactionPipeline/TransactionChildLinkingTest.php:110
+    106▕             'Authorization' => 'Bearer ' . $this->token,
+    107▕             'Accept' => 'application/json'
+    108▕         ])->postJson('/api/v1/transactions/official', $submission);
+    109▕ 
+  ➜ 110▕         $response->assertStatus(200);
+    111▕ 
+    112▕         // Verify transaction exists
+    113▕         $this->assertDatabaseHas('transactions', [
+    114▕             'transaction_id' => $transaction['transaction_id'],
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Feature\TransactionProcessingTest > transac…  QueryException   
+  SQLSTATE[23000]: Integrity constraint violation: 1452 Cannot add or update a child row: a foreign key constraint fails (`tsms_dev`.`tenants`, CONSTRAINT `tenants_company_id_foreign` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT) (Connection: mysql, SQL: insert into `tenants` (`customer_code`, `trade_name`, `status`, `updated_at`, `created_at`) values (SAMPLE001, Sample Tenant, active, 2025-09-27 03:46:20, 2025-09-27 03:46:20))
+
+  at vendor/laravel/framework/src/Illuminate/Database/Connection.php:825
+    821▕                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    822▕                 );
+    823▕             }
+    824▕ 
+  ➜ 825▕             throw new QueryException(
+    826▕                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    827▕             );
+    828▕         }
+    829▕     }
+
+      [2m+22 vendor frames [22m
+  23  tests/Feature/TransactionProcessingTest.php:27
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Feature\TransactionProcessingTest > status…   QueryException   
+  SQLSTATE[23000]: Integrity constraint violation: 1452 Cannot add or update a child row: a foreign key constraint fails (`tsms_dev`.`tenants`, CONSTRAINT `tenants_company_id_foreign` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT) (Connection: mysql, SQL: insert into `tenants` (`customer_code`, `trade_name`, `status`, `updated_at`, `created_at`) values (SAMPLE001, Sample Tenant, active, 2025-09-27 03:46:20, 2025-09-27 03:46:20))
+
+  at vendor/laravel/framework/src/Illuminate/Database/Connection.php:825
+    821▕                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    822▕                 );
+    823▕             }
+    824▕ 
+  ➜ 825▕             throw new QueryException(
+    826▕                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    827▕             );
+    828▕         }
+    829▕     }
+
+      [2m+22 vendor frames [22m
+  23  tests/Feature/TransactionProcessingTest.php:27
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Feature\TransactionProcessingTest > handles…  QueryException   
+  SQLSTATE[23000]: Integrity constraint violation: 1452 Cannot add or update a child row: a foreign key constraint fails (`tsms_dev`.`tenants`, CONSTRAINT `tenants_company_id_foreign` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT) (Connection: mysql, SQL: insert into `tenants` (`customer_code`, `trade_name`, `status`, `updated_at`, `created_at`) values (SAMPLE001, Sample Tenant, active, 2025-09-27 03:46:20, 2025-09-27 03:46:20))
+
+  at vendor/laravel/framework/src/Illuminate/Database/Connection.php:825
+    821▕                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    822▕                 );
+    823▕             }
+    824▕ 
+  ➜ 825▕             throw new QueryException(
+    826▕                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    827▕             );
+    828▕         }
+    829▕     }
+
+      [2m+22 vendor frames [22m
+  23  tests/Feature/TransactionProcessingTest.php:27
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Feature\TransactionProcessingTest > process…  QueryException   
+  SQLSTATE[23000]: Integrity constraint violation: 1452 Cannot add or update a child row: a foreign key constraint fails (`tsms_dev`.`tenants`, CONSTRAINT `tenants_company_id_foreign` FOREIGN KEY (`company_id`) REFERENCES `companies` (`id`) ON DELETE RESTRICT) (Connection: mysql, SQL: insert into `tenants` (`customer_code`, `trade_name`, `status`, `updated_at`, `created_at`) values (SAMPLE001, Sample Tenant, active, 2025-09-27 03:46:20, 2025-09-27 03:46:20))
+
+  at vendor/laravel/framework/src/Illuminate/Database/Connection.php:825
+    821▕                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    822▕                 );
+    823▕             }
+    824▕ 
+  ➜ 825▕             throw new QueryException(
+    826▕                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    827▕             );
+    828▕         }
+    829▕     }
+
+      [2m+22 vendor frames [22m
+  23  tests/Feature/TransactionProcessingTest.php:27
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Feature\TransactionStatusTest > can retriev…  QueryException   
+  SQLSTATE[42S22]: Column not found: 1054 Unknown column 'status' in 'field list' (Connection: mysql, SQL: insert into `pos_terminals` (`tenant_id`, `serial_number`, `machine_number`, `supports_guest_count`, `pos_type_id`, `integration_type_id`, `auth_type_id`, `status_id`, `registered_at`, `last_seen_at`, `heartbeat_threshold`, `expires_at`, `callback_url`, `notifications_enabled`, `notification_preferences`, `status`, `updated_at`, `created_at`) values (94, EQIU5784, 31MBHB, 1, ?, ?, ?, 1, 2025-09-27 03:46:20, 2025-09-26 10:56:19, 300, ?, ?, 1, "{\"receive_validation_results\":true,\"receive_batch_results\":true,\"include_details\":true}", active, 2025-09-27 03:46:20, 2025-09-27 03:46:20))
+
+  at vendor/laravel/framework/src/Illuminate/Database/Connection.php:825
+    821▕                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    822▕                 );
+    823▕             }
+    824▕ 
+  ➜ 825▕             throw new QueryException(
+    826▕                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    827▕             );
+    828▕         }
+    829▕     }
+
+      [2m+17 vendor frames [22m
+  18  tests/Feature/TransactionStatusTest.php:26
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Feature\TransactionStatusTest > returns 404…  QueryException   
+  SQLSTATE[42S22]: Column not found: 1054 Unknown column 'status' in 'field list' (Connection: mysql, SQL: insert into `pos_terminals` (`tenant_id`, `serial_number`, `machine_number`, `supports_guest_count`, `pos_type_id`, `integration_type_id`, `auth_type_id`, `status_id`, `registered_at`, `last_seen_at`, `heartbeat_threshold`, `expires_at`, `callback_url`, `notifications_enabled`, `notification_preferences`, `status`, `updated_at`, `created_at`) values (95, 95NO4NO6, EM08BZ, 1, ?, ?, ?, 1, 2025-09-27 03:46:20, 2025-09-20 06:00:49, 300, ?, http://www.hammes.com/id-vero-ullam-dolorum-eos-ipsa-deserunt, 0, "{\"receive_validation_results\":true,\"receive_batch_results\":true,\"include_details\":true}", active, 2025-09-27 03:46:20, 2025-09-27 03:46:20))
+
+  at vendor/laravel/framework/src/Illuminate/Database/Connection.php:825
+    821▕                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    822▕                 );
+    823▕             }
+    824▕ 
+  ➜ 825▕             throw new QueryException(
+    826▕                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    827▕             );
+    828▕         }
+    829▕     }
+
+      [2m+17 vendor frames [22m
+  18  tests/Feature/TransactionStatusTest.php:26
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Feature\TransactionValidationAdvancedTest > negative zero v…   
+  Expected response status code [200] but received 422.
+Failed asserting that 422 is identical to 200.
+
+The following errors occurred during the last request:
+
+{
+    "success": false,
+    "message": "Validation failed",
+    "errors": {
+        "transaction.promo_status": [
+            "The transaction.promo status field is required."
+        ],
+        "transaction.customer_code": [
+            "The transaction.customer code field is required."
+        ],
+        "transaction.adjustments": [
+            "The transaction.adjustments field is required.",
+            "adjustments array must contain at least 7 entries",
+            "Missing required adjustment types: promo_discount, senior_discount, pwd_discount, vip_card_discount, service_charge_distributed_to_employees, service_charge_retained_by_management, employee_discount"
+        ],
+        "transaction.taxes": [
+            "The transaction.taxes field is required.",
+            "taxes array must contain at least 4 entries",
+            "Missing required tax types: VAT, VATABLE_SALES, SC_VAT_EXEMPT_SALES"
+        ],
+        "structure": [
+            "Payload does not follow standard TSMS structure"
+        ]
+    },
+    "structure_hint": "Ensure payload follows standard TSMS structure with payload_checksum positioned correctly"
+}
+
+  at tests/Feature/TransactionValidationAdvancedTest.php:76
+     72▕         $payload['transaction']['payload_checksum'] = $this->checksumService->computeChecksum($payload['transaction']);
+     73▕         $payload['payload_checksum'] = $this->checksumService->computeChecksum($payload);
+     74▕         
+     75▕         $response = $this->postJson($this->endpoint, $payload);
+  ➜  76▕         $response->assertStatus(200); // System currently accepts zero amounts
+     77▕         
+     78▕         // Case 2: Negative base amount transaction
+     79▕         $payload = $this->generateValidSinglePayload();
+     80▕         $payload['transaction']['base_amount'] = -100;
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Feature\TransactionVali…  UniqueConstraintViolationException   
+  SQLSTATE[23000]: Integrity constraint violation: 1062 Duplicate entry 'CUST-002' for key 'companies.companies_customer_code_unique' (Connection: mysql, SQL: insert into `companies` (`customer_code`, `company_name`, `tin`, `updated_at`, `created_at`) values (CUST-002, Wiegand-Doyle, 91692276700, 2025-09-27 03:46:20, 2025-09-27 03:46:20))
+
+  at vendor/laravel/framework/src/Illuminate/Database/Connection.php:820
+    816▕         // message to include the bindings with SQL, which will make this exception a
+    817▕         // lot more helpful to the developer instead of just the database's errors.
+    818▕         catch (Exception $e) {
+    819▕             if ($this->isUniqueConstraintError($e)) {
+  ➜ 820▕                 throw new UniqueConstraintViolationException(
+    821▕                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    822▕                 );
+    823▕             }
+    824▕
+
+      [2m+17 vendor frames [22m
+  18  tests/Feature/TransactionValidationAdvancedTest.php:37
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Feature\TransactionValidationTest > validates valid transac…   
+  Failed asserting that false is true.
+
+  at tests/Feature/TransactionValidationTest.php:50
+     46▕             'payload_checksum' => 'dummy-batch-checksum',
+     47▕             'transaction' => $transaction,
+     48▕         ];
+     49▕         $result = $this->service->validate($data);
+  ➜  50▕         $this->assertTrue($result['valid']);
+     51▕         $this->assertEmpty($result['errors']);
+     52▕     }
+     53▕ 
+     54▕     public function test_validates_operating_hours()
+
+  1   tests/Feature/TransactionValidationTest.php:50
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Feature\TransactionValidationTest > validates operating hou…   
+  Failed asserting that an array contains 'Transaction outside operating hours (6AM-10PM)'.
+
+  at tests/Feature/TransactionValidationTest.php:75
+     71▕         ];
+     72▕         $result = $this->service->validate($data);
+     73▕         $this->assertFalse($result['valid']);
+     74▕         $this->assertNotEmpty($result['errors']);
+  ➜  75▕         $this->assertContains('Transaction outside operating hours (6AM-10PM)', $result['errors']);
+     76▕     }
+     77▕ }
+     78▕
+
+  1   tests/Feature/TransactionValidationTest.php:75
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Feature\WebAppForwardingCircuitBreakerTest…   QueryException   
+  SQLSTATE[42S22]: Column not found: 1054 Unknown column 'name' in 'field list' (Connection: mysql, SQL: insert into `tenants` (`company_id`, `trade_name`, `location_type`, `location`, `unit_no`, `floor_area`, `status`, `category`, `zone`, `name`, `updated_at`, `created_at`) values (115, Becker Group, Kiosk, 7742 Marina Extensions
+West Orvaltown, NV 27235, Unit 12, 170.34, Operational, Services, ?, ?, 2025-09-27 03:46:21, 2025-09-27 03:46:21))
+
+  at vendor/laravel/framework/src/Illuminate/Database/Connection.php:825
+    821▕                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    822▕                 );
+    823▕             }
+    824▕ 
+  ➜ 825▕             throw new QueryException(
+    826▕                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    827▕             );
+    828▕         }
+    829▕     }
+
+      [2m+17 vendor frames [22m
+  18  tests/Feature/WebAppForwardingCircuitBreakerTest.php:21
+  19  tests/Feature/WebAppForwardingCircuitBreakerTest.php:43
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Feature\WebAppForwardingCircuitBreakerTest…   QueryException   
+  SQLSTATE[42S22]: Column not found: 1054 Unknown column 'name' in 'field list' (Connection: mysql, SQL: insert into `tenants` (`company_id`, `trade_name`, `location_type`, `location`, `unit_no`, `floor_area`, `status`, `category`, `zone`, `name`, `updated_at`, `created_at`) values (116, Schumm Group, Kiosk, 1582 Yoshiko Neck
+South Josieview, GA 83281, ?, 48.34, Operational, Services, ?, ?, 2025-09-27 03:46:21, 2025-09-27 03:46:21))
+
+  at vendor/laravel/framework/src/Illuminate/Database/Connection.php:825
+    821▕                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    822▕                 );
+    823▕             }
+    824▕ 
+  ➜ 825▕             throw new QueryException(
+    826▕                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    827▕             );
+    828▕         }
+    829▕     }
+
+      [2m+17 vendor frames [22m
+  18  tests/Feature/WebAppForwardingCircuitBreakerTest.php:21
+  19  tests/Feature/WebAppForwardingCircuitBreakerTest.php:63
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Feature\WebAppForwardingSchemaV2Test > sing…  QueryException   
+  SQLSTATE[42S22]: Column not found: 1054 Unknown column 'name' in 'field list' (Connection: mysql, SQL: update `tenants` set `customer_code` = CUST-SINGLE, `name` = Tenant Single, `tenants`.`updated_at` = 2025-09-27 03:46:21 where `id` = 109)
+
+  at vendor/laravel/framework/src/Illuminate/Database/Connection.php:825
+    821▕                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    822▕                 );
+    823▕             }
+    824▕ 
+  ➜ 825▕             throw new QueryException(
+    826▕                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    827▕             );
+    828▕         }
+    829▕     }
+
+      [2m+12 vendor frames [22m
+  13  tests/Feature/WebAppForwardingSchemaV2Test.php:73
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Feature\WebAppForwardingSchemaV2Test > batc…  QueryException   
+  SQLSTATE[42S22]: Column not found: 1054 Unknown column 'name' in 'field list' (Connection: mysql, SQL: update `tenants` set `customer_code` = CUST-A, `name` = Tenant A, `tenants`.`updated_at` = 2025-09-27 03:46:21 where `id` = 110)
+
+  at vendor/laravel/framework/src/Illuminate/Database/Connection.php:825
+    821▕                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    822▕                 );
+    823▕             }
+    824▕ 
+  ➜ 825▕             throw new QueryException(
+    826▕                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    827▕             );
+    828▕         }
+    829▕     }
+
+      [2m+12 vendor frames [22m
+  13  tests/Feature/WebAppForwardingSchemaV2Test.php:104
+
+  ────────────────────────────────────────────────────────────────────────────  
+   FAILED  Tests\Feature\WebAppForwardingSchemaV2Test > homo…  QueryException   
+  SQLSTATE[42S22]: Column not found: 1054 Unknown column 'name' in 'field list' (Connection: mysql, SQL: update `tenants` set `customer_code` = CUST-H1, `name` = Homogeneity One, `tenants`.`updated_at` = 2025-09-27 03:46:21 where `id` = 112)
+
+  at vendor/laravel/framework/src/Illuminate/Database/Connection.php:825
+    821▕                     $this->getName(), $query, $this->prepareBindings($bindings), $e
+    822▕                 );
+    823▕             }
+    824▕ 
+  ➜ 825▕             throw new QueryException(
+    826▕                 $this->getName(), $query, $this->prepareBindings($bindings), $e
+    827▕             );
+    828▕         }
+    829▕     }
+
+      [2m+12 vendor frames [22m
+  13  tests/Feature/WebAppForwardingSchemaV2Test.php:153
+
+
+  Tests:    111 failed, 1 risky, 7 skipped, 63 passed (183 assertions)
+  Duration: 9.90s
+

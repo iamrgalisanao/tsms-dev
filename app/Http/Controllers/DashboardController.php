@@ -13,6 +13,21 @@ use App\Models\TransactionJob;
 
 class DashboardController extends Controller
 {
+    /**
+     * Dismiss or mark admin notification as read
+     */
+    public function dismissNotification(Request $request)
+    {
+        $id = $request->input('id');
+        if (!$id) {
+            return response()->json(['error' => 'Notification ID required'], 400);
+        }
+        // Mark as read (add 'read_at' column if not exists)
+        $updated = \DB::table('notifications')
+            ->where('id', $id)
+            ->update(['read_at' => now()]);
+        return response()->json(['success' => $updated > 0]);
+    }
     protected $dashboardService;
 
     public function __construct(\App\Services\DashboardService $dashboardService)
@@ -23,26 +38,33 @@ class DashboardController extends Controller
     public function index()
     {
         $metrics = $this->getMetrics();
-        $tenants= Tenant::count();
-        // $enrollmentData = $this->getEnrollmentData();
-        // $providers = $this->getProviderStats();
-        // $recentTerminals = $this->getRecentTerminals();
+        $tenants = Tenant::count();
         $recentTransactions = $this->getRecentTransactions();
         $recentTransactionCount = Transaction::where('created_at', '>=', now()->subDays(7))->count();
-        // Use TransactionJob for error count in normalized schema
         $errorCount = \App\Models\TransactionJob::where('created_at', '>=', now()->subDays(7))
             ->where('job_status', 'FAILED')
             ->count();
         $auditLogs = \App\Models\AuditLog::with('user')->orderByDesc('created_at')->limit(50)->get();
 
+        // Surface recent admin notifications for excessive failed transactions
+        $adminNotifications = [];
+        if (auth()->check() && auth()->user()->hasRole('admin')) {
+            $adminNotifications = \DB::table('notifications')
+                ->where('type', 'App\\Notifications\\TransactionFailureThresholdExceeded')
+                ->whereNull('read_at')
+                ->orderByDesc('created_at')
+                ->limit(5)
+                ->get();
+        }
+
         return view('dashboard', compact(
             'metrics',
             'tenants',
-            // 'providers',
             'recentTransactions',
             'recentTransactionCount',
             'errorCount',
-            'auditLogs'
+            'auditLogs',
+            'adminNotifications'
         ));
     }
 
@@ -247,7 +269,7 @@ class DashboardController extends Controller
 
     protected function getRecentTransactions()
     {
-        $transactions = Transaction::with(['terminal', 'tenant'])
+        $transactions = Transaction::with(['terminal', 'tenant.company'])
             ->withSum('adjustments as adjustments_sum', 'amount')
             ->select(['*']) // Ensure all columns are selected
             ->latest()

@@ -9,6 +9,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use App\Jobs\ProcessTransactionJob;
 use App\Jobs\CheckTransactionFailureThresholdsJob;
 use App\Services\PayloadChecksumService; // Add this import
@@ -91,8 +92,8 @@ class TransactionController extends Controller
         // Process adjustments if present
         if (isset($transaction['adjustments']) && is_array($transaction['adjustments'])) {
             foreach ($transaction['adjustments'] as $adjustment) {
-                \App\Models\TransactionAdjustment::create([
-                    'transaction_id' => $transactionModel->transaction_id,
+                // Use relation create to ensure the child record is linked by transaction_pk
+                $transactionModel->adjustments()->create([
                     'adjustment_type' => $adjustment['adjustment_type'],
                     'amount' => $adjustment['amount'],
                 ]);
@@ -102,8 +103,8 @@ class TransactionController extends Controller
         // Process taxes if present
         if (isset($transaction['taxes']) && is_array($transaction['taxes'])) {
             foreach ($transaction['taxes'] as $tax) {
-                \App\Models\TransactionTax::create([
-                    'transaction_id' => $transactionModel->transaction_id,
+                // Use relation create to ensure the child record is linked by transaction_pk
+                $transactionModel->taxes()->create([
                     'tax_type' => $tax['tax_type'],
                     'amount' => $tax['amount'],
                 ]);
@@ -338,6 +339,19 @@ class TransactionController extends Controller
                             'status' => 'duplicate',
                             'message' => 'Transaction already exists'
                         ];
+                        // Update terminal activity on duplicate to reflect recent sales interaction
+                        try {
+                            $terminal->last_seen_at = now();
+                            if (Schema::hasColumn('pos_terminals', 'last_sale_at')) {
+                                $terminal->last_sale_at = now();
+                            }
+                            $terminal->save();
+                        } catch (\Throwable $te) {
+                            Log::warning('Failed to update terminal last_seen_at on duplicate transaction', [
+                                'terminal_id' => $terminal->id,
+                                'error' => $te->getMessage(),
+                            ]);
+                        }
                         continue;
                     }
 
@@ -379,6 +393,21 @@ class TransactionController extends Controller
                         'message' => 'Transaction queued for processing'
                     ];
                     $processedCount++;
+
+                    // Update terminal activity on successful creation
+                    try {
+                        $terminal->last_seen_at = now();
+                        if (Schema::hasColumn('pos_terminals', 'last_sale_at')) {
+                            $terminal->last_sale_at = now();
+                        }
+                        $terminal->save();
+                    } catch (\Throwable $te) {
+                        Log::warning('Failed to update terminal last_seen_at after transaction creation', [
+                            'terminal_id' => $terminal->id,
+                            'transaction_id' => $transaction->transaction_id,
+                            'error' => $te->getMessage(),
+                        ]);
+                    }
 
                 } catch (\Exception $e) {
                     Log::error('Failed to process transaction in batch', [
@@ -925,6 +954,18 @@ class TransactionController extends Controller
                     'submission_exists' => $submission ? true : false,
                     'transaction_rows' => $existingTransactions->count(),
                 ]);
+                // Update terminal liveness on idempotent replay
+                try {
+                    if ($terminalFromToken instanceof \App\Models\PosTerminal) {
+                        $terminalFromToken->last_seen_at = now();
+                        $terminalFromToken->save();
+                    }
+                } catch (\Throwable $te) {
+                    Log::warning('Failed to update terminal last_seen_at on idempotent replay', [
+                        'terminal_id' => $request->terminal_id,
+                        'error' => $te->getMessage(),
+                    ]);
+                }
                 
                 DB::commit();
                 return response()->json([
@@ -1014,6 +1055,18 @@ class TransactionController extends Controller
                     ->where('submission_uuid', $request->submission_uuid)
                     ->first();
                 $existingTransactions = \App\Models\Transaction::where('submission_uuid', $request->submission_uuid)->get();
+                // Touch terminal liveness on idempotent duplicate via cache lock
+                try {
+                    if ($terminalFromToken instanceof \App\Models\PosTerminal) {
+                        $terminalFromToken->last_seen_at = now();
+                        $terminalFromToken->save();
+                    }
+                } catch (\Throwable $te) {
+                    Log::warning('Failed to update terminal last_seen_at on cache-lock idempotent replay', [
+                        'terminal_id' => $request->terminal_id,
+                        'error' => $te->getMessage(),
+                    ]);
+                }
                 try { \DB::commit(); } catch (\Throwable $t) {}
                 return response()->json([
                     'success' => true,
@@ -1052,6 +1105,19 @@ class TransactionController extends Controller
                         ->where('submission_uuid', $request->submission_uuid)
                         ->first();
                     $existingTransactions = \App\Models\Transaction::where('submission_uuid', $request->submission_uuid)->get();
+
+                    // Touch terminal liveness on duplicate submission insert
+                    try {
+                        if ($terminalFromToken instanceof \App\Models\PosTerminal) {
+                            $terminalFromToken->last_seen_at = now();
+                            $terminalFromToken->save();
+                        }
+                    } catch (\Throwable $te) {
+                        Log::warning('Failed to update terminal last_seen_at on duplicate submission insert', [
+                            'terminal_id' => $request->terminal_id,
+                            'error' => $te->getMessage(),
+                        ]);
+                    }
 
                     // Commit open transaction (if any) and return idempotent success
                     try { \DB::commit(); } catch (\Throwable $t) {}
@@ -1115,6 +1181,20 @@ class TransactionController extends Controller
                             'status' => 'success', // ✅ Fixed: Return success for idempotency
                             'message' => 'Transaction already processed'
                         ];
+                        // Update terminal activity for idempotent transaction replay
+                        try {
+                            $terminal->last_seen_at = now();
+                            if (Schema::hasColumn('pos_terminals', 'last_sale_at')) {
+                                $terminal->last_sale_at = now();
+                            }
+                            $terminal->save();
+                        } catch (\Throwable $te) {
+                            Log::warning('Failed to update terminal last_seen_at on idempotent transaction', [
+                                'terminal_id' => $terminal->id,
+                                'transaction_id' => $existingTransaction->transaction_id,
+                                'error' => $te->getMessage(),
+                            ]);
+                        }
                         continue;
                     }
                     Log::info('storeOfficial: Creating transaction record', ['transaction_id' => $transactionData['transaction_id']]);
@@ -1122,6 +1202,7 @@ class TransactionController extends Controller
                     // Extract vatable_sales and vat_amount from taxes if present
                     $vatableSales = 0;
                     $vatAmount = 0;
+                    $scVatExemptSales = 0;
                     if (isset($transactionData['taxes']) && is_array($transactionData['taxes'])) {
                         foreach ($transactionData['taxes'] as $tax) {
                             if (isset($tax['tax_type'])) {
@@ -1130,6 +1211,8 @@ class TransactionController extends Controller
                                     $vatableSales = $tax['amount'] ?? 0;
                                 } elseif ($taxType === 'VAT' || $taxType === 'VAT_AMOUNT') {
                                     $vatAmount = $tax['amount'] ?? 0;
+                                } elseif ($taxType === 'SC_VAT_EXEMPT_SALES') {
+                                    $scVatExemptSales = $tax['amount'] ?? 0;
                                 }
                             }
                         }
@@ -1145,6 +1228,7 @@ class TransactionController extends Controller
                         'net_sales' => $transactionData['net_sales'] ?? 0,
                         'vatable_sales' => $vatableSales,
                         'vat_amount' => $vatAmount,
+                        'sc_vat_exempt_sales' => $scVatExemptSales,
                         'customer_code' => $transactionData['customer_code'] ?? ($terminal->tenant->company->customer_code ?? 'UNKNOWN'),
                         'promo_status' => $transactionData['promo_status'],
                         'payload_checksum' => $transactionData['payload_checksum'],
@@ -1156,8 +1240,8 @@ class TransactionController extends Controller
                     // Process adjustments if present
                     if (isset($transactionData['adjustments']) && is_array($transactionData['adjustments'])) {
                         foreach ($transactionData['adjustments'] as $adjustment) {
-                            \App\Models\TransactionAdjustment::create([
-                                'transaction_id' => $transaction->transaction_id,
+                            // create via relation so transaction_pk is set correctly
+                            $transaction->adjustments()->create([
                                 'adjustment_type' => $adjustment['adjustment_type'],
                                 'amount' => $adjustment['amount'],
                             ]);
@@ -1167,8 +1251,8 @@ class TransactionController extends Controller
                     // Process taxes if present
                     if (isset($transactionData['taxes']) && is_array($transactionData['taxes'])) {
                         foreach ($transactionData['taxes'] as $tax) {
-                            \App\Models\TransactionTax::create([
-                                'transaction_id' => $transaction->transaction_id,
+                            // create via relation so transaction_pk is set correctly
+                            $transaction->taxes()->create([
                                 'tax_type' => $tax['tax_type'],
                                 'amount' => $tax['amount'],
                             ]);
@@ -1179,6 +1263,21 @@ class TransactionController extends Controller
                     Log::info('storeOfficial: Dispatching ProcessTransactionJob', ['transaction_id' => $transaction->transaction_id]);
                     ProcessTransactionJob::dispatch($transaction->id)->afterCommit();
                     Log::info('storeOfficial: ProcessTransactionJob dispatched', ['transaction_id' => $transaction->transaction_id]);
+
+                    // Update terminal activity on successful transaction creation
+                    try {
+                        $terminal->last_seen_at = now();
+                        if (Schema::hasColumn('pos_terminals', 'last_sale_at')) {
+                            $terminal->last_sale_at = now();
+                        }
+                        $terminal->save();
+                    } catch (\Throwable $te) {
+                        Log::warning('Failed to update terminal last_seen_at after official transaction creation', [
+                            'terminal_id' => $terminal->id,
+                            'transaction_id' => $transaction->transaction_id,
+                            'error' => $te->getMessage(),
+                        ]);
+                    }
 
                     // (Notification suppressed here; final status notification sent by ProcessTransactionJob after validation)
 

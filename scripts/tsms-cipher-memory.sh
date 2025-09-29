@@ -20,10 +20,38 @@ ENABLE_MEMORY=false
 LOAD_BUNDLE=false
 CIPHER_MODE="cli"
 BUNDLE_FILE="./web-bundles/teams/team-fullstack.txt"
-CONFIG_FILE="./memAgent/cipher.yml"
+# Prefer final config if present
+if [[ -f "./memAgent/cipher-final.yml" ]]; then
+    CONFIG_FILE="./memAgent/cipher-final.yml"
+else
+    CONFIG_FILE="./memAgent/cipher.yml"
+fi
 ENVIRONMENT_FILE="./memAgent/.env"
 FORCE_REINSTALL=false
 VERBOSE=false
+USER_SPECIFIED_CONFIG=false
+
+# Help function (moved earlier for availability during argument parsing)
+show_help() {
+        echo -e "${CYAN}TSMS Cipher Memory Integration Script${NC}"
+        echo ""
+        echo "Usage: $0 [OPTIONS]"
+        echo ""
+        echo "Options:"
+        echo "  --enable-memory         Start the Cipher memory agent"
+        echo "  --load-bundle           Load project documentation into memory"
+        echo "  --cipher-mode MODE      Set mode: cli, mcp, api, ui (default: cli)"
+        echo "  --bundle-file FILE      Specify bundle file path"
+        echo "  --config-file FILE      Explicitly specify agent config YAML"
+        echo "  --force-reinstall       Force reinstall Cipher CLI"
+        echo "  --verbose, -v           Enable verbose output"
+        echo "  --help, -h              Show this help message"
+        echo ""
+        echo "Examples:"
+        echo "  $0 --load-bundle"
+        echo "  $0 --enable-memory --cipher-mode mcp"
+        echo "  $0 --load-bundle --enable-memory"
+}
 
 # Parse arguments
 while [[ $# -gt 0 ]]; do
@@ -42,6 +70,11 @@ while [[ $# -gt 0 ]]; do
             ;;
         --bundle-file)
             BUNDLE_FILE="$2"
+            shift 2
+            ;;
+        --config-file)
+            CONFIG_FILE="$2"
+            USER_SPECIFIED_CONFIG=true
             shift 2
             ;;
         --force-reinstall)
@@ -64,26 +97,12 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# Help function
-show_help() {
-    echo -e "${CYAN}TSMS Cipher Memory Integration Script${NC}"
-    echo ""
-    echo "Usage: $0 [OPTIONS]"
-    echo ""
-    echo "Options:"
-    echo "  --enable-memory       Start the Cipher memory agent"
-    echo "  --load-bundle         Load project documentation into memory"
-    echo "  --cipher-mode MODE    Set mode: cli, mcp, api, ui (default: cli)"
-    echo "  --bundle-file FILE    Specify bundle file path"
-    echo "  --force-reinstall     Force reinstall Cipher CLI"
-    echo "  --verbose, -v         Enable verbose output"
-    echo "  --help, -h            Show this help message"
-    echo ""
-    echo "Examples:"
-    echo "  $0 --load-bundle                    # Load TSMS docs into memory"
-    echo "  $0 --enable-memory --cipher-mode mcp # Start MCP server"
-    echo "  $0 --load-bundle --enable-memory    # Load docs and start agent"
-}
+if [[ "$USER_SPECIFIED_CONFIG" == false ]]; then
+    if [[ -f "./memAgent/cipher-final.yml" && "$CONFIG_FILE" != "./memAgent/cipher-final.yml" ]]; then
+        log "INFO" "Auto-selecting final config: ./memAgent/cipher-final.yml"
+        CONFIG_FILE="./memAgent/cipher-final.yml"
+    fi
+fi
 
 # Logging function
 log() {

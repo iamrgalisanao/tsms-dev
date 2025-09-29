@@ -144,7 +144,7 @@ class TestRunner
             'tenant_id' => 'TEST-TENANT',
             'hardware_id' => 'TEST-HW-001',
             'machine_number' => 1,
-            'store_name' => 'Test Store',
+            'trade_name' => 'Test Store',
             'terminal_uid' => 'TERM-TEST-001',
             'transaction_timestamp' => date('Y-m-d\TH:i:s\Z'),
             'gross_sales' => 1000.00,
@@ -224,7 +224,7 @@ tenant_id: TEST-TENANT
 hardware_id: TEST-HW-001
 machine_number: 1
 transaction_id: TEST-TX-TEXT-FORMAT
-store_name: Test Store with Text Format
+trade_name: Test Store with Text Format
 transaction_timestamp: 2025-05-17T12:00:00Z
 gross_sales: 1500.00
 net_sales: 1425.00
@@ -480,7 +480,7 @@ class TextFormatParserTester
 tenant_id: C-T1005
 hardware_id: 7P589L2
 transaction_id: 8a918a90-7cbd-4b44-adc0-bc3d31cee238
-store_name: Test Store
+trade_name: Test Store
 transaction_timestamp: 2025-03-26T13:45:00Z
 gross_sales: 12345.67
 EOT;
@@ -496,7 +496,7 @@ EOT;
 tenant_id=C-T1005
 hardware_id=7P589L2
 transaction_id=8a918a90-7cbd-4b44-adc0-bc3d31cee238
-store_name=Test Store
+trade_name=Test Store
 transaction_timestamp=2025-03-26T13:45:00Z
 gross_sales=12345.67
 EOT;
@@ -512,7 +512,7 @@ EOT;
 TENANT_ID C-T1005
 HARDWARE_ID 7P589L2
 TRANSACTION_ID 8a918a90-7cbd-4b44-adc0-bc3d31cee238
-STORE_NAME Test Store
+TRADE_NAME Test Store
 TRANSACTION_TIMESTAMP 2025-03-26T13:45:00Z
 GROSS_SALES 12345.67
 EOT;

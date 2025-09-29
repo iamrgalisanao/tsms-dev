@@ -53,12 +53,12 @@ Route::prefix('v1/auth')->group(function () {
 });
 
 // V1 API Routes with Sanctum authentication
-Route::prefix('v1')->middleware(['auth:sanctum'])->group(function () {
+Route::prefix('v1')->middleware(['auth:sanctum', 'capture.terminal.ip'])->group(function () {
     // Terminal management endpoints
     Route::post('/auth/refresh', [TerminalAuthController::class, 'refresh']);
     Route::get('/auth/me', [TerminalAuthController::class, 'me']);
     Route::post('/heartbeat', [TerminalAuthController::class, 'heartbeat'])
-        ->middleware('abilities:heartbeat:send');
+        ->middleware(['abilities:heartbeat:send', 'throttle:60,1']);
     
     // Transaction endpoints with token abilities
     Route::middleware('abilities:transaction:create')->group(function () {

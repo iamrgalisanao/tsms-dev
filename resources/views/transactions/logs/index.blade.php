@@ -9,6 +9,14 @@
 <link rel="stylesheet" href="{{ asset('plugins/datatables-buttons/css/buttons.bootstrap4.min.css') }}">
 <link rel="stylesheet" href="{{ asset('plugins/toastr/toastr.min.css') }}">
 
+<style>
+/* Ensure we only show Laravel paginator, not DataTables pager/info on this page */
+.dataTables_wrapper .dataTables_paginate,
+.dataTables_wrapper .dataTables_info { display: none !important; }
+/* Tidy up paginator alignment under AdminLTE */
+.pagination { margin-bottom: 0; }
+</style>
+
 @endpush
 
 @push('scripts')
@@ -51,7 +59,10 @@ use App\Helpers\FormatHelper;
 <div class="card card-primary card-outline">
     <div class="card-header">
     <h3 class="card-title">Transaction Logs</h3>
-        <div class="card-tools">
+        <div class="card-tools d-flex align-items-center">
+            @if(auth()->check() && auth()->user()->hasRole('admin'))
+                <a href="{{ route('admin.settings.edit') }}" class="btn btn-sm btn-outline-secondary mr-2">Admin Settings</a>
+            @endif
             <button type="button" class="btn btn-tool" data-toggle="collapse" data-target="#filtersCollapse" aria-expanded="false" aria-controls="filtersCollapse" title="Toggle Filters">
                 <i class="fas fa-filter"></i>
             </button>
@@ -136,6 +147,12 @@ use App\Helpers\FormatHelper;
                     <th>VAT</th>
                     <th>Net</th>
                     <th>Refund</th>
+                    <th>promo_discount</th>
+                    <th>senior_discount</th>
+                    <th>pwd_discount</th>
+                    <th>Tax (breakdown)</th>
+                    <th>VATABLE_SALES</th>
+                    <th>SC_VAT_EXEMPT_SALES</th>
                 </tr>
             </thead>
             <tbody>
@@ -145,10 +162,70 @@ use App\Helpers\FormatHelper;
                     <td>{{ $row->trade_name }}</td>
                     <td>SN: {{ $row->serial_number ?? 'N/A' }} • M: {{ $row->machine_number ?? 'N/A' }}</td>
                     <td class="text-end">{{ number_format($row->tx_count) }}</td>
-                    <td class="text-end">₱{{ number_format($row->gross, 2) }}</td>
-                    <td class="text-end">₱{{ number_format($row->vat, 2) }}</td>
-                    <td class="text-end">₱{{ number_format($row->net, 2) }}</td>
-                    <td class="text-end">₱{{ number_format($row->refund, 2) }}</td>
+                    @php
+                        // Prefer presenter-computed values when we have a sample transaction
+                        $presenterGross = null; $presenterVat = null; $presenterNet = null; $presenterRefund = null;
+                        if (isset($sampleTransactions) && isset($row->sample_tx_id) && $sampleTransactions->has($row->sample_tx_id)) {
+                            $txp = $sampleTransactions->get($row->sample_tx_id);
+                                $p = \App\Presenters\TransactionSummaryPresenter::fromTransaction($txp);
+                                $presenterGross = $p['gross'];
+                                $presenterVat = $p['vat_amount'];
+                                $presenterNet = $p['net'];
+                                $presenterRefund = $p['refund'];
+                        }
+                    @endphp
+                    <td class="text-end">{{ isset($presenterGross) ? \App\Helpers\FormatHelper::formatCurrency($presenterGross) : ('₱' . number_format($row->gross, 2)) }}</td>
+                    <td class="text-end">{{ isset($presenterVat) ? \App\Helpers\FormatHelper::formatCurrency($presenterVat) : ('₱' . number_format($row->vat, 2)) }}</td>
+                    <td class="text-end">{{ isset($presenterNet) ? \App\Helpers\FormatHelper::formatCurrency($presenterNet) : ('₱' . number_format($row->net, 2)) }}</td>
+                    <td class="text-end">{{ isset($presenterRefund) ? \App\Helpers\FormatHelper::formatCurrency($presenterRefund) : ('₱' . number_format($row->refund, 2)) }}</td>
+                        @php
+                        // Use presenter to keep view logic minimal
+                        $promo = $senior = $pwd = $vat = $vatable = $sc_vat = null;
+                        if (isset($sampleTransactions) && isset($row->sample_tx_id) && $sampleTransactions->has($row->sample_tx_id)) {
+                            $tx = $sampleTransactions->get($row->sample_tx_id);
+                            // avoid clobbering the paginator $summary variable; use $txSummary for the presenter result
+                            $txSummary = \App\Presenters\TransactionSummaryPresenter::fromTransaction($tx);
+                                // Prefer presenter values for display, but fall back to
+                                // aggregated row totals when presenter sample is absent.
+                                $promo_amount = $txSummary['promo_amount'] ?? null;
+                                $senior_amount = $txSummary['senior_amount'] ?? null;
+                                $pwd_amount = $txSummary['pwd_amount'] ?? null;
+                                $vat_amount = $txSummary['vat_amount'] ?? null;
+                                $vatable_sales = $txSummary['vatable_sales'] ?? null;
+                                $sc_vat_amount = $txSummary['sc_vat_amount'] ?? null;
+
+                                // fallback to row-level aggregates so the summary shows daily totals
+                                if ($promo_amount === null && isset($row->promo_discount)) {
+                                    $promo_amount = $row->promo_discount;
+                                }
+                                if ($senior_amount === null && isset($row->senior_discount)) {
+                                    $senior_amount = $row->senior_discount;
+                                }
+                                if ($pwd_amount === null && isset($row->pwd_discount)) {
+                                    $pwd_amount = $row->pwd_discount;
+                                }
+                                if ($vat_amount === null && isset($row->vat)) {
+                                    $vat_amount = $row->vat;
+                                }
+                                if ($vatable_sales === null && isset($row->vatable_sales)) {
+                                    $vatable_sales = $row->vatable_sales;
+                                }
+                                // sc_vat may be stored under different keys depending on aggregation
+                                if ($sc_vat_amount === null) {
+                                    if (isset($row->sc_vat_amount)) {
+                                        $sc_vat_amount = $row->sc_vat_amount;
+                                    } elseif (isset($row->sc_vat_exempt_sales)) {
+                                        $sc_vat_amount = $row->sc_vat_exempt_sales;
+                                    }
+                                }
+                        }
+                    @endphp
+                    <td class="text-end">{{ $promo_amount !== null ? \App\Helpers\FormatHelper::formatCurrency($promo_amount) : '-' }}</td>
+                    <td class="text-end">{{ $senior_amount !== null ? \App\Helpers\FormatHelper::formatCurrency($senior_amount) : '-' }}</td>
+                    <td class="text-end">{{ $pwd_amount !== null ? \App\Helpers\FormatHelper::formatCurrency($pwd_amount) : '-' }}</td>
+                    <td class="text-end">{{ $vat_amount !== null ? \App\Helpers\FormatHelper::formatCurrency($vat_amount) : '-' }}</td>
+                    <td class="text-end">{{ $vatable_sales !== null ? \App\Helpers\FormatHelper::formatCurrency($vatable_sales) : '-' }}</td>
+                    <td class="text-end">{{ $sc_vat_amount !== null ? \App\Helpers\FormatHelper::formatCurrency($sc_vat_amount) : '-' }}</td>
                 </tr>
                 @empty
                 @endforelse
@@ -173,7 +250,7 @@ use App\Helpers\FormatHelper;
             <tbody>
                 @forelse($logs as $log)
                 <tr>
-                    <td>{{ substr($log->transaction_id, -8) }}</td>
+                    <td class="text-break"><code style="white-space:normal;word-break:break-all;overflow-wrap:anywhere;">{{ $log->transaction_id }}</code></td>
                     {{-- <td>{{ $log->terminal->identifier ?? 'N/A' }}</td>
                     <td> --}}
                     <td>
@@ -238,11 +315,11 @@ use App\Helpers\FormatHelper;
                 <div>
                     @if(($activeTab ?? 'detailed') === 'summary')
                         @if(isset($summary) && method_exists($summary, 'links'))
-                            {{ $summary->onEachSide(1)->links() }}
+                            {{ $summary->onEachSide(1)->links('pagination::bootstrap-4') }}
                         @endif
                     @else
                         @if(isset($logs) && method_exists($logs, 'links'))
-                            {{ $logs->onEachSide(1)->links() }}
+                            {{ $logs->onEachSide(1)->links('pagination::bootstrap-4') }}
                         @endif
                     @endif
                 </div>

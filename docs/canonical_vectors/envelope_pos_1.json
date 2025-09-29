@@ -1,0 +1,65 @@
+{
+    "submission_uuid": "3a8e2000-ad7b-451f-a1c6-bf7817fd46ac",
+    "tenant_id": 101,
+    "terminal_id": 1,
+    "submission_timestamp": "2025-09-28T05:50:41Z",
+    "transaction_count": 1,
+    "payload_checksum": "93c91d5240fa7dc31fe4e89a95c4a51102630dde8badfdc6d369c1961638c77e",
+    "transaction": {
+        "transaction_id": "30745663-39a4-4872-8461-df79a63e3c00",
+        "transaction_timestamp": "2025-09-28T05:50:41Z",
+        "gross_sales": 62.35,
+        "net_sales": 62.35,
+        "promo_status": "WITH_APPROVAL",
+        "customer_code": "C-0001",
+        "payload_checksum": "94fc3ac74332f02a6a67802092075b8a87cfbeca890c091ebb8ad15d4837a671",
+        "adjustments": [
+            {
+                "adjustment_type": "promo_discount",
+                "amount": 0
+            },
+            {
+                "adjustment_type": "employee_discount",
+                "amount": 0
+            },
+            {
+                "adjustment_type": "senior_discount",
+                "amount": 0
+            },
+            {
+                "adjustment_type": "pwd_discount",
+                "amount": 0
+            },
+            {
+                "adjustment_type": "vip_card_discount",
+                "amount": 0
+            },
+            {
+                "adjustment_type": "service_charge_distributed_to_employees",
+                "amount": 0
+            },
+            {
+                "adjustment_type": "service_charge_retained_by_management",
+                "amount": 0
+            }
+        ],
+        "taxes": [
+            {
+                "tax_type": "VAT",
+                "amount": 0
+            },
+            {
+                "tax_type": "VATABLE_SALES",
+                "amount": 0
+            },
+            {
+                "tax_type": "SC_VAT_EXEMPT_SALES",
+                "amount": 62.35
+            },
+            {
+                "tax_type": "OTHER_TAX",
+                "amount": 0
+            }
+        ]
+    }
+}

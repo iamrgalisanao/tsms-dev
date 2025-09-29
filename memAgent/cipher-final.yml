@@ -1,0 +1,125 @@
+name: "tsms-memory-agent"
+version: "1.0.1"
+description: "Final TSMS memory agent config (sanitized)"
+
+# Prompt / system instruction providers (required by cipher 0.2.2)
+providers:
+  - name: "project-static"
+    type: "static"
+    priority: 100
+    enabled: true
+    config:
+      content: |
+        You are the TSMS project memory agent. Provide concise, technically accurate, security-aware guidance grounded ONLY in indexed TSMS project knowledge (architecture docs, POS integration notes, source references). If unsure, say you need more context.
+  - name: "bmad-roles-primer"
+    type: "static"
+    priority: 90
+    enabled: true
+    config:
+      content: |
+        BMad-Method Core Roles (primer for grounding before full bundle ingestion):
+        Orchestrator: Coordinates multi-role collaboration & workflow transitions.
+        Architect: Drives systems design, scalability, integration boundaries.
+        Analyst: Clarifies requirements, domain models, edge cases.
+        UX Expert: Ensures user flow clarity, accessibility, interaction quality.
+        PM: Schedules, risk tracking, milestone planning.
+        Product Owner: Prioritizes backlog for business value; refines acceptance criteria.
+        Use these definitions only as lightweight scaffolding; prefer bundle-sourced authoritative sections when available.
+
+settings:
+  maxGenerationTime: 8000
+  failOnProviderError: false
+  contentSeparator: "\n\n"
+
+llm:
+  provider: "openai"
+  model: "gpt-4o-mini"
+  temperature: 0.2
+  max_tokens: 4000
+  api_key_env: "OPENAI_API_KEY"
+  apiKey: "${OPENAI_API_KEY}"
+
+embeddings:
+  provider: "openai"
+  model: "text-embedding-3-small"
+  dimensions: 1536
+  api_key_env: "OPENAI_API_KEY"
+  apiKey: "${OPENAI_API_KEY}"
+
+vector_store:
+  provider: "local"
+  path: "./data/tsms_vector_store.db"
+  collection: "tsms_project_memory"
+
+memory:
+  max_tokens: 12000
+  overlap_tokens: 400
+  chunk_size: 1500
+  similarity_threshold: 0.75
+  max_results: 15
+
+data_sources:
+  - type: "file"
+    path: "../web-bundles/teams/team-fullstack.txt"
+    enabled: true
+    weight: 1.0
+  - type: "file"
+    path: "../ARCHITECTURE.md"
+    enabled: true
+    weight: 1.0
+  - type: "directory"
+    path: "../_md/"
+    patterns: ["*.md"]
+    enabled: true
+    weight: 0.9
+  - type: "directory"
+    path: "../docs/"
+    patterns: ["*.md", "*.txt"]
+    enabled: true
+    weight: 0.9
+  - type: "directory"
+    path: "../"
+    patterns: ["README.md", "composer.json", "package.json", "*.yml", "*.yaml"]
+    exclude: ["vendor", "node_modules", ".git", "storage/logs", "bootstrap/cache"]
+    enabled: true
+    weight: 0.8
+  - type: "directory"
+    path: "../tests/"
+    patterns: ["*.md", "*.txt"]
+    enabled: true
+    weight: 0.7
+  - type: "directory"
+    path: "../ops/"
+    patterns: ["*.md", "*.txt", "*.yml"]
+    enabled: true
+    weight: 0.7
+
+logging:
+  level: "info"
+  file: "./logs/tsms_cipher.log"
+  console: true
+  timestamp: true
+
+server:
+  host: "localhost"
+  port: 3333
+  cors: true
+
+context_tags:
+  - "pos-integration"
+  - "transaction-processing"
+  - "laravel-framework"
+  - "react-frontend"
+  - "api-design"
+  - "database-schema"
+  - "testing-procedures"
+  - "deployment-operations"
+  - "security-implementation"
+
+search:
+  boost_recent: true
+  context_window: 5
+  semantic_expansion: true
+
+# Explicitly start with no external MCP servers; can be added later dynamically
+mcpServers: {}

@@ -1,6 +1,6 @@
 @extends('layouts.master')
 @section('title', 'Terminal Tokens')
-@section('content')
+{{-- Removed redundant opening of content section; actual content section starts below --}}
 
 @push('styles')
 <!-- DataTables -->
@@ -19,6 +19,34 @@
         <h3 class="card-title text-white">List of Tokens</h3>
     </div>
     <div class="card-body">
+        <!-- Controls: token presence filter + per-page selector -->
+        <form method="GET" action="{{ route('terminal-tokens') }}" class="row g-2 align-items-end mb-3">
+          <div class="col-md-4">
+            <label for="status" class="form-label mb-0">Show</label>
+            <select name="status" id="status" class="form-control">
+              <option value="" {{ request('status') === null || request('status') === '' ? 'selected' : '' }}>All terminals</option>
+              <option value="has_tokens" {{ request('status') === 'has_tokens' ? 'selected' : '' }}>Only terminals with tokens</option>
+              <option value="no_tokens" {{ request('status') === 'no_tokens' ? 'selected' : '' }}>Only terminals without tokens</option>
+            </select>
+          </div>
+          <div class="col-md-3">
+            <label for="per_page" class="form-label mb-0">Per page (table)</label>
+            @php $pp = (int) request('per_page', 10); @endphp
+            <select name="per_page" id="per_page" class="form-control">
+              @foreach([10,25,50,100,500,1000,2000] as $opt)
+                <option value="{{ $opt }}" {{ $pp === $opt ? 'selected' : '' }}>{{ $opt }}</option>
+              @endforeach
+            </select>
+          </div>
+          <div class="col-md-3">
+            <label class="form-label mb-0">&nbsp;</label>
+            <div>
+              <button type="submit" class="btn btn-outline-primary me-2">Apply</button>
+              <a href="{{ route('terminal-tokens') }}" class="btn btn-outline-secondary">Reset</a>
+            </div>
+          </div>
+        </form>
+
         <table id="example3" class="table table-bordered table-striped">
             <thead>
                 <tr>
@@ -60,13 +88,17 @@
                       @endif
                     </td>
                     <td>
-                      @php
-                        $latestToken = $terminal->tokens->last();
-                      @endphp
-                      <div class="input-group">
-                        <input type="text" class="form-control" value="{{ $latestToken ? $latestToken->name : '' }}" readonly style="max-width: 180px;">
-                        <span class="input-group-text" title="Token Created">{{ $latestToken?->created_at?->format('Y-m-d H:i') }}</span>
-                      </div>
+                        @php
+                          $latestToken = $terminal->tokens->last();
+                        @endphp
+                        @if($latestToken)
+                          <div class="input-group">
+                            <input type="text" class="form-control" value="{{ $latestToken->name }}" readonly style="max-width: 180px;">
+                            <span class="input-group-text" title="Token Created">{{ $latestToken?->created_at?->format('Y-m-d H:i') }}</span>
+                          </div>
+                        @else
+                          <span class="badge bg-secondary">No token yet</span>
+                        @endif
                     </td>
 @if(session('bearer_token'))
   <div class="modal fade" id="newTokenModal" tabindex="-1" aria-labelledby="newTokenModalLabel" role="dialog" aria-modal="true">
@@ -125,19 +157,24 @@
   </script>
 @endif
                     <td>
+                      @php $hasToken = (bool) $latestToken; @endphp
                       <form method="POST" action="{{ route('terminal-tokens.regenerate', $terminal->id) }}" class="d-inline">
                         @csrf
-                        <button type="submit" class="btn btn-sm btn-warning">Regenerate API Key</button>
+                        <button type="submit" class="btn btn-sm {{ $hasToken ? 'btn-warning' : 'btn-success' }}">
+                          {{ $hasToken ? 'Regenerate API Key' : 'Generate API Key' }}
+                        </button>
                       </form>
-                      <form method="POST" action="{{ route('terminal-tokens.revoke', $terminal->id) }}" class="d-inline ms-1">
-                        @csrf
-                        <button type="submit" class="btn btn-sm btn-danger" onclick="return confirm('Are you sure you want to revoke this API key?')">Revoke API Key</button>
-                      </form>
+                      @if($hasToken)
+                        <form method="POST" action="{{ route('terminal-tokens.revoke', $terminal->id) }}" class="d-inline ms-1">
+                          @csrf
+                          <button type="submit" class="btn btn-sm btn-danger" onclick="return confirm('Are you sure you want to revoke this API key?')">Revoke API Key</button>
+                        </form>
+                      @endif
                     </td>
                   </tr>
                   @empty
                   <tr>
-                    <td colspan="7" class="text-center">No terminals found</td>
+                    <td colspan="9" class="text-center">No terminals found</td>
                   </tr>
                 @endforelse
             </tbody>
@@ -167,17 +204,22 @@
 
 <script>
 $(function () {
-    $("#example3").DataTable({
+  var initialLen = parseInt($('#per_page').val(), 10);
+  if (isNaN(initialLen) || initialLen <= 0) { initialLen = 10; }
+  var table = $("#example3").DataTable({
         "responsive": true, 
-        "lengthChange": false, 
+    "lengthChange": false,
+    "pageLength": initialLen,
+    // Keep a consistent menu even if hidden; allows programmatic changes
+    "lengthMenu": [[10, 25, 50, 100, 500, 1000, 2000], [10, 25, 50, 100, 500, 1000, 2000]],
         "autoWidth": false,
         "ordering": true,
         "info": true,
         "paging": true,
         "searching": true,
-        "language": {
-            "emptyTable": "No transaction logs available",
-            "zeroRecords": "No matching records found",
+    "language": {
+      "emptyTable": "No terminals available",
+      "zeroRecords": "No matching terminals found",
             "info": "Showing _START_ to _END_ of _TOTAL_ entries",
             "infoEmpty": "Showing 0 to 0 of 0 entries",
             "infoFiltered": "(filtered from _MAX_ total entries)",
@@ -197,6 +239,14 @@ $(function () {
               { extend: "colvis",text: "Cols",  className: "btn btn-lg btn-danger" }
         ]
     }).buttons().container().appendTo('#example3_wrapper .col-md-6:eq(0)');
+
+    // Tie the custom per-page dropdown to DataTables page length
+    $(document).on('change', '#per_page', function () {
+      var val = parseInt(this.value, 10);
+      if (!isNaN(val) && val > 0) {
+        table.page.len(val).draw();
+      }
+    });
 
     // Toastr notifications
     @if(session('success'))
@@ -230,147 +280,8 @@ $(function () {
 
 @endpush
 
-<div class="card">
-  <div class="card-header">
-    <h5>Terminal Tokens</h5>
-  </div>
-  <div class="card-body">
-    <!-- Filters -->
-    <div class="mb-4">
-      <form method="GET" action="{{ route('terminal-tokens') }}" class="row g-3">
-        <div class="col-md-4">
-          <label for="terminal_id" class="form-label">Terminal ID</label>
-          <input type="text" class="form-control" id="terminal_id" name="terminal_id" value="{{ request('terminal_id') }}">
-        </div>
-        <div class="col-md-4">
-          <label for="status" class="form-label">Status</label>
-          <select class="form-select" id="status" name="status">
-            <option value="">All Statuses</option>
-            <option value="active" {{ request('status') === 'active' ? 'selected' : '' }}>Active</option>
-            <option value="expired" {{ request('status') === 'expired' ? 'selected' : '' }}>Expired</option>
-            <option value="revoked" {{ request('status') === 'revoked' ? 'selected' : '' }}>Revoked</option>
-          </select>
-        </div>
-        <div class="col-md-4 d-flex align-items-end">
-          <button type="submit" class="btn btn-primary me-2">Filter</button>
-          <a href="{{ route('terminal-tokens') }}" class="btn btn-secondary">Reset</a>
-        </div>
-      </form>
-    </div>
 
-    <!-- Terminal Tokens Table -->
-    <div class="table-responsive">
-      <table class="table table-striped">
-        <thead>
-          <tr>
-            <th>Terminal ID</th>
-            <th>Tenant</th>
-            <th>Created</th>
-            <th>Expires At</th>
-            <th>Status</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          @forelse($terminals as $terminal)
-          <tr>
-            <td>{{ $terminal->terminal_uid }}</td>
-            <td>{{ $terminal->tenant->trade_name ?? 'Unknown' }}</td>
-            <td>{{ $terminal->created_at?->format('Y-m-d H:i') ?? 'N/A' }}</td>
-            <td>
-              @if($terminal->expires_at)
-                {{ $terminal->expires_at?->format('Y-m-d H:i') }}
-              @else
-                Never
-              @endif
-            </td>
-            <td>
-              @if($terminal->is_revoked)
-                <span class="badge bg-danger">Revoked</span>
-              @elseif($terminal->expires_at && $terminal->expires_at->isPast())
-                <span class="badge bg-warning">Expired</span>
-              @else
-                <span class="badge bg-success">Active</span>
-              @endif
-            </td>
-            <td>
-              <form method="POST" action="{{ route('terminal-tokens.regenerate', $terminal->id) }}" class="d-inline">
-                @csrf
-                <button type="submit" class="btn btn-sm btn-primary">Regenerate JWT</button>
-              </form>
-            </td>
-          </tr>
-          @empty
-          <tr>
-            <td colspan="6" class="text-center">No terminals found</td>
-          </tr>
-          @endforelse
-        </tbody>
-      </table>
-    </div>
-
-    <!-- Pagination -->
-    <div class="mt-4 d-flex justify-content-center">
-      @if($terminals->hasPages())
-        <nav aria-label="Page navigation">
-          <ul class="pagination">
-            {{-- Previous Page Link --}}
-            @if($terminals->onFirstPage())
-              <li class="page-item disabled">
-                <span class="page-link">«</span>
-              </li>
-            @else
-              <li class="page-item">
-                <a class="page-link" href="{{ $terminals->previousPageUrl() }}" rel="prev">«</a>
-              </li>
-            @endif
-
-            {{-- Pagination Elements --}}
-            @foreach($terminals->getUrlRange(1, $terminals->lastPage()) as $page => $url)
-              @if($page == $terminals->currentPage())
-                <li class="page-item active">
-                  <span class="page-link">{{ $page }}</span>
-                </li>
-              @else
-                <li class="page-item">
-                  <a class="page-link" href="{{ $url }}">{{ $page }}</a>
-                </li>
-              @endif
-            @endforeach
-
-            {{-- Next Page Link --}}
-            @if($terminals->hasMorePages())
-              <li class="page-item">
-                <a class="page-link" href="{{ $terminals->nextPageUrl() }}" rel="next">»</a>
-              </li>
-            @else
-              <li class="page-item disabled">
-                <span class="page-link">»</span>
-              </li>
-            @endif
-          </ul>
-        </nav>
-      @endif
-    </div>
-  </div>
-</div>
-
-@if(session('success'))
-<div class="alert alert-success alert-dismissible fade show mt-4" role="alert">
-  {{ session('success') }}
-  <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-</div>
-@endif
-
-@if(session('error'))
-<div class="alert alert-danger alert-dismissible fade show mt-4" role="alert">
-  {{ session('error') }}
-  <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
-</div>
-@endif
-@endsection
-
-@section('styles')
+@push('styles')
 <style>
 /* Additional styling for the pagination */
 .pagination {
@@ -396,4 +307,4 @@ $(function () {
   padding: 0.35em 0.65em;
 }
 </style>
-@endsection
+@endpush

@@ -126,61 +126,6 @@ use App\Helpers\BadgeHelper;
     </div>
 
     <div class="card-body p-4">
-      <!-- Search and Filters -->
-      <div class="row g-3 mb-4">
-        <div class="col-md-6">
-          <div class="input-group">
-            <input type="text" class="form-control" id="searchLogs" placeholder="Search logs..." aria-label="Search logs">
-            <button class="btn btn-outline-secondary" type="button" id="clearSearch" aria-label="Clear search" tabindex="0"><i class="fas fa-times"></i></button>
-            <button class="btn btn-primary px-4" onclick="applyFilters()" aria-label="Search logs">
-              <i class="fas fa-search me-2" aria-hidden="true"></i>Search
-            </button>
-          </div>
-        </div>
-        <div class="col-md-6 text-end">
-          <button class="btn btn-outline-secondary" type="button" data-bs-toggle="collapse"
-            data-bs-target="#advancedFilters" aria-controls="advancedFilters" aria-expanded="false" aria-label="Show advanced filters">
-            <i class="fas fa-filter me-2" aria-hidden="true"></i>Advanced Filters
-          </button>
-        </div>
-      </div>
-      <!-- Advanced Filters Panel -->
-      <div class="collapse mb-4" id="advancedFilters">
-        <div class="card card-body bg-light">
-          <form id="advancedFiltersForm" class="row g-3" aria-label="Advanced log filters">
-            <div class="col-md-3">
-              <label for="filterDateRange" class="form-label">Date Range</label>
-              <input type="text" class="form-control" id="filterDateRange" name="date_range" placeholder="YYYY-MM-DD to YYYY-MM-DD" aria-label="Date range">
-            </div>
-            <div class="col-md-3">
-              <label for="filterEventType" class="form-label">Event Type</label>
-              <select class="form-select" id="filterEventType" name="event_type" aria-label="Event type">
-                <option value="">All</option>
-                <option value="system">System</option>
-                <option value="success">Success</option>
-                <option value="error">Error</option>
-                <option value="pending">Pending</option>
-              </select>
-            </div>
-            <div class="col-md-3">
-              <label for="filterSeverity" class="form-label">Severity</label>
-              <select class="form-select" id="filterSeverity" name="severity" aria-label="Severity">
-                <option value="">All</option>
-                <option value="info">Info</option>
-                <option value="warning">Warning</option>
-                <option value="critical">Critical</option>
-              </select>
-            </div>
-            <div class="col-md-3">
-              <label for="filterUser" class="form-label">User</label>
-              <input type="text" class="form-control" id="filterUser" name="user" placeholder="Username or ID" aria-label="User">
-            </div>
-            <div class="col-12 text-end">
-              <button type="submit" class="btn btn-primary" aria-label="Apply advanced filters">Apply Filters</button>
-            </div>
-          </form>
-        </div>
-      </div>
 
       <!-- Tab Content -->
       <div class="tab-content">
@@ -206,25 +151,6 @@ use App\Helpers\BadgeHelper;
 @push('scripts')
 <script>
 $(document).ready(function() {
-  // Clear search input
-  $('#clearSearch').on('click', function() {
-    $('#searchLogs').val('');
-    applyFilters();
-  });
-
-  // Advanced filters submit
-  $('#advancedFiltersForm').on('submit', function(e) {
-    e.preventDefault();
-    applyFilters();
-  });
-
-  // Main search button
-  $('#searchLogs').on('keypress', function(e) {
-    if (e.which === 13) {
-      applyFilters();
-    }
-  });
-
   // Live update toggle
   $('#liveUpdate').on('change', function() {
     if ($(this).is(':checked')) {
@@ -260,21 +186,28 @@ function applyFilters() {
   $('#liveUpdateSpinner').show();
   // Gather filter values
   const data = {
-    search: $('#searchLogs').val(),
-    date_range: $('#filterDateRange').val(),
-    event_type: $('#filterEventType').val(),
-    severity: $('#filterSeverity').val(),
-    user: $('#filterUser').val(),
     tab: $('.nav-link.active').attr('href').replace('#','')
   };
+  // Preserve current DataTables search term across refreshes for the Audit tab
+  let currentSearch = '';
+  if (data.tab === 'audit' && $.fn.DataTable && $.fn.DataTable.isDataTable('#auditTable')) {
+    try { currentSearch = $('#auditTable').DataTable().search(); } catch (e) {}
+  }
   $.ajax({
-    url: '/logs/ajax',
+    url: '{{ route('log-viewer.filtered') }}',
     method: 'GET',
     data: data,
+    headers: { 'X-Requested-With': 'XMLHttpRequest' },
     success: function(response) {
       // Replace table partials with new data
       if (data.tab === 'audit') {
         $('#audit').html(response.auditHtml);
+        // Re-initialize DataTable after DOM replacement
+        initAuditDataTable();
+        // Re-apply previous search term if any
+        if (currentSearch) {
+          try { $('#auditTable').DataTable().search(currentSearch).draw(); } catch (e) {}
+        }
       } else {
         $('#webhook').html(response.webhookHtml);
       }
@@ -305,6 +238,50 @@ function stopLiveUpdates() {
     liveUpdateInterval = null;
   }
   $('#liveUpdateSpinner').hide();
+}
+
+// Safe (idempotent) initializer for the audit table DataTable
+function initAuditDataTable() {
+  const selector = '#auditTable';
+  if (!$.fn.DataTable) return; // plugins not loaded yet
+  // If a previous instance exists (edge: re-attach), destroy before re-init
+  if ($.fn.DataTable.isDataTable(selector)) {
+    try { $(selector).DataTable().clear().destroy(); } catch (e) {}
+  }
+  $(selector).DataTable({
+    responsive: true,
+    lengthChange: false,
+    autoWidth: false,
+    ordering: true,
+    info: true,
+    paging: true,
+    searching: true,
+    pageLength: 10,
+    order: [[0, 'desc']],
+    // Explicitly declare 8 columns to match <thead>
+    columns: [
+      { defaultContent: '' }, // Time
+      { defaultContent: '' }, // User
+      { defaultContent: '' }, // Action
+      { defaultContent: '' }, // Resource
+      { defaultContent: '' }, // Tenant
+      { defaultContent: '' }, // Details
+      { defaultContent: '' }, // IP Address
+      { defaultContent: '', orderable: false, searchable: false } // Actions
+    ],
+    columnDefs: [
+      { targets: '_all', defaultContent: '' }
+    ],
+    language: {
+      emptyTable: 'No audit logs available',
+      zeroRecords: 'No matching audit records found',
+      info: 'Showing _START_ to _END_ of _TOTAL_ audit entries',
+      infoEmpty: 'Showing 0 to 0 of 0 audit entries',
+      infoFiltered: '(filtered from _MAX_ total audit entries)',
+      search: 'Search audit logs:',
+      paginate: { first: 'First', last: 'Last', next: 'Next', previous: 'Previous' }
+    }
+  });
 }
 </script>
 <style>

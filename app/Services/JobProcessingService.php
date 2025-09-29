@@ -118,10 +118,8 @@ class JobProcessingService
             // Calculate adjustments sum from relationship (includes discounts, service charges, and other adjustments)
             $adjustmentsSum = $transaction->adjustments()->sum('amount') ?? 0;
 
-            // Calculate other_tax sum (excluding VAT) from relationship
-            $otherTaxSum = $transaction->taxes()
-                ->where('tax_type', '!=', 'VAT')
-                ->sum('amount') ?? 0;
+            // Use Transaction helper to compute other tax sum, which accounts for SC_VAT_EXEMPT_SALES
+            $otherTaxSum = method_exists($transaction, 'otherTaxSum') ? $transaction->otherTaxSum() : 0;
 
             // Validate net_sales = gross_sales - other_tax (simplified formula)
             $expectedNetSales = $transaction->gross_sales - $otherTaxSum;

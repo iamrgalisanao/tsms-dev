@@ -1,0 +1,15 @@
+name: "schema-minimal"
+providers:
+  - name: "static"
+    type: "static"
+    priority: 1
+    enabled: true
+    config:
+      content: "Hello"
+settings:
+  maxGenerationTime: 5000
+  failOnProviderError: false
+  contentSeparator: "\n\n"
+logging:
+  level: "debug"
+  console: true

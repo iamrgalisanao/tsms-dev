@@ -21,8 +21,11 @@ class PosTerminal extends Model implements Authenticatable
         'integration_type_id',
         'auth_type_id',
         'status_id',
+    'ip_address',
         'registered_at',
         'last_seen_at',
+	'last_sale_at',
+    'last_ip_at',
         'heartbeat_threshold',
         'expires_at',
         'callback_url',
@@ -42,6 +45,8 @@ class PosTerminal extends Model implements Authenticatable
         'expires_at' => 'datetime',
         'registered_at' => 'datetime',
         'last_seen_at' => 'datetime',
+        'last_sale_at' => 'datetime',
+        'last_ip_at' => 'datetime',
     ];
 
     // Use serial_number as the auth identifier

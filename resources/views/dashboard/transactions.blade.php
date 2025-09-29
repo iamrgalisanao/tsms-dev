@@ -8,7 +8,7 @@
   <div class="card-body">
     <!-- Filters -->
     <div class="mb-4">
-      <form method="GET" action="{{ route('transactions') }}" class="row g-3">
+  <form method="GET" action="{{ route('transactions.index') }}" class="row g-3">
         <div class="col-md-3">
           <label for="validation_status" class="form-label">Status</label>
           <select name="validation_status" id="validation_status" class="form-select">
@@ -43,14 +43,21 @@
 
         <div class="col-md-2 d-flex align-items-end">
           <button type="submit" class="btn btn-primary me-2">Filter</button>
-          <a href="{{ route('transactions') }}" class="btn btn-secondary">Reset</a>
+          <a href="{{ route('transactions.index') }}" class="btn btn-secondary">Reset</a>
         </div>
       </form>
     </div>
 
+    <div class="d-flex justify-content-between align-items-center mb-2">
+      <h6 class="mb-0">Transactions</h6>
+      @if(auth()->check() && auth()->user()->hasRole('admin'))
+        <a href="{{ route('admin.settings.edit') }}" class="btn btn-sm btn-outline-secondary">Admin Settings</a>
+      @endif
+    </div>
+
     <!-- Transactions Table -->
     <div class="table-responsive">
-      <table class="table table-striped">
+  <table class="table table-striped transactions-table">
         <thead>
           <tr>
             <th>ID</th>
@@ -65,7 +72,7 @@
         <tbody>
           @forelse($transactions as $transaction)
           <tr>
-            <td>{{ $transaction->transaction_id }}</td>
+            <td class="text-break"><code style="white-space:normal;word-break:break-all;overflow-wrap:anywhere;">{{ $transaction->transaction_id }}</code></td>
             <td>{{ $transaction->serial_number }}</td>
             {{-- <td>{{ $transaction->posTerminal->terminal_uid ?? 'Unknown' }}</td> --}}
             <td>{{ number_format($transaction->gross_sales, 2) }}</td>
@@ -78,12 +85,12 @@
               </span>
             </td>
             <td>
-              <a href="{{ route('transactions') }}/{{ $transaction->id }}" class="btn btn-sm btn-info">View</a>
+              <a href="{{ route('transactions.show', $transaction->id) }}" class="btn btn-sm btn-info">View</a>
             </td>
           </tr>
           @empty
           <tr>
-            <td colspan="6" class="text-center">No transactions found</td>
+            <td colspan="7" class="text-center">No transactions found</td>
           </tr>
           @endforelse
         </tbody>

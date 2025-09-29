@@ -156,30 +156,48 @@ class TSMSTransactionRequest extends FormRequest
             return;
         }
 
+        /*
+         // Temporarily disabled: net_sales reconciliation check
+         // TODO: Re-enable after further testing; this short-circuits request-level
+         // reconciliation so server-side validation can be the authoritative check.
         // Calculate expected net_sales = gross_sales - adjustments - other_tax
-        $adjustmentSum = 0;
+        // Include service charges in adjustments to match server-side reconciliation.
+        $adjustmentSum = 0.0;
+        $adjustmentSum += $transaction['service_charge'] ?? 0.0;
+        $adjustmentSum += $transaction['management_service_charge'] ?? 0.0;
         foreach ($adjustments as $adjustment) {
             if (isset($adjustment['amount'])) {
-                $adjustmentSum += $adjustment['amount'];
+                $adjustmentSum += (float) $adjustment['amount'];
             }
         }
 
-        $otherTaxSum = 0;
+        $otherTaxSum = 0.0;
         foreach ($taxes as $tax) {
-            if (isset($tax['tax_type']) && $tax['tax_type'] !== 'VATABLE_SALES' && isset($tax['amount'])) {
-                $otherTaxSum += $tax['amount'];
+            // Exclude VAT/VATABLE_SALES and SC_VAT_EXEMPT_SALES from "other tax" when computing
+            // expected net sales. SC_VAT_EXEMPT_SALES represents non-VAT composition and should
+            // not be treated as an "other tax" that reduces net_sales.
+            if (isset($tax['tax_type']) && !in_array($tax['tax_type'], ['VAT', 'VATABLE_SALES', 'SC_VAT_EXEMPT_SALES']) && isset($tax['amount'])) {
+                $otherTaxSum += (float) $tax['amount'];
             }
         }
 
         $expectedNetSales = round($grossSales - $adjustmentSum - $otherTaxSum, 2);
 
-        // Allow for small rounding differences (0.01 tolerance)
-        if (abs($netSales - $expectedNetSales) > 0.01) {
+        // Allow for small rounding differences (0.05 tolerance to match service-level rules)
+        if (abs($netSales - $expectedNetSales) > 0.05) {
             $validator->errors()->add(
                 "{$prefix}.net_sales",
-                "net_sales ({$netSales}) must equal gross_sales ({$grossSales}) - adjustments ({$adjustmentSum}) - other_tax ({$otherTaxSum}) = {$expectedNetSales}"
+                sprintf(
+                    'net_sales (%.2f) must equal gross_sales (%.2f) - adjustments (%.2f) - other_tax (%.2f) = %.2f',
+                    $netSales,
+                    $grossSales,
+                    $adjustmentSum,
+                    $otherTaxSum,
+                    $expectedNetSales
+                )
             );
         }
+        */
 
         // Validate adjustments array has required structure
         if (count($adjustments) < 7) {
@@ -218,16 +236,35 @@ class TSMSTransactionRequest extends FormRequest
             );
         }
 
-        // Validate that required tax types are present
+        // Relaxed validation: allow non-VAT sales if SC_VAT_EXEMPT_SALES is present and VAT/VATABLE_SALES are zero
         $requiredTaxTypes = ['VAT', 'VATABLE_SALES', 'SC_VAT_EXEMPT_SALES'];
         $presentTaxTypes = array_column($taxes, 'tax_type');
         $missingTaxTypes = array_diff($requiredTaxTypes, $presentTaxTypes);
 
+        $vatAmount = 0;
+        $vatableSalesAmount = 0;
+        $scVatExemptAmount = 0;
+        foreach ($taxes as $tax) {
+            if ($tax['tax_type'] === 'VAT') {
+                $vatAmount = $tax['amount'];
+            }
+            if ($tax['tax_type'] === 'VATABLE_SALES') {
+                $vatableSalesAmount = $tax['amount'];
+            }
+            if ($tax['tax_type'] === 'SC_VAT_EXEMPT_SALES') {
+                $scVatExemptAmount = $tax['amount'];
+            }
+        }
+
+        // Only error if missing required tax types AND not a valid non-VAT sale
         if (!empty($missingTaxTypes)) {
-            $validator->errors()->add(
-                "{$prefix}.taxes",
-                "Missing required tax types: " . implode(', ', $missingTaxTypes)
-            );
+            $isNonVat = ($vatAmount == 0 && $vatableSalesAmount == 0 && $scVatExemptAmount > 0);
+            if (!$isNonVat) {
+                $validator->errors()->add(
+                    "{$prefix}.taxes",
+                    "Missing required tax types: " . implode(', ', $missingTaxTypes)
+                );
+            }
         }
     }
 

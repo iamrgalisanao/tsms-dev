@@ -11,6 +11,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\RateLimiter;
 
 class NotificationService
 {
@@ -83,7 +84,19 @@ class NotificationService
                     ];
                 })->toArray();
                 
-                $this->sendTransactionFailureNotification($posTerminalId, $failureCount, $formattedFailures);
+                // Per-terminal cooldown to prevent alert storms
+                $cooldownMinutes = (int) (config('notifications.rate_limiting.cooldown_minutes', 15));
+                $key = sprintf('alerts:tx-failure-threshold:%s', $posTerminalId ?? 'global');
+                $allowed = RateLimiter::attempt($key, 1, function () { return true; }, $cooldownMinutes * 60);
+
+                if (!$allowed) {
+                    Log::info('Alert suppressed due to cooldown', [
+                        'key' => $key,
+                        'cooldown_minutes' => $cooldownMinutes,
+                    ]);
+                } else {
+                    $this->sendTransactionFailureNotification($posTerminalId, $failureCount, $formattedFailures);
+                }
                 
                 Log::warning('Transaction failure threshold exceeded', [
                     'pos_terminal_id' => $posTerminalId,

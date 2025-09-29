@@ -1,0 +1,51 @@
+name: "tsms-memory-agent"
+version: "1.0.0"
+description: "Clean rebuilt config for TSMS memory agent"
+
+providers:
+  - name: "project-static"
+    type: "static"
+    priority: 100
+    enabled: true
+    config:
+      content: |
+        You are the TSMS project memory agent. Provide concise, technically accurate answers using loaded project knowledge.
+
+settings:
+  maxGenerationTime: 5000
+  failOnProviderError: false
+  contentSeparator: "\n\n"
+
+logging:
+  level: "debug"
+  console: true
+
+# (Intentionally omitting all advanced sections to isolate core schema load)
+llm:
+  provider: "openai"
+  model: "gpt-4o-mini"
+  temperature: 0.2
+  max_tokens: 4000
+  api_key_env: "OPENAI_API_KEY"
+  apiKey: "${OPENAI_API_KEY}"
+
+embeddings:
+  provider: "openai"
+  model: "text-embedding-3-small"
+  dimensions: 1536
+  api_key_env: "OPENAI_API_KEY"
+  apiKey: "${OPENAI_API_KEY}"
+
+vector_store:
+  provider: "local"
+  path: "./data/test_vector_store.db"
+  collection: "test_memory"
+
+memory:
+  max_tokens: 4000
+  overlap_tokens: 200
+  chunk_size: 800
+  similarity_threshold: 0.75
+  max_results: 8
+
+mcpServers: {}

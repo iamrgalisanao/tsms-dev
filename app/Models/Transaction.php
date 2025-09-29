@@ -4,6 +4,8 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use App\Models\Tenant;
+use Illuminate\Support\Facades\Schema;
 
 class Transaction extends Model
 {
@@ -110,9 +112,13 @@ class Transaction extends Model
         'transaction_id',
         'hardware_id',
         'transaction_timestamp',
+        // Legacy compatibility: some tests/seeders still mass-assign `base_amount`.
+        // Mutator `setBaseAmountAttribute` maps this into `gross_sales`.
+        'base_amount',
         'gross_sales',
         'vatable_sales',
         'vat_amount',
+    'sc_vat_exempt_sales',
         'net_sales',
         'tax_exempt',
         'service_charge',
@@ -157,10 +163,8 @@ class Transaction extends Model
      */
     public function getNetAmountAttribute()
     {
-        // Calculate other_tax sum (excluding VAT) from relationship
-        $otherTaxSum = $this->taxes()
-            ->where('tax_type', '!=', 'VAT')
-            ->sum('amount') ?? 0;
+        // Use otherTaxSum helper which considers both tax rows and sc_vat_exempt_sales column
+        $otherTaxSum = $this->otherTaxSum();
 
         // Simplified formula: net_sales = gross_sales - other_tax
         return round($this->gross_sales - $otherTaxSum, 2);
@@ -173,12 +177,40 @@ class Transaction extends Model
      */
     public function getCalculatedNetSalesAttribute()
     {
-        // Calculate other_tax sum (excluding VAT) from relationship
-        $otherTaxSum = $this->taxes()
-            ->where('tax_type', '!=', 'VAT')
-            ->sum('amount') ?? 0;
+        $otherTaxSum = $this->otherTaxSum();
 
         return round($this->gross_sales - $otherTaxSum, 2);
+    }
+
+    /**
+     * Return the sum of taxes considered 'other' (excluding VAT). This prefers explicit TransactionTax
+     * rows when present; if no SC_VAT_EXEMPT_SALES tax row exists but the transaction has
+     * a non-zero `sc_vat_exempt_sales` column (older ingestion paths), include that value so
+     * calculations remain correct.
+     *
+     * @return float
+     */
+    public function otherTaxSum(): float
+    {
+        $taxRows = $this->taxes()->where('tax_type', '!=', 'VAT')->get();
+        $sum = $taxRows->sum('amount') ?? 0.0;
+
+        // If there's no explicit SC_VAT_EXEMPT_SALES tax row but we have a column value, include it
+        if ($taxRows->where('tax_type', 'SC_VAT_EXEMPT_SALES')->isEmpty() && !empty($this->sc_vat_exempt_sales)) {
+            $sum += (float) $this->sc_vat_exempt_sales;
+        }
+
+        return (float) $sum;
+    }
+
+    /**
+     * Compatibility mutator: accept legacy `vat_exempt_sales` when tests or
+     * older ingestion paths set that attribute. Map it into the canonical
+     * `sc_vat_exempt_sales` column used by current calculations.
+     */
+    public function setVatExemptSalesAttribute($value)
+    {
+        $this->attributes['sc_vat_exempt_sales'] = $value;
     }
 
     /**
@@ -192,6 +224,7 @@ class Transaction extends Model
         'gross_sales' => 'decimal:2',
         'vatable_sales' => 'decimal:2',
         'vat_amount' => 'decimal:2',
+    'sc_vat_exempt_sales' => 'decimal:2',
         'net_sales' => 'decimal:2',
         'service_charge' => 'decimal:2',
         'management_service_charge' => 'decimal:2',
@@ -212,6 +245,7 @@ class Transaction extends Model
     protected $appends = [
         'net_amount',
         'calculated_net_sales',
+        'display_tenant_code',
     ];
     
     // Add job status constants
@@ -365,4 +399,128 @@ class Transaction extends Model
         return $this->belongsTo(TransactionSubmission::class, 'submission_uuid', 'submission_uuid');
     }
 
+    
+
+    /**
+     * Accessor: Display-friendly tenant code.
+     * Priority:
+     *  1) Tenant.customer_code (tenant-level identifier if present)
+     *  2) Transaction.customer_code (legacy company-level code stored on transactions)
+     *  3) Company.customer_code (via tenant relationship)
+     *  4) 'UNKNOWN_TENANT'
+     */
+    public function getDisplayTenantCodeAttribute(): string
+    {
+        // Prefer tenant-level code if present
+        $tenantCode = $this->tenant?->customer_code;
+        if (!empty($tenantCode)) {
+            return $tenantCode;
+        }
+
+        // Fall back to the transaction-level stored code
+        if (!empty($this->customer_code)) {
+            return $this->customer_code;
+        }
+
+        // Try company-level code via tenant relation
+        $companyCode = $this->tenant?->company?->customer_code;
+        if (!empty($companyCode)) {
+            return $companyCode;
+        }
+
+        return 'UNKNOWN_TENANT';
+    }
+
+    /**
+     * Compatibility accessor for legacy "base_amount" field.
+     * Some older code/tests still reference $transaction->base_amount.
+     * Map reads to the canonical gross_sales value so callers keep working.
+     *
+     * @return float|null
+     */
+    public function getBaseAmountAttribute()
+    {
+        return isset($this->gross_sales) ? (float) $this->gross_sales : null;
+    }
+
+    /**
+     * Compatibility mutator for legacy "base_amount" input.
+     * Maps mass-assigned base_amount => gross_sales so factories/tests that
+     * still provide base_amount won't trigger SQL errors when the column
+     * has been removed from the schema.
+     *
+     * @param mixed $value
+     * @return void
+     */
+    public function setBaseAmountAttribute($value): void
+    {
+        if ($value === null) {
+            $this->attributes['gross_sales'] = null;
+            return;
+        }
+
+        // Normalize numeric-like inputs and round to 2 decimals to match casts
+        $this->attributes['gross_sales'] = round((float) $value, 2);
+    }
+
+    /**
+     * Automatically synchronize transactions.customer_code from the related tenant.customer_code
+     * for data hygiene. Applies on create and when tenant_id changes (or when customer_code is empty).
+     */
+    protected static function booted()
+    {
+        $sync = function (Transaction $tx) {
+            // Prefer already-loaded relation to avoid an extra query
+            if ($tx->relationLoaded('tenant') && $tx->tenant && !empty($tx->tenant->customer_code)) {
+                $tx->customer_code = $tx->tenant->customer_code;
+                return;
+            }
+
+            // Otherwise, look up by tenant_id if present
+            if ($tx->tenant_id) {
+                $tenant = Tenant::find($tx->tenant_id);
+                if ($tenant && !empty($tenant->customer_code)) {
+                    $tx->customer_code = $tenant->customer_code;
+                }
+            }
+        };
+
+        static::creating(function (Transaction $tx) use ($sync) {
+            // Defensive defaults for legacy sales-reporting columns. Some older
+            // staging DB schemas expect these columns to be present and non-null.
+            $legacyCols = [
+                'senior_discount',
+                'pwd_discount',
+                'vip_card_discount',
+                'service_charge_distributed_to_employees',
+                'service_charge_retained_by_management',
+                'employee_discount',
+            ];
+            foreach ($legacyCols as $col) {
+                try {
+                    // If the DB still contains legacy columns and the incoming
+                    // attributes either don't include them or include them as
+                    // explicit null, set a safe default of 0 to avoid inserting
+                    // NULL into non-nullable legacy columns.
+                    $hasCol = Schema::hasColumn((new Transaction)->getTable(), $col);
+                    $attrMissing = ! array_key_exists($col, $tx->attributes);
+                    $attrNull = array_key_exists($col, $tx->attributes) && $tx->attributes[$col] === null;
+
+                    if ($hasCol && ($attrMissing || $attrNull)) {
+                        $tx->attributes[$col] = 0;
+                    }
+                } catch (\Throwable $e) {
+                    // Ignore schema inspection failures in constrained contexts
+                }
+            }
+
+            $sync($tx);
+        });
+
+        static::saving(function (Transaction $tx) use ($sync) {
+            if ($tx->isDirty('tenant_id') || empty($tx->customer_code)) {
+                $sync($tx);
+            }
+        });
+    }
 }

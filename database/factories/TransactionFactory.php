@@ -28,9 +28,13 @@ class TransactionFactory extends Factory
             'tenant_id' => $tenant->id,
             'terminal_id' => $terminal->id,
             'transaction_id' => 'TXN-' . $this->faker->unique()->uuid,
-            'hardware_id' => 'HW-' . $this->faker->unique()->numberBetween(1000, 9999),
+            // Generate an 8-character uppercase alphanumeric hardware ID (no hyphens)
+            'hardware_id' => $this->faker->unique()->regexify('[A-Z0-9]{8}'),
             'transaction_timestamp' => now(),
-            'base_amount' => $this->faker->randomFloat(2, 100, 10000),
+            // Legacy `base_amount` column was removed from the schema. Avoid
+            // including it in factory output to prevent QueryExceptions during
+            // test DB inserts. Use `gross_sales` as the canonical amount field.
+            // canonical canonical amount
             'gross_sales' => $this->faker->randomFloat(2, 100, 10000),
             'net_sales' => $this->faker->randomFloat(2, 80, 9500), // Slightly less than gross_sales
             'customer_code' => 'TEST001',

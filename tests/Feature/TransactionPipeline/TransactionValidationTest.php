@@ -37,13 +37,18 @@ class TransactionValidationTest extends TestCase
         $this->validationService = app(TransactionValidationService::class);
     }
 
-    /** @test */
-    public function validates_valid_transaction()
+    public function test_smoke_discovery()
+    {
+        // Simple smoke test to verify PHPUnit discovers prefixed test methods.
+        $this->assertTrue(true);
+    }
+
+    public function test_validates_valid_transaction()
     {
         $transaction = Transaction::factory()->create([
             'terminal_id' => $this->terminal->id,
             'customer_code' => $this->tenant->customer_code,
-            'base_amount' => 100.00,
+            'gross_sales' => 100.00,
             'transaction_timestamp' => Carbon::now()->setHour(14)->toDateTimeString()
         ]);
 
@@ -51,13 +56,12 @@ class TransactionValidationTest extends TestCase
         $this->assertEmpty($errors);
     }
 
-    /** @test */
-    public function validates_operating_hours()
+    public function test_validates_operating_hours()
     {
         $transaction = Transaction::factory()->create([
             'terminal_id' => $this->terminal->id,
             'customer_code' => $this->tenant->customer_code,
-            'base_amount' => 100.00,
+            'gross_sales' => 100.00,
             'transaction_timestamp' => Carbon::now()->setHour(23)->toDateTimeString()
         ]);
 
@@ -66,13 +70,12 @@ class TransactionValidationTest extends TestCase
         $this->assertContains('Transaction outside operating hours (6AM-10PM)', $errors);
     }
 
-    /** @test */
-    public function validates_negative_amounts()
+    public function test_validates_negative_amounts()
     {
         $transaction = Transaction::factory()->create([
             'terminal_id' => $this->terminal->id,
             'customer_code' => $this->tenant->customer_code,
-            'base_amount' => -50.00,
+            'gross_sales' => -50.00,
             'transaction_timestamp' => Carbon::now()->setHour(14)->toDateTimeString()
         ]);
 
@@ -81,8 +84,7 @@ class TransactionValidationTest extends TestCase
         $this->assertContains('Amount must be positive', $errors);
     }
 
-    /** @test */
-    public function validates_terminal_status()
+    public function test_validates_terminal_status()
     {
         // Create inactive terminal
         $inactiveTerminal = PosTerminal::factory()->create([
@@ -93,7 +95,7 @@ class TransactionValidationTest extends TestCase
         $transaction = Transaction::factory()->create([
             'terminal_id' => $inactiveTerminal->id,
             'customer_code' => $this->tenant->customer_code,
-            'base_amount' => 100.00,
+            'gross_sales' => 100.00,
             'transaction_timestamp' => Carbon::now()->setHour(14)->toDateTimeString()
         ]);
 
@@ -102,13 +104,12 @@ class TransactionValidationTest extends TestCase
         $this->assertContains('Terminal is not active', $errors);
     }
 
-    /** @test */
-    public function validates_maximum_amount_limits()
+    public function test_validates_maximum_amount_limits()
     {
         $transaction = Transaction::factory()->create([
             'terminal_id' => $this->terminal->id,
             'customer_code' => $this->tenant->customer_code,
-            'base_amount' => 50000.00, // Exceeds typical limit
+            'gross_sales' => 50000.00, // Exceeds typical limit
             'transaction_timestamp' => Carbon::now()->setHour(14)->toDateTimeString()
         ]);
 
@@ -117,13 +118,12 @@ class TransactionValidationTest extends TestCase
         $this->assertContains('Amount exceeds maximum limit', $errors);
     }
 
-    /** @test */
-    public function validates_minimum_amount_limits()
+    public function test_validates_minimum_amount_limits()
     {
         $transaction = Transaction::factory()->create([
             'terminal_id' => $this->terminal->id,
             'customer_code' => $this->tenant->customer_code,
-            'base_amount' => 0.50, // Below minimum
+            'gross_sales' => 0.50, // Below minimum
             'transaction_timestamp' => Carbon::now()->setHour(14)->toDateTimeString()
         ]);
 
@@ -132,13 +132,12 @@ class TransactionValidationTest extends TestCase
         $this->assertContains('Amount below minimum limit', $errors);
     }
 
-    /** @test */
-    public function validates_transaction_timestamp_format()
+    public function test_validates_transaction_timestamp_format()
     {
         $transactionData = [
             'terminal_id' => $this->terminal->id,
             'customer_code' => $this->tenant->customer_code,
-            'base_amount' => 100.00,
+            'gross_sales' => 100.00,
             'transaction_timestamp' => 'invalid-timestamp'
         ];
 
@@ -147,13 +146,12 @@ class TransactionValidationTest extends TestCase
         $this->assertContains('Invalid timestamp format', $errors);
     }
 
-    /** @test */
-    public function validates_future_timestamps()
+    public function test_validates_future_timestamps()
     {
         $transaction = Transaction::factory()->create([
             'terminal_id' => $this->terminal->id,
             'customer_code' => $this->tenant->customer_code,
-            'base_amount' => 100.00,
+            'gross_sales' => 100.00,
             'transaction_timestamp' => Carbon::now()->addDays(1)->toDateTimeString()
         ]);
 
@@ -162,13 +160,12 @@ class TransactionValidationTest extends TestCase
         $this->assertContains('Transaction timestamp cannot be in the future', $errors);
     }
 
-    /** @test */
-    public function validates_old_transactions()
+    public function test_validates_old_transactions()
     {
         $transaction = Transaction::factory()->create([
             'terminal_id' => $this->terminal->id,
             'customer_code' => $this->tenant->customer_code,
-            'base_amount' => 100.00,
+            'gross_sales' => 100.00,
             'transaction_timestamp' => Carbon::now()->subDays(8)->toDateTimeString()
         ]);
 
@@ -177,13 +174,12 @@ class TransactionValidationTest extends TestCase
         $this->assertContains('Transaction is too old (> 7 days)', $errors);
     }
 
-    /** @test */
-    public function validates_customer_code_format()
+    public function test_validates_customer_code_format()
     {
         $transactionData = [
             'terminal_id' => $this->terminal->id,
             'customer_code' => 'INVALID-CODE-123',
-            'base_amount' => 100.00,
+            'gross_sales' => 100.00,
             'transaction_timestamp' => Carbon::now()->setHour(14)->toDateTimeString()
         ];
 
@@ -192,8 +188,7 @@ class TransactionValidationTest extends TestCase
         $this->assertContains('Invalid customer code format', $errors);
     }
 
-    /** @test */
-    public function validates_terminal_belongs_to_customer()
+    public function test_validates_terminal_belongs_to_customer()
     {
         $otherTenant = Tenant::factory()->create(['customer_code' => 'OTHER001']);
         $otherTerminal = PosTerminal::factory()->create(['tenant_id' => $otherTenant->id]);
@@ -201,7 +196,7 @@ class TransactionValidationTest extends TestCase
         $transactionData = [
             'terminal_id' => $otherTerminal->id,
             'customer_code' => $this->tenant->customer_code,
-            'base_amount' => 100.00,
+            'gross_sales' => 100.00,
             'transaction_timestamp' => Carbon::now()->setHour(14)->toDateTimeString()
         ];
 
@@ -210,8 +205,7 @@ class TransactionValidationTest extends TestCase
         $this->assertContains('Terminal does not belong to customer', $errors);
     }
 
-    /** @test */
-    public function validates_duplicate_transaction_ids()
+    public function test_validates_duplicate_transaction_ids()
     {
         $transactionId = 'TXN-' . uniqid();
         
@@ -226,7 +220,7 @@ class TransactionValidationTest extends TestCase
             'transaction_id' => $transactionId,
             'terminal_id' => $this->terminal->id,
             'customer_code' => $this->tenant->customer_code,
-            'base_amount' => 100.00,
+            'gross_sales' => 100.00,
             'transaction_timestamp' => Carbon::now()->setHour(14)->toDateTimeString()
         ];
 
@@ -235,12 +229,11 @@ class TransactionValidationTest extends TestCase
         $this->assertContains('Transaction ID already exists', $errors);
     }
 
-    /** @test */
-    public function validates_required_fields()
+    public function test_validates_required_fields()
     {
         $transactionData = [
             // Missing required fields
-            'base_amount' => 100.00,
+            'gross_sales' => 100.00,
         ];
 
         $errors = $this->validationService->validateTransaction($transactionData);
@@ -250,23 +243,21 @@ class TransactionValidationTest extends TestCase
         $this->assertContains('Transaction timestamp is required', $errors);
     }
 
-    /** @test */
-    public function validates_decimal_precision()
+    public function test_validates_decimal_precision()
     {
-        $transaction = Transaction::factory()->create([
+        $transactionData = [
             'terminal_id' => $this->terminal->id,
             'customer_code' => $this->tenant->customer_code,
-            'base_amount' => 100.123, // Too many decimal places
+            'gross_sales' => 100.123, // Too many decimal places
             'transaction_timestamp' => Carbon::now()->setHour(14)->toDateTimeString()
-        ]);
+        ];
 
-        $errors = $this->validationService->validateTransaction($transaction->toArray());
+        $errors = $this->validationService->validateTransaction($transactionData);
         $this->assertNotEmpty($errors);
         $this->assertContains('Amount has too many decimal places', $errors);
     }
 
-    /** @test */
-    public function validates_concurrent_transactions()
+    public function test_validates_concurrent_transactions()
     {
         $timestamp = Carbon::now()->setHour(14)->toDateTimeString();
         
@@ -275,7 +266,7 @@ class TransactionValidationTest extends TestCase
             $transaction = Transaction::factory()->create([
                 'terminal_id' => $this->terminal->id,
                 'customer_code' => $this->tenant->customer_code,
-                'base_amount' => 100.00,
+                'gross_sales' => 100.00,
                 'transaction_timestamp' => $timestamp
             ]);
             
@@ -284,17 +275,16 @@ class TransactionValidationTest extends TestCase
         }
     }
 
-    /** @test */
-    public function validates_transaction_items_consistency()
+    public function test_validates_transaction_items_consistency()
     {
         $transactionData = [
             'terminal_id' => $this->terminal->id,
             'customer_code' => $this->tenant->customer_code,
-            'base_amount' => 100.00,
+            'gross_sales' => 100.00,
             'transaction_timestamp' => Carbon::now()->setHour(14)->toDateTimeString(),
             'items' => [
                 ['price' => 50.00, 'quantity' => 1],
-                ['price' => 60.00, 'quantity' => 1] // Total 110.00 != base_amount 100.00
+                ['price' => 60.00, 'quantity' => 1] // Total 110.00 != base amount 100.00
             ]
         ];
 
@@ -303,13 +293,12 @@ class TransactionValidationTest extends TestCase
         $this->assertContains('Items total does not match base amount', $errors);
     }
 
-    /** @test */
-    public function validates_hardware_id_format()
+    public function test_validates_hardware_id_format()
     {
         $transactionData = [
             'terminal_id' => $this->terminal->id,
             'customer_code' => $this->tenant->customer_code,
-            'base_amount' => 100.00,
+            'gross_sales' => 100.00,
             'transaction_timestamp' => Carbon::now()->setHour(14)->toDateTimeString(),
             'hardware_id' => 'INVALID-HW-ID'
         ];
@@ -319,13 +308,12 @@ class TransactionValidationTest extends TestCase
         $this->assertContains('Invalid hardware ID format', $errors);
     }
 
-    /** @test */
-    public function logs_validation_results()
+    public function test_logs_validation_results()
     {
         $transaction = Transaction::factory()->create([
             'terminal_id' => $this->terminal->id,
             'customer_code' => $this->tenant->customer_code,
-            'base_amount' => -50.00, // Invalid amount
+            'gross_sales' => -50.00, // Invalid amount
             'transaction_timestamp' => Carbon::now()->setHour(14)->toDateTimeString()
         ]);
 
@@ -333,19 +321,18 @@ class TransactionValidationTest extends TestCase
         
         // Verify validation was logged
         $this->assertDatabaseHas('transaction_validations', [
-            'transaction_id' => $transaction->id,
+            'transaction_pk' => $transaction->id,
             'validation_status' => 'FAILED'
         ]);
     }
 
-    /** @test */
-    public function validates_business_rules()
+    public function test_validates_business_rules()
     {
         // Test specific business rules
         $transactionData = [
             'terminal_id' => $this->terminal->id,
             'customer_code' => $this->tenant->customer_code,
-            'base_amount' => 100.00,
+            'gross_sales' => 100.00,
             'transaction_timestamp' => Carbon::now()->setHour(14)->toDateTimeString(),
             'payment_method' => 'INVALID_METHOD'
         ];
@@ -355,14 +342,13 @@ class TransactionValidationTest extends TestCase
         $this->assertContains('Invalid payment method', $errors);
     }
 
-    /** @test */
-    public function validates_transaction_sequence()
+    public function test_validates_transaction_sequence()
     {
         // Create transactions with sequence numbers
         $transactionData1 = [
             'terminal_id' => $this->terminal->id,
             'customer_code' => $this->tenant->customer_code,
-            'base_amount' => 100.00,
+            'gross_sales' => 100.00,
             'transaction_timestamp' => Carbon::now()->setHour(14)->toDateTimeString(),
             'sequence_number' => 1
         ];
@@ -370,7 +356,7 @@ class TransactionValidationTest extends TestCase
         $transactionData2 = [
             'terminal_id' => $this->terminal->id,
             'customer_code' => $this->tenant->customer_code,
-            'base_amount' => 100.00,
+            'gross_sales' => 100.00,
             'transaction_timestamp' => Carbon::now()->setHour(14)->addMinutes(1)->toDateTimeString(),
             'sequence_number' => 3 // Gap in sequence
         ];
@@ -383,13 +369,12 @@ class TransactionValidationTest extends TestCase
         $this->assertContains('Sequence number gap detected', $errors2);
     }
 
-    /** @test */
-    public function validates_multiple_validation_errors()
+    public function test_validates_multiple_validation_errors()
     {
         $transactionData = [
             'terminal_id' => $this->terminal->id,
             'customer_code' => $this->tenant->customer_code,
-            'base_amount' => -100.00, // Invalid amount
+            'gross_sales' => -100.00, // Invalid amount
             'transaction_timestamp' => Carbon::now()->addDays(1)->toDateTimeString() // Future timestamp
         ];
 

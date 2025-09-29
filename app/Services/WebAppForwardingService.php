@@ -96,6 +96,8 @@ class WebAppForwardingService
             'transaction_timestamp' => $this->isoTimestamp($transaction->transaction_timestamp),
             'amount'                => (float) $transaction->gross_sales,
             'net_amount'           => (float) $transaction->net_sales,
+            // Explicit numeric field so downstream webapp receives SC_VAT_EXEMPT_SALES directly
+            'sc_vat_exempt_sales'  => (float) ($transaction->sc_vat_exempt_sales ?? 0.0),
             'validation_status'     => $transaction->validation_status,
             'processed_at'          => $this->isoTimestamp($transaction->created_at),
             'submission_uuid'       => $transaction->submission_uuid,
@@ -103,7 +105,10 @@ class WebAppForwardingService
             'void_reason'           => $transaction->void_reason,
             'status'                => 'VOIDED',
         ];
-        $payload['checksum'] = $this->checksumService->computeChecksum($payload);
+    // Compute checksum excluding the explicit sc_vat_exempt_sales top-level field
+    $forChecksum = $payload;
+    unset($forChecksum['sc_vat_exempt_sales']);
+    $payload['checksum'] = $this->checksumService->computeChecksum($forChecksum);
 
         $client = \Illuminate\Support\Facades\Http::timeout($this->timeout)
             ->withToken($this->authToken);
@@ -378,15 +383,19 @@ class WebAppForwardingService
                 'transaction_timestamp' => $this->isoTimestamp($tx->transaction_timestamp),
                 'amount' => (float) $tx->gross_sales,
                 'net_amount' => (float) $tx->net_sales,
+                // Provide explicit sc_vat_exempt_sales numeric field (in addition to tax rows)
+                'sc_vat_exempt_sales' => (float) ($tx->sc_vat_exempt_sales ?? 0.0),
                 'validation_status' => $this->s($tx->validation_status),
                 'processed_at' => $this->isoTimestamp($tx->created_at),
                 'submission_uuid' => $this->s($tx->submission_uuid),
                 'adjustments' => $this->normalizeAdjustments($completeAdjustments),
                 'taxes' => $this->normalizeTaxes($completeTaxes),
             ];
-            // Remove checksum if present, then compute
+            // Compute checksum from a copy that excludes the explicit sc_vat_exempt_sales
             unset($payloadArr['checksum']);
-            $payloadArr['checksum'] = $this->checksumService->computeChecksum($payloadArr);
+            $forChecksum = $payloadArr;
+            unset($forChecksum['sc_vat_exempt_sales']);
+            $payloadArr['checksum'] = $this->checksumService->computeChecksum($forChecksum);
 
             $forward = WebappTransactionForward::updateOrCreate(
                 [
@@ -813,6 +822,8 @@ class WebAppForwardingService
             'transactions.*.tenant_name' => ['string'], // optional but must be string
             'transactions.*.transaction_timestamp' => ['required','date_format:Y-m-d\\TH:i:s.v\\Z'],
             'transactions.*.amount' => ['required','numeric','gte:0'],
+            // Optional explicit numeric field for SC_VAT_EXEMPT_SALES
+            'transactions.*.sc_vat_exempt_sales' => ['numeric'],
             'transactions.*.net_amount' => ['required','numeric','gte:0'],
             'transactions.*.adjustments' => ['array'],
             'transactions.*.adjustments.*.adjustment_type' => ['required','string'],
@@ -978,6 +989,8 @@ class WebAppForwardingService
             'transaction_timestamp' => $this->isoTimestamp($transaction->transaction_timestamp),
             'amount' => (float) $transaction->gross_sales,
             'net_amount' => (float) $transaction->net_sales,
+            // Expose explicit sc_vat_exempt_sales for downstream webapp compatibility
+            'sc_vat_exempt_sales' => (float) ($transaction->sc_vat_exempt_sales ?? 0.0),
             'validation_status' => $this->s($transaction->validation_status),
             'processed_at' => $this->isoTimestamp($transaction->created_at),
             'submission_uuid' => $this->s($transaction->submission_uuid),
@@ -985,9 +998,11 @@ class WebAppForwardingService
             'taxes' => $this->normalizeTaxes($completeTaxes),
         ];
 
-        // Compute checksum
-        unset($payloadArr['checksum']);
-        $payloadArr['checksum'] = $this->checksumService->computeChecksum($payloadArr);
+    // Compute checksum from a copy that excludes explicit sc_vat_exempt_sales to preserve checksum contract
+    unset($payloadArr['checksum']);
+    $forChecksum = $payloadArr;
+    unset($forChecksum['sc_vat_exempt_sales']);
+    $payloadArr['checksum'] = $this->checksumService->computeChecksum($forChecksum);
 
         // Build bulk payload format (even for single transaction)
         $batchId = 'TSMS_' . now()->format('YmdHis') . '_' . uniqid();

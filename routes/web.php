@@ -38,6 +38,19 @@ Route::middleware('guest')->group(function () {
 });
 
 Route::middleware(['auth'])->group(function () {
+    // Main Dashboard Route
+    Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
+
+    // Dashboard Group Routes
+    Route::prefix('dashboard')->name('dashboard.')->group(function () {
+        // Dismiss admin notification (POST)
+        Route::post('/notifications/dismiss', [DashboardController::class, 'dismissNotification'])->name('notifications.dismiss');
+        Route::get('/providers', [ProvidersController::class, 'index'])->name('providers.index');
+        Route::get('/providers/{id}', [ProvidersController::class, 'show'])->name('providers.show');
+        Route::get('/retry-history', [RetryHistoryController::class, 'index'])->name('retry-history');
+        Route::get('/performance', [DashboardController::class, 'performance'])->name('performance');
+        Route::post('/performance/export', [DashboardController::class, 'exportPerformance'])->name('performance.export');
+    });
     Route::post('/logout', [LoginController::class, 'logout'])->name('logout');
     
     // Main Dashboard Route
@@ -157,5 +170,11 @@ Route::middleware(['auth'])->group(function () {
     // User Management Routes - RBAC protected
     Route::middleware(['role:admin|manager'])->group(function () {
         Route::resource('users', UserController::class);
+    });
+
+    // Admin System Settings
+    Route::middleware(['role:admin'])->prefix('admin')->name('admin.')->group(function () {
+        Route::get('/settings', [\App\Http\Controllers\Admin\SystemSettingsController::class, 'edit'])->name('settings.edit');
+        Route::post('/settings', [\App\Http\Controllers\Admin\SystemSettingsController::class, 'update'])->name('settings.update');
     });
 });
