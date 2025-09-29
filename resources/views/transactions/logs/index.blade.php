@@ -150,7 +150,7 @@ use App\Helpers\FormatHelper;
                     <th>promo_discount</th>
                     <th>senior_discount</th>
                     <th>pwd_discount</th>
-                    <th>VAT</th>
+                    <th>Tax (breakdown)</th>
                     <th>VATABLE_SALES</th>
                     <th>SC_VAT_EXEMPT_SALES</th>
                 </tr>
@@ -162,37 +162,70 @@ use App\Helpers\FormatHelper;
                     <td>{{ $row->trade_name }}</td>
                     <td>SN: {{ $row->serial_number ?? 'N/A' }} • M: {{ $row->machine_number ?? 'N/A' }}</td>
                     <td class="text-end">{{ number_format($row->tx_count) }}</td>
-                    <td class="text-end">₱{{ number_format($row->gross, 2) }}</td>
-                    <td class="text-end">₱{{ number_format($row->vat, 2) }}</td>
-                    <td class="text-end">₱{{ number_format($row->net, 2) }}</td>
-                    <td class="text-end">₱{{ number_format($row->refund, 2) }}</td>
                     @php
-                        $promo = null; $senior = null; $pwd = null;
-                        $vat = null; $vatable = null; $sc_vat = null;
+                        // Prefer presenter-computed values when we have a sample transaction
+                        $presenterGross = null; $presenterVat = null; $presenterNet = null; $presenterRefund = null;
                         if (isset($sampleTransactions) && isset($row->sample_tx_id) && $sampleTransactions->has($row->sample_tx_id)) {
-                            $tx = $sampleTransactions->get($row->sample_tx_id);
-                            // adjustments
-                            $promoRow = $tx->adjustments->firstWhere('adjustment_type', 'promo_discount');
-                            $seniorRow = $tx->adjustments->firstWhere('adjustment_type', 'senior_discount');
-                            $pwdRow = $tx->adjustments->firstWhere('adjustment_type', 'pwd_discount');
-                            $promo = $promoRow ? number_format((float)$promoRow->amount, 2) : null;
-                            $senior = $seniorRow ? number_format((float)$seniorRow->amount, 2) : null;
-                            $pwd = $pwdRow ? number_format((float)$pwdRow->amount, 2) : null;
-                            // taxes
-                            $vatRow = $tx->taxes->firstWhere('tax_type', 'VAT');
-                            $vatableRow = $tx->taxes->firstWhere('tax_type', 'VATABLE_SALES');
-                            $scRow = $tx->taxes->firstWhere('tax_type', 'SC_VAT_EXEMPT_SALES');
-                            $vat = $vatRow ? number_format((float)$vatRow->amount, 2) : null;
-                            $vatable = $vatableRow ? number_format((float)$vatableRow->amount, 2) : null;
-                            $sc_vat = $scRow ? number_format((float)$scRow->amount, 2) : null;
+                            $txp = $sampleTransactions->get($row->sample_tx_id);
+                                $p = \App\Presenters\TransactionSummaryPresenter::fromTransaction($txp);
+                                $presenterGross = $p['gross'];
+                                $presenterVat = $p['vat_amount'];
+                                $presenterNet = $p['net'];
+                                $presenterRefund = $p['refund'];
                         }
                     @endphp
-                    <td class="text-end">{{ $promo !== null ? '₱' . $promo : '-' }}</td>
-                    <td class="text-end">{{ $senior !== null ? '₱' . $senior : '-' }}</td>
-                    <td class="text-end">{{ $pwd !== null ? '₱' . $pwd : '-' }}</td>
-                    <td class="text-end">{{ $vat !== null ? '₱' . $vat : '-' }}</td>
-                    <td class="text-end">{{ $vatable !== null ? '₱' . $vatable : '-' }}</td>
-                    <td class="text-end">{{ $sc_vat !== null ? '₱' . $sc_vat : '-' }}</td>
+                    <td class="text-end">{{ isset($presenterGross) ? \App\Helpers\FormatHelper::formatCurrency($presenterGross) : ('₱' . number_format($row->gross, 2)) }}</td>
+                    <td class="text-end">{{ isset($presenterVat) ? \App\Helpers\FormatHelper::formatCurrency($presenterVat) : ('₱' . number_format($row->vat, 2)) }}</td>
+                    <td class="text-end">{{ isset($presenterNet) ? \App\Helpers\FormatHelper::formatCurrency($presenterNet) : ('₱' . number_format($row->net, 2)) }}</td>
+                    <td class="text-end">{{ isset($presenterRefund) ? \App\Helpers\FormatHelper::formatCurrency($presenterRefund) : ('₱' . number_format($row->refund, 2)) }}</td>
+                        @php
+                        // Use presenter to keep view logic minimal
+                        $promo = $senior = $pwd = $vat = $vatable = $sc_vat = null;
+                        if (isset($sampleTransactions) && isset($row->sample_tx_id) && $sampleTransactions->has($row->sample_tx_id)) {
+                            $tx = $sampleTransactions->get($row->sample_tx_id);
+                            // avoid clobbering the paginator $summary variable; use $txSummary for the presenter result
+                            $txSummary = \App\Presenters\TransactionSummaryPresenter::fromTransaction($tx);
+                                // Prefer presenter values for display, but fall back to
+                                // aggregated row totals when presenter sample is absent.
+                                $promo_amount = $txSummary['promo_amount'] ?? null;
+                                $senior_amount = $txSummary['senior_amount'] ?? null;
+                                $pwd_amount = $txSummary['pwd_amount'] ?? null;
+                                $vat_amount = $txSummary['vat_amount'] ?? null;
+                                $vatable_sales = $txSummary['vatable_sales'] ?? null;
+                                $sc_vat_amount = $txSummary['sc_vat_amount'] ?? null;
+
+                                // fallback to row-level aggregates so the summary shows daily totals
+                                if ($promo_amount === null && isset($row->promo_discount)) {
+                                    $promo_amount = $row->promo_discount;
+                                }
+                                if ($senior_amount === null && isset($row->senior_discount)) {
+                                    $senior_amount = $row->senior_discount;
+                                }
+                                if ($pwd_amount === null && isset($row->pwd_discount)) {
+                                    $pwd_amount = $row->pwd_discount;
+                                }
+                                if ($vat_amount === null && isset($row->vat)) {
+                                    $vat_amount = $row->vat;
+                                }
+                                if ($vatable_sales === null && isset($row->vatable_sales)) {
+                                    $vatable_sales = $row->vatable_sales;
+                                }
+                                // sc_vat may be stored under different keys depending on aggregation
+                                if ($sc_vat_amount === null) {
+                                    if (isset($row->sc_vat_amount)) {
+                                        $sc_vat_amount = $row->sc_vat_amount;
+                                    } elseif (isset($row->sc_vat_exempt_sales)) {
+                                        $sc_vat_amount = $row->sc_vat_exempt_sales;
+                                    }
+                                }
+                        }
+                    @endphp
+                    <td class="text-end">{{ $promo_amount !== null ? \App\Helpers\FormatHelper::formatCurrency($promo_amount) : '-' }}</td>
+                    <td class="text-end">{{ $senior_amount !== null ? \App\Helpers\FormatHelper::formatCurrency($senior_amount) : '-' }}</td>
+                    <td class="text-end">{{ $pwd_amount !== null ? \App\Helpers\FormatHelper::formatCurrency($pwd_amount) : '-' }}</td>
+                    <td class="text-end">{{ $vat_amount !== null ? \App\Helpers\FormatHelper::formatCurrency($vat_amount) : '-' }}</td>
+                    <td class="text-end">{{ $vatable_sales !== null ? \App\Helpers\FormatHelper::formatCurrency($vatable_sales) : '-' }}</td>
+                    <td class="text-end">{{ $sc_vat_amount !== null ? \App\Helpers\FormatHelper::formatCurrency($sc_vat_amount) : '-' }}</td>
                 </tr>
                 @empty
                 @endforelse
