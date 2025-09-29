@@ -163,15 +163,19 @@ use App\Helpers\FormatHelper;
                     <td>SN: {{ $row->serial_number ?? 'N/A' }} • M: {{ $row->machine_number ?? 'N/A' }}</td>
                     <td class="text-end">{{ number_format($row->tx_count) }}</td>
                     @php
-                        // Prefer presenter-computed values when we have a sample transaction
+                        // Prefer aggregated row totals (daily sums) for Gross/VAT/Net/Refund.
+                        // Only use the sample-transaction presenter values when the
+                        // summary row represents exactly one transaction (tx_count == 1).
                         $presenterGross = null; $presenterVat = null; $presenterNet = null; $presenterRefund = null;
                         if (isset($sampleTransactions) && isset($row->sample_tx_id) && $sampleTransactions->has($row->sample_tx_id)) {
                             $txp = $sampleTransactions->get($row->sample_tx_id);
-                                $p = \App\Presenters\TransactionSummaryPresenter::fromTransaction($txp);
+                            $p = \App\Presenters\TransactionSummaryPresenter::fromTransaction($txp);
+                            if ((int) ($row->tx_count ?? 0) === 1) {
                                 $presenterGross = $p['gross'];
                                 $presenterVat = $p['vat_amount'];
                                 $presenterNet = $p['net'];
                                 $presenterRefund = $p['refund'];
+                            }
                         }
                     @endphp
                     <td class="text-end">{{ isset($presenterGross) ? \App\Helpers\FormatHelper::formatCurrency($presenterGross) : ('₱' . number_format($row->gross, 2)) }}</td>
@@ -185,39 +189,43 @@ use App\Helpers\FormatHelper;
                             $tx = $sampleTransactions->get($row->sample_tx_id);
                             // avoid clobbering the paginator $summary variable; use $txSummary for the presenter result
                             $txSummary = \App\Presenters\TransactionSummaryPresenter::fromTransaction($tx);
-                                // Prefer presenter values for display, but fall back to
-                                // aggregated row totals when presenter sample is absent.
-                                $promo_amount = $txSummary['promo_amount'] ?? null;
-                                $senior_amount = $txSummary['senior_amount'] ?? null;
-                                $pwd_amount = $txSummary['pwd_amount'] ?? null;
-                                $vat_amount = $txSummary['vat_amount'] ?? null;
-                                $vatable_sales = $txSummary['vatable_sales'] ?? null;
-                                $sc_vat_amount = $txSummary['sc_vat_amount'] ?? null;
 
-                                // fallback to row-level aggregates so the summary shows daily totals
-                                if ($promo_amount === null && isset($row->promo_discount)) {
-                                    $promo_amount = $row->promo_discount;
+                            // Only use presenter (sample transaction) values when the summary row
+                            // represents exactly one transaction. For multi-transaction rows we
+                            // prefer the aggregated row totals so the summary reflects daily/terminal sums.
+                            $usePresenter = ((int) ($row->tx_count ?? 0) === 1);
+
+                            $promo_amount = $usePresenter ? ($txSummary['promo_amount'] ?? null) : null;
+                            $senior_amount = $usePresenter ? ($txSummary['senior_amount'] ?? null) : null;
+                            $pwd_amount = $usePresenter ? ($txSummary['pwd_amount'] ?? null) : null;
+                            $vat_amount = $usePresenter ? ($txSummary['vat_amount'] ?? null) : null;
+                            $vatable_sales = $usePresenter ? ($txSummary['vatable_sales'] ?? null) : null;
+                            $sc_vat_amount = $usePresenter ? ($txSummary['sc_vat_amount'] ?? null) : null;
+
+                            // fallback to row-level aggregates so the summary shows daily totals
+                            if ($promo_amount === null && isset($row->promo_discount)) {
+                                $promo_amount = $row->promo_discount;
+                            }
+                            if ($senior_amount === null && isset($row->senior_discount)) {
+                                $senior_amount = $row->senior_discount;
+                            }
+                            if ($pwd_amount === null && isset($row->pwd_discount)) {
+                                $pwd_amount = $row->pwd_discount;
+                            }
+                            if ($vat_amount === null && isset($row->vat)) {
+                                $vat_amount = $row->vat;
+                            }
+                            if ($vatable_sales === null && isset($row->vatable_sales)) {
+                                $vatable_sales = $row->vatable_sales;
+                            }
+                            // sc_vat may be stored under different keys depending on aggregation
+                            if ($sc_vat_amount === null) {
+                                if (isset($row->sc_vat_amount)) {
+                                    $sc_vat_amount = $row->sc_vat_amount;
+                                } elseif (isset($row->sc_vat_exempt_sales)) {
+                                    $sc_vat_amount = $row->sc_vat_exempt_sales;
                                 }
-                                if ($senior_amount === null && isset($row->senior_discount)) {
-                                    $senior_amount = $row->senior_discount;
-                                }
-                                if ($pwd_amount === null && isset($row->pwd_discount)) {
-                                    $pwd_amount = $row->pwd_discount;
-                                }
-                                if ($vat_amount === null && isset($row->vat)) {
-                                    $vat_amount = $row->vat;
-                                }
-                                if ($vatable_sales === null && isset($row->vatable_sales)) {
-                                    $vatable_sales = $row->vatable_sales;
-                                }
-                                // sc_vat may be stored under different keys depending on aggregation
-                                if ($sc_vat_amount === null) {
-                                    if (isset($row->sc_vat_amount)) {
-                                        $sc_vat_amount = $row->sc_vat_amount;
-                                    } elseif (isset($row->sc_vat_exempt_sales)) {
-                                        $sc_vat_amount = $row->sc_vat_exempt_sales;
-                                    }
-                                }
+                            }
                         }
                     @endphp
                     <td class="text-end">{{ $promo_amount !== null ? \App\Helpers\FormatHelper::formatCurrency($promo_amount) : '-' }}</td>
