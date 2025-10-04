@@ -121,17 +121,24 @@ class JobProcessingService
             // Use Transaction helper to compute other tax sum, which accounts for SC_VAT_EXEMPT_SALES
             $otherTaxSum = method_exists($transaction, 'otherTaxSum') ? $transaction->otherTaxSum() : 0;
 
-            // Validate net_sales = gross_sales - other_tax (simplified formula)
-            $expectedNetSales = $transaction->gross_sales - $otherTaxSum;
-            if (abs($transaction->net_sales - $expectedNetSales) > 0.05) {
-                Log::warning('Net sales validation failed', [
-                    'transaction_id' => $transaction->transaction_id,
-                    'net_sales' => $transaction->net_sales,
-                    'expected' => $expectedNetSales,
-                    'gross_sales' => $transaction->gross_sales,
-                    'other_tax' => $otherTaxSum
+            // If computation-based validation is disabled, skip strict reconciliation checks
+            if (\App\Support\FeatureFlags::computationValidationEnabled()) {
+                // Validate net_sales = gross_sales - other_tax (simplified formula)
+                $expectedNetSales = $transaction->gross_sales - $otherTaxSum;
+                if (abs($transaction->net_sales - $expectedNetSales) > 0.05) {
+                    Log::warning('Net sales validation failed', [
+                        'transaction_id' => $transaction->transaction_id,
+                        'net_sales' => $transaction->net_sales,
+                        'expected' => $expectedNetSales,
+                        'gross_sales' => $transaction->gross_sales,
+                        'other_tax' => $otherTaxSum
+                    ]);
+                    return false;
+                }
+            } else {
+                Log::debug('Computation validation disabled; net/gross reconciliation skipped for transaction', [
+                    'transaction_id' => $transaction->transaction_id
                 ]);
-                return false;
             }
 
             // Basic positivity checks

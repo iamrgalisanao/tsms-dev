@@ -4,6 +4,10 @@ return [
     'validation' => [
         'strict_mode' => env('TSMS_VALIDATION_STRICT_MODE', false),
         'net_includes_vat' => env('TSMS_NET_INCLUDES_VAT', true),
+        // When true, the system will perform computational reconciliation checks
+        // (e.g. validate that net_sales/gross_sales match expected sums from taxes/adjustments).
+        // Default false to keep passive mapping behaviour unless explicitly enabled.
+        'enable_computation_validation' => (bool) env('TSMS_ENABLE_COMPUTATION_VALIDATION', false),
         'max_vat_difference' => env('TSMS_MAX_VAT_DIFFERENCE', 0.02),
         'max_rounding_difference' => env('TSMS_MAX_ROUNDING_DIFFERENCE', 0.05),
         'future_timestamp_tolerance_seconds' => (int) env('TSMS_FUTURE_TIMESTAMP_TOLERANCE_SECONDS', 0),

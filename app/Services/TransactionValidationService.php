@@ -962,6 +962,62 @@ class TransactionValidationService
     {
         $errors = [];
 
+        // If computation-based validation is disabled via config, skip reconciliation checks.
+        // This preserves passive mapping behavior where payload values are accepted as-is.
+        if (! \App\Support\FeatureFlags::computationValidationEnabled()) {
+            $txId = $transaction->transaction_id ?? ($transaction['transaction_id'] ?? null);
+            Log::info('Computation validation disabled by feature flag; skipping strict reconciliation checks', [
+                'transaction_id' => $txId
+            ]);
+            // Also create a lightweight SecurityEvent record for audit/telemetry so ops can track
+            try {
+                SecurityEvent::create([
+                    'tenant_id' => $transaction->tenant_id ?? ($transaction['tenant_id'] ?? null),
+                    'event_type' => 'validation_skipped',
+                    'severity' => 'info',
+                    'user_id' => null,
+                    'source_ip' => request()?->ip() ?? null,
+                    'context' => json_encode([
+                        'transaction_id' => $txId,
+                        'reason' => 'computation_validation_disabled'
+                    ]),
+                    'event_timestamp' => now(),
+                ]);
+            } catch (\Throwable $_) {
+                // Don't fail validation flow due to audit write issues
+            }
+            // Run only basic positivity and VAT checks that don't enforce reconciliation
+            // (reuse some of the logic below but avoid strict expected-net/gross assertions).
+            if (($transaction->gross_sales ?? 0) <= 0) {
+                $errors[] = 'Gross sales must be positive.';
+                $errors[] = 'Amount must be positive';
+            }
+            if (($transaction->net_sales ?? 0) < 0) {
+                $errors[] = 'Net sales cannot be negative.';
+                $errors[] = 'Amount cannot be negative';
+            }
+
+            // VAT check still useful even if reconciliation is off
+            $taxes = $this->getTaxBuckets($transaction);
+            $vatable = $taxes['vatable_sales'] ?? 0.0;
+            $vat_amount = $taxes['vat_amount'] ?? ($transaction->vat_amount ?? 0.0);
+            if (empty($transaction->tax_exempt) && $vatable > 0) {
+                $expectedVat = round($vatable * 0.12, 2);
+                $actualVat = round($vat_amount, 2);
+                $maxVatDiff = config('tsms.validation.max_vat_difference', self::MAX_VAT_DIFFERENCE);
+                if (abs($expectedVat - $actualVat) > $maxVatDiff) {
+                    $errors[] = sprintf(
+                        'VAT amount %.2f does not match expected 12%% of vatable sales (%.2f).',
+                        $actualVat,
+                        $expectedVat
+                    );
+                    $errors[] = 'VAT mismatch';
+                }
+            }
+
+            return $errors;
+        }
+
         // Normalize taxes and adjustments for canonical reconciliation
         $taxes = $this->getTaxBuckets($transaction);
         $adjustmentSum = $this->getReconciliationAdjustmentSum($transaction);
