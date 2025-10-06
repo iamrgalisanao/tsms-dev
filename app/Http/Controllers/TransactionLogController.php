@@ -50,8 +50,9 @@ class TransactionLogController extends Controller
             $filters['transaction_id'] = trim($request->transaction_id);
         }
 
-        $basis = in_array($request->input('date_basis'), ['created','completed']) ? $request->input('date_basis') : 'completed';
-        $dateColumn = $basis === 'completed' ? 'completed_at' : 'created_at';
+    // Allow 'transaction' as a date basis which uses the canonical transaction_timestamp
+    $basis = in_array($request->input('date_basis'), ['created','completed','transaction']) ? $request->input('date_basis') : 'completed';
+    $dateColumn = $basis === 'completed' ? 'completed_at' : ($basis === 'transaction' ? 'transaction_timestamp' : 'created_at');
 
         $logs = Transaction::select([
             'id',
@@ -179,6 +180,7 @@ class TransactionLogController extends Controller
             $perPage = 1000;
         }
 
+        // For summary roll-ups allow grouping/filters by transaction_timestamp as well
         $query = \DB::table('transactions as t')
             ->leftJoin('tenants as tn', 'tn.id', '=', 't.tenant_id')
             ->leftJoin('pos_terminals as term', 'term.id', '=', 't.terminal_id')
@@ -186,10 +188,19 @@ class TransactionLogController extends Controller
                 $q->where('t.validation_status', $filters['status']);
             })
             ->when(isset($filters['date_from']), function ($q) use ($filters, $dateColumn) {
-                $q->where($dateColumn, '>=', $filters['date_from'] . ' 00:00:00');
+                // Prefer transaction_timestamp when selected; fall back to created/completed as appropriate.
+                if ($dateColumn === 'transaction_timestamp') {
+                    $q->where('t.transaction_timestamp', '>=', $filters['date_from'] . ' 00:00:00');
+                } else {
+                    $q->where($dateColumn, '>=', $filters['date_from'] . ' 00:00:00');
+                }
             })
             ->when(isset($filters['date_to']), function ($q) use ($filters, $dateColumn) {
-                $q->where($dateColumn, '<=', $filters['date_to'] . ' 23:59:59');
+                if ($dateColumn === 'transaction_timestamp') {
+                    $q->where('t.transaction_timestamp', '<=', $filters['date_to'] . ' 23:59:59');
+                } else {
+                    $q->where($dateColumn, '<=', $filters['date_to'] . ' 23:59:59');
+                }
             })
             ->when(isset($filters['tenant_id']), function ($q) use ($filters) {
                 $q->where('t.tenant_id', $filters['tenant_id']);

@@ -14,10 +14,20 @@ class TransactionLogService
     {
         return Cache::remember($this->getCacheKey($filters), 300, function() use ($filters) {
             return Transaction::with(['terminal.provider', 'tenant'])
-                ->when($filters['date_from'] ?? null, fn($q, $date) => 
-                    $q->whereDate('created_at', '>=', $date))
-                ->when($filters['date_to'] ?? null, fn($q, $date) => 
-                    $q->whereDate('created_at', '<=', $date))
+                ->when($filters['date_from'] ?? null, function($q, $date) {
+                    // Prefer filtering by the canonical transaction timestamp when available,
+                    // otherwise fall back to created_at to preserve existing behavior.
+                    $q->where(function($q) use ($date) {
+                        $q->whereDate('transaction_timestamp', '>=', $date)
+                          ->orWhereDate('created_at', '>=', $date);
+                    });
+                })
+                ->when($filters['date_to'] ?? null, function($q, $date) {
+                    $q->where(function($q) use ($date) {
+                        $q->whereDate('transaction_timestamp', '<=', $date)
+                          ->orWhereDate('created_at', '<=', $date);
+                    });
+                })
                 ->when($filters['amount_min'] ?? null, fn($q, $amount) => 
                     $q->where('gross_sales', '>=', $amount))
                 ->when($filters['amount_max'] ?? null, fn($q, $amount) => 
@@ -68,7 +78,10 @@ class TransactionLogService
                 $q->where('validation_status', $status);
             })
             ->when($filters['date'] ?? null, function($q, $date) {
-                $q->whereDate('created_at', $date);
+                $q->where(function($q) use ($date) {
+                    $q->whereDate('transaction_timestamp', $date)
+                      ->orWhereDate('created_at', $date);
+                });
             });
 
         return Excel::download(new TransactionLogsExport($query), 'transaction-logs-' . now()->format('Y-m-d') . '.xlsx');

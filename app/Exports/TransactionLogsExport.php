@@ -24,7 +24,11 @@ class TransactionLogsExport implements FromQuery, WithHeadings, WithMapping
                 $query->where('validation_status', $status);
             })
             ->when($this->filters['date'] ?? null, function($query, $date) {
-                $query->whereDate('created_at', $date);
+                // Prefer transaction_timestamp for export filters when present
+                $query->where(function($q) use ($date) {
+                    $q->whereDate('transaction_timestamp', $date)
+                      ->orWhereDate('created_at', $date);
+                });
             });
     }
 
@@ -37,6 +41,7 @@ class TransactionLogsExport implements FromQuery, WithHeadings, WithMapping
             'Validation Status',
             'Job Status',
             'Attempts',
+            'Transaction Timestamp',
             'Created At'
         ];
     }
@@ -50,6 +55,7 @@ class TransactionLogsExport implements FromQuery, WithHeadings, WithMapping
             $transaction->validation_status,
             $transaction->job_status,
             $transaction->job_attempts,
+            $transaction->transaction_timestamp ? $transaction->transaction_timestamp->format('Y-m-d H:i:s') : null,
             $transaction->created_at->format('Y-m-d H:i:s')
         ];
     }

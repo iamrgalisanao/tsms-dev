@@ -23,7 +23,6 @@ class CircuitBreaker extends Model
         'tenant_id',
         'name',
         'status',
-        'failures',
         'trip_count',
         'failure_count',
         'failure_threshold',
@@ -50,12 +49,13 @@ class CircuitBreaker extends Model
     
     public function getFailureCountAttribute()
     {
-        return $this->failures;
+        // The DB column is 'trip_count' (older code used 'failures').
+        return $this->trip_count ?? 0;
     }
     
     public function setFailureCountAttribute($value)
     {
-        $this->attributes['failures'] = $value;
+        $this->attributes['trip_count'] = $value;
     }
     
     public function getOpenedAtAttribute()
@@ -70,14 +70,19 @@ class CircuitBreaker extends Model
     
     public function recordFailure()
     {
-        $this->failures++;
+        // Use atomic increment to avoid race conditions and ensure DB reflects the new count
+        $this->increment('trip_count');
+
+        // Refresh model to get the updated trip_count
+        $this->refresh();
+
         $this->last_failure_at = Carbon::now();
-        
-        if ($this->failures >= $this->failure_threshold) {
+
+        if (($this->trip_count ?? 0) >= $this->failure_threshold) {
             $this->status = self::STATE_OPEN;
             $this->cooldown_until = Carbon::now()->addSeconds((int) $this->reset_timeout);
         }
-        
+
         $this->save();
     }
     
@@ -86,8 +91,8 @@ class CircuitBreaker extends Model
         if ($this->status === self::STATE_HALF_OPEN) {
             $this->status = self::STATE_CLOSED;
         }
-        
-        $this->failures = 0;
+        // Reset trip_count on success
+        $this->update(['trip_count' => 0]);
         $this->save();
     }
     
@@ -119,7 +124,7 @@ class CircuitBreaker extends Model
             ],
             [
                 'status' => self::STATE_CLOSED,
-                'failures' => 0,
+                'trip_count' => 0,
                 'failure_threshold' => 5,
                 'reset_timeout' => 300
             ]

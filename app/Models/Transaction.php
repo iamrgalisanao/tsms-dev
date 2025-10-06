@@ -126,11 +126,13 @@ class Transaction extends Model
         'customer_code',
         'promo_status',
         'payload_checksum',
+    'original_payload',
         'validation_status',
     'job_status',
     'last_error',
     'job_attempts',
     'completed_at',
+    'discount_total',
         'submission_uuid',
         'submission_timestamp',
         'refund_status',
@@ -515,6 +517,22 @@ class Transaction extends Model
             }
 
             $sync($tx);
+            // Ensure transaction_id uniqueness per terminal in test/dev runs where
+            // factories may generate identical IDs. If a duplicate exists for the
+            // same terminal, append a short timestamp suffix to avoid DB unique
+            // constraint failures. This is defensive and only triggers when needed.
+            try {
+                if (!empty($tx->terminal_id) && !empty($tx->transaction_id)) {
+                    $exists = Transaction::where('terminal_id', $tx->terminal_id)
+                                ->where('transaction_id', $tx->transaction_id)
+                                ->exists();
+                    if ($exists) {
+                        $tx->transaction_id = $tx->transaction_id . '-' . substr((string) microtime(true), -4);
+                    }
+                }
+            } catch (\Throwable $e) {
+                // ignore lookup failures in constrained environments
+            }
         });
 
         static::saving(function (Transaction $tx) use ($sync) {

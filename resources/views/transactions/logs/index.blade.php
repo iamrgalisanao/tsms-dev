@@ -91,10 +91,11 @@ use App\Helpers\FormatHelper;
                 </div>
                 <div class="form-group col-sm-6 col-md-2 col-lg-2">
                     <label class="small text-muted mb-1">Date Basis</label>
-                    @php $basis = in_array(request('date_basis'), ['created','completed']) ? request('date_basis') : 'completed'; @endphp
+                    @php $basis = in_array(request('date_basis'), ['created','completed','transaction']) ? request('date_basis') : 'completed'; @endphp
                     <select name="date_basis" class="form-control form-control-sm">
                         <option value="created" {{ $basis==='created' ? 'selected' : '' }}>Created</option>
                         <option value="completed" {{ $basis==='completed' ? 'selected' : '' }}>Completed</option>
+                        <option value="transaction" {{ $basis==='transaction' ? 'selected' : '' }}>Transaction Time</option>
                     </select>
                 </div>
                 <div class="form-group col-sm-6 col-md-2 col-lg-2">

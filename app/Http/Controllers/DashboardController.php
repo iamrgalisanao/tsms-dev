@@ -35,12 +35,14 @@ class DashboardController extends Controller
         $this->dashboardService = $dashboardService;
     }
 
-    public function index()
+    public function index(Request $request)
     {
-        $metrics = $this->getMetrics();
+        $dateBasis = $request->input('date_basis', 'created'); // 'created' or 'transaction'
+        $metrics = $this->getMetrics($dateBasis);
         $tenants = Tenant::count();
         $recentTransactions = $this->getRecentTransactions();
-        $recentTransactionCount = Transaction::where('created_at', '>=', now()->subDays(7))->count();
+        $dateColumn = $dateBasis === 'transaction' ? 'transaction_timestamp' : 'created_at';
+        $recentTransactionCount = Transaction::where($dateColumn, '>=', now()->subDays(7))->count();
         $errorCount = \App\Models\TransactionJob::where('created_at', '>=', now()->subDays(7))
             ->where('job_status', 'FAILED')
             ->count();
@@ -107,7 +109,7 @@ class DashboardController extends Controller
     //     ];
     // }
 
-    protected function getMetrics()
+    protected function getMetrics($dateBasis = 'created')
     {
         // Get the ID for the 'active' status from the lookup table
         $activeStatusId = \App\Models\TerminalStatus::where('name', 'active')->value('id');
@@ -116,7 +118,7 @@ class DashboardController extends Controller
             : 0;
 
         return [
-            'today_count' => $this->getTransactionMetrics(),
+            'today_count' => $this->getTransactionMetrics($dateBasis),
             'success_rate' => $this->getSuccessRate(),
             'avg_processing_time' => $this->getAvgProcessingTime(),
             'error_rate' => $this->getErrorRate(),
@@ -279,9 +281,10 @@ class DashboardController extends Controller
     return $transactions;
     }
 
-    protected function getTransactionMetrics()
+    protected function getTransactionMetrics($dateBasis = 'created')
     {
-        return Transaction::whereDate('created_at', Carbon::today())->count();
+        $dateColumn = $dateBasis === 'transaction' ? 'transaction_timestamp' : 'created_at';
+        return Transaction::whereDate($dateColumn, Carbon::today())->count();
     }
 
     protected function getSuccessRate()
