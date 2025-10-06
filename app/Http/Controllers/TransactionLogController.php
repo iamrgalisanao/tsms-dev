@@ -172,8 +172,22 @@ class TransactionLogController extends Controller
             'terminal_id',
         ]);
 
-        $basis = in_array($request->input('date_basis'), ['created','completed']) ? $request->input('date_basis') : 'completed';
-        $dateColumn = $basis === 'completed' ? 't.completed_at' : 't.created_at';
+        // Allow 'transaction' as a date basis for summaries as well. When selected,
+        // group by the canonical transaction timestamp but fall back to created_at
+        // for rows that don't have transaction_timestamp set.
+        $basis = in_array($request->input('date_basis'), ['created','completed','transaction']) ? $request->input('date_basis') : 'completed';
+        if ($basis === 'completed') {
+            $dateColumn = 't.completed_at';
+            $dateExpr = 't.completed_at';
+        } elseif ($basis === 'transaction') {
+            $dateColumn = 't.transaction_timestamp';
+            // Use COALESCE so that rows without transaction_timestamp will still
+            // be included using created_at as a fallback for grouping and ordering.
+            $dateExpr = 'COALESCE(t.transaction_timestamp, t.created_at)';
+        } else {
+            $dateColumn = 't.created_at';
+            $dateExpr = 't.created_at';
+        }
 
         // Determine pagination size like index(): if date filter provided and no per_page set, use 1000
         $perPage = (int) $request->input('per_page', 15);
@@ -189,16 +203,23 @@ class TransactionLogController extends Controller
                 $q->where('t.validation_status', $filters['status']);
             })
             ->when(isset($filters['date_from']), function ($q) use ($filters, $dateColumn) {
-                // Prefer transaction_timestamp when selected; fall back to created/completed as appropriate.
-                if ($dateColumn === 'transaction_timestamp') {
-                    $q->where('t.transaction_timestamp', '>=', $filters['date_from'] . ' 00:00:00');
+                // If transaction basis is selected, accept either transaction_timestamp
+                // or created_at (fallback). Otherwise, filter the chosen date column.
+                if ($dateColumn === 't.transaction_timestamp') {
+                    $q->where(function ($q) use ($filters) {
+                        $q->where('t.transaction_timestamp', '>=', $filters['date_from'] . ' 00:00:00')
+                          ->orWhere('t.created_at', '>=', $filters['date_from'] . ' 00:00:00');
+                    });
                 } else {
                     $q->where($dateColumn, '>=', $filters['date_from'] . ' 00:00:00');
                 }
             })
             ->when(isset($filters['date_to']), function ($q) use ($filters, $dateColumn) {
-                if ($dateColumn === 'transaction_timestamp') {
-                    $q->where('t.transaction_timestamp', '<=', $filters['date_to'] . ' 23:59:59');
+                if ($dateColumn === 't.transaction_timestamp') {
+                    $q->where(function ($q) use ($filters) {
+                        $q->where('t.transaction_timestamp', '<=', $filters['date_to'] . ' 23:59:59')
+                          ->orWhere('t.created_at', '<=', $filters['date_to'] . ' 23:59:59');
+                    });
                 } else {
                     $q->where($dateColumn, '<=', $filters['date_to'] . ' 23:59:59');
                 }
@@ -209,7 +230,7 @@ class TransactionLogController extends Controller
             ->when(isset($filters['terminal_id']), function ($q) use ($filters) {
                 $q->where('t.terminal_id', $filters['terminal_id']);
             })
-            ->selectRaw('DATE(' . $dateColumn . ') as date')
+            ->selectRaw('DATE(' . $dateExpr . ') as date')
             ->selectRaw('t.tenant_id, t.terminal_id')
             ->selectRaw('COALESCE(tn.trade_name, "Unknown") as trade_name')
             ->selectRaw('term.serial_number, term.machine_number')
