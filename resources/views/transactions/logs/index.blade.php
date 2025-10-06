@@ -251,6 +251,7 @@ use App\Helpers\FormatHelper;
                     {{-- <th>Job Status</th> --}}
                     <!-- {{-- <th>Attempts</th> --}} -->
                     <!-- <th>Transaction Count</th> -->
+                    <th>Transaction Time</th>
                     <th>Completed At</th>
                     <th>Created At</th>
                     <th>Actions</th>
@@ -290,6 +291,12 @@ use App\Helpers\FormatHelper;
                     <!-- {{-- <td class="text-center">{{ $log->job_attempts }}</td> --}}
                     {{-- <td class="text-center">{{ FormatHelper::formatDate($log->completed_at) }}</td> --}} -->
                     <!-- <td class="text-center">{{ $log->transaction_count }}</td> -->
+                    <td class="text-center">
+                        @php
+                            $txTime = $log->transaction_timestamp ?? $log->created_at;
+                        @endphp
+                        {{ \Carbon\Carbon::parse($txTime)->format('Y-m-d H:i:s') }}
+                    </td>
                     <td class="text-center">{{ \Carbon\Carbon::parse($log->completed_at)->format('Y-m-d H:i:s') }}</td>
                     <td class="text-center">{{ \Carbon\Carbon::parse($log->created_at)->format('Y-m-d H:i:s') }}</td>
                     <td class="text-center">

@@ -60,6 +60,7 @@ class TransactionLogController extends Controller
             'terminal_id',
             'gross_sales as amount',
             'validation_status',
+            'transaction_timestamp',
             'created_at',
             'completed_at'
             ])
