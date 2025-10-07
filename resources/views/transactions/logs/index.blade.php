@@ -15,6 +15,30 @@
 .dataTables_wrapper .dataTables_info { display: none !important; }
 /* Tidy up paginator alignment under AdminLTE */
 .pagination { margin-bottom: 0; }
+
+/* Keep table header visible when scrolling long result sets. The
+   .table-responsive wrapper becomes the scroll container; the thead
+   cells are positioned sticky relative to that container. Adjust the
+   max-height as appropriate for your UI chrome. */
+.table-responsive {
+    max-height: calc(100vh - 220px);
+    overflow: auto;
+}
+
+/* Sticky header for both summary and detailed tables */
+#transactionLogsTable thead th,
+#transactionSummaryTable thead th {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    background: #ffffff; /* ensure header background hides rows behind it */
+}
+
+/* Add a subtle shadow so the header visually separates from rows */
+#transactionLogsTable thead th,
+#transactionSummaryTable thead th {
+    box-shadow: 0 2px 4px rgba(0,0,0,0.03);
+}
 </style>
 
 @endpush
