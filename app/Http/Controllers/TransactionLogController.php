@@ -54,16 +54,36 @@ class TransactionLogController extends Controller
     $basis = in_array($request->input('date_basis'), ['created','completed','transaction']) ? $request->input('date_basis') : 'completed';
     $dateColumn = $basis === 'completed' ? 'completed_at' : ($basis === 'transaction' ? 'transaction_timestamp' : 'created_at');
 
-        $logs = Transaction::select([
+        // Build select list conditionally so we don't attempt to select columns
+        // that may not exist on older database schemas.
+        $select = [
             'id',
             'transaction_id',
             'terminal_id',
+            // canonical stored amounts used across the app/summary
             'gross_sales as amount',
+            'vat_amount as vat',
+            'net_sales',
+            'refund_amount as refund',
+            'vatable_sales',
+            'sc_vat_exempt_sales',
             'validation_status',
             'transaction_timestamp',
             'created_at',
             'completed_at'
-            ])
+        ];
+
+        if (Schema::hasColumn('transactions', 'promo_discount')) {
+            $select[] = 'promo_discount';
+        }
+        if (Schema::hasColumn('transactions', 'senior_discount')) {
+            $select[] = 'senior_discount';
+        }
+        if (Schema::hasColumn('transactions', 'pwd_discount')) {
+            $select[] = 'pwd_discount';
+        }
+
+        $logs = Transaction::select($select)
             ->with(['terminal:id,serial_number,tenant_id,machine_number', 'terminal.tenant:id,trade_name'])
             ->when(isset($filters['transaction_id']), function ($query) use ($filters) {
             $search = str_replace('TX-', '', $filters['transaction_id']);
