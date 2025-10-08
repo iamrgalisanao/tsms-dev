@@ -34,9 +34,11 @@ class BackfillTransactionAggregates extends Command
         $total = $query->count();
         $this->info("Transactions to consider: {$total}");
 
-        $processed = 0;
-        $wouldUpdateTotal = 0;
-        $sampleChanges = [];
+    $processed = 0;
+    $wouldUpdateTotal = 0;
+    $sampleChanges = [];
+    $anomalies = [];
+    $anomalyCount = 0;
 
         $query->chunk($chunkSize, function ($transactions) use (&$processed, &$wouldUpdateTotal, &$sampleChanges, $dryRun) {
             $ids = collect($transactions)->pluck('id')->values()->all();
@@ -56,11 +58,14 @@ class BackfillTransactionAggregates extends Command
             // We compute conditional sums per tax_type (CASE WHEN) so we don't rely on
             // non-existent columns in transaction_taxes across environments.
             $taxTable = 'transaction_taxes';
+            // Use case-insensitive and pattern matching for tax_type because
+            // historical values may use different naming conventions
+            // (e.g. 'VATABLE_SALES', 'VAT', 'SC_VAT_EXEMPT_SALES').
             $taxes = DB::table($taxTable)
                 ->select('transaction_pk')
-                ->selectRaw("SUM(CASE WHEN tax_type = 'vatable' THEN COALESCE(amount,0) ELSE 0 END) as vatable_sales")
-                ->selectRaw("SUM(CASE WHEN tax_type = 'vat' THEN COALESCE(amount,0) ELSE 0 END) as vat_amount")
-                ->selectRaw("SUM(CASE WHEN tax_type = 'sc_vat_exempt' THEN COALESCE(amount,0) ELSE 0 END) as sc_vat_exempt_sales")
+                ->selectRaw("SUM(CASE WHEN LOWER(tax_type) LIKE '%vatable%' THEN COALESCE(amount,0) ELSE 0 END) as vatable_sales")
+                ->selectRaw("SUM(CASE WHEN LOWER(tax_type) = 'vat' THEN COALESCE(amount,0) ELSE 0 END) as vat_amount")
+                ->selectRaw("SUM(CASE WHEN LOWER(tax_type) LIKE '%sc_vat_exempt%' THEN COALESCE(amount,0) ELSE 0 END) as sc_vat_exempt_sales")
                 ->whereIn('transaction_pk', $ids)
                 ->groupBy('transaction_pk')
                 ->get()
@@ -121,7 +126,19 @@ class BackfillTransactionAggregates extends Command
                         $currVal = $current->{$k} ?? 0;
                         // compare rounded values to 2 decimals to avoid noise from
                         // tiny decimal differences or representation issues.
-                        if (round((float) $currVal, 2) !== round((float) $v, 2)) {
+                        $roundedCurr = round((float) $currVal, 2);
+                        $roundedNew = round((float) $v, 2);
+                        // If computed value is zero but stored value is non-zero,
+                        // this looks like an anomaly: do not overwrite automatically.
+                        if ($roundedNew === 0.00 && $roundedCurr !== 0.00) {
+                            $anomalyCount++;
+                            if (count($anomalies) < 20) {
+                                $anomalies[] = ['id' => $txId, 'column' => $k, 'current' => $roundedCurr, 'computed' => $roundedNew];
+                            }
+                            // skip applying this column update
+                            continue;
+                        }
+                        if ($roundedCurr !== $roundedNew) {
                             $set[$k] = $v;
                             $doUpdate = true;
                         }
@@ -156,6 +173,15 @@ class BackfillTransactionAggregates extends Command
                     foreach ($s['changes'] as $k => $v) {
                         $curr = $s['current']->{$k} ?? 0;
                         $this->line("    {$k}: {$curr} -> {$v}");
+                    }
+                }
+            }
+            if ($anomalyCount > 0) {
+                $this->info("Anomalies detected (computed zero while stored non-zero) = {$anomalyCount}");
+                if (!empty($anomalies)) {
+                    $this->info("Sample anomalies (up to 20):");
+                    foreach ($anomalies as $a) {
+                        $this->line("- tx {$a['id']}: {$a['column']}: {$a['current']} -> {$a['computed']}");
                     }
                 }
             }
