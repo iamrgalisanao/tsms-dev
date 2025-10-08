@@ -52,30 +52,19 @@ class BackfillTransactionAggregates extends Command
                 ->get()
                 ->groupBy('transaction_pk');
 
-            // Aggregate taxes by transaction_pk, but only select columns that actually exist
-            $taxes = collect();
+            // Aggregate taxes by transaction_pk using normalized schema (tax_type + amount).
+            // We compute conditional sums per tax_type (CASE WHEN) so we don't rely on
+            // non-existent columns in transaction_taxes across environments.
             $taxTable = 'transaction_taxes';
-            $taxSelects = [];
-            if (Schema::hasColumn($taxTable, 'vatable_sales')) {
-                $taxSelects[] = DB::raw('SUM(COALESCE(vatable_sales,0)) as vatable_sales');
-            }
-            if (Schema::hasColumn($taxTable, 'vat_amount')) {
-                $taxSelects[] = DB::raw('SUM(COALESCE(vat_amount,0)) as vat_amount');
-            }
-            if (Schema::hasColumn($taxTable, 'sc_vat_exempt_sales')) {
-                $taxSelects[] = DB::raw('SUM(COALESCE(sc_vat_exempt_sales,0)) as sc_vat_exempt_sales');
-            }
-
-            if (!empty($taxSelects)) {
-                // prepend transaction_pk
-                $selects = array_merge(['transaction_pk'], $taxSelects);
-                $taxes = DB::table($taxTable)
-                    ->select($selects)
-                    ->whereIn('transaction_pk', $ids)
-                    ->groupBy('transaction_pk')
-                    ->get()
-                    ->keyBy('transaction_pk');
-            }
+            $taxes = DB::table($taxTable)
+                ->select('transaction_pk')
+                ->selectRaw("SUM(CASE WHEN tax_type = 'vatable' THEN COALESCE(amount,0) ELSE 0 END) as vatable_sales")
+                ->selectRaw("SUM(CASE WHEN tax_type = 'vat' THEN COALESCE(amount,0) ELSE 0 END) as vat_amount")
+                ->selectRaw("SUM(CASE WHEN tax_type = 'sc_vat_exempt' THEN COALESCE(amount,0) ELSE 0 END) as sc_vat_exempt_sales")
+                ->whereIn('transaction_pk', $ids)
+                ->groupBy('transaction_pk')
+                ->get()
+                ->keyBy('transaction_pk');
 
             // Prepare updates per transaction
             $updates = [];
