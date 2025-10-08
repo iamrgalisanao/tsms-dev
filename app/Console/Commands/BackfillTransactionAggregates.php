@@ -108,7 +108,10 @@ class BackfillTransactionAggregates extends Command
             }
 
             // Apply updates idempotently (or simulate when dry-run)
-            foreach (array_chunk($updates, 200) as $chunk) {
+            // chunk updates but preserve transaction id keys so we log and apply
+            // updates against the correct transaction ids (array_chunk would
+            // otherwise reindex numeric keys and produce tx ids like 0,1,2...).
+            foreach (array_chunk($updates, 200, true) as $chunk) {
                 foreach ($chunk as $txId => $cols) {
                     // Read current values
                     $current = DB::table('transactions')->where('id', $txId)->first($this->columnsToSelect(array_keys($cols)));
@@ -116,7 +119,9 @@ class BackfillTransactionAggregates extends Command
                     $set = [];
                     foreach ($cols as $k => $v) {
                         $currVal = $current->{$k} ?? 0;
-                        if ((float) $currVal !== (float) $v) {
+                        // compare rounded values to 2 decimals to avoid noise from
+                        // tiny decimal differences or representation issues.
+                        if (round((float) $currVal, 2) !== round((float) $v, 2)) {
                             $set[$k] = $v;
                             $doUpdate = true;
                         }
