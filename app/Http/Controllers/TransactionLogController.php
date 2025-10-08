@@ -235,7 +235,9 @@ class TransactionLogController extends Controller
             ->selectRaw('COALESCE(tn.trade_name, "Unknown") as trade_name')
             ->selectRaw('term.serial_number, term.machine_number')
             ->selectRaw('COUNT(*) as tx_count')
-            ->selectRaw('COALESCE(SUM(t.gross_sales),0) as gross')
+            // Compute gross from components to ensure consistent aggregation
+            // gross = vatable_sales + vat_amount + sc_vat_exempt_sales
+            ->selectRaw('COALESCE(SUM(t.vatable_sales),0) + COALESCE(SUM(t.vat_amount),0) + COALESCE(SUM(t.sc_vat_exempt_sales),0) as gross')
             ->selectRaw('COALESCE(SUM(t.vat_amount),0) as vat')
             ->selectRaw('COALESCE(SUM(t.net_sales),0) as net')
             ->selectRaw('COALESCE(SUM(t.refund_amount),0) as refund')
