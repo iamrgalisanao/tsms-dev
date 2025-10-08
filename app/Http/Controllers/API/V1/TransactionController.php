@@ -355,8 +355,42 @@ class TransactionController extends Controller
                         continue;
                     }
 
+                    // Aggregate taxes and adjustments from incoming payload so we persist canonical totals
+                    $vatableSales = 0;
+                    $vatAmount = 0;
+                    $scVatExemptSales = 0;
+                    if (isset($transactionData['taxes']) && is_array($transactionData['taxes'])) {
+                        foreach ($transactionData['taxes'] as $tax) {
+                            $taxType = strtoupper($tax['tax_type'] ?? '');
+                            if ($taxType === 'VATABLE_SALES') {
+                                $vatableSales += $tax['amount'] ?? 0;
+                            } elseif ($taxType === 'VAT' || $taxType === 'VAT_AMOUNT') {
+                                $vatAmount += $tax['amount'] ?? 0;
+                            } elseif ($taxType === 'SC_VAT_EXEMPT_SALES') {
+                                $scVatExemptSales += $tax['amount'] ?? 0;
+                            }
+                        }
+                    }
+
+                    $promoDiscount = 0;
+                    $seniorDiscount = 0;
+                    $pwdDiscount = 0;
+                    if (isset($transactionData['adjustments']) && is_array($transactionData['adjustments'])) {
+                        foreach ($transactionData['adjustments'] as $adj) {
+                            $type = strtolower($adj['adjustment_type'] ?? '');
+                            $amt = $adj['amount'] ?? 0;
+                            if ($type === 'promo_discount') {
+                                $promoDiscount += $amt;
+                            } elseif ($type === 'senior_discount') {
+                                $seniorDiscount += $amt;
+                            } elseif ($type === 'pwd_discount') {
+                                $pwdDiscount += $amt;
+                            }
+                        }
+                    }
+
                     // Create transaction record
-                    $transaction = Transaction::create([
+                    $txPayload = [
                         'tenant_id' => $terminal->tenant_id,
                         'terminal_id' => $terminal->id,
                         'transaction_id' => $transactionData['transaction_id'],
@@ -367,7 +401,22 @@ class TransactionController extends Controller
                         'customer_code' => $request->customer_code,
                         'payload_checksum' => $transactionData['payload_checksum'] ?? md5(json_encode($transactionData)),
                         'validation_status' => 'PENDING',
-                    ]);
+                        'vatable_sales' => $vatableSales,
+                        'vat_amount' => $vatAmount,
+                        'sc_vat_exempt_sales' => $scVatExemptSales,
+                    ];
+
+                    if (Schema::hasColumn('transactions', 'promo_discount')) {
+                        $txPayload['promo_discount'] = $promoDiscount;
+                    }
+                    if (Schema::hasColumn('transactions', 'senior_discount')) {
+                        $txPayload['senior_discount'] = $seniorDiscount;
+                    }
+                    if (Schema::hasColumn('transactions', 'pwd_discount')) {
+                        $txPayload['pwd_discount'] = $pwdDiscount;
+                    }
+
+                    $transaction = Transaction::create($txPayload);
 
                     // Queue the transaction for processing
                     ProcessTransactionJob::dispatch($transaction->id)->afterCommit();
@@ -1198,8 +1247,8 @@ class TransactionController extends Controller
                         continue;
                     }
                     Log::info('storeOfficial: Creating transaction record', ['transaction_id' => $transactionData['transaction_id']]);
-                    
-                    // Extract vatable_sales and vat_amount from taxes if present
+
+                    // Extract vatable_sales and vat_amount from taxes if present (sum if multiple entries)
                     $vatableSales = 0;
                     $vatAmount = 0;
                     $scVatExemptSales = 0;
@@ -1208,17 +1257,35 @@ class TransactionController extends Controller
                             if (isset($tax['tax_type'])) {
                                 $taxType = strtoupper($tax['tax_type']);
                                 if ($taxType === 'VATABLE_SALES') {
-                                    $vatableSales = $tax['amount'] ?? 0;
+                                    $vatableSales += $tax['amount'] ?? 0;
                                 } elseif ($taxType === 'VAT' || $taxType === 'VAT_AMOUNT') {
-                                    $vatAmount = $tax['amount'] ?? 0;
+                                    $vatAmount += $tax['amount'] ?? 0;
                                 } elseif ($taxType === 'SC_VAT_EXEMPT_SALES') {
-                                    $scVatExemptSales = $tax['amount'] ?? 0;
+                                    $scVatExemptSales += $tax['amount'] ?? 0;
                                 }
                             }
                         }
                     }
-                    
-                    $transaction = Transaction::create([
+
+                    // Aggregate adjustments
+                    $promoDiscount = 0;
+                    $seniorDiscount = 0;
+                    $pwdDiscount = 0;
+                    if (isset($transactionData['adjustments']) && is_array($transactionData['adjustments'])) {
+                        foreach ($transactionData['adjustments'] as $adj) {
+                            $type = strtolower($adj['adjustment_type'] ?? '');
+                            $amt = $adj['amount'] ?? 0;
+                            if ($type === 'promo_discount') {
+                                $promoDiscount += $amt;
+                            } elseif ($type === 'senior_discount') {
+                                $seniorDiscount += $amt;
+                            } elseif ($type === 'pwd_discount') {
+                                $pwdDiscount += $amt;
+                            }
+                        }
+                    }
+
+                    $txPayload = [
                         'tenant_id' => $terminal->tenant_id,
                         'terminal_id' => $terminal->id,
                         'transaction_id' => $transactionData['transaction_id'],
@@ -1235,7 +1302,19 @@ class TransactionController extends Controller
                         'validation_status' => 'PENDING',
                         'submission_uuid' => $request->submission_uuid,
                         'submission_timestamp' => $request->submission_timestamp,
-                    ]);
+                    ];
+
+                    if (Schema::hasColumn('transactions', 'promo_discount')) {
+                        $txPayload['promo_discount'] = $promoDiscount;
+                    }
+                    if (Schema::hasColumn('transactions', 'senior_discount')) {
+                        $txPayload['senior_discount'] = $seniorDiscount;
+                    }
+                    if (Schema::hasColumn('transactions', 'pwd_discount')) {
+                        $txPayload['pwd_discount'] = $pwdDiscount;
+                    }
+
+                    $transaction = Transaction::create($txPayload);
 
                     // Process adjustments if present
                     if (isset($transactionData['adjustments']) && is_array($transactionData['adjustments'])) {
@@ -1668,8 +1747,41 @@ class TransactionController extends Controller
                 ];
             }
 
-            // Create transaction
-            $transactionModel = Transaction::create([
+            // Create transaction - aggregate taxes and adjustments into stored columns
+            $vatableSales = 0;
+            $vatAmount = 0;
+            $scVatExemptSales = 0;
+            if (isset($transaction['taxes']) && is_array($transaction['taxes'])) {
+                foreach ($transaction['taxes'] as $tax) {
+                    $taxType = strtoupper($tax['tax_type'] ?? '');
+                    if ($taxType === 'VATABLE_SALES') {
+                        $vatableSales += $tax['amount'] ?? 0;
+                    } elseif ($taxType === 'VAT' || $taxType === 'VAT_AMOUNT') {
+                        $vatAmount += $tax['amount'] ?? 0;
+                    } elseif ($taxType === 'SC_VAT_EXEMPT_SALES') {
+                        $scVatExemptSales += $tax['amount'] ?? 0;
+                    }
+                }
+            }
+
+            $promoDiscount = 0;
+            $seniorDiscount = 0;
+            $pwdDiscount = 0;
+            if (isset($transaction['adjustments']) && is_array($transaction['adjustments'])) {
+                foreach ($transaction['adjustments'] as $adj) {
+                    $type = strtolower($adj['adjustment_type'] ?? '');
+                    $amt = $adj['amount'] ?? 0;
+                    if ($type === 'promo_discount') {
+                        $promoDiscount += $amt;
+                    } elseif ($type === 'senior_discount') {
+                        $seniorDiscount += $amt;
+                    } elseif ($type === 'pwd_discount') {
+                        $pwdDiscount += $amt;
+                    }
+                }
+            }
+
+            $txPayload = [
                 'tenant_id' => $terminal->tenant_id,
                 'terminal_id' => $terminal->id,
                 'transaction_id' => $transaction['transaction_id'],
@@ -1681,7 +1793,22 @@ class TransactionController extends Controller
                 'payload_checksum' => $transaction['payload_checksum'] ?? '',
                 'validation_status' => $validationStatus,
                 'submission_uuid' => $transaction['submission_uuid'] ?? null,
-            ]);
+                'vatable_sales' => $vatableSales,
+                'vat_amount' => $vatAmount,
+                'sc_vat_exempt_sales' => $scVatExemptSales,
+            ];
+
+            if (Schema::hasColumn('transactions', 'promo_discount')) {
+                $txPayload['promo_discount'] = $promoDiscount;
+            }
+            if (Schema::hasColumn('transactions', 'senior_discount')) {
+                $txPayload['senior_discount'] = $seniorDiscount;
+            }
+            if (Schema::hasColumn('transactions', 'pwd_discount')) {
+                $txPayload['pwd_discount'] = $pwdDiscount;
+            }
+
+            $transactionModel = Transaction::create($txPayload);
             $isSaved = true;
 
             // Process adjustments & taxes
