@@ -13,7 +13,7 @@ class BackfillTransactionAggregates extends Command
      *
      * chunk-size: number of transactions processed per batch
      */
-    protected $signature = 'backfill:transaction-aggregates {--chunk-size=1000} {--start-id=0}';
+    protected $signature = 'backfill:transaction-aggregates {--chunk-size=1000} {--start-id=0} {--dry-run}';
 
     /**
      * The console command description.
@@ -25,7 +25,8 @@ class BackfillTransactionAggregates extends Command
         $chunkSize = (int) $this->option('chunk-size');
         $startId = (int) $this->option('start-id');
 
-        $this->info("Starting backfill with chunk size={$chunkSize}, start_id={$startId}");
+    $dryRun = (bool) $this->option('dry-run');
+    $this->info("Starting backfill with chunk size={$chunkSize}, start_id={$startId}, dry_run=" . ($dryRun ? 'true' : 'false'));
 
         // Process transactions in ascending id order to allow resume
         $query = DB::table('transactions')->select('id')->where('id', '>=', $startId)->orderBy('id');
@@ -34,8 +35,10 @@ class BackfillTransactionAggregates extends Command
         $this->info("Transactions to consider: {$total}");
 
         $processed = 0;
+        $wouldUpdateTotal = 0;
+        $sampleChanges = [];
 
-        $query->chunk($chunkSize, function ($transactions) use (&$processed) {
+        $query->chunk($chunkSize, function ($transactions) use (&$processed, &$wouldUpdateTotal, &$sampleChanges, $dryRun) {
             $ids = collect($transactions)->pluck('id')->values()->all();
             if (empty($ids)) {
                 return false;
@@ -98,10 +101,10 @@ class BackfillTransactionAggregates extends Command
                 }
             }
 
-            // Apply updates idempotently
+            // Apply updates idempotently (or simulate when dry-run)
             foreach (array_chunk($updates, 200) as $chunk) {
                 foreach ($chunk as $txId => $cols) {
-                    // Only update when values differ to minimize writes
+                    // Read current values
                     $current = DB::table('transactions')->where('id', $txId)->first($this->columnsToSelect(array_keys($cols)));
                     $doUpdate = false;
                     $set = [];
@@ -113,17 +116,39 @@ class BackfillTransactionAggregates extends Command
                         }
                     }
                     if ($doUpdate) {
-                        DB::table('transactions')->where('id', $txId)->update($set + ['updated_at' => now()]);
-                        $this->info("Updated tx {$txId}: " . implode(', ', array_map(function($k, $val){ return "$k=$val"; }, array_keys($set), $set)));
+                        $wouldUpdateTotal++;
+                        if ($dryRun) {
+                            // collect a small sample of changes to display
+                            if (count($sampleChanges) < 10) {
+                                $sampleChanges[] = ['id' => $txId, 'changes' => $set, 'current' => $current];
+                            }
+                            // do not write
+                        } else {
+                            DB::table('transactions')->where('id', $txId)->update($set + ['updated_at' => now()]);
+                            $this->info("Updated tx {$txId}: " . implode(', ', array_map(function($k, $val){ return "$k=$val"; }, array_keys($set), $set)));
+                        }
                     }
                 }
             }
 
             $processed += count($ids);
-            $this->info("Processed {$processed} transactions...");
+            $this->info("Processed {$processed} transactions... (would-update-so-far={$wouldUpdateTotal})");
         });
 
         $this->info('Backfill complete');
+        if ($dryRun) {
+            $this->info("Dry-run summary: total transactions scanned={$processed}, transactions that would be updated={$wouldUpdateTotal}");
+            if (!empty($sampleChanges)) {
+                $this->info("Sample changes (up to 10):");
+                foreach ($sampleChanges as $s) {
+                    $this->line("- tx {$s['id']}");
+                    foreach ($s['changes'] as $k => $v) {
+                        $curr = $s['current']->{$k} ?? 0;
+                        $this->line("    {$k}: {$curr} -> {$v}");
+                    }
+                }
+            }
+        }
         return 0;
     }
 
