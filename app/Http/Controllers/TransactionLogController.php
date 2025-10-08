@@ -73,10 +73,27 @@ class TransactionLogController extends Controller
             return $query->where('validation_status', $filters['status']);
             })
             ->when(isset($filters['date_from']), function ($query) use ($filters, $dateColumn) {
-            return $query->where($dateColumn, '>=', $filters['date_from'] . ' 00:00:00');
+                // Mirror summary() behavior: when transaction basis is selected,
+                // include rows that have either transaction_timestamp or created_at
+                // in the requested range. This keeps Detailed and Summary rowsets consistent.
+                if ($dateColumn === 'transaction_timestamp') {
+                    $query->where(function ($q) use ($filters) {
+                        $q->where('transaction_timestamp', '>=', $filters['date_from'] . ' 00:00:00')
+                          ->orWhere('created_at', '>=', $filters['date_from'] . ' 00:00:00');
+                    });
+                } else {
+                    $query->where($dateColumn, '>=', $filters['date_from'] . ' 00:00:00');
+                }
             })
             ->when(isset($filters['date_to']), function ($query) use ($filters, $dateColumn) {
-            return $query->where($dateColumn, '<=', $filters['date_to'] . ' 23:59:59');
+                if ($dateColumn === 'transaction_timestamp') {
+                    $query->where(function ($q) use ($filters) {
+                        $q->where('transaction_timestamp', '<=', $filters['date_to'] . ' 23:59:59')
+                          ->orWhere('created_at', '<=', $filters['date_to'] . ' 23:59:59');
+                    });
+                } else {
+                    $query->where($dateColumn, '<=', $filters['date_to'] . ' 23:59:59');
+                }
             })
             ->when(isset($filters['tenant_id']), function ($query) use ($filters) {
             return $query->where('tenant_id', $filters['tenant_id']);
@@ -235,9 +252,9 @@ class TransactionLogController extends Controller
             ->selectRaw('COALESCE(tn.trade_name, "Unknown") as trade_name')
             ->selectRaw('term.serial_number, term.machine_number')
             ->selectRaw('COUNT(*) as tx_count')
-            // Compute gross from components to ensure consistent aggregation
-            // gross = vatable_sales + vat_amount + sc_vat_exempt_sales
-            ->selectRaw('COALESCE(SUM(t.vatable_sales),0) + COALESCE(SUM(t.vat_amount),0) + COALESCE(SUM(t.sc_vat_exempt_sales),0) as gross')
+            // Use stored gross_sales as the canonical gross for summary so it matches
+            // the Detailed view and POS Z-reading totals.
+            ->selectRaw('COALESCE(SUM(t.gross_sales),0) as gross')
             ->selectRaw('COALESCE(SUM(t.vat_amount),0) as vat')
             ->selectRaw('COALESCE(SUM(t.net_sales),0) as net')
             ->selectRaw('COALESCE(SUM(t.refund_amount),0) as refund')
