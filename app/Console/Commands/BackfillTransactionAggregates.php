@@ -52,13 +52,30 @@ class BackfillTransactionAggregates extends Command
                 ->get()
                 ->groupBy('transaction_pk');
 
-            // Aggregate taxes by transaction_pk
-            $taxes = DB::table('transaction_taxes')
-                ->select('transaction_pk', DB::raw('SUM(COALESCE(vatable_sales,0)) as vatable_sales'), DB::raw('SUM(COALESCE(vat_amount,0)) as vat_amount'), DB::raw('SUM(COALESCE(sc_vat_exempt_sales,0)) as sc_vat_exempt_sales'))
-                ->whereIn('transaction_pk', $ids)
-                ->groupBy('transaction_pk')
-                ->get()
-                ->keyBy('transaction_pk');
+            // Aggregate taxes by transaction_pk, but only select columns that actually exist
+            $taxes = collect();
+            $taxTable = 'transaction_taxes';
+            $taxSelects = [];
+            if (Schema::hasColumn($taxTable, 'vatable_sales')) {
+                $taxSelects[] = DB::raw('SUM(COALESCE(vatable_sales,0)) as vatable_sales');
+            }
+            if (Schema::hasColumn($taxTable, 'vat_amount')) {
+                $taxSelects[] = DB::raw('SUM(COALESCE(vat_amount,0)) as vat_amount');
+            }
+            if (Schema::hasColumn($taxTable, 'sc_vat_exempt_sales')) {
+                $taxSelects[] = DB::raw('SUM(COALESCE(sc_vat_exempt_sales,0)) as sc_vat_exempt_sales');
+            }
+
+            if (!empty($taxSelects)) {
+                // prepend transaction_pk
+                $selects = array_merge(['transaction_pk'], $taxSelects);
+                $taxes = DB::table($taxTable)
+                    ->select($selects)
+                    ->whereIn('transaction_pk', $ids)
+                    ->groupBy('transaction_pk')
+                    ->get()
+                    ->keyBy('transaction_pk');
+            }
 
             // Prepare updates per transaction
             $updates = [];
