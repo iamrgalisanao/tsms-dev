@@ -278,9 +278,7 @@ class TransactionLogController extends Controller
             ->selectRaw('COALESCE(SUM(t.vat_amount),0) as vat')
             ->selectRaw('COALESCE(SUM(t.net_sales),0) as net')
             ->selectRaw('COALESCE(SUM(t.refund_amount),0) as refund')
-            // Ensure we expose explicit aggregated fields used by the summary blade
-            ->selectRaw('COALESCE(SUM(t.vatable_sales),0) as vatable_sales')
-            ->selectRaw('COALESCE(SUM(t.sc_vat_exempt_sales),0) as sc_vat_exempt_sales')
+            // Tax breakdown columns removed from summary (keeps gross/net/refund columns)
             ->when(Schema::hasColumn('transactions', 'promo_discount'), function ($q) {
                 $q->selectRaw('COALESCE(SUM(t.promo_discount),0) as promo_discount');
             })
