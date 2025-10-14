@@ -5,6 +5,7 @@ namespace App\Console\Commands;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use App\Support\FeatureFlags;
 
 class BackfillTransactionAggregates extends Command
 {
@@ -26,7 +27,15 @@ class BackfillTransactionAggregates extends Command
         $startId = (int) $this->option('start-id');
 
     $dryRun = (bool) $this->option('dry-run');
-    $this->info("Starting backfill with chunk size={$chunkSize}, start_id={$startId}, dry_run=" . ($dryRun ? 'true' : 'false'));
+        $this->info("Starting backfill with chunk size={$chunkSize}, start_id={$startId}, dry_run=" . ($dryRun ? 'true' : 'false'));
+
+        // Honor global feature flag: when computation-based validation is disabled
+        // we must avoid computing and writing aggregated monetary fields back to
+        // the `transactions` table to preserve passive ingestion semantics.
+        if (!FeatureFlags::computationValidationEnabled()) {
+            $this->info('Computation validation disabled via feature flag; skipping aggregate backfill to avoid mutating transactions.');
+            return 0;
+        }
 
         // Process transactions in ascending id order to allow resume
         $query = DB::table('transactions')->select('id')->where('id', '>=', $startId)->orderBy('id');
@@ -40,7 +49,7 @@ class BackfillTransactionAggregates extends Command
     $anomalies = [];
     $anomalyCount = 0;
 
-        $query->chunk($chunkSize, function ($transactions) use (&$processed, &$wouldUpdateTotal, &$sampleChanges, $dryRun) {
+    $query->chunk($chunkSize, function ($transactions) use (&$processed, &$wouldUpdateTotal, &$sampleChanges, &$anomalies, &$anomalyCount, $dryRun) {
             $ids = collect($transactions)->pluck('id')->values()->all();
             if (empty($ids)) {
                 return false;
