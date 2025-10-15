@@ -14,6 +14,14 @@ return [
     // Long wait detection thresholds (seconds)
     'waits' => [
         'redis:transaction-processing' => 5,
+        'redis:transaction-processing:s0' => 5,
+        'redis:transaction-processing:s1' => 5,
+        'redis:transaction-processing:s2' => 5,
+        'redis:transaction-processing:s3' => 5,
+        'redis:transaction-processing:s4' => 5,
+        'redis:transaction-processing:s5' => 5,
+        'redis:transaction-processing:s6' => 5,
+        'redis:transaction-processing:s7' => 5,
         'redis:forwarding'             => 10,
         'redis:low'                    => 15,
         'redis:notifications'          => 5,
@@ -36,8 +44,12 @@ return [
         'production' => [
             'high-supervisor' => [
                 'connection' => 'redis',
-                'queue'      => ['transaction-processing'],
-                'balance'    => 'simple',
+                'queue'      => [
+                    'transaction-processing',
+                    'transaction-processing:s0','transaction-processing:s1','transaction-processing:s2','transaction-processing:s3',
+                    'transaction-processing:s4','transaction-processing:s5','transaction-processing:s6','transaction-processing:s7'
+                ],
+                'balance'    => 'auto',
                 'processes'  => env('HZ_HIGH_PROCESSES', 8),
                 'tries'      => 3,
                 'timeout'    => 30,
@@ -74,7 +86,12 @@ return [
         'staging' => [
             'default' => [
                 'connection' => 'redis',
-                'queue'      => ['transaction-processing','forwarding','low','notifications'],
+                'queue'      => [
+                    'transaction-processing',
+                    'transaction-processing:s0','transaction-processing:s1','transaction-processing:s2','transaction-processing:s3',
+                    'transaction-processing:s4','transaction-processing:s5','transaction-processing:s6','transaction-processing:s7',
+                    'forwarding','low','notifications'
+                ],
                 'balance'    => 'auto',
                 'processes'  => 4,
                 'tries'      => 2,
@@ -84,7 +101,12 @@ return [
             'default' => [
                 'connection' => 'redis',
                 // Include processing queues locally so Horizon runs workers for them
-                'queue'      => ['transaction-processing','forwarding','low','notifications','default'],
+                'queue'      => [
+                    'transaction-processing',
+                    'transaction-processing:s0','transaction-processing:s1','transaction-processing:s2','transaction-processing:s3',
+                    'transaction-processing:s4','transaction-processing:s5','transaction-processing:s6','transaction-processing:s7',
+                    'forwarding','low','notifications','default'
+                ],
                 'processes'  => 1,
                 'tries'      => 1,
             ],

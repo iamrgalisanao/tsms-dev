@@ -33,7 +33,9 @@ class TestTransactionPipeline extends Command
         
         foreach ($transactions as $transaction) {
             $this->info("Dispatching job for transaction: {$transaction->transaction_id}");
-            ProcessTransactionJob::dispatch($transaction->id);
+            $shard = ($transaction->tenant_id ?? 0) % 8;
+            ProcessTransactionJob::dispatch($transaction->id)
+                ->onQueue('transaction-processing:s'.$shard);
         }
         
         $this->info('Jobs dispatched. Please check the dashboard for results in a few moments.');

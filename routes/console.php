@@ -106,7 +106,11 @@ Schedule::call(function () {
 
     foreach ($candidates as $txn) {
         if (($txn->job_attempts ?? 0) >= $maxRequeues) { $skipped++; continue; }
-        \App\Jobs\ProcessTransactionJob::dispatch($txn->id)->afterCommit();
+        $tenantId = $txn->tenant_id ?? optional($txn->terminal)->tenant_id ?? 0;
+        $shard = $tenantId % 8;
+        \App\Jobs\ProcessTransactionJob::dispatch($txn->id)
+            ->afterCommit()
+            ->onQueue('transaction-processing:s' . $shard);
         $txn->job_attempts = ($txn->job_attempts ?? 0) + 1;
         $txn->save();
         $requeued++;

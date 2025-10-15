@@ -487,7 +487,11 @@ class TransactionController extends Controller
                     $transaction = Transaction::create($txPayload);
 
                     // Queue the transaction for processing
-                    ProcessTransactionJob::dispatch($transaction->id)->afterCommit();
+                    // Shard queue by tenant for fairness
+                    $shard = $terminal->tenant_id % 8; // 8 shards
+                    ProcessTransactionJob::dispatch($transaction->id)
+                        ->onQueue('transaction-processing:s'.$shard)
+                        ->afterCommit();
 
                     // Log system activity
                     \App\Models\SystemLog::create([
@@ -1437,7 +1441,10 @@ class TransactionController extends Controller
 
                     // Queue the transaction for processing
                     Log::info('storeOfficial: Dispatching ProcessTransactionJob', ['transaction_id' => $transaction->transaction_id]);
-                    ProcessTransactionJob::dispatch($transaction->id)->afterCommit();
+                    $shard = $terminal->tenant_id % 8;
+                    ProcessTransactionJob::dispatch($transaction->id)
+                        ->onQueue('transaction-processing:s'.$shard)
+                        ->afterCommit();
                     Log::info('storeOfficial: ProcessTransactionJob dispatched', ['transaction_id' => $transaction->transaction_id]);
 
                     // Update terminal activity on successful transaction creation

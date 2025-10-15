@@ -5,6 +5,7 @@ namespace App\Jobs;
 use App\Models\Transaction;
 use App\Services\TransactionValidationService;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Queue\Middleware\WithoutOverlapping;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
@@ -79,20 +80,6 @@ class ProcessTransactionJob implements ShouldQueue, ShouldBeUnique
                 'transaction_pk' => $this->transactionId,
                 'attempt' => $this->attempts()
             ]);
-        $lockKey = "txn:process:" . $this->transactionId;
-        // Prevent parallel processing (5s lock safeguard)
-        $lock = Cache::lock($lockKey, 5);
-        if (!$lock->get()) {
-                Log::debug('Early exit: lock contention', [
-                    'transaction_pk' => $this->transactionId,
-                    'attempt' => $this->attempts()
-                ]);
-            Log::warning('Skipping transaction processing due to active lock', [
-                'transaction_pk' => $this->transactionId,
-                'attempt' => $this->attempts()
-            ]);
-            return;
-        }
 
         $started = microtime(true);
         try {
@@ -266,8 +253,6 @@ class ProcessTransactionJob implements ShouldQueue, ShouldBeUnique
         } catch (\Throwable $e) {
             $this->handleError($e);
             throw $e;
-        } finally {
-            optional($lock)->release();
         }
     }
 
@@ -410,9 +395,27 @@ class ProcessTransactionJob implements ShouldQueue, ShouldBeUnique
      */
     public function tags(): array
     {
-        return [
+        $tenantId = optional(Transaction::find($this->transactionId))->tenant_id;
+        $tags = [
             'transaction:pk='.$this->transactionId,
             'domain:processing'
+        ];
+        if (!empty($tenantId)) {
+            $tags[] = 'tenant:'.$tenantId;
+        }
+        return $tags;
+    }
+
+    /**
+     * Ensure no overlapping runs for the same transaction pk across workers.
+     */
+    public function middleware(): array
+    {
+        return [
+            // Prevent concurrent processing for the same transaction id
+            (new WithoutOverlapping('txn:'.$this->transactionId))
+                ->releaseAfter(10)   // requeue after 10s if lock held
+                ->expireAfter(600),  // safety expiry 10 minutes
         ];
     }
 }
