@@ -141,13 +141,18 @@
       <div class="d-flex justify-content-between align-items-center">
         <ul class="nav nav-pills" role="tablist">
           <li class="nav-item">
-            <a class="nav-link active" data-bs-toggle="tab" href="#audit">
+            <a class="nav-link active" role="tab" aria-controls="audit" aria-selected="true" data-toggle="tab" data-bs-toggle="tab" href="#audit">
               <i class="fas fa-history me-2"></i> Audit Trail
             </a>
           </li>
           <li class="nav-item">
-            <a class="nav-link" data-bs-toggle="tab" href="#system">
+            <a class="nav-link" role="tab" aria-controls="system" aria-selected="false" data-toggle="tab" data-bs-toggle="tab" href="#system">
               <i class="fas fa-cogs me-2"></i> System Logs
+            </a>
+          </li>
+          <li class="nav-item">
+            <a class="nav-link" role="tab" aria-controls="submission" aria-selected="false" data-toggle="tab" data-bs-toggle="tab" href="#submission">
+              <i class="fas fa-inbox me-2"></i> Submission Events
             </a>
           </li>
           {{-- <li class="nav-item">
@@ -178,11 +183,14 @@
 
       <!-- Tab Content -->
       <div class="tab-content">
-        <div class="tab-pane fade" id="system">
+        <div class="tab-pane fade" id="system" role="tabpanel" aria-labelledby="system-tab">
           @include('logs.partials.system-table', ['logs' => $systemLogs])
         </div>
-        <div class="tab-pane fade show active" id="audit">
+        <div class="tab-pane fade show active" id="audit" role="tabpanel" aria-labelledby="audit-tab">
           @include('logs.partials.audit-table', ['logs' => $auditLogs])
+        </div>
+        <div class="tab-pane fade" id="submission" role="tabpanel" aria-labelledby="submission-tab">
+          @include('logs.partials.submission-events-table', ['submissionEvents' => $submissionEvents])
         </div>
         <div class="tab-pane fade" id="webhook">
           @include('logs.partials.webhook-table', ['logs' => $webhookLogs])
@@ -191,9 +199,9 @@
     </div>
   </div>
 </div>
+@include('logs.partials.context-modal')
 @endsection
 @push('scripts')
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 <script>
 // Dashboard logs filter submitter – tolerant of optional fields/IDs
 function applyFilters() {

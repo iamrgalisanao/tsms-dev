@@ -165,6 +165,11 @@ class LogViewerController extends Controller
             ->latest()
             ->paginate(15);
 
+        // Preload a small page of submission events for initial render
+        $submissionEvents = \App\Models\SubmissionEvent::latest('occurred_at')
+            ->latest('created_at')
+            ->paginate(15);
+
         $stats = $this->logService->getEnhancedStats();
         
         // Add audit-specific stats
@@ -178,7 +183,7 @@ class LogViewerController extends Controller
             'system_events' => \App\Models\AuditLog::where('action_type', 'SYSTEM')->count(),
         ];
 
-    return view('logs.index', compact('auditLogs', 'webhookLogs', 'stats', 'auditStats'));
+    return view('logs.index', compact('auditLogs', 'webhookLogs', 'stats', 'auditStats', 'submissionEvents'));
     }
 
     public function getFilteredLogs(Request $request)
@@ -189,8 +194,9 @@ class LogViewerController extends Controller
         // Inputs (advanced filters removed; keep basic search)
         $search = trim((string) $request->input('search')) ?: null;
 
-        $auditHtml = '';
-        $webhookHtml = '';
+    $auditHtml = '';
+    $webhookHtml = '';
+    $submissionHtml = '';
 
         if ($tab === 'webhook') {
             // Basic webhook filtering (extend as needed)
@@ -201,6 +207,23 @@ class LogViewerController extends Controller
 
             $webhookLogs = $webhookQuery->limit(100)->get();
             $webhookHtml = view('logs.partials.webhook-table', compact('webhookLogs'))->render();
+        } elseif ($tab === 'submission') {
+            // Submission events list
+            $submissionQuery = \App\Models\SubmissionEvent::query()
+                ->when($search, function($q) use ($search) {
+                    $q->where(function($qq) use ($search) {
+                        $qq->where('submission_uuid', 'like', "%$search%")
+                           ->orWhere('status', 'like', "%$search%")
+                           ->orWhere('reason_code', 'like', "%$search%")
+                           ->orWhere('tenant_id', (int) $search ?: 0)
+                           ->orWhere('terminal_id', (int) $search ?: 0);
+                    });
+                })
+                ->latest('occurred_at')
+                ->latest('created_at');
+
+            $submissionEvents = $submissionQuery->limit(200)->get();
+            $submissionHtml = view('logs.partials.submission-events-table', compact('submissionEvents'))->render();
         } else {
             // Audit Trail filtering
             $auditQuery = \App\Models\AuditLog::with(['user'])
@@ -308,7 +331,8 @@ class LogViewerController extends Controller
         return response()->json([
             'auditHtml' => $auditHtml,
             'webhookHtml' => $webhookHtml,
-            'isEmpty' => empty($auditHtml) && empty($webhookHtml),
+            'submissionHtml' => $submissionHtml,
+            'isEmpty' => empty($auditHtml) && empty($webhookHtml) && empty($submissionHtml),
         ]);
     }
 
@@ -467,5 +491,29 @@ public function getAuditContext($id)
     public function export(Request $request, string $format = 'csv')
     {
         return $this->exportService->export($format, $request->all());
+    }
+
+    /**
+     * Return submission event items for a submission UUID (web-authenticated).
+     */
+    public function submissionItems(string $submission_uuid)
+    {
+        try {
+            $items = \App\Models\SubmissionEventItem::where('submission_uuid', $submission_uuid)
+                ->latest('occurred_at')
+                ->latest('created_at')
+                ->limit(500)
+                ->get();
+            return response()->json([
+                'submission_uuid' => $submission_uuid,
+                'count' => $items->count(),
+                'items' => $items,
+            ]);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'error' => 'Failed to load submission items',
+                'message' => $e->getMessage(),
+            ], 500);
+        }
     }
 }

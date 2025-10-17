@@ -1,9 +1,12 @@
-<div class="modal fade" id="contextModal" tabindex="-1">
+<div class="modal fade" id="contextModal" tabindex="-1" role="dialog" aria-modal="true" aria-labelledby="contextModalTitle">
   <div class="modal-dialog modal-lg">
     <div class="modal-content">
       <div class="modal-header">
-        <h5 class="modal-title">Log Context Details</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        <h5 class="modal-title" id="contextModalTitle">Log Context Details</h5>
+        <!-- Close button compatible with Bootstrap 4 and 5 -->
+        <button type="button" class="btn-close" data-bs-dismiss="modal" data-dismiss="modal" aria-label="Close">
+          <span class="sr-only">Close</span>
+        </button>
       </div>
       <div class="modal-body">
         <ul class="nav nav-tabs mb-3" id="contextTabs" role="tablist">
@@ -26,7 +29,7 @@
         </div>
       </div>
       <div class="modal-footer">
-        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" data-dismiss="modal">Close</button>
         <button type="button" class="btn btn-primary" onclick="copyContext()">
           <i class="fas fa-copy me-1"></i>Copy
         </button>

@@ -122,6 +122,11 @@ use App\Helpers\BadgeHelper;
             <i class="fas fa-exchange-alt me-2"></i>Webhook Logs
           </a>
         </li>
+        <li class="nav-item">
+          <a class="nav-link fw-medium text-muted" href="#submission" data-bs-toggle="tab">
+            <i class="fas fa-inbox me-2"></i>Submission Events
+          </a>
+        </li>
       </ul>
     </div>
 
@@ -134,6 +139,9 @@ use App\Helpers\BadgeHelper;
         </div>
         <div class="tab-pane fade" id="webhook">
           @include('logs.partials.webhook-table')
+        </div>
+        <div class="tab-pane fade" id="submission">
+          @include('logs.partials.submission-events-table')
         </div>
         <!-- Empty State -->
         <div id="emptyState" class="text-center py-5" style="display:none;">
@@ -158,6 +166,11 @@ $(document).ready(function() {
     } else {
       stopLiveUpdates();
     }
+  });
+
+  // Refresh when switching tabs
+  $(document).on('shown.bs.tab', 'a[data-bs-toggle="tab"]', function (e) {
+    applyFilters();
   });
 
   // Initial load
@@ -208,8 +221,11 @@ function applyFilters() {
         if (currentSearch) {
           try { $('#auditTable').DataTable().search(currentSearch).draw(); } catch (e) {}
         }
-      } else {
+      } else if (data.tab === 'webhook') {
         $('#webhook').html(response.webhookHtml);
+      } else if (data.tab === 'submission') {
+        $('#submission').html(response.submissionHtml);
+        initSubmissionDataTable();
       }
       // Show/hide empty state
       if (response.isEmpty) {
@@ -258,18 +274,9 @@ function initAuditDataTable() {
     searching: true,
     pageLength: 10,
     order: [[0, 'desc']],
-    // Explicitly declare 8 columns to match <thead>
-    columns: [
-      { defaultContent: '' }, // Time
-      { defaultContent: '' }, // User
-      { defaultContent: '' }, // Action
-      { defaultContent: '' }, // Resource
-      { defaultContent: '' }, // Tenant
-      { defaultContent: '' }, // Details
-      { defaultContent: '' }, // IP Address
-      { defaultContent: '', orderable: false, searchable: false } // Actions
-    ],
+    // Let DataTables infer columns from DOM to avoid mismatch errors
     columnDefs: [
+      { targets: -1, orderable: false, searchable: false },
       { targets: '_all', defaultContent: '' }
     ],
     language: {
@@ -280,6 +287,30 @@ function initAuditDataTable() {
       infoFiltered: '(filtered from _MAX_ total audit entries)',
       search: 'Search audit logs:',
       paginate: { first: 'First', last: 'Last', next: 'Next', previous: 'Previous' }
+    }
+  });
+}
+
+// Simple initializer for the submission events table
+function initSubmissionDataTable() {
+  const selector = '#submissionTable';
+  if (!$.fn.DataTable) return;
+  if ($.fn.DataTable.isDataTable(selector)) {
+    try { $(selector).DataTable().clear().destroy(); } catch (e) {}
+  }
+  $(selector).DataTable({
+    responsive: true,
+    lengthChange: false,
+    autoWidth: false,
+    ordering: true,
+    info: true,
+    paging: true,
+    searching: true,
+    pageLength: 10,
+    order: [[0, 'desc']],
+    language: {
+      emptyTable: 'No submission events available',
+      search: 'Search submission events:'
     }
   });
 }

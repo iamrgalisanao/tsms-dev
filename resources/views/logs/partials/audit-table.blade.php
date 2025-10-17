@@ -194,7 +194,7 @@ $(function () {
   const selector = '#auditTable';
   if ($.fn.DataTable.isDataTable(selector)) return;
 
-    $(selector).DataTable({
+        $(selector).DataTable({
     responsive: true,
     lengthChange: false,
     autoWidth: false,
@@ -203,22 +203,11 @@ $(function () {
     paging: true,
     searching: true,
     order: [[0, 'desc']],
-
-        // EXPLICIT: 8 columns to match <thead>
-    columns: [
-      { defaultContent: '' }, // Time
-      { defaultContent: '' }, // User
-      { defaultContent: '' }, // Action
-      { defaultContent: '' }, // Resource
-            { defaultContent: '' }, // Tenant
-      { defaultContent: '' }, // Details
-      { defaultContent: '' }, // IP Address
-      { defaultContent: '' }  // Actions
-    ],
-    columnDefs: [
-      { targets: -1, orderable: false, searchable: false },
-      { targets: '_all', defaultContent: '' }
-    ],
+            // Let DataTables infer columns from the DOM to avoid mismatches
+            columnDefs: [
+                { targets: -1, orderable: false, searchable: false },
+                { targets: '_all', defaultContent: '' }
+            ],
 
     language: {
       emptyTable: 'No audit logs available',

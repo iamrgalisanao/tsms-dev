@@ -75,6 +75,8 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/filtered', [LogViewerController::class, 'getFilteredLogs'])->name('filtered');
         Route::get('/audit', [LogViewerController::class, 'auditTrail'])->name('audit');
         Route::get('/webhooks', [LogViewerController::class, 'webhookLogs'])->name('webhooks');
+        // New: web route for submission event items (used by System Logs UI)
+        Route::get('/submission-items/{submission_uuid}', [LogViewerController::class, 'submissionItems'])->name('submission-items');
     });
 
     // Keep test transaction routes before other transaction routes

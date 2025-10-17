@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\AuditLog;
 use App\Models\SystemLog;
 use App\Models\WebhookLog;
+use App\Models\SubmissionEvent;
 use Illuminate\Http\Request;
 use App\Models\PosTerminal;
 
@@ -64,6 +65,11 @@ class LogController extends Controller
             ->latest()
             ->paginate(15, ['*'], 'webhook_page');
 
+        // Submission events for the new tab
+        $submissionEvents = SubmissionEvent::latest('occurred_at')
+            ->latest('created_at')
+            ->paginate(15, ['*'], 'submission_page');
+
         $stats = [
             'system' => SystemLog::count(),
             'errors' => SystemLog::where('severity', 'error')->count(),
@@ -87,6 +93,6 @@ class LogController extends Controller
         // Get terminals for filter dropdown
         $terminals = PosTerminal::select('id', 'serial_number')->get();
 
-        return view('dashboard.logs', compact('systemLogs', 'auditLogs', 'webhookLogs', 'stats', 'terminals'));
+        return view('dashboard.logs', compact('systemLogs', 'auditLogs', 'webhookLogs', 'stats', 'terminals', 'submissionEvents'));
     }
 }
