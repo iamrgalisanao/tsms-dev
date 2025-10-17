@@ -335,6 +335,28 @@ class TransactionController extends Controller
                     'errors' => ['tenant_id' => ['Terminal does not belong to the specified tenant']]
                 ], 422);
             }
+            // Customer code tenant-binding policy: warn or reject based on config
+            $strictCustomerCode = (bool) config('tsms.validation.strict_customer_code_binding', false);
+            $declaredCustomer = $request->transaction_count === 1
+                ? ($request->transaction['customer_code'] ?? null)
+                : null; // For batch we check inside loop per item
+            $tenantCustomer = optional($terminal->tenant->company)->customer_code;
+            if ($request->transaction_count === 1 && $declaredCustomer && $tenantCustomer && $declaredCustomer !== $tenantCustomer) {
+                if ($strictCustomerCode) {
+                    DB::rollBack();
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Customer code mismatch with tenant',
+                        'errors' => ['customer_code' => ['Customer code does not match tenant company']]
+                    ], 422);
+                } else {
+                    Log::warning('Customer code mismatch with tenant (warn mode)', [
+                        'submission_uuid' => $request->submission_uuid,
+                        'declared_customer_code' => $declaredCustomer,
+                        'tenant_customer_code' => $tenantCustomer,
+                    ]);
+                }
+            }
             $processedTransactions = [];
             $failedTransactions = [];
             $processedCount = 0;
@@ -365,6 +387,29 @@ class TransactionController extends Controller
                 }
 
                 try {
+                    // Per-item customer_code tenant-binding
+                    if (isset($transactionData['customer_code'])) {
+                        $strictCustomerCode = (bool) config('tsms.validation.strict_customer_code_binding', false);
+                        $tenantCustomer = optional($terminal->tenant->company)->customer_code;
+                        if ($tenantCustomer && $transactionData['customer_code'] !== $tenantCustomer) {
+                            if ($strictCustomerCode) {
+                                $failedTransactions[] = [
+                                    'transaction_id' => $transactionData['transaction_id'] ?? 'unknown',
+                                    'status' => 'failed',
+                                    'message' => 'Customer code mismatch with tenant',
+                                ];
+                                $failedCount++;
+                                continue;
+                            } else {
+                                Log::warning('Customer code mismatch with tenant (warn mode, batch item)', [
+                                    'batch_id' => $request->batch_id ?? 'missing',
+                                    'transaction_id' => $transactionData['transaction_id'] ?? 'unknown',
+                                    'declared_customer_code' => $transactionData['customer_code'],
+                                    'tenant_customer_code' => $tenantCustomer,
+                                ]);
+                            }
+                        }
+                    }
                     // Optional per-item guard: if transaction payload includes tenant_id, it must match terminal's tenant
                     if (isset($transactionData['tenant_id']) && (int) $transactionData['tenant_id'] !== (int) $terminal->tenant_id) {
                         Log::warning('batchStore: Tenant ID mismatch in transaction item', [
@@ -584,6 +629,8 @@ class TransactionController extends Controller
             DB::rollBack();
             Log::warning('Batch transaction validation failed', [
                 'errors' => $e->errors(),
+                'batch_id' => $request->batch_id ?? null,
+                'transaction_ids' => collect($request->transactions ?? [])->take(10)->pluck('transaction_id')->all(),
             ]);
             return response()->json([
                 'success' => false,
@@ -595,7 +642,9 @@ class TransactionController extends Controller
             Log::error('Batch transaction API error', [
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
-                'request' => $request->except(['password', 'token'])
+                'request' => $request->except(['password', 'token']),
+                'batch_id' => $request->batch_id ?? null,
+                'transaction_ids' => collect($request->transactions ?? [])->take(10)->pluck('transaction_id')->all(),
             ]);
 
             return response()->json([
@@ -609,6 +658,8 @@ class TransactionController extends Controller
                 'exception' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
                 'request' => $request->all(),
+                'batch_id' => $request->batch_id ?? null,
+                'transaction_ids' => collect($request->transactions ?? [])->take(10)->pluck('transaction_id')->all(),
             ]);
 
             return response()->json([
@@ -1182,6 +1233,7 @@ class TransactionController extends Controller
             $rawPayload = $request->getContent();
             $checksumService = new PayloadChecksumService();
             $checksumResults = $checksumService->validateSubmissionChecksumsFromRaw($rawPayload);
+            $correlationId = $request->attributes->get('correlation_id');
             if (!$checksumResults['valid']) {
                 // Emit a clear log for grep-based incident correlation
                 Log::warning('Checksum validation failed', [
@@ -1189,7 +1241,12 @@ class TransactionController extends Controller
                     'tenant_id'         => $request->tenant_id,
                     'terminal_id'       => $request->terminal_id,
                     'transaction_count' => $request->transaction_count,
+                    // Provide sample of transaction_ids when present to aid debugging
+                    'transaction_ids'   => $request->transaction_count === 1
+                        ? [$request->transaction['transaction_id'] ?? null]
+                        : collect($request->transactions ?? [])->take(10)->pluck('transaction_id')->all(),
                     'errors'            => $checksumResults['errors'],
+                    'correlation_id'    => $correlationId,
                 ]);
 
                 // Record structured REJECTED event (checksum)
@@ -1203,6 +1260,7 @@ class TransactionController extends Controller
                         'reason_details'    => ['errors' => $checksumResults['errors']],
                         'transaction_count' => (int) ($request->transaction_count ?? 0),
                         'occurred_at'       => now(),
+                        'correlation_id'    => $correlationId,
                     ]);
                 } catch (\Throwable $te) {
                     Log::warning('Failed to write SubmissionEvent (REJECTED)', [
@@ -1328,6 +1386,7 @@ class TransactionController extends Controller
                     'reason_details'    => null,
                     'transaction_count' => (int) ($request->transaction_count ?? 0),
                     'occurred_at'       => now(),
+                    'correlation_id'    => $request->attributes->get('correlation_id'),
                 ]);
             } catch (\Throwable $te) {
                 Log::warning('Failed to write SubmissionEvent (RECEIVED)', [
@@ -1568,6 +1627,27 @@ class TransactionController extends Controller
                         'status' => 'failed',
                         'message' => $e->getMessage()
                     ];
+
+                    // Record per-item failure event
+                    try {
+                        \App\Models\SubmissionEventItem::create([
+                            'submission_uuid' => $request->submission_uuid,
+                            'tenant_id'       => $request->tenant_id,
+                            'terminal_id'     => $request->terminal_id,
+                            'transaction_id'  => $transactionData['transaction_id'] ?? 'unknown',
+                            'status'          => 'FAILED',
+                            'reason_code'     => 'PROCESSING_ERROR',
+                            'reason_details'  => ['error' => $e->getMessage()],
+                            'occurred_at'     => now(),
+                            'correlation_id'  => $request->attributes->get('correlation_id'),
+                        ]);
+                    } catch (\Throwable $te) {
+                        Log::warning('Failed to write SubmissionEventItem (FAILED)', [
+                            'submission_uuid' => $request->submission_uuid,
+                            'transaction_id'  => $transactionData['transaction_id'] ?? 'unknown',
+                            'error'           => $te->getMessage(),
+                        ]);
+                    }
                 }
             }
 
@@ -1594,6 +1674,7 @@ class TransactionController extends Controller
                     'reason_details'    => $totalFailed > 0 ? ['failed_count' => $totalFailed] : null,
                     'transaction_count' => (int) ($request->transaction_count ?? 0),
                     'occurred_at'       => now(),
+                    'correlation_id'    => $request->attributes->get('correlation_id'),
                 ]);
             } catch (\Throwable $te) {
                 Log::warning('Failed to write SubmissionEvent (COMPLETED)', [

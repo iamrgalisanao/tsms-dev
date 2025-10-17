@@ -4,6 +4,8 @@ return [
     'validation' => [
         'strict_mode' => env('TSMS_VALIDATION_STRICT_MODE', false),
         'net_includes_vat' => env('TSMS_NET_INCLUDES_VAT', true),
+        // If true, mismatched customer_code vs tenant company will be rejected; otherwise only warn
+        'strict_customer_code_binding' => (bool) env('TSMS_STRICT_CUSTOMER_CODE_BINDING', false),
         // When true, the system will perform computational reconciliation checks
         // (e.g. validate that net_sales/gross_sales match expected sums from taxes/adjustments).
         // Default false to keep passive mapping behaviour unless explicitly enabled.

@@ -13,6 +13,9 @@ use App\Http\Controllers\TerminalTokenController;
 use App\Services\TransactionValidationService;
 use App\Http\Controllers\API\V1\TransactionController as ApiTransactionController;
 use App\Http\Controllers\API\V1\SubmissionEventController;
+use App\Http\Controllers\API\V1\SubmissionEventItemsController;
+use App\Http\Controllers\API\V1\ChecksumSandboxController;
+use App\Http\Middleware\AttachCorrelationId;
 use App\Http\Controllers\McpController;
 use App\Http\Controllers\DashboardController;
 
@@ -54,7 +57,7 @@ Route::prefix('v1/auth')->group(function () {
 });
 
 // V1 API Routes with Sanctum authentication
-Route::prefix('v1')->middleware(['auth:sanctum', 'capture.terminal.ip'])->group(function () {
+Route::prefix('v1')->middleware(['auth:sanctum', 'capture.terminal.ip', AttachCorrelationId::class])->group(function () {
     // Terminal management endpoints
     Route::post('/auth/refresh', [TerminalAuthController::class, 'refresh']);
     Route::get('/auth/me', [TerminalAuthController::class, 'me']);
@@ -74,6 +77,7 @@ Route::prefix('v1')->middleware(['auth:sanctum', 'capture.terminal.ip'])->group(
     Route::middleware('abilities:transaction:read')->group(function () {
         Route::get('/transactions/{id}/status', [TransactionController::class, 'status']);
         Route::get('/submission-events', [SubmissionEventController::class, 'index']);
+        Route::get('/submission-events/{submission_uuid}/items', [SubmissionEventItemsController::class, 'index']);
     });
     
     // Terminal Token Management API (requires admin authentication)
@@ -86,6 +90,11 @@ Route::prefix('v1')->middleware(['auth:sanctum', 'capture.terminal.ip'])->group(
     // Token introspection (any authenticated token may introspect itself)
     Route::get('/tokens/introspect', [TerminalTokenController::class, 'introspectToken'])
         ->middleware('throttle:30,1');
+});
+
+// Checksum sandbox (tenant-authenticated; rate-limited)
+Route::prefix('v1')->middleware(['auth:sanctum', 'throttle:30,1'])->group(function () {
+    Route::post('/checksum/sandbox', [ChecksumSandboxController::class, 'compute']);
 });
 
 // Legacy V1 API Routes with rate limiting (for backward compatibility)
