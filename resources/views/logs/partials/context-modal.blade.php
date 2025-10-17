@@ -70,5 +70,57 @@ function setLogDetails(json, html) {
   document.getElementById('contextContent').textContent = formatJson(json);
   document.getElementById('contextHtmlContent').innerHTML = html;
 }
+
+// Accessibility/focus management for the modal to avoid aria-hidden focus warnings
+(function() {
+  var modal = document.getElementById('contextModal');
+  if (!modal) return;
+
+  var previouslyFocused = null;
+
+  function contains(parent, node) {
+    try { return parent && node && parent.contains(node); } catch (e) { return false; }
+  }
+
+  function onShow() {
+    // Remember what had focus before opening
+    previouslyFocused = document.activeElement;
+    // Move initial focus inside modal (close button preferred)
+    var closeBtn = modal.querySelector('.btn-close, [data-dismiss="modal"], [data-bs-dismiss="modal"]');
+    if (closeBtn && typeof closeBtn.focus === 'function') {
+      try { closeBtn.focus({ preventScroll: true }); } catch (e) {}
+    }
+  }
+
+  function onHide() {
+    // If a focused element is inside the modal, blur it before aria-hidden is applied
+    var active = document.activeElement;
+    if (contains(modal, active) && typeof active.blur === 'function') {
+      try { active.blur(); } catch (e) {}
+    }
+  }
+
+  function onHidden() {
+    // Restore focus to the element that opened the modal (if still in DOM), else fallback
+    if (previouslyFocused && document.contains(previouslyFocused) && typeof previouslyFocused.focus === 'function') {
+      try { previouslyFocused.focus({ preventScroll: true }); } catch (e) {}
+    } else {
+      try { (document.querySelector('main, [tabindex="-1"]') || document.body).focus({ preventScroll: true }); } catch (e) {}
+    }
+    previouslyFocused = null;
+  }
+
+  // Wire events for both Bootstrap 4 (jQuery) and Bootstrap 5
+  if (typeof $ !== 'undefined' && $.fn && $.fn.modal) {
+    $('#contextModal')
+      .on('show.bs.modal', onShow)
+      .on('hide.bs.modal', onHide)
+      .on('hidden.bs.modal', onHidden);
+  } else if (window.bootstrap && window.bootstrap.Modal) {
+    modal.addEventListener('show.bs.modal', onShow);
+    modal.addEventListener('hide.bs.modal', onHide);
+    modal.addEventListener('hidden.bs.modal', onHidden);
+  }
+})();
 </script>
 @endpush
