@@ -12,6 +12,7 @@ use App\Http\Controllers\API\V1\TerminalAuthController;
 use App\Http\Controllers\TerminalTokenController;
 use App\Services\TransactionValidationService;
 use App\Http\Controllers\API\V1\TransactionController as ApiTransactionController;
+use App\Http\Controllers\API\V1\SubmissionEventController;
 use App\Http\Controllers\McpController;
 use App\Http\Controllers\DashboardController;
 
@@ -72,6 +73,7 @@ Route::prefix('v1')->middleware(['auth:sanctum', 'capture.terminal.ip'])->group(
     
     Route::middleware('abilities:transaction:read')->group(function () {
         Route::get('/transactions/{id}/status', [TransactionController::class, 'status']);
+        Route::get('/submission-events', [SubmissionEventController::class, 'index']);
     });
     
     // Terminal Token Management API (requires admin authentication)

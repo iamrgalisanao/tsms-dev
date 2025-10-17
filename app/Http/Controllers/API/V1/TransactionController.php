@@ -1183,6 +1183,33 @@ class TransactionController extends Controller
             $checksumService = new PayloadChecksumService();
             $checksumResults = $checksumService->validateSubmissionChecksumsFromRaw($rawPayload);
             if (!$checksumResults['valid']) {
+                // Emit a clear log for grep-based incident correlation
+                Log::warning('Checksum validation failed', [
+                    'submission_uuid'   => $request->submission_uuid,
+                    'tenant_id'         => $request->tenant_id,
+                    'terminal_id'       => $request->terminal_id,
+                    'transaction_count' => $request->transaction_count,
+                    'errors'            => $checksumResults['errors'],
+                ]);
+
+                // Record structured REJECTED event (checksum)
+                try {
+                    \App\Models\SubmissionEvent::create([
+                        'submission_uuid'   => $request->submission_uuid,
+                        'tenant_id'         => $request->tenant_id,
+                        'terminal_id'       => $request->terminal_id,
+                        'status'            => 'REJECTED',
+                        'reason_code'       => 'CHECKSUM_MISMATCH',
+                        'reason_details'    => ['errors' => $checksumResults['errors']],
+                        'transaction_count' => (int) ($request->transaction_count ?? 0),
+                        'occurred_at'       => now(),
+                    ]);
+                } catch (\Throwable $te) {
+                    Log::warning('Failed to write SubmissionEvent (REJECTED)', [
+                        'submission_uuid' => $request->submission_uuid,
+                        'error' => $te->getMessage(),
+                    ]);
+                }
                 DB::rollBack();
                 return response()->json([
                     'success' => false,
@@ -1289,6 +1316,25 @@ class TransactionController extends Controller
                 'submission_uuid' => $submission->submission_uuid,
                 'terminal_id' => $submission->terminal_id,
             ]);
+
+            // Record structured RECEIVED event
+            try {
+                \App\Models\SubmissionEvent::create([
+                    'submission_uuid'   => $submission->submission_uuid,
+                    'tenant_id'         => $request->tenant_id,
+                    'terminal_id'       => $request->terminal_id,
+                    'status'            => 'RECEIVED',
+                    'reason_code'       => null,
+                    'reason_details'    => null,
+                    'transaction_count' => (int) ($request->transaction_count ?? 0),
+                    'occurred_at'       => now(),
+                ]);
+            } catch (\Throwable $te) {
+                Log::warning('Failed to write SubmissionEvent (RECEIVED)', [
+                    'submission_uuid' => $submission->submission_uuid,
+                    'error' => $te->getMessage(),
+                ]);
+            }
 
             Log::info('Checksum validation passed', [
                 'submission_uuid'   => $request->submission_uuid,
@@ -1536,6 +1582,25 @@ class TransactionController extends Controller
                 'failed_count' => $totalFailed,
                 'checksum_validation' => 'passed'
             ]);
+
+            // Record structured COMPLETED event
+            try {
+                \App\Models\SubmissionEvent::create([
+                    'submission_uuid'   => $request->submission_uuid,
+                    'tenant_id'         => $request->tenant_id,
+                    'terminal_id'       => $request->terminal_id,
+                    'status'            => 'COMPLETED',
+                    'reason_code'       => $totalFailed > 0 ? 'PARTIAL_FAILURE' : null,
+                    'reason_details'    => $totalFailed > 0 ? ['failed_count' => $totalFailed] : null,
+                    'transaction_count' => (int) ($request->transaction_count ?? 0),
+                    'occurred_at'       => now(),
+                ]);
+            } catch (\Throwable $te) {
+                Log::warning('Failed to write SubmissionEvent (COMPLETED)', [
+                    'submission_uuid' => $request->submission_uuid,
+                    'error' => $te->getMessage(),
+                ]);
+            }
 
             // Send batch notification to terminal if enabled and there's more than one transaction
             if (config('notifications.callbacks.enabled') && $request->transaction_count > 1 && $terminal->notifications_enabled && $terminal->callback_url) {
