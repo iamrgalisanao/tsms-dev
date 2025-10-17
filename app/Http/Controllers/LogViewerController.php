@@ -499,6 +499,10 @@ public function getAuditContext($id)
     public function submissionItems(string $submission_uuid)
     {
         try {
+            $event = \App\Models\SubmissionEvent::where('submission_uuid', $submission_uuid)
+                ->latest('occurred_at')
+                ->latest('created_at')
+                ->first();
             $items = \App\Models\SubmissionEventItem::where('submission_uuid', $submission_uuid)
                 ->latest('occurred_at')
                 ->latest('created_at')
@@ -508,6 +512,7 @@ public function getAuditContext($id)
                 'submission_uuid' => $submission_uuid,
                 'count' => $items->count(),
                 'items' => $items,
+                'event' => $event,
             ]);
         } catch (\Throwable $e) {
             return response()->json([

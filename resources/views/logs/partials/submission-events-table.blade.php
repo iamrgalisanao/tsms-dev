@@ -72,8 +72,29 @@ $(document).on('click', '.view-submission-items', function() {
     success: function(resp) {
       try {
         const items = resp.data || resp.items || [];
+        const event = resp.event || null;
         if (!items.length) {
-          $('#contextModal .modal-body').html('<div class="text-center text-muted">No itemized events for this submission.</div>');
+          // Show submission summary when no per-item records exist
+          if (event) {
+            const occurred = (event.occurred_at || event.created_at || '').toString().replace('T',' ').replace('Z','');
+            const status = (event.status || '').toUpperCase();
+            const reason = (event.reason_code || '—');
+            const details = event.reason_details ? JSON.stringify(event.reason_details, null, 2) : null;
+            let html = '<div class="mb-3">'
+              + `<div><strong>Submission UUID:</strong> <span class="text-monospace">${event.submission_uuid}</span></div>`
+              + `<div><strong>Status:</strong> <span class="badge ${status==='REJECTED'?'bg-danger':(status==='COMPLETED'?'bg-success':'bg-secondary')}">${status}</span></div>`
+              + `<div><strong>Occurred:</strong> ${occurred}</div>`
+              + `<div><strong>Tenant / Terminal:</strong> ${event.tenant_id} / ${event.terminal_id}</div>`
+              + `<div><strong>Transaction Count:</strong> ${event.transaction_count ?? '-'}</div>`
+              + `<div><strong>Reason:</strong> ${reason}</div>`;
+            if (details) {
+              html += `<div class="mt-2"><strong>Reason Details:</strong><pre class="bg-light p-2 rounded">${details}</pre></div>`;
+            }
+            html += '</div>';
+            $('#contextModal .modal-body').html(html);
+          } else {
+            $('#contextModal .modal-body').html('<div class="text-center text-muted">No itemized events for this submission.</div>');
+          }
           return;
         }
         let html = '<div class="table-responsive"><table class="table table-sm table-striped">\
@@ -83,7 +104,7 @@ $(document).on('click', '.view-submission-items', function() {
           const st = (it.status || '').toUpperCase();
           const badge = st === 'FAILED' ? 'bg-danger' : (st === 'QUEUED' ? 'bg-warning' : 'bg-secondary');
           const reason = (it.reason_code || '—') + (it.reason_details ? ' · ' + JSON.stringify(it.reason_details) : '');
-          html += `<tr><td>${ts}</td><td class="text-monospace">${it.transaction_id || '—'}</td><td><span class="badge ${badge}">${st}</span></td><td>${reason}</td></tr>`;
+          html += `<tr><td>${ts}</td><td class=\"text-monospace\">${it.transaction_id || '—'}</td><td><span class=\"badge ${badge}\">${st}</span></td><td>${reason}</td></tr>`;
         });
         html += '</tbody></table></div>';
         $('#contextModal .modal-body').html(html);
