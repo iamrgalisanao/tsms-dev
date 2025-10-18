@@ -225,7 +225,6 @@ function applyFilters() {
         $('#webhook').html(response.webhookHtml);
       } else if (data.tab === 'submission') {
         $('#submission').html(response.submissionHtml);
-        initSubmissionDataTable();
       }
       // Show/hide empty state
       if (response.isEmpty) {
@@ -292,28 +291,7 @@ function initAuditDataTable() {
 }
 
 // Simple initializer for the submission events table
-function initSubmissionDataTable() {
-  const selector = '#submissionTable';
-  if (!$.fn.DataTable) return;
-  if ($.fn.DataTable.isDataTable(selector)) {
-    try { $(selector).DataTable().clear().destroy(); } catch (e) {}
-  }
-  $(selector).DataTable({
-    responsive: true,
-    lengthChange: false,
-    autoWidth: false,
-    ordering: true,
-    info: true,
-    paging: true,
-    searching: true,
-    pageLength: 10,
-    order: [[0, 'desc']],
-    language: {
-      emptyTable: 'No submission events available',
-      search: 'Search submission events:'
-    }
-  });
-}
+// Submission tab now uses server-side pagination inside its partial
 </script>
 <style>
 .card {

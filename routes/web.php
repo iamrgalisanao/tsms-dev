@@ -73,6 +73,7 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/audit-context/{id}', [LogViewerController::class, 'getAuditContext'])->name('audit-context');
     Route::get('/system-context/{id}', [LogViewerController::class, 'systemContext'])->name('system-context');
         Route::get('/filtered', [LogViewerController::class, 'getFilteredLogs'])->name('filtered');
+        Route::get('/submission-events', [LogViewerController::class, 'submissionEventsData'])->name('submission.events');
         Route::get('/audit', [LogViewerController::class, 'auditTrail'])->name('audit');
         Route::get('/webhooks', [LogViewerController::class, 'webhookLogs'])->name('webhooks');
         // New: web route for submission event items (used by System Logs UI)
