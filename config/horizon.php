@@ -5,7 +5,9 @@
 return [
     'domain' => env('HORIZON_DOMAIN'),
     'path'   => env('HORIZON_PATH', 'horizon'),
-    'use'    => env('HORIZON_CONNECTION', 'default'),
+    // Ensure Horizon uses the same Redis connection as your queues.
+    // Priority: HORIZON_CONNECTION > QUEUE_REDIS_CONNECTION > 'default'.
+    'use'    => env('HORIZON_CONNECTION', env('QUEUE_REDIS_CONNECTION', 'default')),
     'prefix' => env('HORIZON_PREFIX', 'tsms:horizon:'),
 
     // Apply your auth middleware / gate (define can:viewHorizon in AuthServiceProvider)
