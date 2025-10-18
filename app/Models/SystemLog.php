@@ -33,7 +33,14 @@ class SystemLog extends Model
 
     public function terminal()
     {
-        return $this->belongsTo(PosTerminal::class, 'terminal_uid', 'terminal_uid');
+        // Local key (SystemLog.terminal_uid) maps to PosTerminal.serial_number per normalized schema
+        return $this->belongsTo(PosTerminal::class, 'terminal_uid', 'serial_number');
+    }
+
+    // Backward-compatible alias used by some legacy views
+    public function posTerminal()
+    {
+        return $this->belongsTo(PosTerminal::class, 'terminal_uid', 'serial_number');
     }
 
     public function user(): BelongsTo

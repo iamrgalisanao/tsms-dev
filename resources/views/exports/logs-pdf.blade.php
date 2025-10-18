@@ -135,7 +135,7 @@
             {{ strtoupper($log->severity ?? 'info') }}
           </span>
         </td>
-        <td>{{ $log->posTerminal->terminal_uid ?? 'N/A' }}</td>
+  <td>{{ $log->posTerminal->serial_number ?? $log->terminal_uid ?? 'N/A' }}</td>
         <td>{{ $log->message ?? 'No message' }}</td>
       </tr>
       @empty

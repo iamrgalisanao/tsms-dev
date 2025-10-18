@@ -37,7 +37,7 @@
           @forelse($logs as $log)
           <tr>
             <td>{{ $log->created_at->format('Y-m-d H:i:s') }}</td>
-            <td>{{ $log->terminal->terminal_uid ?? 'N/A' }}</td>
+            <td>{{ $log->terminal->serial_number ?? $log->terminal_uid ?? 'N/A' }}</td>
             <td><span class="badge bg-{{ $log->status === 'SUCCESS' ? 'success' : 'danger' }}">{{ $log->status }}</span>
             </td>
             <td>{{ Str::limit($log->response_payload, 50) }}</td>
