@@ -391,19 +391,30 @@ class ProcessTransactionJob implements ShouldQueue, ShouldBeUnique
     }
 
     /**
-     * Horizon tags for filtering / metrics.
+     * Horizon tags for observability and filtering.
+     * Attempts a lightweight lookup to include tenant/terminal; falls back gracefully.
      */
     public function tags(): array
     {
-        $tenantId = optional(Transaction::find($this->transactionId))->tenant_id;
-        $tags = [
-            'transaction:pk='.$this->transactionId,
-            'domain:processing'
-        ];
-        if (!empty($tenantId)) {
-            $tags[] = 'tenant:'.$tenantId;
+        try {
+            $tx = Transaction::select('id', 'tenant_id', 'terminal_id', 'transaction_id')
+                ->find($this->transactionId);
+            if ($tx) {
+                return [
+                    'domain:processing',
+                    'transaction:pk=' . $tx->id,
+                    'transaction:id=' . ($tx->transaction_id ?? 'unknown'),
+                    'tenant:' . ($tx->tenant_id ?? 'unknown'),
+                    'terminal:' . ($tx->terminal_id ?? 'unknown'),
+                ];
+            }
+        } catch (\Throwable $e) {
+            // ignore and fall through
         }
-        return $tags;
+        return [
+            'domain:processing',
+            'transaction:pk=' . $this->transactionId,
+        ];
     }
 
     /**
@@ -418,4 +429,6 @@ class ProcessTransactionJob implements ShouldQueue, ShouldBeUnique
                 ->expireAfter(600),  // safety expiry 10 minutes
         ];
     }
+
+    
 }
