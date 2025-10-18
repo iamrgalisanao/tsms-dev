@@ -1,0 +1,28 @@
+# Horizon via Supervisor (Ubuntu/Debian)
+#
+# Copy to: /etc/supervisor/conf.d/tsms-horizon.conf
+# Adjust paths, PHP binary, and user as needed, then:
+#   sudo supervisorctl reread
+#   sudo supervisorctl update
+#   sudo supervisorctl start tsms-horizon
+#
+[program:tsms-horizon]
+directory=/var/www/PITX/tsms-dev
+command=/usr/bin/php /var/www/PITX/tsms-dev/artisan horizon
+process_name=%(program_name)s
+numprocs=1
+autostart=true
+autorestart=true
+startsecs=5
+stopwaitsecs=3600
+stopsignal=QUIT
+killasgroup=true
+user=www-data
+redirect_stderr=true
+stdout_logfile=/var/log/supervisor/tsms-horizon.log
+stdout_logfile_maxbytes=20MB
+stdout_logfile_backups=5
+stderr_logfile=/var/log/supervisor/tsms-horizon.err.log
+
+# Optional: ensure reasonable environment (usually .env is enough)
+# environment=APP_ENV="staging",APP_NAME="TSMS"
