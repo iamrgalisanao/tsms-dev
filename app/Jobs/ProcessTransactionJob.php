@@ -42,8 +42,10 @@ class ProcessTransactionJob implements ShouldQueue, ShouldBeUnique
     public function __construct(int $transactionId)
     {
         $this->transactionId = $transactionId;
-        // Ensure critical processing queue
-        $this->onQueue('transaction-processing');
+        // Default to critical processing queue only if no queue was preset by the dispatcher (e.g., sharded queues)
+        if (empty($this->queue)) {
+            $this->onQueue('transaction-processing');
+        }
     }
 
     /**
@@ -154,7 +156,7 @@ class ProcessTransactionJob implements ShouldQueue, ShouldBeUnique
                 $errorMessage = implode('; ', $flatErrors);
 
                 $validation->update([
-                    'status_code' => 'INVALID',
+                    'status_code' => Transaction::VALIDATION_STATUS_FAILED,
                     'details' => json_encode($errorsArray),
                     'completed_at' => now(),
                 ]);
@@ -164,7 +166,7 @@ class ProcessTransactionJob implements ShouldQueue, ShouldBeUnique
                     'error_message' => $errorMessage,
                 ]);
 
-                $transaction->validation_status = 'INVALID';
+                $transaction->validation_status = Transaction::VALIDATION_STATUS_FAILED;
                 $transaction->job_status = Transaction::JOB_STATUS_FAILED;
                 $transaction->last_error = $errorMessage;
                 $transaction->job_attempts = ($transaction->job_attempts ?? 0) + 1;
@@ -190,6 +192,7 @@ class ProcessTransactionJob implements ShouldQueue, ShouldBeUnique
 
                 // Final failure notification (deferred model) - fire only on first terminal transition
                 try {
+                    // Keep external result payload as 'INVALID' to preserve webhook compatibility
                     $this->dispatchTerminalNotification($transaction, 'INVALID', $flatErrors);
                 } catch (\Throwable $notifyEx) {
                     Log::error('Failed sending failure notification', [
@@ -358,14 +361,14 @@ class ProcessTransactionJob implements ShouldQueue, ShouldBeUnique
             $validation = $transaction->validations()->latest()->first();
             if ($validation && $validation->status_code === Transaction::VALIDATION_STATUS_PENDING) {
                 $validation->update([
-                    'status_code' => 'ERROR',
+                    'status_code' => Transaction::VALIDATION_STATUS_FAILED,
                     'details' => $e->getMessage(),
                     'completed_at' => now(),
                 ]);
             }
             $transaction->job_status = Transaction::JOB_STATUS_FAILED;
             if ($transaction->validation_status !== Transaction::VALIDATION_STATUS_VALID) {
-                $transaction->validation_status = 'ERROR';
+                $transaction->validation_status = Transaction::VALIDATION_STATUS_FAILED;
             }
             $transaction->last_error = $e->getMessage();
             $transaction->job_attempts = ($transaction->job_attempts ?? 0) + 1;
