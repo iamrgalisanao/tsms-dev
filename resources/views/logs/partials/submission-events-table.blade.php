@@ -274,7 +274,6 @@ $(document).on('click', '.view-submission-items', function() {
             }
             const hzBase = computeHorizonBase();
             const horizonLink = hzBase ? `${hzBase}` : '#';
-            const logsLink = `/log-viewer?tab=audit&search=${encodeURIComponent(event.submission_uuid || '')}`;
             let html = '<div class="mb-3">'
               + `<div><strong>Submission UUID:</strong> <span class="text-monospace">${event.submission_uuid}</span></div>`
               + `<div><strong>Status:</strong> <span class="badge ${status==='REJECTED'?'bg-danger':(status==='COMPLETED'?'bg-success':'bg-secondary')}">${status}</span></div>`
@@ -287,7 +286,6 @@ $(document).on('click', '.view-submission-items', function() {
             }
             html += `<div class="mt-3 d-flex gap-2">
               <a href="${horizonLink}" target="_blank" class="btn btn-sm btn-outline-secondary"><i class="fas fa-tachometer-alt me-1"></i>Open Horizon</a>
-              <a href="${logsLink}" class="btn btn-sm btn-outline-secondary"><i class="fas fa-search me-1"></i>Search Logs</a>
             </div>`;
             html += '</div>';
             $('#contextModal .modal-body').html(html);
@@ -323,10 +321,8 @@ $(document).on('click', '.view-submission-items', function() {
         }
         const hzBase = computeHorizonBase();
         const horizonLink = hzBase ? `${hzBase}` : '#';
-        const logsLink = `/log-viewer?tab=audit&search=${encodeURIComponent(resp.submission_uuid || '')}`;
         html += `<div class="mt-3 d-flex gap-2">
           <a href="${horizonLink}" target="_blank" class="btn btn-sm btn-outline-secondary"><i class="fas fa-tachometer-alt me-1"></i>Open Horizon</a>
-          <a href="${logsLink}" class="btn btn-sm btn-outline-secondary"><i class="fas fa-search me-1"></i>Search Logs</a>
         </div>`;
         $('#contextModal .modal-body').html(html);
       } catch (e) {
