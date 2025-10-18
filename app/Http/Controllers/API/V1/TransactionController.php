@@ -21,6 +21,23 @@ use Carbon\Carbon;
 class TransactionController extends Controller
 {
     /**
+     * Emit a submission-level event safely without throwing.
+     */
+    protected function emitSubmissionEventSafe(array $data): void
+    {
+        try {
+            \App\Models\SubmissionEvent::create(array_merge([
+                'occurred_at' => now(),
+            ], $data));
+        } catch (\Throwable $te) {
+            Log::warning('Failed to write SubmissionEvent (helper)', [
+                'submission_uuid' => $data['submission_uuid'] ?? 'unknown',
+                'status' => $data['status'] ?? 'unknown',
+                'error' => $te->getMessage(),
+            ]);
+        }
+    }
+    /**
      * Refund a transaction
      *
      * @param Request $request
@@ -1221,6 +1238,20 @@ class TransactionController extends Controller
             // Validate transaction count matches actual count
             $actualCount = $request->transaction_count === 1 ? 1 : count($request->transactions);
             if ($actualCount !== $request->transaction_count) {
+                // Emit submission-level REJECTED for count mismatch
+                $this->emitSubmissionEventSafe([
+                    'submission_uuid'   => $request->submission_uuid ?? 'unknown',
+                    'tenant_id'         => $request->tenant_id ?? null,
+                    'terminal_id'       => $request->terminal_id ?? null,
+                    'status'            => 'REJECTED',
+                    'reason_code'       => 'COUNT_MISMATCH',
+                    'reason_details'    => [
+                        'expected' => (int) ($request->transaction_count ?? 0),
+                        'actual'   => (int) $actualCount,
+                    ],
+                    'transaction_count' => (int) ($request->transaction_count ?? 0),
+                    'correlation_id'    => $request->attributes->get('correlation_id'),
+                ]);
                 DB::rollBack();
                 return response()->json([
                     'success' => false,
@@ -1406,6 +1437,34 @@ class TransactionController extends Controller
             // Get terminal and validate tenant
             $terminal = PosTerminal::with(['tenant.company'])->findOrFail($request->terminal_id);
             if ($terminal->tenant_id !== $request->tenant_id) {
+                // Mark submission REJECTED if envelope exists
+                try {
+                    if (isset($submission) && $submission instanceof \App\Models\TransactionSubmission) {
+                        $submission->status = \App\Models\TransactionSubmission::STATUS_REJECTED;
+                        $submission->save();
+                    }
+                } catch (\Throwable $te) {
+                    Log::warning('Failed to update submission status to REJECTED on tenant/terminal mismatch', [
+                        'submission_uuid' => $request->submission_uuid,
+                        'error' => $te->getMessage(),
+                    ]);
+                }
+
+                // Emit submission-level REJECTED event
+                $this->emitSubmissionEventSafe([
+                    'submission_uuid'   => $request->submission_uuid ?? 'unknown',
+                    'tenant_id'         => $request->tenant_id ?? null,
+                    'terminal_id'       => $request->terminal_id ?? null,
+                    'status'            => 'REJECTED',
+                    'reason_code'       => 'TENANT_TERMINAL_MISMATCH',
+                    'reason_details'    => [
+                        'terminal_tenant_id' => $terminal->tenant_id,
+                        'payload_tenant_id'  => $request->tenant_id,
+                    ],
+                    'transaction_count' => (int) ($request->transaction_count ?? 0),
+                    'correlation_id'    => $request->attributes->get('correlation_id'),
+                ]);
+
                 return response()->json([
                     'success' => false,
                     'message' => 'Validation failed',
@@ -1713,6 +1772,18 @@ class TransactionController extends Controller
             Log::warning('Official transaction validation failed', [
                 'submission_uuid' => $request->submission_uuid ?? 'unknown',
                 'errors' => $e->errors()
+            ]);
+
+            // Record structured REJECTED event (generic validation failure)
+            $this->emitSubmissionEventSafe([
+                'submission_uuid'   => $request->submission_uuid ?? 'unknown',
+                'tenant_id'         => $request->tenant_id ?? null,
+                'terminal_id'       => $request->terminal_id ?? null,
+                'status'            => 'REJECTED',
+                'reason_code'       => 'VALIDATION_FAILED',
+                'reason_details'    => ['errors' => $e->errors()],
+                'transaction_count' => (int) ($request->transaction_count ?? 0),
+                'correlation_id'    => $request->attributes->get('correlation_id'),
             ]);
 
             // (Validation failure notification suppressed; errors surfaced in response and async notifications handled elsewhere)

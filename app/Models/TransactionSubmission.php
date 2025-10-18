@@ -37,6 +37,7 @@ class TransactionSubmission extends Model
     public const STATUS_PROCESSING = 'PROCESSING';
     public const STATUS_COMPLETED  = 'COMPLETED';
     public const STATUS_CONFLICT   = 'CONFLICT';
+    public const STATUS_REJECTED   = 'REJECTED';
 
     public function terminal()
     {
