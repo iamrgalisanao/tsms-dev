@@ -253,8 +253,26 @@ $(document).on('click', '.view-submission-items', function() {
             const status = (event.status || '').toUpperCase();
             const reason = (event.reason_code || '—');
             const details = event.reason_details ? JSON.stringify(event.reason_details, null, 2) : null;
-            // Compute Horizon and Logs links (best-effort)
-            const hzBase = (typeof HORIZON_BASE_URL !== 'undefined' && HORIZON_BASE_URL) ? HORIZON_BASE_URL : ("{{ rtrim(config('horizon.domain') ?? '', '/') }}/{{ trim(config('horizon.path'), '/') }}".replace(/\/+$/,''));
+            // Compute Horizon and Logs links (robust absolute URL)
+            const __hzDomain = "{{ rtrim(config('horizon.domain') ?? '', '/') }}";
+            const __hzPath = "{{ trim(config('horizon.path') ?? 'horizon', '/') }}";
+            function computeHorizonBase() {
+              // 1) If an explicit global is provided, trust it (and normalize trailing slash)
+              if (typeof HORIZON_BASE_URL !== 'undefined' && HORIZON_BASE_URL) {
+                return String(HORIZON_BASE_URL).replace(/\/+$/, '');
+              }
+              // 2) If domain is empty, fall back to current origin + path
+              if (!__hzDomain) {
+                return `${window.location.origin}/${__hzPath}`.replace(/\/+$/, '');
+              }
+              // 3) If domain already includes scheme, join as-is
+              if (/^https?:\/\//i.test(__hzDomain)) {
+                return `${__hzDomain}/${__hzPath}`.replace(/\/+$/, '');
+              }
+              // 4) Domain without scheme: use current page protocol explicitly
+              return `${window.location.protocol}//${__hzDomain}/${__hzPath}`.replace(/\/+$/, '');
+            }
+            const hzBase = computeHorizonBase();
             const horizonLink = hzBase ? `${hzBase}` : '#';
             const logsLink = `/log-viewer?tab=audit&search=${encodeURIComponent(event.submission_uuid || '')}`;
             let html = '<div class="mb-3">'
@@ -289,7 +307,21 @@ $(document).on('click', '.view-submission-items', function() {
         });
         html += '</tbody></table></div>';
         // Actions area below table
-        const hzBase = (typeof HORIZON_BASE_URL !== 'undefined' && HORIZON_BASE_URL) ? HORIZON_BASE_URL : ("{{ rtrim(config('horizon.domain') ?? '', '/') }}/{{ trim(config('horizon.path'), '/') }}".replace(/\/+$/,''));
+        const __hzDomain = "{{ rtrim(config('horizon.domain') ?? '', '/') }}";
+        const __hzPath = "{{ trim(config('horizon.path') ?? 'horizon', '/') }}";
+        function computeHorizonBase() {
+          if (typeof HORIZON_BASE_URL !== 'undefined' && HORIZON_BASE_URL) {
+            return String(HORIZON_BASE_URL).replace(/\/+$/, '');
+          }
+          if (!__hzDomain) {
+            return `${window.location.origin}/${__hzPath}`.replace(/\/+$/, '');
+          }
+          if (/^https?:\/\//i.test(__hzDomain)) {
+            return `${__hzDomain}/${__hzPath}`.replace(/\/+$/, '');
+          }
+          return `${window.location.protocol}//${__hzDomain}/${__hzPath}`.replace(/\/+$/, '');
+        }
+        const hzBase = computeHorizonBase();
         const horizonLink = hzBase ? `${hzBase}` : '#';
         const logsLink = `/log-viewer?tab=audit&search=${encodeURIComponent(resp.submission_uuid || '')}`;
         html += `<div class="mt-3 d-flex gap-2">
