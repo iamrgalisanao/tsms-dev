@@ -65,7 +65,8 @@ Route::prefix('v1')->middleware(['auth:sanctum', 'capture.terminal.ip', AttachCo
         ->middleware(['abilities:heartbeat:send', 'throttle:60,1']);
     
     // Transaction endpoints with token abilities
-    Route::middleware('abilities:transaction:create')->group(function () {
+    // Apply custom API rate limiter (uses config/rate-limiting.php default_limits.api)
+    Route::middleware(['abilities:transaction:create', 'api.limit:api'])->group(function () {
         // Legacy basic ingestion endpoint disabled (use /v1/transactions/official)
         // Route::post('/transactions', [TransactionController::class, 'store']);
         Route::post('/transactions/batch', [TransactionController::class, 'batchStore']);
@@ -74,7 +75,7 @@ Route::prefix('v1')->middleware(['auth:sanctum', 'capture.terminal.ip', AttachCo
         Route::post('/transactions/{transaction_id}/void', [TransactionController::class, 'voidFromPOS']);
     });
     
-    Route::middleware('abilities:transaction:read')->group(function () {
+    Route::middleware(['abilities:transaction:read', 'api.limit:api'])->group(function () {
         Route::get('/transactions/{id}/status', [TransactionController::class, 'status']);
         Route::get('/submission-events', [SubmissionEventController::class, 'index']);
         Route::get('/submission-events/{submission_uuid}/items', [SubmissionEventItemsController::class, 'index']);

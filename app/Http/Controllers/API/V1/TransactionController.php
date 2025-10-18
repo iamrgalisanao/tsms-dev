@@ -546,7 +546,54 @@ class TransactionController extends Controller
                         $txPayload['pwd_discount'] = $pwdDiscount;
                     }
 
-                    $transaction = Transaction::create($txPayload);
+                    // Create the transaction; if a race condition causes a duplicate key,
+                    // treat it as idempotent success rather than failure.
+                    try {
+                        $transaction = Transaction::create($txPayload);
+                    } catch (\Illuminate\Database\QueryException $qe) {
+                        // SQLSTATE 23000 is integrity constraint violation (duplicate key)
+                        $sqlState = $qe->getCode();
+                        $message = $qe->getMessage();
+                        if ($sqlState === '23000' || str_contains($message, 'Integrity constraint violation') || str_contains($message, 'Duplicate entry')) {
+                            \Log::info('storeOfficial: Duplicate transaction detected at insert (treating as idempotent)', [
+                                'transaction_id' => $transactionData['transaction_id'],
+                                'terminal_id' => $terminal->id,
+                                'error' => $message,
+                            ]);
+
+                            $existingTransaction = Transaction::where('transaction_id', $transactionData['transaction_id'])
+                                ->where('terminal_id', $terminal->id)
+                                ->first();
+
+                            if ($existingTransaction) {
+                                $processedTransactions[] = [
+                                    'transaction_id' => $existingTransaction->transaction_id,
+                                    'status' => 'success',
+                                    'message' => 'Transaction already processed'
+                                ];
+
+                                // Update terminal activity for idempotent transaction replay
+                                try {
+                                    $terminal->last_seen_at = now();
+                                    if (Schema::hasColumn('pos_terminals', 'last_sale_at')) {
+                                        $terminal->last_sale_at = now();
+                                    }
+                                    $terminal->save();
+                                } catch (\Throwable $te) {
+                                    Log::warning('Failed to update terminal last_seen_at after idempotent insert duplicate', [
+                                        'terminal_id' => $terminal->id,
+                                        'transaction_id' => $existingTransaction->transaction_id,
+                                        'error' => $te->getMessage(),
+                                    ]);
+                                }
+
+                                continue; // proceed to next item
+                            }
+
+                            // If for some reason we can't find it, rethrow to be handled by outer catch
+                        }
+                        throw $qe;
+                    }
 
                     // Queue the transaction for processing
                     // Shard queue by tenant for fairness

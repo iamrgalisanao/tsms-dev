@@ -32,4 +32,7 @@ return [
         'enabled' => true,
         'key_prefix' => 'rate_limit:tenant:',
     ],
+
+    // For feature tests: allow enabling rate limiting behavior inside the testing environment
+    'enable_in_tests' => env('RATE_LIMIT_ENABLE_IN_TESTS', false),
 ];

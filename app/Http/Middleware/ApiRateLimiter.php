@@ -18,8 +18,9 @@ class ApiRateLimiter
 
     public function handle(Request $request, Closure $next, string $type = 'api'): Response
     {
-        // Skip rate limiting during testing
-        if (app()->environment('testing')) {
+        // Skip rate limiting during testing unless explicitly enabled
+        $enableInTests = (bool) config('rate-limiting.enable_in_tests', false) || env('RATE_LIMIT_ENABLE_IN_TESTS', false);
+        if (app()->environment('testing') && !$enableInTests) {
             return $next($request);
         }
         

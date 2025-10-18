@@ -30,14 +30,12 @@ class RateLimiterService
         }
 
         return sha1($signature . '|' . $type);
-    // $monitor property and constructor already defined above, this duplicate block is removed.
-        $this->monitor = $monitor;
     }
 
     public function attemptRequest(Request $request, string $type = 'api'): bool
     {
-        // Skip rate limiting during testing
-        if (app()->environment('testing')) {
+        // Skip rate limiting during testing unless explicitly enabled
+        if (app()->environment('testing') && !config('rate-limiting.enable_in_tests', false)) {
             return true;
         }
         

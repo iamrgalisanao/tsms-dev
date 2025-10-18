@@ -4,6 +4,7 @@ namespace App\Providers;
 
 use Illuminate\Support\ServiceProvider;
 use App\Services\RateLimiter\RateLimiterService;
+use App\Services\RateLimiter\RateLimitMonitor;
 use Illuminate\Cache\RateLimiter;
 use Illuminate\Support\Facades\Route;
 
@@ -11,8 +12,16 @@ class RateLimitingServiceProvider extends ServiceProvider
 {
     public function register(): void
     {
+        // Bind monitor first
+        $this->app->singleton(RateLimitMonitor::class, function ($app) {
+            return new RateLimitMonitor();
+        });
+
         $this->app->singleton(RateLimiterService::class, function ($app) {
-            return new RateLimiterService($app->make(RateLimiter::class));
+            return new RateLimiterService(
+                $app->make(RateLimiter::class),
+                $app->make(RateLimitMonitor::class)
+            );
         });
     }
 

@@ -18,10 +18,11 @@ class RateLimitMonitor
             'timestamp' => now(),
         ]);
 
-        // Increment violation counter in Redis
-        $key = "rate_limits:violations:{$type}:" . now()->format('Y-m-d:H');
-        Cache::increment($key);
-        Cache::expire($key, now()->addDay());
+    // Increment violation counter with TTL. Cache::expire is not supported on all stores.
+    $key = "rate_limits:violations:{$type}:" . now()->format('Y-m-d:H');
+    // Ensure key exists with TTL, then increment
+    Cache::add($key, 0, now()->addDay());
+    Cache::increment($key);
     }
 
     public function getViolationMetrics(string $type, int $hours = 24): array
