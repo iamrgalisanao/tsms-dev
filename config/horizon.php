@@ -6,12 +6,19 @@ return [
     'domain' => env('HORIZON_DOMAIN'),
     'path'   => env('HORIZON_PATH', 'horizon'),
     // Ensure Horizon uses the same Redis connection as your queues.
-    // Priority: HORIZON_CONNECTION > QUEUE_REDIS_CONNECTION > 'default'.
-    'use'    => env('HORIZON_CONNECTION', env('QUEUE_REDIS_CONNECTION', 'default')),
+    // Priority: HORIZON_CONNECTION > QUEUE_REDIS_CONNECTION > 'horizon' > 'default'.
+    'use'    => env('HORIZON_CONNECTION', env('QUEUE_REDIS_CONNECTION', env('QUEUE_HORIZON_FALLBACK','horizon'))),
     'prefix' => env('HORIZON_PREFIX', 'tsms:horizon:'),
 
+    // Optional: CORS headers for Horizon API when served under a subdomain
+    // Set HORIZON_CORS_ORIGIN to your dashboard origin (e.g., https://admin.tsms.dev)
+    'cors' => [
+        'allow_origin' => env('HORIZON_CORS_ORIGIN', null),
+    ],
+
     // Apply your auth middleware / gate (define can:viewHorizon in AuthServiceProvider)
-    'middleware' => ['web', 'auth', 'can:viewHorizon'],
+    // Make it configurable to aid staging/debug (e.g., set HORIZON_MIDDLEWARE="web" temporarily)
+    'middleware' => array_map('trim', explode(',', env('HORIZON_MIDDLEWARE', 'web,auth,can:viewHorizon'))),
 
     // Long wait detection thresholds (seconds)
     'waits' => [
