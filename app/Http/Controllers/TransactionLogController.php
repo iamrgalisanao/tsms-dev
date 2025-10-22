@@ -73,6 +73,7 @@ class TransactionLogController extends Controller
             'completed_at'
         ];
 
+        // Add available discount fields
         if (Schema::hasColumn('transactions', 'promo_discount')) {
             $select[] = 'promo_discount';
         }
@@ -81,6 +82,19 @@ class TransactionLogController extends Controller
         }
         if (Schema::hasColumn('transactions', 'pwd_discount')) {
             $select[] = 'pwd_discount';
+        }
+        
+        // Add available service charge fields
+        if (Schema::hasColumn('transactions', 'service_charge')) {
+            $select[] = 'service_charge';
+        }
+        if (Schema::hasColumn('transactions', 'management_service_charge')) {
+            $select[] = 'management_service_charge';
+        }
+        
+        // Add available tax fields
+        if (Schema::hasColumn('transactions', 'tax_exempt')) {
+            $select[] = 'tax_exempt';
         }
 
         $logs = Transaction::select($select)
@@ -305,7 +319,7 @@ class TransactionLogController extends Controller
             ->selectRaw('COALESCE(SUM(t.vat_amount),0) as vat')
             ->selectRaw('COALESCE(SUM(t.net_sales),0) as net')
             ->selectRaw('COALESCE(SUM(t.refund_amount),0) as refund')
-            // Tax breakdown columns removed from summary (keeps gross/net/refund columns)
+            // Add available discount fields
             ->when(Schema::hasColumn('transactions', 'promo_discount'), function ($q) {
                 $q->selectRaw('COALESCE(SUM(t.promo_discount),0) as promo_discount');
             })
@@ -314,6 +328,23 @@ class TransactionLogController extends Controller
             })
             ->when(Schema::hasColumn('transactions', 'pwd_discount'), function ($q) {
                 $q->selectRaw('COALESCE(SUM(t.pwd_discount),0) as pwd_discount');
+            })
+            // Add available service charge fields
+            ->when(Schema::hasColumn('transactions', 'service_charge'), function ($q) {
+                $q->selectRaw('COALESCE(SUM(t.service_charge),0) as service_charge');
+            })
+            ->when(Schema::hasColumn('transactions', 'management_service_charge'), function ($q) {
+                $q->selectRaw('COALESCE(SUM(t.management_service_charge),0) as management_service_charge');
+            })
+            // Add available tax fields
+            ->when(Schema::hasColumn('transactions', 'tax_exempt'), function ($q) {
+                $q->selectRaw('COALESCE(SUM(t.tax_exempt),0) as tax_exempt');
+            })
+            ->when(Schema::hasColumn('transactions', 'vatable_sales'), function ($q) {
+                $q->selectRaw('COALESCE(SUM(t.vatable_sales),0) as vatable_sales');
+            })
+            ->when(Schema::hasColumn('transactions', 'sc_vat_exempt_sales'), function ($q) {
+                $q->selectRaw('COALESCE(SUM(t.sc_vat_exempt_sales),0) as sc_vat_exempt_sales');
             })
             ->selectRaw('MIN(t.id) as sample_tx_id')
             ->groupBy('date', 't.tenant_id', 't.terminal_id', 'trade_name', 'term.serial_number', 'term.machine_number')

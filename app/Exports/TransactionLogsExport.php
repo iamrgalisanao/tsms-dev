@@ -61,6 +61,7 @@ class TransactionLogsExport
             'VAT',
             'Vatable Sales',
             'SC VAT Exempt Sales',
+            'Tax Exempt',
             'Other Tax',
             // Status & Timestamps
             'Validation Status',
@@ -91,15 +92,16 @@ class TransactionLogsExport
             number_format($transaction->promo_discount ?? 0, 2),
             number_format($transaction->senior_discount ?? 0, 2),
             number_format($transaction->pwd_discount ?? 0, 2),
-            '-', // VIP Card Discount - not available in current schema
-            '-', // Employee Discount - not available in current schema  
-            '-', // Service Charge (Employees) - not available in current schema
-            '-', // Service Charge (Management) - not available in current schema
+            '-', // VIP Card Discount - not available in database
+            '-', // Employee Discount - not available in database  
+            number_format($transaction->service_charge ?? 0, 2),
+            number_format($transaction->management_service_charge ?? 0, 2),
             // Tax Columns
             number_format($transaction->vat ?? 0, 2),
             number_format($transaction->vatable_sales ?? 0, 2),
-            number_format($transaction->sc_vat_exempt_sales ?? 0, 2), 
-            '-', // Other Tax - not available in current schema
+            number_format($transaction->sc_vat_exempt_sales ?? 0, 2),
+            number_format($transaction->tax_exempt ?? 0, 2),
+            '-', // Other Tax - not available in database
             // Status & Timestamps
             $transaction->validation_status,
             $transaction->job_status ?? $transaction->latest_job_status ?? 'N/A',
