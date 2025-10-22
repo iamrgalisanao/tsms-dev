@@ -90,10 +90,10 @@ class BackfillTransactionAggregates extends Command
                 if (isset($adjustments[$id])) {
                     foreach ($adjustments[$id] as $adj) {
                         $type = $adj->adjustment_type;
-                        $amt = (float) $adj->total_amount;
-                        if ($type === 'promo') $promo += $amt;
-                        elseif ($type === 'senior') $senior += $amt;
-                        elseif ($type === 'pwd') $pwd += $amt;
+                        $amt = (float) $adj->total_amount; // Fix: use the correct alias from SQL query
+                        if ($type === 'promo_discount') $promo += $amt; // Fix: use full field names
+                        elseif ($type === 'senior_discount') $senior += $amt;
+                        elseif ($type === 'pwd_discount') $pwd += $amt;
                         // ignore other types here; future types can be added
                     }
                 }
