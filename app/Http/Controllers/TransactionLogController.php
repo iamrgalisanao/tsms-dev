@@ -93,13 +93,19 @@ class TransactionLogController extends Controller
             return $query->where('validation_status', $filters['status']);
             })
             ->when(isset($filters['date_from']), function ($query) use ($filters, $dateColumn) {
-                // Mirror summary() behavior: when transaction basis is selected,
-                // include rows that have either transaction_timestamp or created_at
-                // in the requested range. This keeps Detailed and Summary rowsets consistent.
+                // Apply date filtering based on selected date basis.
+                // For transaction_timestamp, use it as primary with created_at as fallback only for NULL values.
                 if ($dateColumn === 'transaction_timestamp') {
                     $query->where(function ($q) use ($filters) {
-                        $q->where('transaction_timestamp', '>=', $filters['date_from'] . ' 00:00:00')
-                          ->orWhere('created_at', '>=', $filters['date_from'] . ' 00:00:00');
+                        $q->where(function ($subQ) use ($filters) {
+                            // Primary: transaction_timestamp is not null and within range
+                            $subQ->whereNotNull('transaction_timestamp')
+                                 ->where('transaction_timestamp', '>=', $filters['date_from'] . ' 00:00:00');
+                        })->orWhere(function ($subQ) use ($filters) {
+                            // Fallback: transaction_timestamp is null, use created_at
+                            $subQ->whereNull('transaction_timestamp')
+                                 ->where('created_at', '>=', $filters['date_from'] . ' 00:00:00');
+                        });
                     });
                 } else {
                     $query->where($dateColumn, '>=', $filters['date_from'] . ' 00:00:00');
@@ -108,8 +114,15 @@ class TransactionLogController extends Controller
             ->when(isset($filters['date_to']), function ($query) use ($filters, $dateColumn) {
                 if ($dateColumn === 'transaction_timestamp') {
                     $query->where(function ($q) use ($filters) {
-                        $q->where('transaction_timestamp', '<=', $filters['date_to'] . ' 23:59:59')
-                          ->orWhere('created_at', '<=', $filters['date_to'] . ' 23:59:59');
+                        $q->where(function ($subQ) use ($filters) {
+                            // Primary: transaction_timestamp is not null and within range
+                            $subQ->whereNotNull('transaction_timestamp')
+                                 ->where('transaction_timestamp', '<=', $filters['date_to'] . ' 23:59:59');
+                        })->orWhere(function ($subQ) use ($filters) {
+                            // Fallback: transaction_timestamp is null, use created_at
+                            $subQ->whereNull('transaction_timestamp')
+                                 ->where('created_at', '<=', $filters['date_to'] . ' 23:59:59');
+                        });
                     });
                 } else {
                     $query->where($dateColumn, '<=', $filters['date_to'] . ' 23:59:59');
@@ -240,12 +253,19 @@ class TransactionLogController extends Controller
                 $q->where('t.validation_status', $filters['status']);
             })
             ->when(isset($filters['date_from']), function ($q) use ($filters, $dateColumn) {
-                // If transaction basis is selected, accept either transaction_timestamp
-                // or created_at (fallback). Otherwise, filter the chosen date column.
+                // Apply date filtering based on selected date basis.
+                // For transaction_timestamp, use it as primary with created_at as fallback only for NULL values.
                 if ($dateColumn === 't.transaction_timestamp') {
                     $q->where(function ($q) use ($filters) {
-                        $q->where('t.transaction_timestamp', '>=', $filters['date_from'] . ' 00:00:00')
-                          ->orWhere('t.created_at', '>=', $filters['date_from'] . ' 00:00:00');
+                        $q->where(function ($subQ) use ($filters) {
+                            // Primary: transaction_timestamp is not null and within range
+                            $subQ->whereNotNull('t.transaction_timestamp')
+                                 ->where('t.transaction_timestamp', '>=', $filters['date_from'] . ' 00:00:00');
+                        })->orWhere(function ($subQ) use ($filters) {
+                            // Fallback: transaction_timestamp is null, use created_at
+                            $subQ->whereNull('t.transaction_timestamp')
+                                 ->where('t.created_at', '>=', $filters['date_from'] . ' 00:00:00');
+                        });
                     });
                 } else {
                     $q->where($dateColumn, '>=', $filters['date_from'] . ' 00:00:00');
@@ -254,8 +274,15 @@ class TransactionLogController extends Controller
             ->when(isset($filters['date_to']), function ($q) use ($filters, $dateColumn) {
                 if ($dateColumn === 't.transaction_timestamp') {
                     $q->where(function ($q) use ($filters) {
-                        $q->where('t.transaction_timestamp', '<=', $filters['date_to'] . ' 23:59:59')
-                          ->orWhere('t.created_at', '<=', $filters['date_to'] . ' 23:59:59');
+                        $q->where(function ($subQ) use ($filters) {
+                            // Primary: transaction_timestamp is not null and within range
+                            $subQ->whereNotNull('t.transaction_timestamp')
+                                 ->where('t.transaction_timestamp', '<=', $filters['date_to'] . ' 23:59:59');
+                        })->orWhere(function ($subQ) use ($filters) {
+                            // Fallback: transaction_timestamp is null, use created_at
+                            $subQ->whereNull('t.transaction_timestamp')
+                                 ->where('t.created_at', '<=', $filters['date_to'] . ' 23:59:59');
+                        });
                     });
                 } else {
                     $q->where($dateColumn, '<=', $filters['date_to'] . ' 23:59:59');
