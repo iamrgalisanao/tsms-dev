@@ -269,7 +269,7 @@ use App\Helpers\FormatHelper;
                     <th>Transaction ID</th>
                     <th>Tenant / Terminal</th>
                     <th>Amount</th>
-                    <th>Status</th>
+                    {{-- <th>Status</th> --}}
                     {{-- <th>Job Status</th> --}}
                     <!-- {{-- <th>Attempts</th> --}} -->
                     <!-- <th>Transaction Count</th> -->
@@ -287,8 +287,8 @@ use App\Helpers\FormatHelper;
                     <th>SC VAT Exempt Sales</th>
                     <th>Other Tax</th>
                     <th>Transaction Time</th>
-                    <th>Completed At</th>
-                    <th>Created At</th>
+                    {{-- <th>Completed At</th>
+                    <th>Created At</th> --}}
                     <th>Actions</th>
                 </tr>
             </thead>
@@ -315,13 +315,13 @@ use App\Helpers\FormatHelper;
                     </td>
                     <!-- {{-- <td>{{ $log->terminal->terminal_uid ?? 'N/A' }}</td> --}} -->
                     <td class="text-end">₱{{ number_format($log->amount, 2) }}</td>
-                    <td class="text-center">
+                    {{-- <td class="text-center">
                         @if($log->latest_job_status === 'FAILED')
                             <span class="badge badge-danger">FAILED</span>
                         @else
                             {!! BadgeHelper::getValidationStatusBadge($log->validation_status) . ' + ' . BadgeHelper::getJobStatusBadge($log->latest_job_status, 'job') !!}
                         @endif
-                    </td>
+                    </td> --}}
                     <!-- Adjustment Columns -->
                     <td class="text-end">{{ isset($log->promo_discount) && $log->promo_discount !== null ? \App\Helpers\FormatHelper::formatCurrency($log->promo_discount) : '-' }}</td>
                     <td class="text-end">{{ isset($log->senior_discount) && $log->senior_discount !== null ? \App\Helpers\FormatHelper::formatCurrency($log->senior_discount) : '-' }}</td>
@@ -345,8 +345,8 @@ use App\Helpers\FormatHelper;
                         @endphp
                         {{ \Carbon\Carbon::parse($txTime)->format('Y-m-d H:i:s') }}
                     </td>
-                    <td class="text-center">{{ \Carbon\Carbon::parse($log->completed_at)->format('Y-m-d H:i:s') }}</td>
-                    <td class="text-center">{{ \Carbon\Carbon::parse($log->created_at)->format('Y-m-d H:i:s') }}</td>
+                    {{-- <td class="text-center">{{ \Carbon\Carbon::parse($log->completed_at)->format('Y-m-d H:i:s') }}</td>
+                    <td class="text-center">{{ \Carbon\Carbon::parse($log->created_at)->format('Y-m-d H:i:s') }}</td> --}}
                     <td class="text-center">
                         <a href="{{ route('transactions.logs.show', $log->id) }}" class="btn btn-sm btn-outline-primary">View</a>
                         @if($log->validation_status === 'ERROR' && Gate::check('retry-transactions'))
