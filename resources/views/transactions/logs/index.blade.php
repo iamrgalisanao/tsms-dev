@@ -169,15 +169,21 @@ use App\Helpers\FormatHelper;
                     <th>Terminal</th>
                     <th>Tx Count</th>
                     <th>Gross</th>
-                    <th>VAT</th>
                     <th>Net</th>
                     <th>Refund</th>
-                    <th>promo_discount</th>
-                    <th>senior_discount</th>
-                    <th>pwd_discount</th>
-                    <th>Tax (breakdown)</th>
-                    <th>VATABLE_SALES</th>
-                    <th>SC_VAT_EXEMPT_SALES</th>
+                    <!-- Adjustment Columns -->
+                    <th>Promo Discount</th>
+                    <th>Senior Discount</th>
+                    <th>PWD Discount</th>
+                    <th>VIP Card Discount</th>
+                    <th>Employee Discount</th>
+                    <th>Service Charge (Employees)</th>
+                    <th>Service Charge (Management)</th>
+                    <!-- Tax Columns -->
+                    <th>VAT</th>
+                    <th>Vatable Sales</th>
+                    <th>SC VAT Exempt Sales</th>
+                    <th>Other Tax</th>
                 </tr>
             </thead>
             <tbody>
@@ -188,28 +194,26 @@ use App\Helpers\FormatHelper;
                     <td>SN: {{ $row->serial_number ?? 'N/A' }} • M: {{ $row->machine_number ?? 'N/A' }}</td>
                     <td class="text-end">{{ number_format($row->tx_count) }}</td>
                     @php
-                        // Prefer aggregated row totals (daily sums) for Gross/VAT/Net/Refund.
+                        // Prefer aggregated row totals (daily sums) for Gross/Net/Refund.
                         // Only use the sample-transaction presenter values when the
                         // summary row represents exactly one transaction (tx_count == 1).
-                        $presenterGross = null; $presenterVat = null; $presenterNet = null; $presenterRefund = null;
+                        $presenterGross = null; $presenterNet = null; $presenterRefund = null;
                         if (isset($sampleTransactions) && isset($row->sample_tx_id) && $sampleTransactions->has($row->sample_tx_id)) {
                             $txp = $sampleTransactions->get($row->sample_tx_id);
                             $p = \App\Presenters\TransactionSummaryPresenter::fromTransaction($txp);
                             if ((int) ($row->tx_count ?? 0) === 1) {
                                 $presenterGross = $p['gross'];
-                                $presenterVat = $p['vat_amount'];
                                 $presenterNet = $p['net'];
                                 $presenterRefund = $p['refund'];
                             }
                         }
                     @endphp
                     <td class="text-end">{{ isset($presenterGross) ? \App\Helpers\FormatHelper::formatCurrency($presenterGross) : ('₱' . number_format($row->gross, 2)) }}</td>
-                    <td class="text-end">{{ isset($presenterVat) ? \App\Helpers\FormatHelper::formatCurrency($presenterVat) : ('₱' . number_format($row->vat, 2)) }}</td>
                     <td class="text-end">{{ isset($presenterNet) ? \App\Helpers\FormatHelper::formatCurrency($presenterNet) : ('₱' . number_format($row->net, 2)) }}</td>
                     <td class="text-end">{{ isset($presenterRefund) ? \App\Helpers\FormatHelper::formatCurrency($presenterRefund) : ('₱' . number_format($row->refund, 2)) }}</td>
-                        @php
-                        // Use presenter to keep view logic minimal
-                        $promo = $senior = $pwd = $vat = $vatable = $sc_vat = null;
+                    @php
+                        // Extract all adjustment and tax values using presenter and fallbacks
+                        $adjustmentData = $taxData = [];
                         if (isset($sampleTransactions) && isset($row->sample_tx_id) && $sampleTransactions->has($row->sample_tx_id)) {
                             $tx = $sampleTransactions->get($row->sample_tx_id);
                             // avoid clobbering the paginator $summary variable; use $txSummary for the presenter result
@@ -220,45 +224,39 @@ use App\Helpers\FormatHelper;
                             // prefer the aggregated row totals so the summary reflects daily/terminal sums.
                             $usePresenter = ((int) ($row->tx_count ?? 0) === 1);
 
-                            $promo_amount = $usePresenter ? ($txSummary['promo_amount'] ?? null) : null;
-                            $senior_amount = $usePresenter ? ($txSummary['senior_amount'] ?? null) : null;
-                            $pwd_amount = $usePresenter ? ($txSummary['pwd_amount'] ?? null) : null;
-                            $vat_amount = $usePresenter ? ($txSummary['vat_amount'] ?? null) : null;
-                            $vatable_sales = $usePresenter ? ($txSummary['vatable_sales'] ?? null) : null;
-                            $sc_vat_amount = $usePresenter ? ($txSummary['sc_vat_amount'] ?? null) : null;
+                            // Adjustment types mapping
+                            $adjustmentData = [
+                                'promo_discount' => $usePresenter ? ($txSummary['promo'] ?? null) : ($row->promo_discount ?? null),
+                                'senior_discount' => $usePresenter ? ($txSummary['senior'] ?? null) : ($row->senior_discount ?? null),
+                                'pwd_discount' => $usePresenter ? ($txSummary['pwd'] ?? null) : ($row->pwd_discount ?? null),
+                                'vip_card_discount' => $usePresenter ? ($txSummary['vip_card_discount'] ?? null) : ($row->vip_card_discount ?? null),
+                                'employee_discount' => $usePresenter ? ($txSummary['employee_discount'] ?? null) : ($row->employee_discount ?? null),
+                                'service_charge_distributed_to_employees' => $usePresenter ? ($txSummary['service_charge_employees'] ?? null) : ($row->service_charge_employees ?? null),
+                                'service_charge_retained_by_management' => $usePresenter ? ($txSummary['service_charge_management'] ?? null) : ($row->service_charge_management ?? null),
+                            ];
 
-                            // fallback to row-level aggregates so the summary shows daily totals
-                            if ($promo_amount === null && isset($row->promo_discount)) {
-                                $promo_amount = $row->promo_discount;
-                            }
-                            if ($senior_amount === null && isset($row->senior_discount)) {
-                                $senior_amount = $row->senior_discount;
-                            }
-                            if ($pwd_amount === null && isset($row->pwd_discount)) {
-                                $pwd_amount = $row->pwd_discount;
-                            }
-                            if ($vat_amount === null && isset($row->vat)) {
-                                $vat_amount = $row->vat;
-                            }
-                            if ($vatable_sales === null && isset($row->vatable_sales)) {
-                                $vatable_sales = $row->vatable_sales;
-                            }
-                            // sc_vat may be stored under different keys depending on aggregation
-                            if ($sc_vat_amount === null) {
-                                if (isset($row->sc_vat_amount)) {
-                                    $sc_vat_amount = $row->sc_vat_amount;
-                                } elseif (isset($row->sc_vat_exempt_sales)) {
-                                    $sc_vat_amount = $row->sc_vat_exempt_sales;
-                                }
-                            }
+                            // Tax types mapping
+                            $taxData = [
+                                'vat' => $usePresenter ? ($txSummary['vat'] ?? null) : ($row->vat ?? null),
+                                'vatable_sales' => $usePresenter ? ($txSummary['vatable'] ?? null) : ($row->vatable_sales ?? null),
+                                'sc_vat_exempt_sales' => $usePresenter ? ($txSummary['sc_vat'] ?? null) : ($row->sc_vat_exempt_sales ?? $row->sc_vat_amount ?? null),
+                                'other_tax' => $usePresenter ? ($txSummary['other_tax'] ?? null) : ($row->other_tax ?? null),
+                            ];
                         }
                     @endphp
-                    <td class="text-end">{{ $promo_amount !== null ? \App\Helpers\FormatHelper::formatCurrency($promo_amount) : '-' }}</td>
-                    <td class="text-end">{{ $senior_amount !== null ? \App\Helpers\FormatHelper::formatCurrency($senior_amount) : '-' }}</td>
-                    <td class="text-end">{{ $pwd_amount !== null ? \App\Helpers\FormatHelper::formatCurrency($pwd_amount) : '-' }}</td>
-                    <td class="text-end">{{ $vat_amount !== null ? \App\Helpers\FormatHelper::formatCurrency($vat_amount) : '-' }}</td>
-                    <td class="text-end">{{ $vatable_sales !== null ? \App\Helpers\FormatHelper::formatCurrency($vatable_sales) : '-' }}</td>
-                    <td class="text-end">{{ $sc_vat_amount !== null ? \App\Helpers\FormatHelper::formatCurrency($sc_vat_amount) : '-' }}</td>
+                    <!-- Adjustment Columns -->
+                    <td class="text-end">{{ $adjustmentData['promo_discount'] !== null ? \App\Helpers\FormatHelper::formatCurrency($adjustmentData['promo_discount']) : '-' }}</td>
+                    <td class="text-end">{{ $adjustmentData['senior_discount'] !== null ? \App\Helpers\FormatHelper::formatCurrency($adjustmentData['senior_discount']) : '-' }}</td>
+                    <td class="text-end">{{ $adjustmentData['pwd_discount'] !== null ? \App\Helpers\FormatHelper::formatCurrency($adjustmentData['pwd_discount']) : '-' }}</td>
+                    <td class="text-end">{{ $adjustmentData['vip_card_discount'] !== null ? \App\Helpers\FormatHelper::formatCurrency($adjustmentData['vip_card_discount']) : '-' }}</td>
+                    <td class="text-end">{{ $adjustmentData['employee_discount'] !== null ? \App\Helpers\FormatHelper::formatCurrency($adjustmentData['employee_discount']) : '-' }}</td>
+                    <td class="text-end">{{ $adjustmentData['service_charge_distributed_to_employees'] !== null ? \App\Helpers\FormatHelper::formatCurrency($adjustmentData['service_charge_distributed_to_employees']) : '-' }}</td>
+                    <td class="text-end">{{ $adjustmentData['service_charge_retained_by_management'] !== null ? \App\Helpers\FormatHelper::formatCurrency($adjustmentData['service_charge_retained_by_management']) : '-' }}</td>
+                    <!-- Tax Columns -->
+                    <td class="text-end">{{ $taxData['vat'] !== null ? \App\Helpers\FormatHelper::formatCurrency($taxData['vat']) : '-' }}</td>
+                    <td class="text-end">{{ $taxData['vatable_sales'] !== null ? \App\Helpers\FormatHelper::formatCurrency($taxData['vatable_sales']) : '-' }}</td>
+                    <td class="text-end">{{ $taxData['sc_vat_exempt_sales'] !== null ? \App\Helpers\FormatHelper::formatCurrency($taxData['sc_vat_exempt_sales']) : '-' }}</td>
+                    <td class="text-end">{{ $taxData['other_tax'] !== null ? \App\Helpers\FormatHelper::formatCurrency($taxData['other_tax']) : '-' }}</td>
                 </tr>
                 @empty
                 @endforelse
@@ -275,6 +273,19 @@ use App\Helpers\FormatHelper;
                     {{-- <th>Job Status</th> --}}
                     <!-- {{-- <th>Attempts</th> --}} -->
                     <!-- <th>Transaction Count</th> -->
+                    <!-- Adjustment Columns -->
+                    <th>Promo Discount</th>
+                    <th>Senior Discount</th>
+                    <th>PWD Discount</th>
+                    <th>VIP Card Discount</th>
+                    <th>Employee Discount</th>
+                    <th>Service Charge (Employees)</th>
+                    <th>Service Charge (Management)</th>
+                    <!-- Tax Columns -->
+                    <th>VAT</th>
+                    <th>Vatable Sales</th>
+                    <th>SC VAT Exempt Sales</th>
+                    <th>Other Tax</th>
                     <th>Transaction Time</th>
                     <th>Completed At</th>
                     <th>Created At</th>
@@ -311,6 +322,19 @@ use App\Helpers\FormatHelper;
                             {!! BadgeHelper::getValidationStatusBadge($log->validation_status) . ' + ' . BadgeHelper::getJobStatusBadge($log->latest_job_status, 'job') !!}
                         @endif
                     </td>
+                    <!-- Adjustment Columns -->
+                    <td class="text-end">{{ isset($log->promo_discount) && $log->promo_discount !== null ? \App\Helpers\FormatHelper::formatCurrency($log->promo_discount) : '-' }}</td>
+                    <td class="text-end">{{ isset($log->senior_discount) && $log->senior_discount !== null ? \App\Helpers\FormatHelper::formatCurrency($log->senior_discount) : '-' }}</td>
+                    <td class="text-end">{{ isset($log->pwd_discount) && $log->pwd_discount !== null ? \App\Helpers\FormatHelper::formatCurrency($log->pwd_discount) : '-' }}</td>
+                    <td class="text-end">-</td> <!-- VIP Card Discount - not available in select -->
+                    <td class="text-end">-</td> <!-- Employee Discount - not available in select -->
+                    <td class="text-end">-</td> <!-- Service Charge (Employees) - not available in select -->
+                    <td class="text-end">-</td> <!-- Service Charge (Management) - not available in select -->
+                    <!-- Tax Columns -->
+                    <td class="text-end">{{ isset($log->vat) && $log->vat !== null ? \App\Helpers\FormatHelper::formatCurrency($log->vat) : '-' }}</td>
+                    <td class="text-end">{{ isset($log->vatable_sales) && $log->vatable_sales !== null ? \App\Helpers\FormatHelper::formatCurrency($log->vatable_sales) : '-' }}</td>
+                    <td class="text-end">{{ isset($log->sc_vat_exempt_sales) && $log->sc_vat_exempt_sales !== null ? \App\Helpers\FormatHelper::formatCurrency($log->sc_vat_exempt_sales) : '-' }}</td>
+                    <td class="text-end">-</td> <!-- Other Tax - not available in select -->
                     {{-- <td class="text-center">{!! BadgeHelper::getJobStatusBadge($log->latest_job_status, 'job') !!}</td> --}}
                     <!-- {{-- <td class="text-center">{{ $log->job_attempts }}</td> --}}
                     {{-- <td class="text-center">{{ FormatHelper::formatDate($log->completed_at) }}</td> --}} -->
