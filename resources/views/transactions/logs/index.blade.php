@@ -268,7 +268,8 @@ use App\Helpers\FormatHelper;
                 <tr>
                     <th>Transaction ID</th>
                     <th>Tenant / Terminal</th>
-                    <th>Amount</th>
+                    <th>Gross Sales</th>
+                    <th>Net Sales</th>
                     {{-- <th>Status</th> --}}
                     {{-- <th>Job Status</th> --}}
                     <!-- {{-- <th>Attempts</th> --}} -->
@@ -315,6 +316,7 @@ use App\Helpers\FormatHelper;
                     </td>
                     <!-- {{-- <td>{{ $log->terminal->terminal_uid ?? 'N/A' }}</td> --}} -->
                     <td class="text-end">₱{{ number_format($log->amount, 2) }}</td>
+                    <td class="text-end">{{ isset($log->net_sales) && $log->net_sales !== null ? \App\Helpers\FormatHelper::formatCurrency($log->net_sales) : '-' }}</td>
                     {{-- <td class="text-center">
                         @if($log->latest_job_status === 'FAILED')
                             <span class="badge badge-danger">FAILED</span>
