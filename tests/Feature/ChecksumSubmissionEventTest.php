@@ -101,18 +101,8 @@ class ChecksumSubmissionEventTest extends TestCase
         // Assert response is 422 (validation failed)
         $response->assertStatus(422);
         
-        // Debug: Check what the actual response contains
-        $responseData = $response->json();
-        echo "Response: " . json_encode($responseData, JSON_PRETTY_PRINT) . "\n";
-        
         // Check that SubmissionEvent was created
         $eventsAfter = SubmissionEvent::count();
-        echo "Events before: $eventsBefore, Events after: $eventsAfter\n";
-        
-        if ($eventsAfter > $eventsBefore) {
-            $event = SubmissionEvent::latest()->first();
-            echo "Latest event: " . json_encode($event->toArray(), JSON_PRETTY_PRINT) . "\n";
-        }
         
         $this->assertEquals($eventsBefore + 1, $eventsAfter, 'SubmissionEvent should be created for checksum failure');
 

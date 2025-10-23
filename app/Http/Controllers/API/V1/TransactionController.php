@@ -1076,13 +1076,18 @@ class TransactionController extends Controller
      */
     public function storeOfficial(TSMSTransactionRequest $request)
     {
+        // Generate correlation ID for audit trail
+        $correlationId = \Illuminate\Support\Str::uuid();
+        $request->attributes->set('correlation_id', $correlationId);
+        
         try {
             DB::beginTransaction();
 
             Log::info('Official TSMS transaction API request received', [
                 'payload_size' => strlen(json_encode($request->all())),
                 'submission_uuid' => $request->submission_uuid ?? 'missing',
-                'transaction_count' => $request->transaction_count ?? 'missing'
+                'transaction_count' => $request->transaction_count ?? 'missing',
+                'correlation_id' => $correlationId
             ]);
 
             // Enforce terminal token -> terminal binding using Sanctum personal access tokens
@@ -1163,6 +1168,9 @@ class TransactionController extends Controller
                 'submission_uuid' => $request->submission_uuid,
                 'transaction_count' => $request->transaction_count
             ]);
+
+            // Detailed structure validation (moved from TSMSTransactionRequest)
+            $this->validateDetailedStructure($request, $correlationId);
 
             // ------------------------------------------------------------------
             // Submission-level idempotency & drift detection
@@ -1327,9 +1335,18 @@ class TransactionController extends Controller
                     'correlation_id'    => $correlationId,
                 ]);
 
-                // Record structured REJECTED event (checksum)
+                // Record structured REJECTED event (checksum) - create outside main transaction  
+                Log::info('Creating SubmissionEvent for checksum failure', [
+                    'submission_uuid' => $request->submission_uuid,
+                    'correlation_id' => $correlationId
+                ]);
+                
+                // Commit the main transaction first, then create audit event
+                DB::commit();
+                
                 try {
-                    \App\Models\SubmissionEvent::create([
+                    // Create audit event after main transaction is committed
+                    $submissionEvent = \App\Models\SubmissionEvent::create([
                         'submission_uuid'   => $request->submission_uuid,
                         'tenant_id'         => $request->tenant_id,
                         'terminal_id'       => $request->terminal_id,
@@ -1340,13 +1357,19 @@ class TransactionController extends Controller
                         'occurred_at'       => now(),
                         'correlation_id'    => $correlationId,
                     ]);
+                    Log::info('SubmissionEvent created successfully', [
+                        'event_id' => $submissionEvent->id,
+                        'submission_uuid' => $request->submission_uuid,
+                        'reason_code' => 'CHECKSUM_MISMATCH'
+                    ]);
                 } catch (\Throwable $te) {
                     Log::warning('Failed to write SubmissionEvent (REJECTED)', [
                         'submission_uuid' => $request->submission_uuid,
                         'error' => $te->getMessage(),
+                        'trace' => $te->getTraceAsString()
                     ]);
                 }
-                DB::rollBack();
+                
                 return response()->json([
                     'success' => false,
                     'message' => 'Invalid payload checksum',
@@ -2254,6 +2277,96 @@ class TransactionController extends Controller
                 'status' => 'failed',
                 'errors' => ['system' => 'System error occurred while processing transaction']
             ];
+        }
+    }
+
+    /**
+     * Validate detailed transaction structure (moved from TSMSTransactionRequest)
+     * Creates audit trail for validation failures
+     */
+    private function validateDetailedStructure(\Illuminate\Http\Request $request, string $correlationId): void
+    {
+        $isSingle = $request->transaction_count === 1;
+        
+        // Build detailed validation rules
+        $rules = [];
+        if ($isSingle) {
+            $rules = [
+                'transaction' => 'required|array',
+                'transaction.transaction_id' => 'required|string|uuid',
+                'transaction.transaction_timestamp' => 'required|date_format:Y-m-d\TH:i:s\Z',
+                'transaction.gross_sales' => 'required|numeric|min:0',
+                'transaction.net_sales' => 'required|numeric',
+                'transaction.promo_status' => 'required|string',
+                'transaction.customer_code' => 'required|string',
+                'transaction.payload_checksum' => 'required|string|min:64|max:64',
+                'transaction.adjustments' => 'required|array|min:7',
+                'transaction.adjustments.*.adjustment_type' => 'required|string',
+                'transaction.adjustments.*.amount' => 'required|numeric',
+                'transaction.taxes' => 'required|array|min:4',
+                'transaction.taxes.*.tax_type' => 'required|string',
+                'transaction.taxes.*.amount' => 'required|numeric',
+            ];
+        } else {
+            $rules = [
+                'transactions' => 'required|array|min:1',
+                'transactions.*.transaction_id' => 'required|string|uuid',
+                'transactions.*.transaction_timestamp' => 'required|date_format:Y-m-d\TH:i:s\Z',
+                'transactions.*.gross_sales' => 'required|numeric|min:0',
+                'transactions.*.net_sales' => 'required|numeric',
+                'transactions.*.promo_status' => 'required|string',
+                'transactions.*.customer_code' => 'required|string',
+                'transactions.*.payload_checksum' => 'required|string|min:64|max:64',
+                'transactions.*.adjustments' => 'required|array|min:7',
+                'transactions.*.adjustments.*.adjustment_type' => 'required|string',
+                'transactions.*.adjustments.*.amount' => 'required|numeric',
+                'transactions.*.taxes' => 'required|array|min:4',
+                'transactions.*.taxes.*.tax_type' => 'required|string',
+                'transactions.*.taxes.*.amount' => 'required|numeric',
+            ];
+        }
+
+        // Validate structure
+        $validator = \Validator::make($request->all(), $rules);
+        
+        if ($validator->fails()) {
+            // Create audit event for structure validation failure
+            $this->createRejectionAuditEvent(
+                $request, 
+                'STRUCTURE_INVALID', 
+                $validator->errors()->toArray(),
+                $correlationId
+            );
+            
+            // Throw validation exception
+            throw new \Illuminate\Validation\ValidationException($validator);
+        }
+    }
+
+    /**
+     * Create rejection audit event for validation failures
+     */
+    private function createRejectionAuditEvent(\Illuminate\Http\Request $request, string $reasonCode, array $errors, string $correlationId = null): void
+    {
+        try {
+            \App\Models\SubmissionEvent::create([
+                'submission_uuid' => $request->submission_uuid,
+                'tenant_id' => $request->tenant_id,
+                'terminal_id' => $request->terminal_id,
+                'status' => 'REJECTED',
+                'reason_code' => $reasonCode,
+                'reason_details' => ['errors' => $errors],
+                'transaction_count' => (int) ($request->transaction_count ?? 0),
+                'occurred_at' => now(),
+                'correlation_id' => $correlationId,
+            ]);
+        } catch (\Throwable $e) {
+            Log::warning('Failed to create SubmissionEvent', [
+                'submission_uuid' => $request->submission_uuid,
+                'reason_code' => $reasonCode,
+                'error' => $e->getMessage(),
+                'correlation_id' => $correlationId
+            ]);
         }
     }
 }
