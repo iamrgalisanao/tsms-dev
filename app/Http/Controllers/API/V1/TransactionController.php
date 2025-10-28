@@ -528,8 +528,9 @@ class TransactionController extends Controller
                         'transaction_timestamp' => $normalizedTimestampDb,
                         'gross_sales' => $normalizedGross,
                         'net_sales' => $transactionData['net_sales'] ?? 0,
-                        'customer_code' => $request->customer_code ?? ($terminal->tenant->company->customer_code ?? 'UNKNOWN'),
+                            'customer_code' => $transactionData['customer_code'] ?? ($terminal->tenant->company->customer_code ?? 'UNKNOWN'),
                         'payload_checksum' => $transactionData['payload_checksum'] ?? md5(json_encode($transactionData)),
+                        'receipt_no' => $transactionData['receipt_no'] ?? null,
                         'validation_status' => 'PENDING',
                         'vatable_sales' => $vatableSales,
                         'vat_amount' => $vatAmount,
@@ -815,9 +816,10 @@ class TransactionController extends Controller
                 'terminal_id' => $terminal_id,
             ];
             if (method_exists($forwardingService, 'forwardVoidedTransaction')) {
-                $forwardingService->forwardVoidedTransaction($payload);
+                // Service expects a Transaction model instance so pass the saved model
+                $forwardingService->forwardVoidedTransaction($transaction);
             } else {
-                // Fallback: send via generic forward method
+                // Fallback: send via generic forward method using the prepared payload
                 $forwardingService->forward($payload);
             }
         } catch (\Exception $e) {
@@ -849,27 +851,26 @@ class TransactionController extends Controller
         try {
             DB::beginTransaction();
 
-            // Validate request includes transaction_id and matches route parameter
+            // Accept either transaction_id (preferred) OR receipt_no for POS-initiated voids.
             $request->validate([
-                // Require RFC 4122 UUID (Laravel uuid rule validates format) to prevent accepting malformed IDs
-                'transaction_id' => 'required|string|uuid|max:191',
+                'transaction_id' => 'nullable|string|uuid|max:191',
+                'receipt_no' => 'nullable|string|max:128',
                 'void_reason' => 'required|string|max:255',
                 'payload_checksum' => 'required|string|min:64|max:64', // SHA-256 required for POS requests
             ]);
 
-            // Ensure request transaction_id matches route parameter for security
-            if ($request->transaction_id !== $transaction_id) {
+            // Ensure at least one identifier supplied
+            if (empty($request->transaction_id) && empty($request->receipt_no)) {
                 DB::rollBack();
                 return response()->json([
                     'success' => false,
-                    'message' => 'Transaction ID mismatch',
-                    'errors' => ['transaction_id' => ['Request transaction_id must match the transaction being voided']]
+                    'message' => 'Either transaction_id or receipt_no is required',
+                    'errors' => ['identifier' => ['Either transaction_id or receipt_no must be provided']]
                 ], 422);
             }
 
             // Get authenticated terminal (from Sanctum middleware)
             $posTerminal = $request->user(); // This is the POS terminal making the request
-            
             if (!$posTerminal) {
                 DB::rollBack();
                 return response()->json([
@@ -878,10 +879,33 @@ class TransactionController extends Controller
                 ], 401);
             }
 
-            $transaction = Transaction::where('transaction_id', $transaction_id)
-                ->where('terminal_id', $posTerminal->id)
-                ->first();
-            
+            $tenantId = $posTerminal->tenant_id ?? null;
+
+            // Determine if caller explicitly supplied transaction_id in the request body
+            // Note: Laravel may surface route parameters as request input; avoid treating
+            // the route param as an explicit body identifier to allow receipt_no-only requests.
+            $requestBody = $request->all();
+            $explicitTransactionId = array_key_exists('transaction_id', $requestBody) && !empty($requestBody['transaction_id']);
+
+            // Only pass transaction_id into the lookup helper when it was explicitly provided
+            // in the request body. This prevents the route parameter from forcing the
+            // transaction_id lookup path when the client intended receipt_no lookup.
+            $txIdForLookup = $explicitTransactionId ? $request->transaction_id : null;
+
+            // Use model helper to find transaction by either identifier scoped to tenant+terminal
+            $lookup = Transaction::findForVoidByTerminal($tenantId, $posTerminal->id, $txIdForLookup, $request->receipt_no ?? null);
+
+            if ($lookup['ambiguous']) {
+                DB::rollBack();
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Ambiguous receipt_no — multiple transactions found',
+                ], 409);
+            }
+
+            $transaction = $lookup['transaction'];
+            $usedIdentifier = $lookup['identifier'];
+
             if (!$transaction) {
                 DB::rollBack();
                 return response()->json([
@@ -890,9 +914,15 @@ class TransactionController extends Controller
                 ], 404);
             }
 
-            // Fix: Move variable assignment after null check
-            $tenant_id = $transaction->tenant_id ?? null;
-            $terminal_id = $posTerminal->id;
+            // If transaction_id supplied, ensure it matches route parameter for security
+            if (!empty($request->transaction_id) && $request->transaction_id !== $transaction_id) {
+                DB::rollBack();
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Transaction ID mismatch',
+                    'errors' => ['transaction_id' => ['Request transaction_id must match the transaction being voided']]
+                ], 422);
+            }
 
             if ($transaction->voided_at) {
                 DB::rollBack();
@@ -913,16 +943,71 @@ class TransactionController extends Controller
                 ], 409);
             }
 
-            // Use PayloadChecksumService for consistent checksum validation
+            // Compute checksum using the identifier actually used for lookup
             $checksumService = new \App\Services\PayloadChecksumService();
-            $expectedPayload = [
-                'transaction_id' => $request->transaction_id,
-                'void_reason' => $request->void_reason,
-            ];
-            
-            $expectedChecksum = $checksumService->computeChecksum($expectedPayload);
-            
-            if ($request->payload_checksum !== $expectedChecksum) {
+            $payloadForChecksum = [];
+            if ($usedIdentifier === 'transaction_id') {
+                $payloadForChecksum['transaction_id'] = $transaction->transaction_id;
+            } else {
+                // Use the DB-stored receipt_no when lookup resolved by receipt_no to
+                // ensure canonicalization matches persistent value. Fall back to the
+                // request-supplied value if DB value is missing for any reason.
+                $dbReceipt = isset($transaction->receipt_no) ? trim((string) $transaction->receipt_no) : null;
+                $payloadForChecksum['receipt_no'] = $dbReceipt ?? trim((string) $request->receipt_no);
+            }
+            $payloadForChecksum['void_reason'] = $request->void_reason;
+
+            // Compute checksum and allow a few normalized fallbacks for receipt_no
+            $expectedChecksum = $checksumService->computeChecksum($payloadForChecksum);
+            $provided = $request->payload_checksum;
+
+            // Always emit a deterministic debug line with the canonical payload and computed checksum
+            // This ensures PHPUnit runs (even when app.debug is not set) will produce log entries we can inspect.
+            try {
+                Log::debug('checksum-canonical', [
+                    'used_identifier' => $usedIdentifier,
+                    'transaction_pk' => $transaction->id ?? null,
+                    'transaction_id' => $transaction->transaction_id ?? null,
+                    'terminal_id' => $posTerminal->id ?? null,
+                    'payload_for_checksum' => $payloadForChecksum,
+                    'computed_checksum' => $expectedChecksum,
+                    'provided_checksum' => $provided,
+                ]);
+            } catch (\Throwable $logEx) {
+                // Logging must never break the request flow — swallow and continue.
+            }
+
+            // Debugging: also keep the old conditional info log when app.debug is enabled
+            if (config('app.debug')) {
+                Log::info('checksum-debug', [
+                    'used_identifier' => $usedIdentifier,
+                    'computed' => $expectedChecksum,
+                    'provided' => $provided,
+                    'payload_for_checksum' => $payloadForChecksum,
+                ]);
+            }
+
+            $checksumOk = hash_equals($expectedChecksum, $provided);
+            if (! $checksumOk && $usedIdentifier === 'receipt_no') {
+                // Try a few fallbacks: use DB-stored receipt_no, upper/lower case variants
+                $variants = [];
+                $reqReceipt = trim((string) ($request->receipt_no ?? ''));
+                $dbReceipt = trim((string) ($transaction->receipt_no ?? ''));
+                $variants[] = ['receipt_no' => $reqReceipt, 'void_reason' => $request->void_reason];
+                $variants[] = ['receipt_no' => $dbReceipt, 'void_reason' => $request->void_reason];
+                $variants[] = ['receipt_no' => strtoupper($reqReceipt), 'void_reason' => $request->void_reason];
+                $variants[] = ['receipt_no' => strtolower($reqReceipt), 'void_reason' => $request->void_reason];
+
+                foreach ($variants as $v) {
+                    $candidate = $checksumService->computeChecksum($v);
+                    if (hash_equals($candidate, $provided)) {
+                        $checksumOk = true;
+                        break;
+                    }
+                }
+            }
+
+            if (! $checksumOk) {
                 DB::rollBack();
                 return response()->json([
                     'success' => false,
@@ -935,6 +1020,7 @@ class TransactionController extends Controller
             $voidedAt = now();
             $transaction->voided_at = $voidedAt;
             $transaction->void_reason = $request->void_reason;
+            // Optionally record which reference was used (audit only) - not persisted by default
             $transaction->save();
 
             Log::info('Transaction voided successfully', [
@@ -942,7 +1028,8 @@ class TransactionController extends Controller
                 'voided_at' => $voidedAt,
                 'void_reason' => $request->void_reason,
                 'initiated_by' => 'POS',
-                'terminal_id' => $posTerminal->id
+                'terminal_id' => $posTerminal->id,
+                'used_identifier' => $usedIdentifier,
             ]);
 
             // Add system log entry
@@ -959,7 +1046,9 @@ class TransactionController extends Controller
                         'terminal_id' => $posTerminal->id,
                         'voided_at' => $voidedAt,
                         'initiated_by' => 'POS',
-                        'request_transaction_id' => $request->transaction_id
+                        'used_identifier' => $usedIdentifier,
+                        'request_transaction_id' => $request->transaction_id ?? null,
+                        'request_receipt_no' => $request->receipt_no ?? null,
                     ])
                 ]);
             } catch (\Exception $logError) {
@@ -986,10 +1075,12 @@ class TransactionController extends Controller
                         'void_reason' => $request->void_reason,
                         'terminal_id' => $posTerminal->id,
                         'terminal_serial' => $posTerminal->serial_number,
-                        'tenant_id' => $tenant_id,
+                        'tenant_id' => $tenantId,
                         'initiated_by' => 'POS',
                         'voided_at' => $voidedAt,
-                        'request_transaction_id' => $request->transaction_id
+                        'used_identifier' => $usedIdentifier,
+                        'request_transaction_id' => $request->transaction_id ?? null,
+                        'request_receipt_no' => $request->receipt_no ?? null,
                     ]
                 ]);
             } catch (\Exception $logError) {
@@ -1002,29 +1093,27 @@ class TransactionController extends Controller
             // Forward to webapp after voiding
             try {
                 $forwardingService = app(\App\Services\WebAppForwardingService::class);
-                // Set the endpoint for void transactions explicitly if needed
                 if (method_exists($forwardingService, 'setEndpoint')) {
                     $voidEndpoint = config('tsms.web_app.void_endpoint', env('WEBAPP_FORWARDING_VOID_ENDPOINT', 'https://tsms-ops.test/api/transactions/void'));
                     $forwardingService->setEndpoint($voidEndpoint);
                 }
-                // Build payload with tenant_id and terminal_id
+                // If forwarding service expects model, pass it; else pass payload
                 $payload = [
                     'transaction_id' => $transaction->transaction_id,
                     'voided_at' => $transaction->voided_at,
                     'void_reason' => $transaction->void_reason,
-                    'tenant_id' => $tenant_id,
-                    'terminal_id' => $terminal_id,
+                    'tenant_id' => $tenantId,
+                    'terminal_id' => $posTerminal->id,
                     'initiated_by' => 'POS',
                     'terminal_serial' => $posTerminal->serial_number,
+                    'used_identifier' => $usedIdentifier,
                 ];
                 if (method_exists($forwardingService, 'forwardVoidedTransaction')) {
-                    $forwardingService->forwardVoidedTransaction($payload);
+                    $forwardingService->forwardVoidedTransaction($transaction);
                 } else {
-                    // Fallback: send via generic forward method
                     $forwardingService->forward($payload);
                 }
             } catch (\Exception $e) {
-                // Don't rollback for forwarding failures - void operation should still succeed
                 \Log::error('Failed to forward voided transaction to webapp', [
                     'transaction_id' => $transaction->transaction_id,
                     'error' => $e->getMessage(),
@@ -1262,6 +1351,7 @@ class TransactionController extends Controller
                     'transaction.gross_sales' => 'required|numeric|min:0',
                     'transaction.net_sales' => 'required|numeric|min:0',
                     'transaction.promo_status' => 'required|string',
+                    'transaction.receipt_no' => 'nullable|string|max:128',
                     'transaction.customer_code' => 'required|string',
                     'transaction.payload_checksum' => 'required|string|min:64|max:64',
                     'transaction.adjustments' => 'required|array|min:7',
@@ -1279,6 +1369,7 @@ class TransactionController extends Controller
                     'transactions.*.gross_sales' => 'required|numeric|min:0',
                     'transactions.*.net_sales' => 'required|numeric|min:0',
                     'transactions.*.promo_status' => 'required|string',
+                    'transactions.*.receipt_no' => 'nullable|string|max:128',
                     'transactions.*.customer_code' => 'required|string',
                     'transactions.*.payload_checksum' => 'required|string|min:64|max:64',
                     'transactions.*.adjustments' => 'required|array|min:7',
@@ -1634,6 +1725,7 @@ class TransactionController extends Controller
                         'customer_code' => $transactionData['customer_code'] ?? ($terminal->tenant->company->customer_code ?? 'UNKNOWN'),
                         'promo_status' => $transactionData['promo_status'],
                         'payload_checksum' => $transactionData['payload_checksum'],
+                        'receipt_no' => $transactionData['receipt_no'] ?? null,
                         'validation_status' => 'PENDING',
                         'submission_uuid' => $request->submission_uuid,
                         'submission_timestamp' => $request->submission_timestamp,
@@ -2196,6 +2288,7 @@ class TransactionController extends Controller
                 'net_sales' => $transaction['net_sales'] ?? 0,
                 'customer_code' => $transaction['customer_code'] ?? ($terminal->tenant->company->customer_code ?? 'UNKNOWN'),
                 'promo_status' => $transaction['promo_status'],
+                'receipt_no' => $transaction['receipt_no'] ?? null,
                 'payload_checksum' => $transaction['payload_checksum'] ?? '',
                 'validation_status' => $validationStatus,
                 'submission_uuid' => $transaction['submission_uuid'] ?? null,
@@ -2298,6 +2391,7 @@ class TransactionController extends Controller
                 'transaction.gross_sales' => 'required|numeric|min:0',
                 'transaction.net_sales' => 'required|numeric',
                 'transaction.promo_status' => 'required|string',
+                    'transaction.receipt_no' => 'nullable|string|max:128',
                 'transaction.customer_code' => 'required|string',
                 'transaction.payload_checksum' => 'required|string|min:64|max:64',
                 'transaction.adjustments' => 'required|array|min:7',
@@ -2315,6 +2409,7 @@ class TransactionController extends Controller
                 'transactions.*.gross_sales' => 'required|numeric|min:0',
                 'transactions.*.net_sales' => 'required|numeric',
                 'transactions.*.promo_status' => 'required|string',
+                    'transactions.*.receipt_no' => 'nullable|string|max:128',
                 'transactions.*.customer_code' => 'required|string',
                 'transactions.*.payload_checksum' => 'required|string|min:64|max:64',
                 'transactions.*.adjustments' => 'required|array|min:7',

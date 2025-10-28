@@ -143,4 +143,75 @@ class VoidTransactionTest extends TestCase
                     'message' => 'Transaction not found or does not belong to this terminal',
                 ]);
     }
+
+    public function test_successful_void_using_receipt_no()
+    {
+        // Set a receipt number on the existing transaction
+        $this->transaction->receipt_no = 'RCPT-1001';
+        $this->transaction->save();
+
+        $this->actingAs($this->terminal, 'sanctum');
+
+        $payload = [
+            'receipt_no' => 'RCPT-1001',
+            'void_reason' => 'Customer returned item',
+        ];
+        $checksum = $this->checksumService->computeChecksum($payload);
+
+        // Note: route still expects a transaction_id in the URL, we can pass the same id
+        $response = $this->postJson("/api/v1/transactions/{$this->transaction->transaction_id}/void", [
+            'receipt_no' => 'RCPT-1001',
+            'void_reason' => 'Customer returned item',
+            'payload_checksum' => $checksum,
+        ]);
+
+        $response->assertStatus(200)
+                ->assertJson([
+                    'success' => true,
+                    'message' => 'Transaction voided successfully by POS',
+                    'transaction_id' => $this->transaction->transaction_id,
+                ]);
+
+        $this->transaction->refresh();
+        $this->assertNotNull($this->transaction->voided_at);
+        $this->assertEquals('Customer returned item', $this->transaction->void_reason);
+    }
+
+    public function test_ambiguous_receipt_no_returns_409()
+    {
+        // Create a second transaction with same tenant+terminal+receipt_no
+        $second = Transaction::factory()->create([
+            'terminal_id' => $this->terminal->id,
+            'transaction_id' => \Illuminate\Support\Str::uuid()->toString(),
+            'receipt_no' => 'DUP-100',
+            'tenant_id' => $this->terminal->tenant_id,
+        ]);
+
+        $first = Transaction::factory()->create([
+            'terminal_id' => $this->terminal->id,
+            'transaction_id' => \Illuminate\Support\Str::uuid()->toString(),
+            'receipt_no' => 'DUP-100',
+            'tenant_id' => $this->terminal->tenant_id,
+        ]);
+
+        $this->actingAs($this->terminal, 'sanctum');
+
+        $payload = [
+            'receipt_no' => 'DUP-100',
+            'void_reason' => 'Ambiguous test',
+        ];
+        $checksum = $this->checksumService->computeChecksum($payload);
+
+        $response = $this->postJson("/api/v1/transactions/{$first->transaction_id}/void", [
+            'receipt_no' => 'DUP-100',
+            'void_reason' => 'Ambiguous test',
+            'payload_checksum' => $checksum,
+        ]);
+
+        $response->assertStatus(409)
+                 ->assertJson([
+                     'success' => false,
+                     'message' => 'Ambiguous receipt_no — multiple transactions found',
+                 ]);
+    }
 }

@@ -135,6 +135,7 @@ class Transaction extends Model
     'discount_total',
         'submission_uuid',
         'submission_timestamp',
+    'receipt_no',
         'refund_status',
         'refund_amount',
         'refund_reason',
@@ -145,6 +146,22 @@ class Transaction extends Model
         'created_at',
         'updated_at',
     ];
+
+    /**
+     * Normalize receipt number on set: trim and coerce to string or null.
+     *
+     * @param mixed $value
+     * @return void
+     */
+    public function setReceiptNoAttribute($value): void
+    {
+        if ($value === null) {
+            $this->attributes['receipt_no'] = null;
+            return;
+        }
+
+        $this->attributes['receipt_no'] = trim((string) $value);
+    }
 
     /**
      * Accessor for the latest job status from transaction_jobs
@@ -399,6 +416,80 @@ class Transaction extends Model
     public function submission()
     {
         return $this->belongsTo(TransactionSubmission::class, 'submission_uuid', 'submission_uuid');
+    }
+
+    /**
+     * Find a transaction for voiding, scoped by tenant + terminal.
+     *
+     * Returns an array with keys:
+     *  - transaction: Transaction|null
+     *  - ambiguous: bool
+     *  - identifier: 'transaction_id'|'receipt_no'|null
+     *
+     * This centralizes lookup/normalization so controllers can remain small.
+     *
+     * @param int|null $tenantId
+     * @param int $terminalId
+     * @param string|null $transactionId
+     * @param string|null $receiptNo
+     * @return array
+     */
+    public static function findForVoidByTerminal(?int $tenantId, int $terminalId, ?string $transactionId = null, ?string $receiptNo = null): array
+    {
+        // Prefer explicit transaction_id when supplied
+        if (!empty($transactionId)) {
+            // Prefer tenant-scoped lookup if tenant provided, but fall back to terminal-only lookup
+            if ($tenantId !== null) {
+                $tx = self::where('tenant_id', $tenantId)
+                          ->where('terminal_id', $terminalId)
+                          ->where('transaction_id', $transactionId)
+                          ->first();
+                if ($tx) {
+                    return ['transaction' => $tx, 'ambiguous' => false, 'identifier' => 'transaction_id'];
+                }
+            }
+
+            // Fallback: lookup by terminal + transaction_id (back-compat for records without tenant_id)
+            $tx = self::where('terminal_id', $terminalId)
+                      ->where('transaction_id', $transactionId)
+                      ->first();
+
+            return ['transaction' => $tx, 'ambiguous' => false, 'identifier' => 'transaction_id'];
+        }
+
+        if (empty($receiptNo)) {
+            return ['transaction' => null, 'ambiguous' => false, 'identifier' => null];
+        }
+
+        $receiptNorm = trim((string) $receiptNo);
+
+        // Prefer tenant-scoped lookup if tenant provided
+        if ($tenantId !== null) {
+            $query = self::where('tenant_id', $tenantId)
+                         ->where('terminal_id', $terminalId)
+                         ->where('receipt_no', $receiptNorm);
+            $count = $query->count();
+            if ($count > 1) {
+                return ['transaction' => null, 'ambiguous' => true, 'identifier' => 'receipt_no'];
+            }
+            if ($count === 1) {
+                return ['transaction' => $query->first(), 'ambiguous' => false, 'identifier' => 'receipt_no'];
+            }
+            // else fall through to terminal-only lookup
+        }
+
+        // Terminal-scoped fallback (covers legacy rows without tenant_id)
+        $query = self::where('terminal_id', $terminalId)
+                     ->where('receipt_no', $receiptNorm);
+        $count = $query->count();
+        if ($count === 0) {
+            return ['transaction' => null, 'ambiguous' => false, 'identifier' => 'receipt_no'];
+        }
+        if ($count > 1) {
+            return ['transaction' => null, 'ambiguous' => true, 'identifier' => 'receipt_no'];
+        }
+
+        return ['transaction' => $query->first(), 'ambiguous' => false, 'identifier' => 'receipt_no'];
     }
 
     
