@@ -160,7 +160,53 @@ class Transaction extends Model
             return;
         }
 
-        $this->attributes['receipt_no'] = trim((string) $value);
+        $this->attributes['receipt_no'] = $this->normalizeReceiptNo((string) $value);
+    }
+
+    /**
+     * Normalize a receipt number deterministically for storage and lookup.
+     * Rules:
+     *  - Trim leading/trailing ASCII whitespace
+     *  - Normalize Unicode (NFKC) when available
+     *  - Remove non-printable/control characters
+     *  - Collapse internal whitespace runs to a single space
+     *  - Enforce a safe maximum length (128 chars)
+     *  - Preserve leading zeros and all digits (do not cast to int)
+     *
+     * @param string $value
+     * @return string
+     */
+    protected function normalizeReceiptNo(string $value): string
+    {
+        // 1) Trim ASCII whitespace
+        $s = trim($value);
+
+        // 2) Unicode normalization (NFKC) if available
+        if (class_exists('\Normalizer')) {
+            try {
+                $norm = \Normalizer::normalize($s, \Normalizer::FORM_KC);
+                if ($norm !== false && $norm !== null) {
+                    $s = $norm;
+                }
+            } catch (\Throwable $e) {
+                // ignore and fall back to original string
+            }
+        }
+
+    // 3) Replace control chars (C0/C1) with a single space so we preserve
+    // word boundaries when tabs/newlines are present, then collapse them
+    // in the next step.
+    $s = preg_replace('/[\x00-\x1F\x7F]/u', ' ', $s) ?? $s;
+
+        // 4) Collapse internal whitespace runs to a single space
+        $s = preg_replace('/\s+/u', ' ', $s) ?? $s;
+
+        // 5) Enforce max length
+        if (mb_strlen($s, 'UTF-8') > 128) {
+            $s = mb_substr($s, 0, 128, 'UTF-8');
+        }
+
+        return $s;
     }
 
     /**
