@@ -270,6 +270,7 @@ use App\Helpers\FormatHelper;
             <thead>
                 <tr>
                     <th>Transaction ID</th>
+                    <th>Receipt No</th>
                     <th>Tenant / Terminal</th>
                     <th>Gross Sales</th>
                     <th>Net Sales</th>
@@ -301,6 +302,7 @@ use App\Helpers\FormatHelper;
                 @forelse($logs as $log)
                 <tr>
                     <td class="text-break"><code style="white-space:normal;word-break:break-all;overflow-wrap:anywhere;">{{ $log->transaction_id }}</code></td>
+                    <td class="text-break"><code style="white-space:normal;word-break:break-all;overflow-wrap:anywhere;">{{ $log->receipt_no ?? '-' }}</code></td>
                     {{-- <td>{{ $log->terminal->identifier ?? 'N/A' }}</td>
                     <td> --}}
                     <td>
