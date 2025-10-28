@@ -73,6 +73,11 @@ class TransactionLogController extends Controller
             'completed_at'
         ];
 
+        // Include receipt_no when available in the schema so the Detailed view can render it
+        if (Schema::hasColumn('transactions', 'receipt_no')) {
+            $select[] = 'receipt_no';
+        }
+
         // Add available discount fields
         if (Schema::hasColumn('transactions', 'promo_discount')) {
             $select[] = 'promo_discount';

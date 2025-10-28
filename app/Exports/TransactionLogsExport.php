@@ -46,6 +46,7 @@ class TransactionLogsExport
     {
         return [
             'Transaction ID',
+            'Receipt No',
             'Tenant / Terminal',
             'Gross Sales',
             'Net Sales',
@@ -85,6 +86,7 @@ class TransactionLogsExport
         
         return [
             $transaction->transaction_id,
+            $transaction->receipt_no ?? '-',
             $tenantTerminal,
             number_format($transaction->amount ?? $transaction->gross_sales ?? 0, 2),
             number_format($transaction->net_sales ?? 0, 2),
