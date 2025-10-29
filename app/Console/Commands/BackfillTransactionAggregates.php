@@ -56,24 +56,45 @@ class BackfillTransactionAggregates extends Command
             }
 
             // Aggregate adjustments by transaction_pk. Some historical rows may not
-            // have transaction_pk populated; to be robust we LEFT JOIN the
-            // transactions table and group by COALESCE(a.transaction_pk, t.id)
-            // so adjustments referenced by transaction_id are included.
-            $adjustments = DB::table('transaction_adjustments as a')
-                ->leftJoin('transactions as t', 'a.transaction_id', '=', 't.transaction_id')
-                ->select(DB::raw('COALESCE(a.transaction_pk, t.id) as transaction_pk'), DB::raw('SUM(COALESCE(a.amount,0)) as total_amount'), 'a.adjustment_type')
-                ->whereIn(DB::raw('COALESCE(a.transaction_pk, t.id)'), $ids)
-                ->groupBy(DB::raw('COALESCE(a.transaction_pk, t.id)'), 'a.adjustment_type')
-                ->get()
-                ->groupBy('transaction_pk');
+            // have transaction_pk populated; try to include those that reference
+            // transactions.transaction_id. Be defensive: not all DB schemas have
+            // the same column names, so check for column existence before using
+            // them in SQL (to avoid 'Unknown column' errors on some envs).
+            $hasAdjTransactionId = Schema::hasColumn('transaction_adjustments', 'transaction_id');
+            $hasAdjTransactionPk = Schema::hasColumn('transaction_adjustments', 'transaction_pk');
 
-            // Diagnostic: count adjustment rows that still couldn't be mapped to a transaction
-            $unmappedAdjustments = DB::table('transaction_adjustments as a')
-                ->leftJoin('transactions as t', 'a.transaction_id', '=', 't.transaction_id')
-                ->whereNull(DB::raw('COALESCE(a.transaction_pk, t.id)'))
-                ->count();
-            if ($unmappedAdjustments > 0) {
-                $this->info("Note: {$unmappedAdjustments} adjustment rows could not be mapped to a transaction (transaction_pk and transaction_id missing or unmatched). These will be skipped.");
+            if ($hasAdjTransactionId) {
+                // Join adjustments by transaction_id when present and group by
+                // COALESCE(a.transaction_pk, t.id) so both forms are covered.
+                $adjustments = DB::table('transaction_adjustments as a')
+                    ->leftJoin('transactions as t', 'a.transaction_id', '=', 't.transaction_id')
+                    ->select(DB::raw('COALESCE(a.transaction_pk, t.id) as transaction_pk'), DB::raw('SUM(COALESCE(a.amount,0)) as total_amount'), 'a.adjustment_type')
+                    ->whereIn(DB::raw('COALESCE(a.transaction_pk, t.id)'), $ids)
+                    ->groupBy(DB::raw('COALESCE(a.transaction_pk, t.id)'), 'a.adjustment_type')
+                    ->get()
+                    ->groupBy('transaction_pk');
+
+                // Diagnostic: count adjustment rows that still couldn't be mapped to a transaction
+                $unmappedAdjustments = DB::table('transaction_adjustments as a')
+                    ->leftJoin('transactions as t', 'a.transaction_id', '=', 't.transaction_id')
+                    ->whereNull(DB::raw('COALESCE(a.transaction_pk, t.id)'))
+                    ->count();
+                if ($unmappedAdjustments > 0) {
+                    $this->info("Note: {$unmappedAdjustments} adjustment rows could not be mapped to a transaction (transaction_pk and transaction_id missing or unmatched). These will be skipped.");
+                }
+            } else {
+                // Fallback: only use transaction_pk when transaction_id is not available
+                if ($hasAdjTransactionPk) {
+                    $adjustments = DB::table('transaction_adjustments')
+                        ->select('transaction_pk', DB::raw('SUM(COALESCE(amount,0)) as total_amount'), 'adjustment_type')
+                        ->whereIn('transaction_pk', $ids)
+                        ->groupBy('transaction_pk', 'adjustment_type')
+                        ->get()
+                        ->groupBy('transaction_pk');
+                } else {
+                    // No usable adjustment columns exist; set empty adjustments map
+                    $adjustments = collect([]);
+                }
             }
 
             // Aggregate taxes by transaction_pk using normalized schema (tax_type + amount).
