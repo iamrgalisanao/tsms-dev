@@ -89,11 +89,22 @@ class BackfillTransactionAggregates extends Command
                 $promo = 0; $senior = 0; $pwd = 0;
                 if (isset($adjustments[$id])) {
                     foreach ($adjustments[$id] as $adj) {
-                        $type = $adj->adjustment_type;
-                        $amt = (float) $adj->total_amount; // Fix: use the correct alias from SQL query
-                        if ($type === 'promo_discount') $promo += $amt; // Fix: use full field names
-                        elseif ($type === 'senior_discount') $senior += $amt;
-                        elseif ($type === 'pwd_discount') $pwd += $amt;
+                        $type = (string) $adj->adjustment_type;
+                        $amt = (float) $adj->total_amount; // alias from SQL query
+
+                        // Normalize adjustment_type for robust matching across historical variants
+                        $typeNorm = strtolower(trim($type));
+                        $typeNorm = str_replace(' ', '_', $typeNorm);
+                        $typeNorm = preg_replace('/[^a-z0-9_]/', '', $typeNorm);
+
+                        // Match common variants for promo, senior, and pwd discounts
+                        if (in_array($typeNorm, ['promo', 'promo_discount', 'discount_promo'])) {
+                            $promo += $amt;
+                        } elseif (in_array($typeNorm, ['senior', 'senior_discount', 'senior_citizen_discount'])) {
+                            $senior += $amt;
+                        } elseif (in_array($typeNorm, ['pwd', 'pwd_discount', 'pwddiscount', 'pwd_citizen_discount'])) {
+                            $pwd += $amt;
+                        }
                         // ignore other types here; future types can be added
                     }
                 }
