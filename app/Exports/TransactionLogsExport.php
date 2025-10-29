@@ -3,8 +3,13 @@
 namespace App\Exports;
 
 use App\Models\Transaction;
+use Maatwebsite\Excel\Concerns\FromQuery;
+use Maatwebsite\Excel\Concerns\WithMapping;
+use Maatwebsite\Excel\Concerns\WithHeadings;
+use Maatwebsite\Excel\Concerns\ShouldAutoSize;
+use Maatwebsite\Excel\Concerns\WithChunkReading;
 
-class TransactionLogsExport
+class TransactionLogsExport implements FromQuery, WithMapping, WithHeadings, ShouldAutoSize, WithChunkReading
 {
     protected $filters;
 
@@ -19,7 +24,11 @@ class TransactionLogsExport
         $dateBasis = $this->getDateBasis();
         $dateColumn = $this->getDateColumn($dateBasis);
         
+        // Select transactions.* and request distinct rows to avoid possible duplicates
+        // introduced by joined/filtering logic elsewhere.
         return Transaction::query()
+            ->select('transactions.*')
+            ->distinct()
             ->with(['terminal', 'tenant'])
             ->when($this->filters['status'] ?? null, function($query, $status) {
                 $query->where('validation_status', $status);

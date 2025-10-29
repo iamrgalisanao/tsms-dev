@@ -72,6 +72,7 @@ class ChecksumSubmissionEventTest extends TestCase
                 'net_sales' => 88.00,
                 'promo_status' => 'WITH_APPROVAL',
                 'customer_code' => 'C-TEST001',
+                'receipt_no' => 'R-INVALID-'.uniqid(),
                 'payload_checksum' => 'b234567890123456789012345678901234567890123456789012345678901234',
                 'adjustments' => [
                     ['adjustment_type' => 'promo_discount', 'amount' => 0],
@@ -132,6 +133,7 @@ class ChecksumSubmissionEventTest extends TestCase
             'net_sales' => 88.00,
             'promo_status' => 'WITH_APPROVAL',
             'customer_code' => 'C-TEST001',
+            'receipt_no' => 'R-'.uniqid(),
             'adjustments' => [
                 ['adjustment_type' => 'promo_discount', 'amount' => 0],
                 ['adjustment_type' => 'senior_discount', 'amount' => 12.00],
@@ -149,8 +151,8 @@ class ChecksumSubmissionEventTest extends TestCase
             ]
         ];
         
-        // Calculate correct transaction checksum
-        $transaction['payload_checksum'] = $this->checksumService->computeChecksum($transaction);
+    // Calculate correct transaction checksum (includes receipt_no)
+    $transaction['payload_checksum'] = $this->checksumService->computeChecksum($transaction);
 
         $payload = [
             'submission_uuid' => (string) Str::uuid(),

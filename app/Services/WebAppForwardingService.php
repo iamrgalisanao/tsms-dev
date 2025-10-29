@@ -383,6 +383,7 @@ class WebAppForwardingService
                 'transaction_timestamp' => $this->isoTimestamp($tx->transaction_timestamp),
                 'amount' => (float) $tx->gross_sales,
                 'net_amount' => (float) $tx->net_sales,
+                'receipt_no' => $this->s($tx->receipt_no),
                 // Provide explicit sc_vat_exempt_sales numeric field (in addition to tax rows)
                 'sc_vat_exempt_sales' => (float) ($tx->sc_vat_exempt_sales ?? 0.0),
                 'validation_status' => $this->s($tx->validation_status),
@@ -825,6 +826,7 @@ class WebAppForwardingService
             // Optional explicit numeric field for SC_VAT_EXEMPT_SALES
             'transactions.*.sc_vat_exempt_sales' => ['numeric'],
             'transactions.*.net_amount' => ['required','numeric','gte:0'],
+            'transactions.*.receipt_no' => ['nullable','string','max:128'],
             'transactions.*.adjustments' => ['array'],
             'transactions.*.adjustments.*.adjustment_type' => ['required','string'],
             'transactions.*.adjustments.*.amount' => ['required','numeric'],
@@ -989,6 +991,7 @@ class WebAppForwardingService
             'transaction_timestamp' => $this->isoTimestamp($transaction->transaction_timestamp),
             'amount' => (float) $transaction->gross_sales,
             'net_amount' => (float) $transaction->net_sales,
+            'receipt_no' => $this->s($transaction->receipt_no),
             // Expose explicit sc_vat_exempt_sales for downstream webapp compatibility
             'sc_vat_exempt_sales' => (float) ($transaction->sc_vat_exempt_sales ?? 0.0),
             'validation_status' => $this->s($transaction->validation_status),

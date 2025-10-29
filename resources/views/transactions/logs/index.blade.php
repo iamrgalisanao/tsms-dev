@@ -331,13 +331,23 @@ use App\Helpers\FormatHelper;
                         @endif
                     </td> --}}
                     <!-- Adjustment Columns -->
-                    <td class="text-end">{{ isset($log->promo_discount) && $log->promo_discount !== null ? \App\Helpers\FormatHelper::formatCurrency($log->promo_discount) : '-' }}</td>
-                    <td class="text-end">{{ isset($log->senior_discount) && $log->senior_discount !== null ? \App\Helpers\FormatHelper::formatCurrency($log->senior_discount) : '-' }}</td>
-                    <td class="text-end">{{ isset($log->pwd_discount) && $log->pwd_discount !== null ? \App\Helpers\FormatHelper::formatCurrency($log->pwd_discount) : '-' }}</td>
+                    @php
+                        // Prefer denormalized columns when present; otherwise sum adjustments loaded from child table
+                        $promoVal = (isset($log->promo_discount) && $log->promo_discount !== null && $log->promo_discount != 0) ? $log->promo_discount : (isset($log->adjustments) ? $log->adjustments->where('adjustment_type', 'promo_discount')->sum('amount') : null);
+                        $seniorVal = (isset($log->senior_discount) && $log->senior_discount !== null && $log->senior_discount != 0) ? $log->senior_discount : (isset($log->adjustments) ? $log->adjustments->where('adjustment_type', 'senior_discount')->sum('amount') : null);
+                        $pwdVal = (isset($log->pwd_discount) && $log->pwd_discount !== null && $log->pwd_discount != 0) ? $log->pwd_discount : (isset($log->adjustments) ? $log->adjustments->where('adjustment_type', 'pwd_discount')->sum('amount') : null);
+                    @endphp
+                    <td class="text-end">{{ ($promoVal !== null && $promoVal != 0) ? \App\Helpers\FormatHelper::formatCurrency($promoVal) : '-' }}</td>
+                    <td class="text-end">{{ ($seniorVal !== null && $seniorVal != 0) ? \App\Helpers\FormatHelper::formatCurrency($seniorVal) : '-' }}</td>
+                    <td class="text-end">{{ ($pwdVal !== null && $pwdVal != 0) ? \App\Helpers\FormatHelper::formatCurrency($pwdVal) : '-' }}</td>
                     <td class="text-end">-</td> <!-- VIP Card Discount - not available in database -->
                     <td class="text-end">-</td> <!-- Employee Discount - not available in database -->
-                    <td class="text-end">{{ isset($log->service_charge) && $log->service_charge !== null ? \App\Helpers\FormatHelper::formatCurrency($log->service_charge) : '-' }}</td>
-                    <td class="text-end">{{ isset($log->management_service_charge) && $log->management_service_charge !== null ? \App\Helpers\FormatHelper::formatCurrency($log->management_service_charge) : '-' }}</td>
+                    @php
+                        $scVal = (isset($log->service_charge) && $log->service_charge !== null && $log->service_charge != 0) ? $log->service_charge : (isset($log->adjustments) ? $log->adjustments->where('adjustment_type', 'service_charge')->sum('amount') : null);
+                        $mngVal = (isset($log->management_service_charge) && $log->management_service_charge !== null && $log->management_service_charge != 0) ? $log->management_service_charge : (isset($log->adjustments) ? $log->adjustments->where('adjustment_type', 'management_service_charge')->sum('amount') : null);
+                    @endphp
+                    <td class="text-end">{{ ($scVal !== null && $scVal != 0) ? \App\Helpers\FormatHelper::formatCurrency($scVal) : '-' }}</td>
+                    <td class="text-end">{{ ($mngVal !== null && $mngVal != 0) ? \App\Helpers\FormatHelper::formatCurrency($mngVal) : '-' }}</td>
                     <!-- Tax Columns -->
                     <td class="text-end">{{ isset($log->vat) && $log->vat !== null ? \App\Helpers\FormatHelper::formatCurrency($log->vat) : '-' }}</td>
                     <td class="text-end">{{ isset($log->vatable_sales) && $log->vatable_sales !== null ? \App\Helpers\FormatHelper::formatCurrency($log->vatable_sales) : '-' }}</td>

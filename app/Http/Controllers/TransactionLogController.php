@@ -103,7 +103,13 @@ class TransactionLogController extends Controller
         }
 
         $logs = Transaction::select($select)
-            ->with(['terminal:id,serial_number,tenant_id,machine_number', 'terminal.tenant:id,trade_name'])
+            ->with([
+                'terminal:id,serial_number,tenant_id,machine_number',
+                'terminal.tenant:id,trade_name',
+                // Eager-load adjustments so the Detailed view can compute discounts
+                // from child rows when denormalized columns are empty.
+                'adjustments:transaction_pk,adjustment_type,amount'
+            ])
             ->when(isset($filters['transaction_id']), function ($query) use ($filters) {
             $search = str_replace('TX-', '', $filters['transaction_id']);
             return $query->where('transaction_id', 'like', "%{$search}%");

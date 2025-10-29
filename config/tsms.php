@@ -8,8 +8,10 @@ return [
         'strict_customer_code_binding' => (bool) env('TSMS_STRICT_CUSTOMER_CODE_BINDING', false),
         // When true, the system will perform computational reconciliation checks
         // (e.g. validate that net_sales/gross_sales match expected sums from taxes/adjustments).
-        // Default false to keep passive mapping behaviour unless explicitly enabled.
-        'enable_computation_validation' => (bool) env('TSMS_ENABLE_COMPUTATION_VALIDATION', false),
+    // Default to true in the testing environment so unit tests that expect
+    // computation-based validation to run will behave correctly. Production
+    // remains opt-in via env var.
+    'enable_computation_validation' => (bool) env('TSMS_ENABLE_COMPUTATION_VALIDATION', env('APP_ENV') === 'testing'),
         'max_vat_difference' => env('TSMS_MAX_VAT_DIFFERENCE', 0.02),
         'max_rounding_difference' => env('TSMS_MAX_ROUNDING_DIFFERENCE', 0.05),
         'future_timestamp_tolerance_seconds' => (int) env('TSMS_FUTURE_TIMESTAMP_TOLERANCE_SECONDS', 0),
