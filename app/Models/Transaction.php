@@ -136,6 +136,11 @@ class Transaction extends Model
         'submission_uuid',
         'submission_timestamp',
     'receipt_no',
+    // Discount totals (denormalized for reporting)
+            // Denormalized discounts (may be computed from transaction_adjustments)
+            'promo_discount',
+            'senior_discount',
+            'pwd_discount',
         'refund_status',
         'refund_amount',
         'refund_reason',
@@ -291,6 +296,10 @@ class Transaction extends Model
         'vat_amount' => 'decimal:2',
     'sc_vat_exempt_sales' => 'decimal:2',
         'net_sales' => 'decimal:2',
+            // Denormalized discount totals
+            'promo_discount' => 'decimal:2',
+            'senior_discount' => 'decimal:2',
+            'pwd_discount' => 'decimal:2',
         'service_charge' => 'decimal:2',
         'management_service_charge' => 'decimal:2',
         'refund_amount' => 'decimal:2',
@@ -628,6 +637,7 @@ class Transaction extends Model
             // Defensive defaults for legacy sales-reporting columns. Some older
             // staging DB schemas expect these columns to be present and non-null.
             $legacyCols = [
+                'promo_discount',
                 'senior_discount',
                 'pwd_discount',
                 'vip_card_discount',
