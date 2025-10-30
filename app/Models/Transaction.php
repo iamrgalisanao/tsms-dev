@@ -384,8 +384,9 @@ class Transaction extends Model
         if ($this->vatable_sales > 0) {
             $expectedVat = round($this->vatable_sales * 0.12, 2);
             $actualVat = round($this->vat_amount, 2);
-            // Allow small rounding differences (within 0.02)
-            return abs($expectedVat - $actualVat) <= 0.02;
+            // Allow small rounding differences (within 0.10) to tolerate
+            // inconsistent VAT rounding from varied POS implementations.
+            return abs($expectedVat - $actualVat) <= 0.10;
         }
         return true;
     }

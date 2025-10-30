@@ -51,22 +51,46 @@ class ReportAggregationService
             switch ($template->type) {
                 case 'security_events':
                     $results = array_merge($results, $this->aggregateSecurityEvents($tenantId, $startDate, $endDate, $template->filters ?? []));
+                    // Backwards-compatible top-level aliases
+                    $results['generated_at'] = $results['metadata']['generated_at'] ?? Carbon::now()->toIso8601String();
+                    if (!empty($results['summary']['total_security_events'])) {
+                        $results['summary']['total_events'] = $results['summary']['total_security_events'];
+                        $results['summary']['total'] = $results['summary']['total_security_events'];
+                    }
                     break;
                     
                 case 'failed_transactions':
                     $results = array_merge($results, $this->aggregateFailedTransactions($tenantId, $startDate, $endDate, $template->filters ?? []));
+                    // Backwards-compatible top-level aliases
+                    $results['generated_at'] = $results['metadata']['generated_at'] ?? Carbon::now()->toIso8601String();
+                    $results['transactions_summary'] = $results['summary'] ?? [];
                     break;
                     
                 case 'circuit_breaker_trips':
                     $results = array_merge($results, $this->aggregateCircuitBreakerTrips($tenantId, $startDate, $endDate, $template->filters ?? []));
+                    // Backwards-compatible top-level aliases
+                    $results['generated_at'] = $results['metadata']['generated_at'] ?? Carbon::now()->toIso8601String();
+                    $results['circuit_breaker_summary'] = $results['summary'] ?? [];
                     break;
                     
                 case 'login_attempts':
                     $results = array_merge($results, $this->aggregateLoginAttempts($tenantId, $startDate, $endDate, $template->filters ?? []));
+                    // Backwards-compatible keys
+                    $results['generated_at'] = $results['metadata']['generated_at'] ?? Carbon::now()->toIso8601String();
+                    if (!empty($results['summary']['failed_logins'])) {
+                        $results['summary']['failed_attempts'] = $results['summary']['failed_logins'];
+                        $results['summary']['total_failed'] = $results['summary']['failed_logins'];
+                    }
                     break;
                     
                 case 'security_alerts':
                     $results = array_merge($results, $this->aggregateSecurityAlerts($tenantId, $startDate, $endDate, $template->filters ?? []));
+                    // Backwards-compatible keys
+                    $results['generated_at'] = $results['metadata']['generated_at'] ?? Carbon::now()->toIso8601String();
+                    if (!empty($results['summary']['high_severity_alerts'])) {
+                        $results['summary']['critical_alerts'] = $results['summary']['high_severity_alerts'];
+                        $results['summary']['total_critical'] = $results['summary']['high_severity_alerts'];
+                    }
                     break;
                     
                 case 'comprehensive':
@@ -96,6 +120,16 @@ class ReportAggregationService
                     
                     // Generate cross-data insights
                     $results['insights'] = $this->generateInsights($results);
+                    // Ensure backwards-compatible insight keys
+                    if (!isset($results['insights']['anomalies'])) {
+                        $results['insights']['anomalies'] = $results['insights']['security_posture'] ?? [];
+                    }
+                    if (!isset($results['insights']['trends'])) {
+                        $results['insights']['trends'] = $results['details']['security_events']['events_by_day'] ?? [];
+                    }
+                    if (!isset($results['insights']['recommendations'])) {
+                        $results['insights']['recommendations'] = $this->generateRecommendations($results, $results['insights']['security_posture']['risk_level'] ?? 'low');
+                    }
                     break;
                     
                 default:

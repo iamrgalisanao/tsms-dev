@@ -5,7 +5,6 @@ namespace App\Console\Commands;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
-use App\Support\FeatureFlags;
 
 class BackfillTransactionAggregates extends Command
 {
@@ -14,7 +13,7 @@ class BackfillTransactionAggregates extends Command
      *
      * chunk-size: number of transactions processed per batch
      */
-    protected $signature = 'backfill:transaction-aggregates {--chunk-size=1000} {--start-id=0} {--dry-run}';
+    protected $signature = 'backfill:transaction-aggregates {--chunk-size=1000} {--start-id=0} {--dry-run} {--allow-write} {--yes} {--audit-only}';
 
     /**
      * The console command description.
@@ -29,12 +28,38 @@ class BackfillTransactionAggregates extends Command
     $dryRun = (bool) $this->option('dry-run');
         $this->info("Starting backfill with chunk size={$chunkSize}, start_id={$startId}, dry_run=" . ($dryRun ? 'true' : 'false'));
 
-        // Honor global feature flag: when computation-based validation is disabled
-        // we must avoid computing and writing aggregated monetary fields back to
-        // the `transactions` table to preserve passive ingestion semantics.
-        if (!FeatureFlags::computationValidationEnabled()) {
-            $this->info('Computation validation disabled via feature flag; skipping aggregate backfill to avoid mutating transactions.');
+        // Default behaviour: passive ingestion. Writes are disabled unless the
+        // operator explicitly opts in with --allow-write and confirms the action.
+        // An audit-only mode is available and does not require --allow-write.
+        $allowWrite = (bool) $this->option('allow-write');
+        $auditOnly = (bool) $this->option('audit-only');
+
+        if (! $allowWrite && ! $auditOnly) {
+            $this->info('Policy: passive ingestion enforced. Backfill command will not perform computations or update transactions.');
+            $this->info('To enable writes run: php artisan backfill:transaction-aggregates --allow-write --chunk-size=1000');
+            $this->info('To run an audit-only report (compute differences and print without writing) run: php artisan backfill:transaction-aggregates --audit-only');
+            $this->info('You will be prompted to confirm the write operation when using --allow-write.');
             return 0;
+        }
+
+        // If audit-only was requested, force dry-run behaviour and continue.
+        if ($auditOnly) {
+            $this->info('Audit-only mode: computing differences and reporting them. No writes will be performed.');
+            $dryRun = true;
+        }
+
+        // If --allow-write was provided, require an explicit confirmation unless
+        // the operator provided --yes to skip interactive confirmation.
+        if ($allowWrite) {
+            $skipConfirm = (bool) $this->option('yes');
+            if (! $skipConfirm) {
+                $confirm = $this->ask("This will perform computation and write aggregated values back to the transactions table.\nType the word YES to proceed:");
+                if ($confirm !== 'YES') {
+                    $this->info('Confirmation failed or cancelled. No changes were made.');
+                    return 0;
+                }
+            }
+            $this->info('Operator override accepted: proceeding with backfill (writes enabled).');
         }
 
         // Process transactions in ascending id order to allow resume
