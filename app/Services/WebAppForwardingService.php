@@ -319,7 +319,7 @@ class WebAppForwardingService
 
     private function createForwardingRecords(Collection $transactions): Collection
     {
-        $batchId = 'TSMS_' . now()->format('YmdHis') . '_' . uniqid();
+    $batchId = 'TSMS_' . now()->format('YmdHis') . '_' . uniqid();
 
         return $transactions->map(function (Transaction $tx) use ($batchId) {
             // Always recompute checksum before building payload
@@ -693,7 +693,7 @@ class WebAppForwardingService
             'source' => 'TSMS',
             'schema_version' => self::BULK_SCHEMA_VERSION,
             'batch_id' => $batchId,
-            'timestamp' => Carbon::now()->format('Y-m-d\\TH:i:s.v\\Z'),
+            'timestamp' => $this->isoTimestamp(Carbon::now()),
             'tenant_id' => $tenantId,
             'terminal_id' => $terminalId,
             'transaction_count' => $records->count(),
@@ -710,9 +710,29 @@ class WebAppForwardingService
         return $envelope;
     }
 
-    private function isoTimestamp(?Carbon $dt): ?string
+    /**
+     * Return an ISO8601 timestamp with exactly 3-digit milliseconds (e.g. 2025-11-11T19:30:04.123Z).
+     * Accepts Carbon, DateTime or string inputs. Returns null for null/invalid input.
+     */
+    private function isoTimestamp($dt): ?string
     {
-        return $dt?->format('Y-m-d\\TH:i:s.v\\Z');
+        if (empty($dt)) {
+            return null;
+        }
+
+        // Accept Carbon or try to parse other date types/strings
+        if (!($dt instanceof Carbon)) {
+            try {
+                $dt = Carbon::parse($dt);
+            } catch (\Throwable $e) {
+                return null;
+            }
+        }
+
+        // Use microseconds -> milliseconds (first 3 digits), zero-padded
+        $micro = $dt->format('u'); // 6-digit microseconds
+        $ms = str_pad(substr($micro, 0, 3), 3, '0', STR_PAD_RIGHT);
+        return $dt->format('Y-m-d\\TH:i:s') . '.' . $ms . 'Z';
     }
 
     private function isCircuitBreakerOpen(): bool
@@ -1024,7 +1044,7 @@ class WebAppForwardingService
             'source' => 'TSMS',
             'schema_version' => self::BULK_SCHEMA_VERSION,
             'batch_id' => $batchId,
-            'timestamp' => Carbon::now()->format('Y-m-d\\TH:i:s.v\\Z'),
+            'timestamp' => $this->isoTimestamp(Carbon::now()),
             'tenant_id' => $tenantId,
             'terminal_id' => $terminalId,
             'transaction_count' => 1,
