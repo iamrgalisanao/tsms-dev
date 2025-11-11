@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Transaction;
 use App\Models\TransactionIdentity;
+use App\Models\SubmissionEvent;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
 
@@ -177,6 +178,24 @@ class JobProcessingService
                                 'validation_status' => self::VALIDATION_STATUS_DUPLICATE,
                                 'job_status' => self::JOB_STATUS_DUPLICATE
                             ])->save();
+                        // Record a submission-level REJECTED event for duplicate submission_uuid
+                        try {
+                            SubmissionEvent::create([
+                                'submission_uuid' => $transaction->submission_uuid ?? null,
+                                'tenant_id' => $transaction->tenant_id ?? null,
+                                'terminal_id' => $transaction->terminal_id ?? null,
+                                'status' => 'REJECTED',
+                                'reason_code' => 'DUPLICATE_SUBMISSION',
+                                'reason_details' => ['existing_id' => $existing->id],
+                                'transaction_count' => 1,
+                                'occurred_at' => now(),
+                            ]);
+                        } catch (\Throwable $__se) {
+                            Log::warning('Failed to create SubmissionEvent for duplicate submission_uuid', [
+                                'submission_uuid' => $transaction->submission_uuid ?? 'unknown',
+                                'error' => $__se->getMessage()
+                            ]);
+                        }
                         } catch (\Throwable $_e) {
                             try {
                                 DB::table('transactions')->where('id', $transaction->id)->update([
@@ -293,6 +312,25 @@ class JobProcessingService
                             'validation_status' => self::VALIDATION_STATUS_DUPLICATE,
                             'job_status' => self::JOB_STATUS_DUPLICATE
                         ])->save();
+                        // Record a submission-level REJECTED event for duplicate identity claim
+                        try {
+                            SubmissionEvent::create([
+                                'submission_uuid' => $transaction->submission_uuid ?? null,
+                                'tenant_id' => $transaction->tenant_id ?? null,
+                                'terminal_id' => $transaction->terminal_id ?? null,
+                                'status' => 'REJECTED',
+                                'reason_code' => 'DUPLICATE_IDENTITY',
+                                'reason_details' => ['canonical_fingerprint' => $canonicalFingerprint],
+                                'transaction_count' => 1,
+                                'occurred_at' => now(),
+                            ]);
+                        } catch (\Throwable $__se) {
+                            Log::warning('Failed to create SubmissionEvent for duplicate identity claim', [
+                                'canonical_fingerprint' => $canonicalFingerprint,
+                                'submission_uuid' => $transaction->submission_uuid ?? 'unknown',
+                                'error' => $__se->getMessage()
+                            ]);
+                        }
                     } catch (\Throwable $_e) {
                         try {
                             DB::table('transactions')->where('id', $transaction->id)->update([
