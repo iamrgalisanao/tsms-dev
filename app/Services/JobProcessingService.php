@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Transaction;
+use App\Models\TransactionIdentity;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
 
@@ -94,107 +95,69 @@ class JobProcessingService
                 return false;
             }
 
-            // Guard rails: early idempotency/duplicate checks to avoid processing
-            // repeated submissions that would create duplicate rows. This is
-            // non-destructive: we mark the incoming transaction as DUPLICATE and
-            // stop further processing so operators can review without deleting
-            // or altering existing records.
+            // ----------------------------
+            // Transaction identity claim
+            // ----------------------------
+            // Compute a canonical fingerprint for the transaction (best-effort).
+            // Then attempt to atomically claim an identity row. If the insert
+            // fails due to uniqueness (duplicate fingerprint for tenant+terminal)
+            // we mark incoming transaction as DUPLICATE and bail out. If we
+            // successfully claim the identity, we continue validations and
+            // processing inside the same DB transaction so that failed
+            // validations will rollback the identity claim.
+            $identityClaimed = false;
+            $canonicalFingerprint = null;
             try {
-                // 1) submission_uuid-based early-replay detection (strong idempotency key)
-                if (!empty($transaction->submission_uuid)) {
-                    $exists = Transaction::where('submission_uuid', $transaction->submission_uuid)
-                        ->where('terminal_id', $transaction->terminal_id)
-                        ->where('id', '!=', $transaction->id)
-                        ->exists();
-                    if ($exists) {
-                        Log::info('Idempotent replay detected (submission_uuid); marking transaction DUPLICATE', [
-                            'transaction_id' => $transaction->transaction_id,
-                            'submission_uuid' => $transaction->submission_uuid
-                        ]);
-                        try {
-                            $transaction->forceFill([
-                                'validation_status' => self::VALIDATION_STATUS_DUPLICATE,
-                                'job_status' => self::JOB_STATUS_DUPLICATE
-                            ])->save();
-                        } catch (\Throwable $_e) {
-                            try {
-                                DB::table('transactions')->where('id', $transaction->id)->update([
-                                    'validation_status' => self::VALIDATION_STATUS_DUPLICATE,
-                                    'job_status' => self::JOB_STATUS_DUPLICATE
-                                ]);
-                            } catch (\Throwable $__e) {
-                                // ignore persistence failures here
-                            }
-                        }
-                        return false;
-                    }
-                }
-
-                // 2) receipt_no-based duplicate detection (best-effort; relies on
-                // normalized receipt_no stored on the model). We only consider
-                // previously-VALID transactions as canonical to avoid marking
-                // older errored rows as blockers.
-                if (!empty($transaction->receipt_no)) {
-                    $receipt = (string) $transaction->receipt_no;
-                    // Build query to find prior VALID transaction with same receipt.
-                    // We prefer to mark duplicates only when the prior transaction
-                    // occurred on the same calendar date as the incoming one.
-                    $query = Transaction::where('tenant_id', $transaction->tenant_id)
-                        ->where('terminal_id', $transaction->terminal_id)
-                        ->where('receipt_no', $receipt)
-                        ->where('id', '!=', $transaction->id)
-                        ->where('validation_status', self::VALIDATION_STATUS_VALID);
-
-                    // If we have a transaction timestamp, constrain to same date
-                    // to avoid marking receipts from other days as duplicates.
-                    try {
-                        $txDate = null;
-                        if (!empty($transaction->transaction_timestamp)) {
-                            // transaction_timestamp is cast to datetime on the model
-                            $txDate = (string) $transaction->transaction_timestamp->toDateString();
-                        } elseif (!empty($transaction->created_at)) {
-                            $txDate = (string) $transaction->created_at->toDateString();
-                        }
-                        if ($txDate !== null) {
-                            $query->whereDate('transaction_timestamp', $txDate);
-                        }
-                    } catch (\Throwable $_dt) {
-                        // If something goes wrong reading the date, fall back to
-                        // the less-restrictive query (legacy behaviour).
-                        Log::debug('Failed to evaluate transaction date for duplicate guard: ' . $_dt->getMessage());
-                    }
-
-                    $exists = $query->exists();
-                    if ($exists) {
-                        Log::info('Duplicate receipt_no detected; marking transaction DUPLICATE', [
-                            'transaction_id' => $transaction->transaction_id,
-                            'receipt_no' => $receipt
-                        ]);
-                        try {
-                            $transaction->forceFill([
-                                'validation_status' => self::VALIDATION_STATUS_DUPLICATE,
-                                'job_status' => self::JOB_STATUS_DUPLICATE
-                            ])->save();
-                        } catch (\Throwable $_e) {
-                            try {
-                                DB::table('transactions')->where('id', $transaction->id)->update([
-                                    'validation_status' => self::VALIDATION_STATUS_DUPLICATE,
-                                    'job_status' => self::JOB_STATUS_DUPLICATE
-                                ]);
-                            } catch (\Throwable $__e) {
-                                // ignore persistence failures here
-                            }
-                        }
-                        return false;
-                    }
-                }
-            } catch (\Throwable $_guard_e) {
-                // Be conservative: if guard checks fail for transient reasons,
-                // allow processing to continue rather than blocking transactions.
-                Log::debug('Duplicate guard rails failed (continuing): ' . $_guard_e->getMessage());
+                $canonicalFingerprint = $this->computeCanonicalFingerprintFromTransaction($transaction);
+            } catch (\Throwable $_cf) {
+                Log::debug('Failed to compute canonical fingerprint: ' . $_cf->getMessage());
             }
 
-            // Increment job attempts first
+            if (!empty($canonicalFingerprint)) {
+                // Begin a DB transaction to atomically claim identity + process
+                DB::beginTransaction();
+                try {
+                    DB::table('transaction_identities')->insert([
+                        'tenant_id' => $transaction->tenant_id,
+                        'terminal_id' => $transaction->terminal_id,
+                        'canonical_fingerprint' => $canonicalFingerprint,
+                        'first_transaction_id' => $transaction->id,
+                        'created_at' => now(),
+                        'updated_at' => now(),
+                    ]);
+                    $identityClaimed = true;
+                } catch (\Illuminate\Database\QueryException $qe) {
+                    // Duplicate key -> an identity already exists. Mark incoming as DUPLICATE.
+                    Log::info('Canonical fingerprint already claimed; marking transaction DUPLICATE', [
+                        'transaction_id' => $transaction->transaction_id,
+                        'canonical_fingerprint' => $canonicalFingerprint
+                    ]);
+                    try {
+                        $transaction->forceFill([
+                            'validation_status' => self::VALIDATION_STATUS_DUPLICATE,
+                            'job_status' => self::JOB_STATUS_DUPLICATE
+                        ])->save();
+                    } catch (\Throwable $_e) {
+                        try {
+                            DB::table('transactions')->where('id', $transaction->id)->update([
+                                'validation_status' => self::VALIDATION_STATUS_DUPLICATE,
+                                'job_status' => self::JOB_STATUS_DUPLICATE
+                            ]);
+                        } catch (\Throwable $__e) {
+                            // ignore
+                        }
+                    }
+                    // ensure we don't leave an open transaction
+                    try { DB::rollBack(); } catch (\Throwable $__) {}
+                    return false;
+                } catch (\Throwable $_other) {
+                    // other DB error: log and allow processing to continue (fail-open)
+                    Log::debug('Identity claim error (continuing): ' . $_other->getMessage());
+                    try { DB::rollBack(); } catch (\Throwable $__v) {}
+                }
+            }
+
+            // Increment job attempts first (inside the DB transaction if identity claimed)
             try {
                 $transaction->increment('job_attempts');
             } catch (\Exception $e) {
@@ -217,29 +180,68 @@ class JobProcessingService
                     'validation_status' => self::VALIDATION_STATUS_ERROR,
                     'job_status' => self::JOB_STATUS_FAILED
                 ]);
-                
+
+                if ($identityClaimed) {
+                    try { DB::rollBack(); } catch (\Throwable $__r) {}
+                }
                 return false;
             }
 
             // Validate required fields first
             if (!$this->validateBasicFields($transaction)) {
+                if ($identityClaimed) {
+                    try { DB::rollBack(); } catch (\Throwable $__r) {}
+                }
                 return false;
             }
 
             // Validate sales amounts next
             if (!$this->validateAmounts($transaction)) {
+                if ($identityClaimed) {
+                    try { DB::rollBack(); } catch (\Throwable $__r) {}
+                }
                 return false;
             }
 
             // Validate checksum last (after amounts). Do NOT flip to ERROR here; let
             // higher-level logic or retry handling decide status transitions.
             if (!$this->validateChecksum($transaction)) {
+                if ($identityClaimed) {
+                    try { DB::rollBack(); } catch (\Throwable $__r) {}
+                }
                 return false;
             }
 
             // Process and update transaction
-            $this->processBusinessLogic($transaction);
-            return true;
+            try {
+                $this->processBusinessLogic($transaction);
+
+                // If we claimed an identity, update the identity row to point to
+                // the canonical transaction id and commit.
+                if ($identityClaimed && !empty($canonicalFingerprint)) {
+                    try {
+                        DB::table('transaction_identities')
+                            ->where('tenant_id', $transaction->tenant_id)
+                            ->where('terminal_id', $transaction->terminal_id)
+                            ->where('canonical_fingerprint', $canonicalFingerprint)
+                            ->update(['first_transaction_id' => $transaction->id, 'updated_at' => now()]);
+                        DB::commit();
+                    } catch (\Throwable $_u) {
+                        // Something went wrong updating identity; rollback to avoid orphaned claims
+                        try { DB::rollBack(); } catch (\Throwable $__r) {}
+                        Log::warning('Failed to update transaction identity after processing: ' . $_u->getMessage());
+                        return false;
+                    }
+                }
+
+                return true;
+            } catch (\Exception $e) {
+                // If processing throws, rollback any identity claim
+                if ($identityClaimed) {
+                    try { DB::rollBack(); } catch (\Throwable $__r) {}
+                }
+                return false;
+            }
 
         } catch (\Exception $e) {
             // Use debug so unexpected exceptions don't interfere with strict
@@ -283,6 +285,99 @@ class JobProcessingService
             }
         }
         return true;
+    }
+
+    /**
+     * Compute a canonical fingerprint (sha256 hex) for a transaction.
+     * Returns null on failure (e.g., invalid JSON)
+     */
+    protected function computeCanonicalFingerprintFromTransaction(Transaction $transaction): ?string
+    {
+        // Prefer original_payload when available and valid
+        $source = null;
+        if (!empty($transaction->original_payload)) {
+            $decoded = json_decode($transaction->original_payload, true);
+            if (json_last_error() !== JSON_ERROR_NONE) {
+                return null;
+            }
+            $source = $decoded;
+        } else {
+            // Build a minimal canonical source from stable transaction fields
+            $source = [
+                'tenant_id' => $transaction->tenant_id,
+                'terminal_id' => $transaction->terminal_id,
+                'receipt_no' => $transaction->receipt_no,
+                'gross_sales' => isset($transaction->gross_sales) ? (float) $transaction->gross_sales : null,
+                'net_sales' => isset($transaction->net_sales) ? (float) $transaction->net_sales : null,
+                'discount_total' => isset($transaction->discount_total) ? (float) $transaction->discount_total : null,
+                'vat_amount' => isset($transaction->vat_amount) ? (float) $transaction->vat_amount : null,
+            ];
+            // include adjustments/line-items if relation exists
+            try {
+                if (method_exists($transaction, 'adjustments')) {
+                    $items = $transaction->adjustments()->get()->map(function ($it) {
+                        return [
+                            'sku' => $it->sku ?? null,
+                            'amount' => isset($it->amount) ? (float) $it->amount : null,
+                            'quantity' => isset($it->quantity) ? (float) $it->quantity : null,
+                        ];
+                    })->toArray();
+                    if (!empty($items)) $source['adjustments'] = $items;
+                }
+            } catch (\Throwable $_) {
+                // ignore relation failure; continue with minimal source
+            }
+        }
+
+        // Normalization: recursively clean scalars, ksort associative arrays,
+        // sort lists deterministically when possible.
+        $cleaner = function ($v) use (&$cleaner) {
+            if (is_array($v)) {
+                $isAssoc = array_keys($v) !== range(0, count($v) - 1);
+                if ($isAssoc) {
+                    // remove volatile keys if present
+                    foreach (['submission_uuid', 'transaction_id', 'payload_checksum', 'created_at', 'updated_at', 'completed_at', 'ingestion_timestamp'] as $k) {
+                        if (array_key_exists($k, $v)) unset($v[$k]);
+                    }
+                    foreach ($v as $k => $sub) {
+                        $v[$k] = $cleaner($sub);
+                    }
+                    ksort($v);
+                    return $v;
+                }
+
+                // sequential list: clean each element
+                $out = array_map($cleaner, $v);
+                // if elements have 'sku' or 'id', sort by those values deterministically
+                usort($out, function ($a, $b) {
+                    $ka = is_array($a) && (isset($a['sku']) || isset($a['id'])) ? (string) ($a['sku'] ?? $a['id']) : null;
+                    $kb = is_array($b) && (isset($b['sku']) || isset($b['id'])) ? (string) ($b['sku'] ?? $b['id']) : null;
+                    if ($ka !== null && $kb !== null) return strcmp($ka, $kb);
+                    return 0;
+                });
+                return $out;
+            }
+
+            if (is_float($v) || is_numeric($v)) {
+                // normalize numeric values to 2 decimals for monetary fields
+                if (is_float($v) || strpos((string) $v, '.') !== false) {
+                    return round((float) $v, 2);
+                }
+                return $v + 0;
+            }
+
+            if (is_string($v)) {
+                $s = trim($v);
+                $s = preg_replace('/\s+/', ' ', $s);
+                return $s;
+            }
+            return $v;
+        };
+
+        $clean = $cleaner($source);
+        $canonicalJson = json_encode($clean, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PRESERVE_ZERO_FRACTION);
+        if ($canonicalJson === false) return null;
+        return hash('sha256', $canonicalJson);
     }
 
     protected function validateAmounts(Transaction $transaction): bool
