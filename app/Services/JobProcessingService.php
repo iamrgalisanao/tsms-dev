@@ -155,6 +155,47 @@ class JobProcessingService
                 'transaction_id' => $transaction->transaction_id
             ]);
 
+            // Early idempotency check using submission_uuid (if present).
+            // This provides an application-level guard before we reach
+            // canonical fingerprinting or identity claiming. We mark the
+            // incoming row DUPLICATE if another row already exists with the
+            // same submission_uuid (and a different id).
+            if (!empty($transaction->submission_uuid)) {
+                try {
+                    $existing = DB::table('transactions')
+                        ->where('submission_uuid', $transaction->submission_uuid)
+                        ->where('id', '<>', $transaction->id)
+                        ->first();
+                    if ($existing) {
+                        Log::info('Duplicate submission_uuid detected; marking transaction DUPLICATE', [
+                            'transaction_id' => $transaction->transaction_id,
+                            'submission_uuid' => $transaction->submission_uuid,
+                            'existing_id' => $existing->id
+                        ]);
+                        try {
+                            $transaction->forceFill([
+                                'validation_status' => self::VALIDATION_STATUS_DUPLICATE,
+                                'job_status' => self::JOB_STATUS_DUPLICATE
+                            ])->save();
+                        } catch (\Throwable $_e) {
+                            try {
+                                DB::table('transactions')->where('id', $transaction->id)->update([
+                                    'validation_status' => self::VALIDATION_STATUS_DUPLICATE,
+                                    'job_status' => self::JOB_STATUS_DUPLICATE
+                                ]);
+                            } catch (\Throwable $__e) {
+                                // ignore
+                            }
+                        }
+                        return false;
+                    }
+                } catch (\Throwable $_x) {
+                    // If this check fails for any reason, we don't want to block
+                    // processing — continue to the canonical fingerprint path.
+                    Log::debug('submission_uuid idempotency check failed: ' . $_x->getMessage());
+                }
+            }
+
             // Fast-fail explicit invalid checksum cases: persist ERROR/FAILED
             // immediately so operators and tests can observe tampering even if
             // other validations short-circuit.
