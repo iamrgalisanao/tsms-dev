@@ -25,6 +25,121 @@ class JobProcessingService
     const STATUS_FAILED = 'FAILED';
     const STATUS_COMPLETED = 'COMPLETED';
 
+    
+    /**
+     * Compute a canonical fingerprint (sha256 hex) for a transaction.
+     * Returns null on failure (e.g., invalid JSON) or when insufficient entropy is present.
+     */
+    protected function computeCanonicalFingerprintFromTransaction(Transaction $transaction): ?string
+    {
+        // Prefer original_payload when available and valid
+        $source = null;
+        if (!empty($transaction->original_payload)) {
+            $decoded = json_decode($transaction->original_payload, true);
+            if (json_last_error() !== JSON_ERROR_NONE) {
+                return null;
+            }
+            $source = $decoded;
+        } else {
+            // Build a minimal canonical source from stable transaction fields
+            $source = [
+                'tenant_id' => $transaction->tenant_id,
+                'terminal_id' => $transaction->terminal_id,
+                'receipt_no' => $transaction->receipt_no,
+                'gross_sales' => isset($transaction->gross_sales) ? (float) $transaction->gross_sales : null,
+                'net_sales' => isset($transaction->net_sales) ? (float) $transaction->net_sales : null,
+                'discount_total' => isset($transaction->discount_total) ? (float) $transaction->discount_total : null,
+                'vat_amount' => isset($transaction->vat_amount) ? (float) $transaction->vat_amount : null,
+            ];
+            // include adjustments/line-items if relation exists
+            try {
+                if (method_exists($transaction, 'adjustments')) {
+                    $items = $transaction->adjustments()->get()->map(function ($it) {
+                        return [
+                            'sku' => $it->sku ?? null,
+                            'amount' => isset($it->amount) ? (float) $it->amount : null,
+                            'quantity' => isset($it->quantity) ? (float) $it->quantity : null,
+                        ];
+                    })->toArray();
+                    if (!empty($items)) $source['adjustments'] = $items;
+                }
+            } catch (\Throwable $_) {
+                // ignore relation failure; continue with minimal source
+            }
+
+            // Defensive entropy check: if original_payload was not present and
+            // the minimal source contains no substantive fields (receipt_no,
+            // monetary fields, or adjustments) then skip fingerprinting to avoid
+            // collapsing many sparse rows into the same identity (false positives).
+            $hasEntropy = false;
+            if (!empty($source['receipt_no'])) $hasEntropy = true;
+            foreach (['gross_sales', 'net_sales', 'discount_total', 'vat_amount'] as $fld) {
+                if (isset($source[$fld]) && $source[$fld] !== null) {
+                    $hasEntropy = true;
+                    break;
+                }
+            }
+            if (!$hasEntropy && isset($source['adjustments']) && is_array($source['adjustments']) && count($source['adjustments']) > 0) {
+                $hasEntropy = true;
+            }
+            if (!$hasEntropy) {
+                // not enough stable data to create a reliable fingerprint
+                Log::debug('Skipping canonical fingerprint: insufficient entropy for transaction', ['id' => $transaction->id]);
+                return null;
+            }
+        }
+
+        // Normalization: recursively clean scalars, ksort associative arrays,
+        // sort lists deterministically when possible.
+        $cleaner = function ($v) use (&$cleaner) {
+            if (is_array($v)) {
+                $isAssoc = array_keys($v) !== range(0, count($v) - 1);
+                if ($isAssoc) {
+                    // remove volatile keys if present
+                    foreach (['submission_uuid', 'transaction_id', 'payload_checksum', 'created_at', 'updated_at', 'completed_at', 'ingestion_timestamp'] as $k) {
+                        if (array_key_exists($k, $v)) unset($v[$k]);
+                    }
+                    foreach ($v as $k => $sub) {
+                        $v[$k] = $cleaner($sub);
+                    }
+                    ksort($v);
+                    return $v;
+                }
+
+                // sequential list: clean each element
+                $out = array_map($cleaner, $v);
+                // if elements have 'sku' or 'id', sort by those values deterministically
+                usort($out, function ($a, $b) {
+                    $ka = is_array($a) && (isset($a['sku']) || isset($a['id'])) ? (string) ($a['sku'] ?? $a['id']) : null;
+                    $kb = is_array($b) && (isset($b['sku']) || isset($b['id'])) ? (string) ($b['sku'] ?? $b['id']) : null;
+                    if ($ka !== null && $kb !== null) return strcmp($ka, $kb);
+                    return 0;
+                });
+                return $out;
+            }
+
+            if (is_float($v) || is_numeric($v)) {
+                // normalize numeric values to 2 decimals for monetary fields
+                if (is_float($v) || strpos((string) $v, '.') !== false) {
+                    return round((float) $v, 2);
+                }
+                return $v + 0;
+            }
+
+            if (is_string($v)) {
+                $s = trim($v);
+                $s = preg_replace('/\s+/', ' ', $s);
+                return $s;
+            }
+            return $v;
+        };
+
+        $clean = $cleaner($source);
+        $canonicalJson = json_encode($clean, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PRESERVE_ZERO_FRACTION);
+        if ($canonicalJson === false) return null;
+        return hash('sha256', $canonicalJson);
+    }
+
     const MAX_RETRY_ATTEMPTS = 5;
     // Additional sentinel statuses for non-destructive duplicate marking
     const VALIDATION_STATUS_DUPLICATE = 'DUPLICATE';
@@ -285,99 +400,6 @@ class JobProcessingService
             }
         }
         return true;
-    }
-
-    /**
-     * Compute a canonical fingerprint (sha256 hex) for a transaction.
-     * Returns null on failure (e.g., invalid JSON)
-     */
-    protected function computeCanonicalFingerprintFromTransaction(Transaction $transaction): ?string
-    {
-        // Prefer original_payload when available and valid
-        $source = null;
-        if (!empty($transaction->original_payload)) {
-            $decoded = json_decode($transaction->original_payload, true);
-            if (json_last_error() !== JSON_ERROR_NONE) {
-                return null;
-            }
-            $source = $decoded;
-        } else {
-            // Build a minimal canonical source from stable transaction fields
-            $source = [
-                'tenant_id' => $transaction->tenant_id,
-                'terminal_id' => $transaction->terminal_id,
-                'receipt_no' => $transaction->receipt_no,
-                'gross_sales' => isset($transaction->gross_sales) ? (float) $transaction->gross_sales : null,
-                'net_sales' => isset($transaction->net_sales) ? (float) $transaction->net_sales : null,
-                'discount_total' => isset($transaction->discount_total) ? (float) $transaction->discount_total : null,
-                'vat_amount' => isset($transaction->vat_amount) ? (float) $transaction->vat_amount : null,
-            ];
-            // include adjustments/line-items if relation exists
-            try {
-                if (method_exists($transaction, 'adjustments')) {
-                    $items = $transaction->adjustments()->get()->map(function ($it) {
-                        return [
-                            'sku' => $it->sku ?? null,
-                            'amount' => isset($it->amount) ? (float) $it->amount : null,
-                            'quantity' => isset($it->quantity) ? (float) $it->quantity : null,
-                        ];
-                    })->toArray();
-                    if (!empty($items)) $source['adjustments'] = $items;
-                }
-            } catch (\Throwable $_) {
-                // ignore relation failure; continue with minimal source
-            }
-        }
-
-        // Normalization: recursively clean scalars, ksort associative arrays,
-        // sort lists deterministically when possible.
-        $cleaner = function ($v) use (&$cleaner) {
-            if (is_array($v)) {
-                $isAssoc = array_keys($v) !== range(0, count($v) - 1);
-                if ($isAssoc) {
-                    // remove volatile keys if present
-                    foreach (['submission_uuid', 'transaction_id', 'payload_checksum', 'created_at', 'updated_at', 'completed_at', 'ingestion_timestamp'] as $k) {
-                        if (array_key_exists($k, $v)) unset($v[$k]);
-                    }
-                    foreach ($v as $k => $sub) {
-                        $v[$k] = $cleaner($sub);
-                    }
-                    ksort($v);
-                    return $v;
-                }
-
-                // sequential list: clean each element
-                $out = array_map($cleaner, $v);
-                // if elements have 'sku' or 'id', sort by those values deterministically
-                usort($out, function ($a, $b) {
-                    $ka = is_array($a) && (isset($a['sku']) || isset($a['id'])) ? (string) ($a['sku'] ?? $a['id']) : null;
-                    $kb = is_array($b) && (isset($b['sku']) || isset($b['id'])) ? (string) ($b['sku'] ?? $b['id']) : null;
-                    if ($ka !== null && $kb !== null) return strcmp($ka, $kb);
-                    return 0;
-                });
-                return $out;
-            }
-
-            if (is_float($v) || is_numeric($v)) {
-                // normalize numeric values to 2 decimals for monetary fields
-                if (is_float($v) || strpos((string) $v, '.') !== false) {
-                    return round((float) $v, 2);
-                }
-                return $v + 0;
-            }
-
-            if (is_string($v)) {
-                $s = trim($v);
-                $s = preg_replace('/\s+/', ' ', $s);
-                return $s;
-            }
-            return $v;
-        };
-
-        $clean = $cleaner($source);
-        $canonicalJson = json_encode($clean, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE | JSON_PRESERVE_ZERO_FRACTION);
-        if ($canonicalJson === false) return null;
-        return hash('sha256', $canonicalJson);
     }
 
     protected function validateAmounts(Transaction $transaction): bool
