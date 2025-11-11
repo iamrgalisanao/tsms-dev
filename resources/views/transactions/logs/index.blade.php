@@ -144,6 +144,12 @@ use App\Helpers\FormatHelper;
                     <button class="btn btn-outline-primary btn-sm mr-2" type="button" id="btnToday"><i class="far fa-calendar-day mr-1"></i> Today</button>
                     <a href="{{ route('transactions.logs.index') }}" class="btn btn-outline-secondary btn-sm"><i class="fas fa-undo mr-1"></i> Reset</a>
                 </div>
+                <div class="form-group col-sm-6 col-md-3 col-lg-3 d-flex align-items-center">
+                    <div class="form-check ml-2">
+                        <input class="form-check-input" type="checkbox" value="1" id="toggleDuplicates" />
+                        <label class="form-check-label small text-muted" for="toggleDuplicates">Show duplicates</label>
+                    </div>
+                </div>
             </div>
         </form>
         </div>
@@ -302,7 +308,7 @@ use App\Helpers\FormatHelper;
             </thead>
             <tbody>
                 @forelse($logs as $log)
-                <tr>
+                <tr data-validation-status="{{ $log->validation_status }}" data-receipt="{{ $log->receipt_no ?? '' }}">
                     <td class="text-break"><code style="white-space:normal;word-break:break-all;overflow-wrap:anywhere;">{{ $log->transaction_id }}</code></td>
                     <td class="text-break"><code style="white-space:normal;word-break:break-all;overflow-wrap:anywhere;">{{ $log->receipt_no ?? '-' }}</code></td>
                     {{-- <td>{{ $log->terminal->identifier ?? 'N/A' }}</td>
@@ -475,6 +481,44 @@ $(function () {
 
     // Move DataTables buttons into our container for AdminLTE layout
     dt.buttons().container().appendTo('#dtBtnContainer');
+
+    // Duplicate hiding: by default hide duplicate rows (same receipt_no) in
+    // the detailed table. Operators can toggle visibility using the
+    // #toggleDuplicates checkbox.
+    function applyDuplicateFilter() {
+        // Only operate on detailed table
+        if (isSummary) return;
+        const seen = {};
+        $('#transactionLogsTable tbody tr').each(function () {
+            const $tr = $(this);
+            const receipt = ($tr.data('receipt') || '').toString().trim();
+            const status = ($tr.data('validation-status') || '').toString();
+            if (!receipt) return; // no receipt to dedupe
+            // Always keep canonical VALID rows; hide subsequent rows with same receipt
+            if (seen[receipt]) {
+                $tr.addClass('duplicate-hidden').hide();
+            } else {
+                // mark first seen; prefer VALID as canonical but we only decide by order on page
+                seen[receipt] = true;
+                $tr.removeClass('duplicate-hidden').show();
+            }
+        });
+    }
+
+    // Toggle handler
+    $('#toggleDuplicates').on('change', function () {
+        if ($(this).is(':checked')) {
+            // show duplicates
+            $('#transactionLogsTable tbody tr.duplicate-hidden').show().removeClass('duplicate-hidden');
+        } else {
+            applyDuplicateFilter();
+        }
+    });
+
+    // Apply filter on initial load (unless toggle is checked)
+    if (!$('#toggleDuplicates').is(':checked')) {
+        applyDuplicateFilter();
+    }
 
     // Toastr notifications
     @if(session('success'))
