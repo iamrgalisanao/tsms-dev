@@ -25,6 +25,9 @@ class JobProcessingService
     const STATUS_COMPLETED = 'COMPLETED';
 
     const MAX_RETRY_ATTEMPTS = 5;
+    // Additional sentinel statuses for non-destructive duplicate marking
+    const VALIDATION_STATUS_DUPLICATE = 'DUPLICATE';
+    const JOB_STATUS_DUPLICATE = 'DUPLICATE';
 
     /**
      * Process a transaction
@@ -89,6 +92,106 @@ class JobProcessingService
             // If the transaction is already being processed by another worker, bail out.
             if ($transaction->job_status === self::JOB_STATUS_PROCESSING) {
                 return false;
+            }
+
+            // Guard rails: early idempotency/duplicate checks to avoid processing
+            // repeated submissions that would create duplicate rows. This is
+            // non-destructive: we mark the incoming transaction as DUPLICATE and
+            // stop further processing so operators can review without deleting
+            // or altering existing records.
+            try {
+                // 1) submission_uuid-based early-replay detection (strong idempotency key)
+                if (!empty($transaction->submission_uuid)) {
+                    $exists = Transaction::where('submission_uuid', $transaction->submission_uuid)
+                        ->where('terminal_id', $transaction->terminal_id)
+                        ->where('id', '!=', $transaction->id)
+                        ->exists();
+                    if ($exists) {
+                        Log::info('Idempotent replay detected (submission_uuid); marking transaction DUPLICATE', [
+                            'transaction_id' => $transaction->transaction_id,
+                            'submission_uuid' => $transaction->submission_uuid
+                        ]);
+                        try {
+                            $transaction->forceFill([
+                                'validation_status' => self::VALIDATION_STATUS_DUPLICATE,
+                                'job_status' => self::JOB_STATUS_DUPLICATE
+                            ])->save();
+                        } catch (\Throwable $_e) {
+                            try {
+                                DB::table('transactions')->where('id', $transaction->id)->update([
+                                    'validation_status' => self::VALIDATION_STATUS_DUPLICATE,
+                                    'job_status' => self::JOB_STATUS_DUPLICATE
+                                ]);
+                            } catch (\Throwable $__e) {
+                                // ignore persistence failures here
+                            }
+                        }
+                        return false;
+                    }
+                }
+
+                // 2) receipt_no-based duplicate detection (best-effort; relies on
+                // normalized receipt_no stored on the model). We only consider
+                // previously-VALID transactions as canonical to avoid marking
+                // older errored rows as blockers.
+                if (!empty($transaction->receipt_no)) {
+                    $receipt = (string) $transaction->receipt_no;
+                    // Build query to find prior VALID transaction with same receipt.
+                    // We prefer to mark duplicates only when the prior transaction
+                    // occurred on the same calendar date as the incoming one.
+                    $query = Transaction::where('tenant_id', $transaction->tenant_id)
+                        ->where('terminal_id', $transaction->terminal_id)
+                        ->where('receipt_no', $receipt)
+                        ->where('id', '!=', $transaction->id)
+                        ->where('validation_status', self::VALIDATION_STATUS_VALID);
+
+                    // If we have a transaction timestamp, constrain to same date
+                    // to avoid marking receipts from other days as duplicates.
+                    try {
+                        $txDate = null;
+                        if (!empty($transaction->transaction_timestamp)) {
+                            // transaction_timestamp is cast to datetime on the model
+                            $txDate = (string) $transaction->transaction_timestamp->toDateString();
+                        } elseif (!empty($transaction->created_at)) {
+                            $txDate = (string) $transaction->created_at->toDateString();
+                        }
+                        if ($txDate !== null) {
+                            $query->whereDate('transaction_timestamp', $txDate);
+                        }
+                    } catch (\Throwable $_dt) {
+                        // If something goes wrong reading the date, fall back to
+                        // the less-restrictive query (legacy behaviour).
+                        Log::debug('Failed to evaluate transaction date for duplicate guard: ' . $_dt->getMessage());
+                    }
+
+                    $exists = $query->exists();
+                    if ($exists) {
+                        Log::info('Duplicate receipt_no detected; marking transaction DUPLICATE', [
+                            'transaction_id' => $transaction->transaction_id,
+                            'receipt_no' => $receipt
+                        ]);
+                        try {
+                            $transaction->forceFill([
+                                'validation_status' => self::VALIDATION_STATUS_DUPLICATE,
+                                'job_status' => self::JOB_STATUS_DUPLICATE
+                            ])->save();
+                        } catch (\Throwable $_e) {
+                            try {
+                                DB::table('transactions')->where('id', $transaction->id)->update([
+                                    'validation_status' => self::VALIDATION_STATUS_DUPLICATE,
+                                    'job_status' => self::JOB_STATUS_DUPLICATE
+                                ]);
+                            } catch (\Throwable $__e) {
+                                // ignore persistence failures here
+                            }
+                        }
+                        return false;
+                    }
+                }
+            } catch (\Throwable $_guard_e) {
+                // Be conservative: if guard checks fail for transient reasons,
+                // allow processing to continue rather than blocking transactions.
+                Log::debug('Duplicate guard rails failed (continuing): ' . $_guard_e->getMessage());
             }
 
             // Increment job attempts first

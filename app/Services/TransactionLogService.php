@@ -14,6 +14,16 @@ class TransactionLogService
     {
         return Cache::remember($this->getCacheKey($filters), 300, function() use ($filters) {
             return Transaction::with(['terminal.provider', 'tenant'])
+                // Default to VALID transactions unless an explicit status
+                // filter is provided. Only apply this default when the
+                // schema contains a receipt_no column so environments that
+                // don't have that column (tests/older schemas) preserve
+                // legacy behavior.
+                ->when(\Illuminate\Support\Facades\Schema::hasColumn('transactions', 'receipt_no') && !isset($filters['status']), function($q) {
+                    // Exclude DUPLICATE rows by default so listings/summary counts
+                    // align with POS unique-receipt counts without hiding PENDING/ERROR rows.
+                    $q->where('validation_status', '!=', 'DUPLICATE');
+                })
                 ->when($filters['date_from'] ?? null, function($q, $date) {
                     // Prefer filtering by the canonical transaction timestamp when available,
                     // otherwise fall back to created_at to preserve existing behavior.
@@ -74,8 +84,15 @@ class TransactionLogService
     {
         $query = Transaction::query()
             ->with(['terminal', 'tenant'])
-            ->when($filters['status'] ?? null, function($q, $status) {
-                $q->where('validation_status', $status);
+            // Default to VALID when no status filter supplied, but only
+            // if receipt_no exists in the schema. Otherwise preserve legacy
+            // behavior and don't filter by validation_status.
+            ->when(isset($filters['status']), function($q) use ($filters) {
+                $q->where('validation_status', $filters['status']);
+            }, function($q) {
+                if (\Illuminate\Support\Facades\Schema::hasColumn('transactions', 'receipt_no')) {
+                    $q->where('validation_status', '!=', 'DUPLICATE');
+                }
             })
             ->when($filters['date'] ?? null, function($q, $date) {
                 $q->where(function($q) use ($date) {
@@ -90,11 +107,14 @@ class TransactionLogService
     public function getUpdatesAfter($lastId)
     {
         return Cache::remember("updates.after.{$lastId}", 30, function() use ($lastId) {
-            return Transaction::where('id', '>', $lastId)
-                ->with(['terminal', 'tenant'])
-                ->latest()
-                ->limit(50)
-                ->get();
+            // Only include VALID transactions by default to keep live updates
+            // consistent with the reporting filter (Option A), but only when
+            // receipt_no exists in the schema. Otherwise include all rows.
+            $query = Transaction::where('id', '>', $lastId)->with(['terminal', 'tenant']);
+            if (\Illuminate\Support\Facades\Schema::hasColumn('transactions', 'receipt_no')) {
+                $query->where('validation_status', '!=', 'DUPLICATE');
+            }
+            return $query->latest()->limit(50)->get();
         });
     }
 }

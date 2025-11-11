@@ -30,8 +30,19 @@ class TransactionLogsExport implements FromQuery, WithMapping, WithHeadings, Sho
             ->select('transactions.*')
             ->distinct()
             ->with(['terminal', 'tenant'])
-            ->when($this->filters['status'] ?? null, function($query, $status) {
-                $query->where('validation_status', $status);
+            // If a status filter is provided, apply it. Otherwise default to
+            // exporting only VALID transactions when the schema supports
+            // receipt_no (so exports align with POS-style counts). If the
+            // receipt_no column is absent, preserve legacy behavior.
+            ->when(isset($this->filters['status']), function($query) {
+                $query->where('validation_status', $this->filters['status']);
+            }, function($query) {
+                if (\Illuminate\Support\Facades\Schema::hasColumn('transactions', 'receipt_no')) {
+                    // Default exporter excludes DUPLICATE rows by default so
+                    // exported counts better match POS-style unique receipt
+                    // counts while still including PENDING/ERROR rows.
+                    $query->where('validation_status', '!=', 'DUPLICATE');
+                }
             })
             ->when($this->filters['date_from'] ?? null, function($query) use ($dateColumn) {
                 $this->applyDateFromFilter($query, $dateColumn);

@@ -168,6 +168,7 @@ use App\Helpers\FormatHelper;
                     <th>Tenant</th>
                     <th>Terminal</th>
                     <th>Tx Count</th>
+                    <th>Unique Receipts</th>
                     <th>Gross</th>
                     <th>Net</th>
                     <th>Refund</th>
@@ -194,6 +195,7 @@ use App\Helpers\FormatHelper;
                     <td>{{ $row->trade_name }}</td>
                     <td>SN: {{ $row->serial_number ?? 'N/A' }} • M: {{ $row->machine_number ?? 'N/A' }}</td>
                     <td class="text-end">{{ number_format($row->tx_count) }}</td>
+                    <td class="text-end">{{ isset($row->unique_receipts) ? number_format($row->unique_receipts) : '-' }}</td>
                     @php
                         // Prefer aggregated row totals (daily sums) for Gross/Net/Refund.
                         // Only use the sample-transaction presenter values when the

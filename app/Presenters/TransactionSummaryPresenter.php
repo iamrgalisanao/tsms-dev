@@ -53,13 +53,23 @@ class TransactionSummaryPresenter
         $net = (float) ($tx->net_sales ?? 0.0);
         $refund = (float) ($tx->refund_amount ?? 0.0);
 
+        // Provide both legacy short keys used by some views (promo, vat, etc.)
+        // and the explicit keys used by unit tests (promo_amount, vat_amount, ...)
         return [
+            'promo' => $promo,
+            'senior' => $senior,
+            'pwd' => $pwd,
+            'vat' => $vat,
+            'vatable' => $vatable,
+            'sc_vat' => $sc_vat,
+
             'promo_amount' => $promo,
             'senior_amount' => $senior,
             'pwd_amount' => $pwd,
             'vat_amount' => $vat,
             'vatable_sales' => $vatable,
             'sc_vat_amount' => $sc_vat,
+
             'gross' => $gross,
             'net' => $net,
             'refund' => $refund,

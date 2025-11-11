@@ -117,6 +117,17 @@ class TransactionLogController extends Controller
             ->when(isset($filters['status']), function ($query) use ($filters) {
             return $query->where('validation_status', $filters['status']);
             })
+            // Default behavior: when the schema supports receipt_no and no
+            // explicit status filter is provided, exclude non-VALID rows
+            // (e.g., DUPLICATE) so UI/reporting matches POS-style unique-receipt
+            // counts by default. If the receipt_no column is not present,
+            // preserve legacy behavior (don't filter).
+            ->when(Schema::hasColumn('transactions', 'receipt_no') && !isset($filters['status']), function ($query) {
+                // Exclude only DUPLICATE sentinel rows by default so that
+                // PENDING/ERROR/VALID rows are still visible to operators and
+                // tests while removing duplicates from POS-style counts.
+                return $query->where('validation_status', '!=', 'DUPLICATE');
+            })
             ->when(isset($filters['date_from']), function ($query) use ($filters, $dateColumn) {
                 // Apply date filtering based on selected date basis.
                 // For transaction_timestamp, use it as primary with created_at as fallback only for NULL values.
@@ -324,6 +335,13 @@ class TransactionLogController extends Controller
             ->selectRaw('COALESCE(tn.trade_name, "Unknown") as trade_name')
             ->selectRaw('term.serial_number, term.machine_number')
             ->selectRaw('COUNT(*) as tx_count')
+            // If receipt_no exists, also surface unique receipt counts so the
+            // UI can present provider-style counts (COUNT DISTINCT receipt_no).
+            ->when(Schema::hasColumn('transactions', 'receipt_no'), function ($q) {
+                // NULLIF guards against empty-string receipt_no values being counted
+                // as distinct; treat empty strings as NULL so they are excluded.
+                $q->selectRaw("COUNT(DISTINCT NULLIF(t.receipt_no, '')) as unique_receipts");
+            })
             // Use stored gross_sales as the canonical gross for summary so it matches
             // the Detailed view and POS Z-reading totals.
             ->selectRaw('COALESCE(SUM(t.gross_sales),0) as gross')
@@ -360,6 +378,13 @@ class TransactionLogController extends Controller
             ->selectRaw('MIN(t.id) as sample_tx_id')
             ->groupBy('date', 't.tenant_id', 't.terminal_id', 'trade_name', 'term.serial_number', 'term.machine_number')
             ->orderBy('date', 'desc');
+
+    // When the schema supports receipt_no, default summary roll-ups to VALID
+    // transactions so aggregates align with POS-style unique receipt counts.
+    if (Schema::hasColumn('transactions', 'receipt_no') && !isset($filters['status'])) {
+        // Exclude only DUPLICATE sentinel rows by default for summaries as well.
+        $query->where('t.validation_status', '!=', 'DUPLICATE');
+    }
 
     $summary = $query->paginate($perPage)->appends($request->all());
 
