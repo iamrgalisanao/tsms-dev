@@ -104,6 +104,7 @@ class WebAppForwardingService
             'voided_at'             => $this->isoTimestamp($transaction->voided_at),
             'void_reason'           => $transaction->void_reason,
             'status'                => 'VOIDED',
+            'with_issues'           => (strtoupper(($transaction->validation_status ?? '')) === 'WITH_ISSUES'),
         ];
     // Compute checksum excluding the explicit sc_vat_exempt_sales top-level field
     $forChecksum = $payload;
@@ -301,8 +302,10 @@ class WebAppForwardingService
 
     private function getTransactionsForForwarding(): Collection
     {
+        // Include VALID and WITH_ISSUES transactions so that accepted-with-issues
+        // submissions will still be forwarded to downstream webapp (annotated with with_issues).
         $candidates = Transaction::query()
-            ->where('validation_status', 'VALID')
+            ->whereIn('validation_status', ['VALID', 'WITH_ISSUES'])
             ->whereDoesntHave('webappForward', fn ($q) =>
                 $q->where('status', WebappTransactionForward::STATUS_COMPLETED)
             )
@@ -679,6 +682,8 @@ class WebAppForwardingService
         }
 
         $transactions = $records->pluck('request_payload')->all();
+    // If any transaction has validation_status == WITH_ISSUES, mark the batch as with_issues
+    $withIssues = collect($transactions)->contains(fn($t) => strtoupper(($t['validation_status'] ?? '')) === 'WITH_ISSUES');
         $transactionChecksums = array_map(fn ($t) => $t['checksum'] ?? '', $transactions);
         $batchChecksum = $this->computeBatchChecksum(
             self::BULK_SCHEMA_VERSION,
@@ -697,6 +702,7 @@ class WebAppForwardingService
             'tenant_id' => $tenantId,
             'terminal_id' => $terminalId,
             'transaction_count' => $records->count(),
+            'with_issues' => $withIssues,
             'batch_checksum' => $batchChecksum,
             'transactions' => $transactions,
         ];
@@ -836,6 +842,7 @@ class WebAppForwardingService
             'terminal_id' => ['required','integer','gte:1'],
             'batch_checksum' => ['required','string','size:64'],
             'transactions' => ['required','array','min:1'],
+            'with_issues' => ['boolean'],
             'transactions.*.transaction_id' => ['required','string'],
             // Allow empty strings for terminal_serial / tenant_code in test contexts; still require key presence
             'transactions.*.terminal_serial' => ['present','string'],
@@ -896,7 +903,7 @@ class WebAppForwardingService
     public function getForwardingStats(): array
     {
         return [
-            'unforwarded_transactions' => Transaction::where('validation_status', 'VALID')
+            'unforwarded_transactions' => Transaction::whereIn('validation_status', ['VALID', 'WITH_ISSUES'])
                 ->whereDoesntHave('webappForward', fn($q) =>
                     $q->where('status', WebappTransactionForward::STATUS_COMPLETED)
                 )
@@ -1048,6 +1055,7 @@ class WebAppForwardingService
             'tenant_id' => $tenantId,
             'terminal_id' => $terminalId,
             'transaction_count' => 1,
+            'with_issues' => (strtoupper(($payloadArr['validation_status'] ?? '')) === 'WITH_ISSUES'),
             'batch_checksum' => $batchChecksum,
             'transactions' => [$payloadArr],
         ];
