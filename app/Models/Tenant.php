@@ -30,8 +30,13 @@ class Tenant extends Model
         'unit_no',
         'floor_area',
         'status',
+        'accept_with_issues',
         'category',
         'zone',
+    ];
+
+    protected $casts = [
+        'accept_with_issues' => 'boolean',
     ];
 
 

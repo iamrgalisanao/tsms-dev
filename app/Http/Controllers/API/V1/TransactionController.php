@@ -531,7 +531,8 @@ class TransactionController extends Controller
                             'customer_code' => $transactionData['customer_code'] ?? ($terminal->tenant->company->customer_code ?? 'UNKNOWN'),
                         'payload_checksum' => $transactionData['payload_checksum'] ?? md5(json_encode($transactionData)),
                         'receipt_no' => $transactionData['receipt_no'] ?? null,
-                        'validation_status' => 'PENDING',
+                        // If we are in accept-with-issues mode, mark created transactions accordingly
+                        'validation_status' => ($acceptWithIssues ?? false) ? 'WITH_ISSUES' : 'PENDING',
                         'vatable_sales' => $vatableSales,
                         'vat_amount' => $vatAmount,
                         'sc_vat_exempt_sales' => $scVatExemptSales,
@@ -661,6 +662,23 @@ class TransactionController extends Controller
             }
 
             DB::commit();
+
+            // If we previously accepted this submission despite checksum issues,
+            // emit an ACCEPTED_WITH_ISSUES submission event for audit/triage purposes.
+            if (!empty($deferredAcceptedWithIssues) && is_array($deferredAcceptedWithIssues)) {
+                try {
+                    \App\Models\SubmissionEvent::create($deferredAcceptedWithIssues);
+                    Log::info('SubmissionEvent created (ACCEPTED_WITH_ISSUES)', [
+                        'submission_uuid' => $deferredAcceptedWithIssues['submission_uuid'] ?? null,
+                        'correlation_id' => $deferredAcceptedWithIssues['correlation_id'] ?? null,
+                    ]);
+                } catch (\Throwable $te) {
+                    Log::warning('Failed to write SubmissionEvent (ACCEPTED_WITH_ISSUES)', [
+                        'submission_uuid' => $deferredAcceptedWithIssues['submission_uuid'] ?? null,
+                        'error' => $te->getMessage(),
+                    ]);
+                }
+            }
 
             Log::info('Batch transaction processing completed', [
                 'batch_id' => $request->batch_id,
@@ -1411,6 +1429,11 @@ class TransactionController extends Controller
             $checksumService = new PayloadChecksumService();
             $checksumResults = $checksumService->validateSubmissionChecksumsFromRaw($rawPayload);
             $correlationId = $request->attributes->get('correlation_id');
+            // Feature toggle: when enabled globally or per-tenant we will ACCEPT_WITH_ISSUES
+            // (persist transactions but mark them WITH_ISSUES) instead of rejecting outright.
+            $acceptWithIssues = false;
+            $deferredAcceptedWithIssues = null;
+            $mode = strtoupper(config('ingestion.default_mode', 'QUARANTINE'));
             if (!$checksumResults['valid']) {
                 // Emit a clear log for grep-based incident correlation
                 Log::warning('Checksum validation failed', [
@@ -1432,40 +1455,124 @@ class TransactionController extends Controller
                     'correlation_id' => $correlationId
                 ]);
                 
-                // Commit the main transaction first, then create audit event
-                DB::commit();
-                
+                // Determine if we should accept with issues (global mode or tenant opt-in)
                 try {
-                    // Create audit event after main transaction is committed
-                    $submissionEvent = \App\Models\SubmissionEvent::create([
+                    $tenant = null;
+                    if ($request->tenant_id) {
+                        $tenant = \App\Models\Tenant::find($request->tenant_id);
+                    }
+                    $tenantAccept = $tenant && ($tenant->accept_with_issues ?? false);
+                } catch (\Throwable $_) {
+                    $tenantAccept = false;
+                }
+
+                if ($mode === 'ACCEPT_WITH_ISSUES' || $tenantAccept) {
+                    // Accept but mark as WITH_ISSUES: record for triage but continue processing.
+                    $acceptWithIssues = true;
+
+                    try {
+                        $quarantine = \App\Models\IngestionQuarantine::create([
+                            'submission_uuid' => $request->submission_uuid ?? null,
+                            'tenant_id' => $request->tenant_id ?? null,
+                            'terminal_id' => $request->terminal_id ?? null,
+                            'payload' => $rawPayload,
+                            'payload_checksum_received' => $request->payload_checksum ?? null,
+                            'payload_checksum_computed' => $checksumResults['submission_checksum'] ?? null,
+                            'status' => 'NEW',
+                            'metadata' => [
+                                'correlation_id' => $correlationId,
+                                'errors' => $checksumResults['errors'],
+                                'ip' => $request->ip(),
+                            ],
+                        ]);
+                        Log::info('Ingestion payload quarantined (accepted with issues)', [
+                            'quarantine_id' => $quarantine->id,
+                            'submission_uuid' => $request->submission_uuid,
+                            'correlation_id' => $correlationId,
+                        ]);
+                    } catch (\Throwable $qe) {
+                        Log::warning('Failed to write ingestion_quarantine row', [
+                            'submission_uuid' => $request->submission_uuid ?? 'unknown',
+                            'error' => $qe->getMessage(),
+                        ]);
+                    }
+
+                    // Defer emission of ACCEPTED_WITH_ISSUES until after processing & commit
+                    $deferredAcceptedWithIssues = [
                         'submission_uuid'   => $request->submission_uuid,
                         'tenant_id'         => $request->tenant_id,
                         'terminal_id'       => $request->terminal_id,
-                        'status'            => 'REJECTED',
+                        'status'            => 'ACCEPTED_WITH_ISSUES',
                         'reason_code'       => 'CHECKSUM_MISMATCH',
                         'reason_details'    => ['errors' => $checksumResults['errors']],
                         'transaction_count' => (int) ($request->transaction_count ?? 0),
                         'occurred_at'       => now(),
                         'correlation_id'    => $correlationId,
-                    ]);
-                    Log::info('SubmissionEvent created successfully', [
-                        'event_id' => $submissionEvent->id,
-                        'submission_uuid' => $request->submission_uuid,
-                        'reason_code' => 'CHECKSUM_MISMATCH'
-                    ]);
-                } catch (\Throwable $te) {
-                    Log::warning('Failed to write SubmissionEvent (REJECTED)', [
-                        'submission_uuid' => $request->submission_uuid,
-                        'error' => $te->getMessage(),
-                        'trace' => $te->getTraceAsString()
-                    ]);
+                    ];
+
+                    // Continue processing transactions below (do not return 422)
+                } else {
+                    // Quarantine-only / strict: commit and return REJECTED as before
+                    DB::commit();
+
+                    try {
+                        $quarantine = \App\Models\IngestionQuarantine::create([
+                            'submission_uuid' => $request->submission_uuid ?? null,
+                            'tenant_id' => $request->tenant_id ?? null,
+                            'terminal_id' => $request->terminal_id ?? null,
+                            'payload' => $rawPayload,
+                            'payload_checksum_received' => $request->payload_checksum ?? null,
+                            'payload_checksum_computed' => $checksumResults['submission_checksum'] ?? null,
+                            'status' => 'NEW',
+                            'metadata' => [
+                                'correlation_id' => $correlationId,
+                                'errors' => $checksumResults['errors'],
+                                'ip' => $request->ip(),
+                            ],
+                        ]);
+                        Log::info('Ingestion payload quarantined', [
+                            'quarantine_id' => $quarantine->id,
+                            'submission_uuid' => $request->submission_uuid,
+                            'correlation_id' => $correlationId,
+                        ]);
+                    } catch (\Throwable $qe) {
+                        Log::warning('Failed to write ingestion_quarantine row', [
+                            'submission_uuid' => $request->submission_uuid ?? 'unknown',
+                            'error' => $qe->getMessage(),
+                        ]);
+                    }
+
+                    try {
+                        $submissionEvent = \App\Models\SubmissionEvent::create([
+                            'submission_uuid'   => $request->submission_uuid,
+                            'tenant_id'         => $request->tenant_id,
+                            'terminal_id'       => $request->terminal_id,
+                            'status'            => 'REJECTED',
+                            'reason_code'       => 'CHECKSUM_MISMATCH',
+                            'reason_details'    => ['errors' => $checksumResults['errors']],
+                            'transaction_count' => (int) ($request->transaction_count ?? 0),
+                            'occurred_at'       => now(),
+                            'correlation_id'    => $correlationId,
+                        ]);
+                        Log::info('SubmissionEvent created successfully', [
+                            'event_id' => $submissionEvent->id,
+                            'submission_uuid' => $request->submission_uuid,
+                            'reason_code' => 'CHECKSUM_MISMATCH'
+                        ]);
+                    } catch (\Throwable $te) {
+                        Log::warning('Failed to write SubmissionEvent (REJECTED)', [
+                            'submission_uuid' => $request->submission_uuid,
+                            'error' => $te->getMessage(),
+                            'trace' => $te->getTraceAsString()
+                        ]);
+                    }
+
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Invalid payload checksum',
+                        'errors' => $checksumResults['errors']
+                    ], 422);
                 }
-                
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Invalid payload checksum',
-                    'errors' => $checksumResults['errors']
-                ], 422);
             }
 
             Log::info('storeOfficial: All validations passed, creating submission envelope');
