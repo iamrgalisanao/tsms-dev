@@ -29,6 +29,9 @@ return [
         'auth_token' => env('WEBAPP_FORWARDING_AUTH_TOKEN'),
         'verify_ssl' => (bool) env('WEBAPP_FORWARDING_VERIFY_SSL', true),
         'enabled' => (bool) env('WEBAPP_FORWARDING_ENABLED', false),
+        // When true, transactions marked WITH_ISSUES will be included in forwarding batches.
+        // Default false: do not forward WITH_ISSUES unless explicitly enabled.
+        'forward_with_issues' => (bool) env('WEBAPP_FORWARD_WITH_ISSUES', false),
     ],
 
     'transactions' => [

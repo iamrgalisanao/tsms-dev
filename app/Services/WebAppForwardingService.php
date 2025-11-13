@@ -302,10 +302,13 @@ class WebAppForwardingService
 
     private function getTransactionsForForwarding(): Collection
     {
-        // Include VALID and WITH_ISSUES transactions so that accepted-with-issues
-        // submissions will still be forwarded to downstream webapp (annotated with with_issues).
+        // Include VALID transactions and optionally WITH_ISSUES depending on config.
+        $statuses = ['VALID'];
+        if (config('tsms.web_app.forward_with_issues', false)) {
+            $statuses[] = 'WITH_ISSUES';
+        }
         $candidates = Transaction::query()
-            ->whereIn('validation_status', ['VALID', 'WITH_ISSUES'])
+            ->whereIn('validation_status', $statuses)
             ->whereDoesntHave('webappForward', fn ($q) =>
                 $q->where('status', WebappTransactionForward::STATUS_COMPLETED)
             )
