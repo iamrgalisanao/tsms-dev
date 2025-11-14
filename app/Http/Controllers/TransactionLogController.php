@@ -245,6 +245,95 @@ class TransactionLogController extends Controller
     }
 
     /**
+     * Return a server-side count of transactions with validation_status = 'WITH_ISSUES'
+     * Accepts the same filters as index() so callers can request counts that match
+     * the current filter set. Returns JSON: { count: n }
+     */
+    public function issuesCount(Request $request)
+    {
+        $filters = $request->only([
+            'status',
+            'date_from',
+            'date_to',
+            'tenant_id',
+            'terminal_id',
+            'amount_min',
+            'amount_max'
+        ]);
+
+        // Allow 'transaction' as a date basis which uses the canonical transaction_timestamp
+        $basis = in_array($request->input('date_basis'), ['created','completed','transaction']) ? $request->input('date_basis') : 'completed';
+        $dateColumn = $basis === 'completed' ? 'completed_at' : ($basis === 'transaction' ? 'transaction_timestamp' : 'created_at');
+
+        $query = Transaction::query();
+
+        if ($request->filled('transaction_id')) {
+            $search = str_replace('TX-', '', trim($request->transaction_id));
+            $query->where('transaction_id', 'like', "%{$search}%");
+        }
+
+        // Apply status filter only if explicitly requested. We still always
+        // want to count rows with WITH_ISSUES, so callers may omit status.
+        if (isset($filters['status'])) {
+            $query->where('validation_status', $filters['status']);
+        }
+
+        // Date filters - mirror logic used in index()/summary()
+        if (isset($filters['date_from'])) {
+            if ($dateColumn === 'transaction_timestamp') {
+                $query->where(function ($q) use ($filters) {
+                    $q->where(function ($subQ) use ($filters) {
+                        $subQ->whereNotNull('transaction_timestamp')
+                             ->where('transaction_timestamp', '>=', $filters['date_from'] . ' 00:00:00');
+                    })->orWhere(function ($subQ) use ($filters) {
+                        $subQ->whereNull('transaction_timestamp')
+                             ->where('created_at', '>=', $filters['date_from'] . ' 00:00:00');
+                    });
+                });
+            } else {
+                $query->where($dateColumn, '>=', $filters['date_from'] . ' 00:00:00');
+            }
+        }
+
+        if (isset($filters['date_to'])) {
+            if ($dateColumn === 'transaction_timestamp') {
+                $query->where(function ($q) use ($filters) {
+                    $q->where(function ($subQ) use ($filters) {
+                        $subQ->whereNotNull('transaction_timestamp')
+                             ->where('transaction_timestamp', '<=', $filters['date_to'] . ' 23:59:59');
+                    })->orWhere(function ($subQ) use ($filters) {
+                        $subQ->whereNull('transaction_timestamp')
+                             ->where('created_at', '<=', $filters['date_to'] . ' 23:59:59');
+                    });
+                });
+            } else {
+                $query->where($dateColumn, '<=', $filters['date_to'] . ' 23:59:59');
+            }
+        }
+
+        if (isset($filters['tenant_id'])) {
+            $query->where('tenant_id', $filters['tenant_id']);
+        }
+
+        if (isset($filters['terminal_id'])) {
+            $query->where('terminal_id', $filters['terminal_id']);
+        }
+
+        if (isset($filters['amount_min'])) {
+            $query->where('gross_sales', '>=', $filters['amount_min']);
+        }
+
+        if (isset($filters['amount_max'])) {
+            $query->where('gross_sales', '<=', $filters['amount_max']);
+        }
+
+        // Only count rows that are WITH_ISSUES
+        $count = $query->where('validation_status', 'WITH_ISSUES')->count();
+
+        return response()->json(['count' => (int) $count]);
+    }
+
+    /**
      * Summary view: grouped roll-ups by date, tenant, and terminal using existing numeric fields.
      * Columns: date, tenant (trade_name), terminal (serial/machine), tx_count, gross, vat, net, refund
      */

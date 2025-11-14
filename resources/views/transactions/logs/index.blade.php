@@ -39,6 +39,26 @@
 #transactionSummaryTable thead th {
     box-shadow: 0 2px 4px rgba(0,0,0,0.03);
 }
+
+/* Highlight rows which were accepted with issues (make them clearly noticeable) */
+#transactionLogsTable tbody tr[data-validation-status="WITH_ISSUES"] {
+    background-color: #f8d7da; /* light red/pink (Bootstrap danger background) */
+    color: #721c24; /* dark red text for contrast */
+}
+#transactionLogsTable tbody tr[data-validation-status="WITH_ISSUES"] code {
+    color: inherit; /* ensure code text follows the row colouring */
+}
+.with-issues-badge {
+    display: inline-block;
+    background-color: #c82333;
+    color: #ffffff;
+    font-weight: 600;
+    margin-left: 8px;
+    padding: 3px 6px;
+    border-radius: 4px;
+    font-size: 0.72rem;
+    vertical-align: middle;
+}
 </style>
 
 @endpush
@@ -145,10 +165,19 @@ use App\Helpers\FormatHelper;
                     <a href="{{ route('transactions.logs.index') }}" class="btn btn-outline-secondary btn-sm"><i class="fas fa-undo mr-1"></i> Reset</a>
                 </div>
                 <div class="form-group col-sm-6 col-md-3 col-lg-3 d-flex align-items-center">
-                    <div class="form-check ml-2">
+                    <div class="form-check ml-2 mr-3">
                         <input class="form-check-input" type="checkbox" value="1" id="toggleDuplicates" />
                         <label class="form-check-label small text-muted" for="toggleDuplicates">Show duplicates</label>
                     </div>
+                    <div class="form-check ml-2 mr-3">
+                        <input class="form-check-input" type="checkbox" value="1" id="toggleIssuesOnly" />
+                        <label class="form-check-label small text-muted" for="toggleIssuesOnly">Only show issues</label>
+                    </div>
+                    @if(auth()->check() && auth()->user()->hasRole('admin'))
+                    <div class="ml-2">
+                        <span id="issuesCountBadge" class="badge badge-danger" title="Number of visible transactions with issues">Issues: <strong>0</strong></span>
+                    </div>
+                    @endif
                 </div>
             </div>
         </form>
@@ -309,7 +338,12 @@ use App\Helpers\FormatHelper;
             <tbody>
                 @forelse($logs as $log)
                 <tr data-validation-status="{{ $log->validation_status }}" data-receipt="{{ $log->receipt_no ?? '' }}">
-                    <td class="text-break"><code style="white-space:normal;word-break:break-all;overflow-wrap:anywhere;">{{ $log->transaction_id }}</code></td>
+                    <td class="text-break">
+                        <code style="white-space:normal;word-break:break-all;overflow-wrap:anywhere;">{{ $log->transaction_id }}</code>
+                        @if(isset($log->validation_status) && $log->validation_status === 'WITH_ISSUES')
+                            <span class="with-issues-badge" data-toggle="tooltip" title="This transaction was accepted but had validation/checksum issues. Please investigate submission events and logs.">WITH ISSUES</span>
+                        @endif
+                    </td>
                     <td class="text-break"><code style="white-space:normal;word-break:break-all;overflow-wrap:anywhere;">{{ $log->receipt_no ?? '-' }}</code></td>
                     {{-- <td>{{ $log->terminal->identifier ?? 'N/A' }}</td>
                     <td> --}}
@@ -482,6 +516,14 @@ $(function () {
     // Move DataTables buttons into our container for AdminLTE layout
     dt.buttons().container().appendTo('#dtBtnContainer');
 
+    // Initialize Bootstrap tooltips (used on badges / small UI hints)
+    try {
+        $('[data-toggle="tooltip"]').tooltip({ trigger: 'hover' });
+    } catch (e) {
+        // Tooltip initialization is best-effort; don't break page if bootstrap JS isn't present
+        console.debug('Tooltip init failed or not available', e && e.message ? e.message : e);
+    }
+
     // Duplicate hiding: by default hide duplicate rows (same receipt_no) in
     // the detailed table. Operators can toggle visibility using the
     // #toggleDuplicates checkbox.
@@ -513,12 +555,91 @@ $(function () {
         } else {
             applyDuplicateFilter();
         }
+        // Re-apply issues filter and update counter when duplicates toggle changes
+        applyIssuesFilter();
+        updateIssuesCounter();
     });
 
     // Apply filter on initial load (unless toggle is checked)
     if (!$('#toggleDuplicates').is(':checked')) {
         applyDuplicateFilter();
     }
+
+    // Apply issues-only filter when toggled and update counter
+    function applyIssuesFilter() {
+        if (isSummary) return; // only relevant to detailed view
+        const onlyIssues = $('#toggleIssuesOnly').is(':checked');
+        $('#transactionLogsTable tbody tr').each(function () {
+            const $tr = $(this);
+            const isIssue = ($tr.data('validation-status') || '').toString() === 'WITH_ISSUES';
+            if (onlyIssues) {
+                if (!isIssue) {
+                    $tr.addClass('issues-hidden').hide();
+                } else {
+                    $tr.removeClass('issues-hidden').show();
+                }
+            } else {
+                // show rows that aren't hidden by duplicates logic
+                $tr.removeClass('issues-hidden');
+                // We do not forcibly show here, because duplicate filter controls visibility
+            }
+        });
+        // After applying issues filter, enforce duplicate hiding logic if applicable
+        if (!$('#toggleDuplicates').is(':checked')) {
+            applyDuplicateFilter();
+        }
+    }
+
+    $('#toggleIssuesOnly').on('change', function () {
+        applyIssuesFilter();
+        updateIssuesCounter();
+    });
+
+    function updateIssuesCounter() {
+        try {
+            // Count visible rows that are WITH_ISSUES
+            const visibleRows = $('#transactionLogsTable tbody tr:visible');
+            const issuesVisible = visibleRows.filter(function () {
+                return ($(this).data('validation-status') || '').toString() === 'WITH_ISSUES';
+            }).length;
+            const $badge = $('#issuesCountBadge');
+            if ($badge.length) {
+                $badge.find('strong').text(issuesVisible);
+            }
+        } catch (e) {
+            console.debug('updateIssuesCounter failed', e && e.message ? e.message : e);
+        }
+    }
+
+    // If admin badge is present, attempt to fetch an accurate server-side count
+    // that respects server-side filters/pagination. Falls back to client-side count
+    // if the request fails.
+    function fetchIssuesCountFromServer() {
+        const $badge = $('#issuesCountBadge');
+        if (!$badge.length) return;
+        try {
+            // Use current window.search to pass filters already present in the URL
+            const url = '{{ route('transactions.logs.issues.count') }}' + window.location.search;
+            $.get(url)
+                .done(function (data) {
+                    if (data && typeof data.count !== 'undefined') {
+                        $badge.find('strong').text(data.count);
+                    }
+                })
+                .fail(function () {
+                    // on failure, keep client-side visible count already set
+                    console.debug('Server issues count fetch failed, falling back to client-side count');
+                });
+        } catch (e) {
+            console.debug('fetchIssuesCountFromServer failed', e && e.message ? e.message : e);
+        }
+    }
+
+    // Update counter on initial load
+    applyIssuesFilter();
+    updateIssuesCounter();
+    // If admin, fetch authoritative server-side count (best-effort)
+    fetchIssuesCountFromServer();
 
     // Toastr notifications
     @if(session('success'))
