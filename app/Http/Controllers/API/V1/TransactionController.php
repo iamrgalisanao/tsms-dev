@@ -509,11 +509,17 @@ class TransactionController extends Controller
                     $normalizedTimestamp = $transactionData['transaction_timestamp']
                         ?? $transactionData['occurred_at']
                         ?? now()->toISOString();
-                    // Convert ISO8601 to database-friendly datetime string
+                    // Convert ISO8601 to canonical DB-friendly ISO string with 3ms and trailing Z
                     try {
-                        $normalizedTimestampDb = Carbon::parse($normalizedTimestamp)->toDateTimeString();
+                        $dt = Carbon::parse($normalizedTimestamp);
+                        $micro = $dt->format('u'); // 6 digits
+                        $ms = str_pad(substr($micro, 0, 3), 3, '0', STR_PAD_RIGHT);
+                        $normalizedTimestampDb = $dt->format('Y-m-d\\TH:i:s') . '.' . $ms . 'Z';
                     } catch (\Throwable $t) {
-                        $normalizedTimestampDb = now()->toDateTimeString();
+                        $dt = now();
+                        $micro = $dt->format('u');
+                        $ms = str_pad(substr($micro, 0, 3), 3, '0', STR_PAD_RIGHT);
+                        $normalizedTimestampDb = $dt->format('Y-m-d\\TH:i:s') . '.' . $ms . 'Z';
                     }
                     $normalizedGross = $transactionData['gross_sales']
                         ?? $transactionData['amount']

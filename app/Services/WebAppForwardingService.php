@@ -380,13 +380,27 @@ class WebAppForwardingService
                 ];
             }
 
+            // Ensure transaction_timestamp is canonical (Y-m-dTH:i:s.vZ). If missing/invalid,
+            // fallback to created_at and emit a warning + metric so ops can triage data quality.
+            $ts = $this->isoTimestamp($tx->transaction_timestamp);
+            if (empty($ts) || !preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/', $ts)) {
+                $fallback = $this->isoTimestamp($tx->created_at) ?: $this->isoTimestamp(now());
+                \Log::warning('Forwarding: transaction_timestamp missing/invalid, using fallback created_at', [
+                    'transaction_id' => $tx->transaction_id,
+                    'original' => $tx->transaction_timestamp,
+                    'fallback' => $fallback,
+                ]);
+                try { Metrics::incr('forwarding.fallback_transaction_timestamp'); } catch (\Throwable $_) {}
+                $ts = $fallback;
+            }
+
             $payloadArr = [
                 'tsms_id' => $tx->id,
                 'transaction_id' => (string)$tx->transaction_id,
                 'terminal_serial' => $this->s($tx->terminal?->serial_number),
                 'tenant_code' => $this->s($tx->tenant?->customer_code),
                 'tenant_name' => $this->s($tx->tenant?->trade_name ?? $tx->tenant?->name),
-                'transaction_timestamp' => $this->isoTimestamp($tx->transaction_timestamp),
+                'transaction_timestamp' => $ts,
                 'amount' => (float) $tx->gross_sales,
                 'net_amount' => (float) $tx->net_sales,
                 'receipt_no' => $this->s($tx->receipt_no),
