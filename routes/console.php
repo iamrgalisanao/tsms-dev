@@ -234,6 +234,18 @@ Schedule::call(function () {
 })->dailyAt('02:00')->name('webapp-forwarding-cleanup')->onOneServer();
 
 // --------------------------------------------------------------------------
+// Reporting refresh: keep summary tables warm and consistent
+// Runs once daily; can be enabled/disabled via config('tsms.reporting.enabled')
+// Adjust --hours for hourly refresh window as desired.
+// --------------------------------------------------------------------------
+Schedule::command('reporting:refresh --table=transactions_hourly --hours=6')
+    ->dailyAt('02:30')
+    ->name('reporting-refresh-daily')
+    ->withoutOverlapping()
+    ->onOneServer()
+    ->when(fn () => (bool) (config('tsms.reporting.enabled') ?? true));
+
+// --------------------------------------------------------------------------
 // POS Terminal Idle Monitor (log-only phase)
 // Runs every N minutes when enabled. Detects terminals that have been idle
 // beyond configured thresholds, logs idle and recovery events with dedupe.

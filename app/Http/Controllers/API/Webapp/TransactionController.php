@@ -17,6 +17,11 @@ class TransactionController extends Controller
     public function index(Request $request)
     {
         $perPage = (int) $request->query('per_page', 15);
+        $maxPer = (int) config('webapp_api.max_per_page', 100);
+        if ($perPage < 1) {
+            $perPage = 15;
+        }
+        $perPage = min($perPage, $maxPer);
 
         $query = Transaction::query()->orderBy('created_at', 'desc');
 
@@ -73,11 +78,26 @@ class TransactionController extends Controller
 
         $ttl = (int) Config::get('webapp_api.cache_ttl_seconds', 10);
 
-        $count = Cache::remember($key, $ttl, function () use ($query) {
-            return (int) $query->count();
-        });
+        // Store a small payload with timestamp so clients can detect cached results
+        $payload = Cache::get($key);
+        $cached = true;
+        if (! $payload) {
+            $countVal = (int) $query->count();
+            $payload = [
+                'count' => $countVal,
+                'timestamp' => now()->toIso8601String(),
+            ];
+            Cache::put($key, $payload, $ttl);
+            $cached = false;
+        }
 
-        return response()->json(['count' => $count]);
+        $response = response()->json(['count' => (int) $payload['count']]);
+        // Add cache metadata headers for client UX
+        $response->headers->set('X-Count-Cached', $cached ? 'true' : 'false');
+        $response->headers->set('X-Count-TTL', (string) $ttl);
+        $response->headers->set('X-Count-Timestamp', $payload['timestamp']);
+
+        return $response;
     }
 
     /**

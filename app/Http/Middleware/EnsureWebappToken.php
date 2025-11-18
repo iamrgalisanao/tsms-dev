@@ -7,6 +7,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Config;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
+use Symfony\Component\HttpFoundation\IpUtils;
 
 class EnsureWebappToken
 {
@@ -33,7 +34,27 @@ class EnsureWebappToken
                 }
             }
 
-            if (! in_array($clientIp, $allowed, true)) {
+            $matched = false;
+            foreach ($allowed as $entry) {
+                // If entry looks like CIDR (contains /) use IpUtils to check ranges
+                if (strpos($entry, '/') !== false) {
+                    try {
+                        if (IpUtils::checkIp($clientIp, [$entry])) {
+                            $matched = true;
+                            break;
+                        }
+                    } catch (\Throwable $e) {
+                        // If IpUtils parsing fails, fall through to literal match
+                    }
+                }
+
+                if ($clientIp === $entry) {
+                    $matched = true;
+                    break;
+                }
+            }
+
+            if (! $matched) {
                 Log::warning('Webapp API request blocked by IP allowlist', ['ip' => $clientIp, 'allowed' => $allowed, 'path' => $request->path()]);
                 return response()->json(['message' => 'Forbidden - IP not allowed'], 403);
             }

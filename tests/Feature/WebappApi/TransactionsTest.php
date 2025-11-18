@@ -18,7 +18,7 @@ class TransactionsTest extends TestCase
 
     public function test_token_with_ability_can_access_transactions()
     {
-        $user = User::factory()->create([ 'email' => 'webapp@example.test' ]);
+    $user = User::factory()->create([ 'email' => 'webapp-tx@example.test' ]);
 
         $token = $user->createToken('webapp-test-token', ['webapp:read'])->plainTextToken;
 

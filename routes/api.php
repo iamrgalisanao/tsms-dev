@@ -103,6 +103,10 @@ Route::prefix('v1/webapp')->middleware(['auth:sanctum', 'ensure.webapp.token', '
     Route::get('/transactions', [\App\Http\Controllers\Api\Webapp\TransactionController::class, 'index']);
     Route::get('/transactions/count', [\App\Http\Controllers\Api\Webapp\TransactionController::class, 'count']);
     Route::get('/transactions/{id}', [\App\Http\Controllers\Api\Webapp\TransactionController::class, 'show']);
+    // Reporting endpoints (summary/aggregates for the Webapp)
+    Route::get('/reports/sales', [\App\Http\Controllers\Api\Webapp\ReportsController::class, 'sales']);
+    Route::get('/reports/sales/drilldown', [\App\Http\Controllers\Api\Webapp\ReportsController::class, 'drilldown']);
+    Route::get('/reports/summary', [\App\Http\Controllers\Api\Webapp\ReportsController::class, 'summary']);
 });
 
 // Also register explicit full-path routes so they are discoverable without relying on prefix grouping
@@ -111,6 +115,14 @@ Route::get('/v1/webapp/transactions', [\App\Http\Controllers\Api\Webapp\Transact
 Route::get('/v1/webapp/transactions/count', [\App\Http\Controllers\Api\Webapp\TransactionController::class, 'count'])
     ->middleware(['auth:sanctum', 'ensure.webapp.token', 'throttle:webapp']);
 Route::get('/v1/webapp/transactions/{id}', [\App\Http\Controllers\Api\Webapp\TransactionController::class, 'show'])
+    ->middleware(['auth:sanctum', 'ensure.webapp.token', 'throttle:webapp']);
+
+// Explicit reporting routes for discovery
+Route::get('/v1/webapp/reports/sales', [\App\Http\Controllers\Api\Webapp\ReportsController::class, 'sales'])
+    ->middleware(['auth:sanctum', 'ensure.webapp.token', 'throttle:webapp']);
+Route::get('/v1/webapp/reports/sales/drilldown', [\App\Http\Controllers\Api\Webapp\ReportsController::class, 'drilldown'])
+    ->middleware(['auth:sanctum', 'ensure.webapp.token', 'throttle:webapp']);
+Route::get('/v1/webapp/reports/summary', [\App\Http\Controllers\Api\Webapp\ReportsController::class, 'summary'])
     ->middleware(['auth:sanctum', 'ensure.webapp.token', 'throttle:webapp']);
 
 // Legacy V1 API Routes with rate limiting (for backward compatibility)
