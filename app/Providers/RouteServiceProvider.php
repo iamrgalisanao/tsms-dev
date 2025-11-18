@@ -30,6 +30,11 @@ class RouteServiceProvider extends ServiceProvider
             return Limit::perMinute(60)->by($request->user()?->id ?: $request->ip());
         });
 
+        // Named rate limiter for webapp machine-to-machine API
+        RateLimiter::for('webapp', function (Request $request) {
+            return Limit::perMinute((int) config('webapp_api.rate_limit_per_minute', 120))->by($request->user()?->id ?: $request->ip());
+        });
+
         $this->routes(function () {
             Route::middleware('api')
                 ->prefix('api')
@@ -42,6 +47,8 @@ class RouteServiceProvider extends ServiceProvider
     // Register Sanctum abilities middleware aliases using Route facade
     Route::aliasMiddleware('abilities', \Laravel\Sanctum\Http\Middleware\CheckAbilities::class);
     Route::aliasMiddleware('ability', \Laravel\Sanctum\Http\Middleware\CheckForAnyAbility::class);
+    // Alias for webapp token checker middleware (Laravel 11: register aliases in provider)
+    Route::aliasMiddleware('ensure.webapp.token', \App\Http\Middleware\EnsureWebappToken::class);
         // Register route middleware aliases here (Laravel 11 style also supported via providers)
         \Illuminate\Support\Facades\Route::aliasMiddleware('capture.terminal.ip', \App\Http\Middleware\CaptureTerminalIp::class);
     }

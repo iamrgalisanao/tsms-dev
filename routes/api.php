@@ -98,6 +98,21 @@ Route::prefix('v1')->middleware(['auth:sanctum', 'throttle:30,1'])->group(functi
     Route::post('/checksum/sandbox', [ChecksumSandboxController::class, 'compute']);
 });
 
+// Machine-to-machine read-only webapp API (directly registered here for test/dev)
+Route::prefix('v1/webapp')->middleware(['auth:sanctum', 'ensure.webapp.token', 'throttle:webapp'])->group(function () {
+    Route::get('/transactions', [\App\Http\Controllers\Api\Webapp\TransactionController::class, 'index']);
+    Route::get('/transactions/count', [\App\Http\Controllers\Api\Webapp\TransactionController::class, 'count']);
+    Route::get('/transactions/{id}', [\App\Http\Controllers\Api\Webapp\TransactionController::class, 'show']);
+});
+
+// Also register explicit full-path routes so they are discoverable without relying on prefix grouping
+Route::get('/v1/webapp/transactions', [\App\Http\Controllers\Api\Webapp\TransactionController::class, 'index'])
+    ->middleware(['auth:sanctum', 'ensure.webapp.token', 'throttle:webapp']);
+Route::get('/v1/webapp/transactions/count', [\App\Http\Controllers\Api\Webapp\TransactionController::class, 'count'])
+    ->middleware(['auth:sanctum', 'ensure.webapp.token', 'throttle:webapp']);
+Route::get('/v1/webapp/transactions/{id}', [\App\Http\Controllers\Api\Webapp\TransactionController::class, 'show'])
+    ->middleware(['auth:sanctum', 'ensure.webapp.token', 'throttle:webapp']);
+
 // Legacy V1 API Routes with rate limiting (for backward compatibility)
 // Disabled by default. Enable temporarily via TSMS_ENABLE_LEGACY_API=true if you must
 // support older POS clients while migrating to Sanctum-protected endpoints.
@@ -440,3 +455,8 @@ Route::post('/transactions/bulk', function (Request $request) {
         'processed_at' => $timestamp
     ]);
 })->name('webapp.test-receiver');
+
+// Include machine-to-machine read-only webapp API routes if present
+if (file_exists(base_path('routes/webapp_api.php'))) {
+    require base_path('routes/webapp_api.php');
+}

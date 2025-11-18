@@ -91,6 +91,24 @@ return [
             'sslmode' => 'prefer',
         ],
 
+        // Reporting connection (read-only for consumers). Configure via DB_REPORTING_* env vars.
+        'reporting' => [
+            'driver' => env('DB_REPORTING_CONNECTION', env('DB_CONNECTION', 'mysql')),
+            'url' => env('DB_REPORTING_URL', env('DATABASE_URL')),
+            'host' => env('DB_REPORTING_HOST', env('DB_HOST', '127.0.0.1')),
+            'port' => env('DB_REPORTING_PORT', env('DB_PORT', '3306')),
+            'database' => env('DB_REPORTING_DATABASE', env('DB_DATABASE', 'tsms_reporting')),
+            'username' => env('DB_REPORTING_USERNAME', env('DB_USERNAME', 'reporting')),
+            'password' => env('DB_REPORTING_PASSWORD', env('DB_PASSWORD', '')),
+            'unix_socket' => env('DB_REPORTING_SOCKET', env('DB_SOCKET', '')),
+            'charset' => env('DB_REPORTING_CHARSET', 'utf8mb4'),
+            'collation' => env('DB_REPORTING_COLLATION', 'utf8mb4_unicode_ci'),
+            'prefix' => env('DB_REPORTING_PREFIX', ''),
+            'prefix_indexes' => true,
+            'strict' => env('DB_REPORTING_STRICT', false),
+            'engine' => env('DB_REPORTING_ENGINE', null),
+        ],
+
         'sqlsrv' => [
             'driver' => 'sqlsrv',
             'url' => env('DB_URL'),
