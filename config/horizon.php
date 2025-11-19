@@ -64,6 +64,15 @@ return [
                 'timeout'    => 30,
                 'nice'       => 0,
             ],
+            'reporting-supervisor' => [
+                'connection' => 'redis',
+                'queue'      => ['reporting'],
+                'balance'    => 'auto',
+                'processes'  => env('HZ_REPORTING_PROCESSES', 2),
+                'tries'      => 3,
+                'timeout'    => 300,
+                'nice'       => 5,
+            ],
             'forward-supervisor' => [
                 'connection' => 'redis',
                 'queue'      => ['forwarding'],
@@ -105,6 +114,15 @@ return [
                 'processes'  => 4,
                 'tries'      => 2,
             ],
+            'reporting-supervisor' => [
+                'connection' => 'redis',
+                'queue'      => ['reporting'],
+                'balance'    => 'auto',
+                'processes'  => env('HZ_REPORTING_PROCESSES', 1),
+                'tries'      => 3,
+                'timeout'    => 300,
+                'nice'       => 5,
+            ],
         ],
         'local' => [
             'default' => [
@@ -116,6 +134,12 @@ return [
                     'transaction-processing:s4','transaction-processing:s5','transaction-processing:s6','transaction-processing:s7',
                     'forwarding','low','notifications','default'
                 ],
+                'processes'  => 1,
+                'tries'      => 1,
+            ],
+            'reporting-supervisor' => [
+                'connection' => 'redis',
+                'queue'      => ['reporting'],
                 'processes'  => 1,
                 'tries'      => 1,
             ],
