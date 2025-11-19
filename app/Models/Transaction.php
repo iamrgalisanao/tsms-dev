@@ -6,6 +6,10 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use App\Models\Tenant;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Bus;
+use App\Jobs\Reporting\InvalidateCountCacheJob;
 
 class Transaction extends Model
 {
@@ -688,5 +692,42 @@ class Transaction extends Model
                 $sync($tx);
             }
         });
+
+        // After write operations we increment tenant_version and optionally dispatch a targeted cache invalidation
+        $handleWrite = function (Transaction $tx) {
+            $tenantId = $tx->tenant_id ?? optional($tx->terminal)->tenant_id ?? null;
+            if ($tenantId) {
+                try {
+                    // Use atomic increment in cache (Redis) to bump tenant version
+                    Cache::increment('webapp:tenant_version:' . $tenantId);
+                } catch (\Throwable $e) {
+                    Log::error('Failed to increment tenant_version', ['tenant' => $tenantId, 'error' => $e->getMessage()]);
+                }
+            }
+
+            // If there is an HTTP request context, try to dispatch a targeted invalidation for that token
+            try {
+                $req = request();
+                if ($req) {
+                    $bearer = $req->bearerToken();
+                    $sanctumId = null;
+                    $ip = $req->ip();
+                    if ($req->user()?->currentAccessToken()) {
+                        $sanctumId = $req->user()->currentAccessToken()->getKey();
+                    }
+
+                    // Dispatch invalidation for the minimal filters we can derive (tenant-level)
+                    $filters = ['tenant_id' => $tenantId];
+                    Bus::dispatch(new InvalidateCountCacheJob($bearer, $sanctumId, $ip, $filters, $tenantId));
+                }
+            } catch (\Throwable $e) {
+                // Log and continue; cache bump already protects correctness
+                Log::error('Failed to dispatch InvalidateCountCacheJob', ['error' => $e->getMessage()]);
+            }
+        };
+
+        static::created($handleWrite);
+        static::updated($handleWrite);
+        static::deleted($handleWrite);
     }
 }
