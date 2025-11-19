@@ -32,13 +32,13 @@ DB_REPORTING_PASSWORD=<secure_password>
 - Run incremental refresh manually:
 
 ```bash
-php artisan reporting:refresh --table=transactions_hourly --from="2025-11-17T00:00:00Z" --to="2025-11-17T23:00:00Z"
+php artisan reporting:refresh transactions_hourly --from="2025-11-17T00:00:00Z" --to="2025-11-17T23:00:00Z"
 ```
 
 - Backfill full date range (throttled):
 
 ```bash
-php artisan reporting:backfill --table=transactions_daily --from=2025-01-01 --to=2025-11-16
+php artisan reporting:backfill transactions_daily --from=2025-01-01 --to=2025-11-16
 ```
 
 6) Monitoring & metadata

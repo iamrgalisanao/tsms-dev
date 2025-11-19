@@ -96,6 +96,40 @@ Testing & verification
 - Note: TSMS schedules the `reporting:refresh` command daily to keep summary tables updated. If your tests rely on summary tables, either run `php artisan reporting:refresh` in your test setup or ensure the scheduler has run.
 - Add tests for allowlist behavior if your client is behind a proxy; verify `X-Forwarded-For` is preserved.
 
+FAQ
+---
+Q: Why do counts sometimes look stale?
+
+A: Count responses are cached per-token for `WEBAPP_API_CACHE_TTL` seconds to reduce DB load. Use the list endpoint for the freshest data, or trigger a manual refresh flow if you need immediate accuracy after a write. We can implement immediate invalidation hooks if your UI requires it.
+
+Q: How should we store the machine token in CI/staging?
+
+A: Use your CI's secrets store (GitHub Actions Secrets, GitLab CI variables, etc.) and inject the token into the environment (do not commit tokens to the repo). For smoke tests we support `WEBAPP_API_SMOKE_TOKEN` as an env var used by our optional smoke test.
+
+Q: Can we use static bearer tokens in production?
+
+A: No. Static tokens are intended only for short-lived staging/testing and TSMS defaults to them disabled. In production use Sanctum personal access tokens stored in a secrets manager and restricted to the `webapp:read` ability.
+
+Q: Our requests come from cloud NAT ranges — can we allow CIDR ranges?
+
+A: Yes — the TSMS allowlist supports single IPs and CIDR ranges (for example `203.0.113.0/24`). Ensure your load balancer preserves `X-Forwarded-For` so TSMS can see the client IP.
+
+Q: How often are the reporting summary tables refreshed?
+
+A: TSMS schedules `php artisan reporting:refresh transactions_hourly` daily at 02:30 by default. If tests rely on summary tables, run the reporting refresh in test setup or ensure the scheduler has run.
+
+Q: What rate limits apply?
+
+A: The named limiter `webapp` applies with a configurable per-minute rate (`WEBAPP_API_RATE_LIMIT_PER_MINUTE`). 429 responses indicate you should back off and retry using exponential backoff.
+
+Q: How do we troubleshoot 403 / IP allowlist failures?
+
+A: Verify the client IP seen by TSMS (inspect `X-Forwarded-For`) and ensure your IP or CIDR is present in `WEBAPP_API_ALLOWED_IPS`. If the client is behind a proxy, add the NAT/CIDR range used by the proxy.
+
+Q: How do I verify a token or list active tokens?
+
+A: Run `php artisan webapp:token list --email=service-webapp@yourdomain` on the TSMS server to inspect tokens and abilities. Revoke via `php artisan webapp:token revoke --token=<id>`.
+
 Troubleshooting
 ---------------
 - If you receive 401: confirm the token is valid and has `webapp:read` ability. Use `php artisan webapp:token list --email=service-webapp@...` on TSMS to inspect tokens.

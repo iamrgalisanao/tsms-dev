@@ -8,14 +8,19 @@ use Illuminate\Support\Facades\Log;
 
 class ReportingRefreshCommand extends Command
 {
-    protected $signature = 'reporting:refresh {table=transactions_hourly} {--hours=3}';
+    // Support both the original positional arg and a --table option for
+    // backward compatibility with docs/scripts that previously used
+    // `--table=...`. The command will prefer the explicit `--table`
+    // option if provided, otherwise it falls back to the positional arg.
+    protected $signature = 'reporting:refresh {tableArg=transactions_hourly} {--hours=3} {--table=}';
 
-    protected $description = 'Refresh reporting summary tables (incremental upsert)';
+    protected $description = 'Refresh reporting summary tables (incremental upsert). Supports positional tableArg or --table option.';
 
     public function handle()
     {
-        $table = $this->argument('table');
-        $hours = intval($this->option('hours'));
+    // Prefer explicit --table option when provided (back-compat), else use positional arg
+    $table = $this->option('table') ?: $this->argument('tableArg');
+    $hours = intval($this->option('hours'));
 
         $this->info("Refreshing summary table: $table for last $hours hours");
 

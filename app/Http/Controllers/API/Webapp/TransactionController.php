@@ -74,7 +74,19 @@ class TransactionController extends Controller
             'terminal_id' => $request->query('terminal_id'),
             'validation_status' => $request->query('validation_status'),
         ];
-        $key = 'webapp:count:' . $tokenId . ':' . md5(json_encode($filters));
+
+        // Include tenant version to support O(1) invalidation on writes
+        $tenantId = $request->query('tenant_id');
+        $tenantVersion = 0;
+        if ($tenantId) {
+            try {
+                $tenantVersion = (int) \Illuminate\Support\Facades\Cache::get('webapp:tenant_version:' . $tenantId, 0);
+            } catch (\Throwable $e) {
+                $tenantVersion = 0;
+            }
+        }
+
+        $key = 'webapp:count:' . $tokenId . ':v' . $tenantVersion . ':' . md5(json_encode($filters));
 
         $ttl = (int) Config::get('webapp_api.cache_ttl_seconds', 10);
 

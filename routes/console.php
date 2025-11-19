@@ -238,9 +238,20 @@ Schedule::call(function () {
 // Runs once daily; can be enabled/disabled via config('tsms.reporting.enabled')
 // Adjust --hours for hourly refresh window as desired.
 // --------------------------------------------------------------------------
-Schedule::command('reporting:refresh --table=transactions_hourly --hours=6')
+// NOTE: `reporting:refresh` expects the table as a positional argument (table)
+// (signature: reporting:refresh {table=transactions_hourly} {--hours=3})
+// Previous invocations used a non-existent --table option which causes errors.
+Schedule::command('reporting:refresh transactions_hourly --hours=6')
     ->dailyAt('02:30')
     ->name('reporting-refresh-daily')
+    ->withoutOverlapping()
+    ->onOneServer()
+    ->when(fn () => (bool) (config('tsms.reporting.enabled') ?? true));
+
+// Incremental dispatch every 5 minutes: split the last N minutes into chunk jobs
+Schedule::command('reporting:dispatch --minutes=15 --chunk=5')
+    ->everyFiveMinutes()
+    ->name('reporting-dispatch-incremental')
     ->withoutOverlapping()
     ->onOneServer()
     ->when(fn () => (bool) (config('tsms.reporting.enabled') ?? true));
