@@ -84,18 +84,59 @@ class ReportingRefreshCommand extends Command
         }
 
         $netSelect = $hasNet ? "SUM(COALESCE(net_sales,0)) AS total_net_amount,\n" : "0 AS total_net_amount,\n";
-        $discountSelect = $hasDiscount ? "SUM(COALESCE(discount_total, COALESCE(promo_discount,0),0)) AS total_discount_amount,\n" : "0 AS total_discount_amount,\n";
-        $vatSelect = $hasVat ? "SUM(COALESCE(vat_amount, COALESCE(tax_amount,0),0)) AS total_tax_amount,\n" : "0 AS total_tax_amount,\n";
+        // Build discount select while referencing only the columns that actually exist.
+        if ($hasDiscount) {
+            $hasDiscountTotal = \Illuminate\Support\Facades\Schema::hasColumn('transactions', 'discount_total');
+            $hasPromoDiscount = \Illuminate\Support\Facades\Schema::hasColumn('transactions', 'promo_discount');
+            if ($hasDiscountTotal && $hasPromoDiscount) {
+                $discountSelect = "SUM(COALESCE(discount_total, promo_discount, 0)) AS total_discount_amount,\n";
+            } elseif ($hasDiscountTotal) {
+                $discountSelect = "SUM(COALESCE(discount_total, 0)) AS total_discount_amount,\n";
+            } else {
+                $discountSelect = "SUM(COALESCE(promo_discount, 0)) AS total_discount_amount,\n";
+            }
+        } else {
+            $discountSelect = "0 AS total_discount_amount,\n";
+        }
+
+        // Build VAT/tax select while referencing only existing columns to avoid unknown-column SQL errors.
+        if ($hasVat) {
+            $hasVatAmount = \Illuminate\Support\Facades\Schema::hasColumn('transactions', 'vat_amount');
+            $hasTaxAmount = \Illuminate\Support\Facades\Schema::hasColumn('transactions', 'tax_amount');
+            if ($hasVatAmount && $hasTaxAmount) {
+                $vatSelect = "SUM(COALESCE(vat_amount, tax_amount, 0)) AS total_tax_amount,\n";
+            } elseif ($hasVatAmount) {
+                $vatSelect = "SUM(COALESCE(vat_amount, 0)) AS total_tax_amount,\n";
+            } else {
+                $vatSelect = "SUM(COALESCE(tax_amount, 0)) AS total_tax_amount,\n";
+            }
+        } else {
+            $vatSelect = "0 AS total_tax_amount,\n";
+        }
         $scSelect = $hasSc ? "SUM(COALESCE(service_charge,0)) AS total_service_charge_amount,\n" : "0 AS total_service_charge_amount,\n";
         $voidSelect = $hasVoided ? "SUM(CASE WHEN voided_at IS NOT NULL THEN 1 ELSE 0 END) AS void_count,\n" : "0 AS void_count,\n";
-        $refSelect = $hasRefund ? "SUM(CASE WHEN COALESCE(refund_amount,0) > 0 OR refund_status = 'REFUNDED' THEN 1 ELSE 0 END) AS refunded_count,\n" : "0 AS refunded_count,\n";
-        $sampleTxIdSelect = $hasTxId ? "MIN(id) AS sample_transaction_id,\n" : "NULL AS sample_transaction_id,\n";
-        $sampleCompletedAtSelect = $hasCompletedAt ? "MIN(COALESCE(completed_at, transaction_timestamp)) AS sample_completed_at,\n" : "NULL AS sample_completed_at,\n";
-        $samplePaymentSelect = $hasPaymentMethod ? "SUBSTRING_INDEX(GROUP_CONCAT(payment_method ORDER BY transaction_timestamp DESC SEPARATOR '|'), '|', 1) AS sample_payment_method,\n" : "NULL AS sample_payment_method,\n";
-        $sampleChannelSelect = $hasChannel ? "SUBSTRING_INDEX(GROUP_CONCAT(channel ORDER BY transaction_timestamp DESC SEPARATOR '|'), '|', 1) AS sample_channel,\n" : "NULL AS sample_channel,\n";
-        $samplePrimarySelect = $hasPrimary ? "SUBSTRING_INDEX(GROUP_CONCAT(primary_category ORDER BY transaction_timestamp DESC SEPARATOR '|'), '|', 1) AS sample_primary_category,\n" : "NULL AS sample_primary_category,\n";
+        // Build refunded_count select referencing only existing refund-related columns
+        if ($hasRefund) {
+            $hasRefundAmount = \Illuminate\Support\Facades\Schema::hasColumn('transactions', 'refund_amount');
+            $hasRefundStatus = \Illuminate\Support\Facades\Schema::hasColumn('transactions', 'refund_status');
+            if ($hasRefundAmount && $hasRefundStatus) {
+                $refSelect = "SUM(CASE WHEN COALESCE(refund_amount,0) > 0 OR refund_status = 'REFUNDED' THEN 1 ELSE 0 END) AS refunded_count,\n";
+            } elseif ($hasRefundAmount) {
+                $refSelect = "SUM(CASE WHEN COALESCE(refund_amount,0) > 0 THEN 1 ELSE 0 END) AS refunded_count,\n";
+            } else {
+                $refSelect = "SUM(CASE WHEN refund_status = 'REFUNDED' THEN 1 ELSE 0 END) AS refunded_count,\n";
+            }
+        } else {
+            $refSelect = "0 AS refunded_count,\n";
+        }
+    // sample_* columns intentionally omitted from insert since reporting table no longer stores sample payloads
+    $sampleTxIdSelect = '';
+    $sampleCompletedAtSelect = '';
+    $samplePaymentSelect = '';
+    $sampleChannelSelect = '';
+    $samplePrimarySelect = '';
 
-        $sql = "INSERT INTO " . $insertInto . " (tenant_id, terminal_id, hour, tx_count, total_amount, total_gross_amount, total_net_amount, total_discount_amount, total_tax_amount, total_service_charge_amount, avg_amount, min_amount, max_amount, success_count, decline_count, issues_count, issues_amount, void_count, refunded_count, sample_transaction_id, sample_completed_at, sample_payment_method, sample_channel, sample_primary_category, duplicate_count, created_at, updated_at)\n".
+    $sql = "INSERT INTO " . $insertInto . " (tenant_id, terminal_id, hour, tx_count, total_amount, total_gross_amount, total_net_amount, total_discount_amount, total_tax_amount, total_service_charge_amount, avg_amount, min_amount, max_amount, success_count, decline_count, issues_count, issues_amount, void_count, refunded_count, duplicate_count, created_at, updated_at)\n".
             "SELECT\n".
             "  tenant_id, COALESCE(terminal_id, 0) AS terminal_id, DATE_FORMAT(transaction_timestamp, '%Y-%m-%d %H:00:00') AS hour,\n".
             "  COUNT(*) AS tx_count,\n".
@@ -114,11 +155,7 @@ class ReportingRefreshCommand extends Command
             "  SUM(CASE WHEN validation_status = 'WITH_ISSUES' THEN gross_sales ELSE 0 END) AS issues_amount,\n".
             $voidSelect.
             $refSelect.
-            $sampleTxIdSelect.
-            $sampleCompletedAtSelect.
-            $samplePaymentSelect.
-            $sampleChannelSelect.
-            $samplePrimarySelect.
+            // sample_* selection omitted (resolved at application layer when needed)
             $duplicateSelect.
             "  NOW() AS created_at, NOW() AS updated_at\n".
             "FROM transactions\n".
@@ -141,11 +178,7 @@ class ReportingRefreshCommand extends Command
             "  issues_amount = VALUES(issues_amount),\n".
             "  void_count = VALUES(void_count),\n".
             "  refunded_count = VALUES(refunded_count),\n".
-            "  sample_transaction_id = VALUES(sample_transaction_id),\n".
-            "  sample_completed_at = VALUES(sample_completed_at),\n".
-            "  sample_payment_method = VALUES(sample_payment_method),\n".
-            "  sample_channel = VALUES(sample_channel),\n".
-            "  sample_primary_category = VALUES(sample_primary_category),\n".
+            // sample_* update omitted
             "  duplicate_count = VALUES(duplicate_count),\n".
             "  updated_at = VALUES(updated_at)";
 
