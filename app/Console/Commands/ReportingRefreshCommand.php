@@ -43,8 +43,12 @@ class ReportingRefreshCommand extends Command
         $hours = max(1, $hours);
         $this->info("Computing aggregates for last $hours hours...");
 
-        // Build SQL for MySQL: aggregate from transactions and upsert into transactions_hourly
-        $sql = "INSERT INTO transactions_hourly (tenant_id, terminal_id, hour, tx_count, total_amount, avg_amount, min_amount, max_amount, success_count, decline_count, issues_count, issues_amount, duplicate_count, created_at, updated_at)\n".
+        // Build SQL for MySQL: aggregate from primary `transactions` table and upsert into reporting.transactions_hourly
+        // We execute the query on the primary DB connection but write into the reporting database using a fully-qualified table name.
+        $reportingDb = DB::connection('reporting')->getDatabaseName();
+        $insertInto = sprintf('`%s`.transactions_hourly', $reportingDb);
+
+        $sql = "INSERT INTO " . $insertInto . " (tenant_id, terminal_id, hour, tx_count, total_amount, avg_amount, min_amount, max_amount, success_count, decline_count, issues_count, issues_amount, duplicate_count, created_at, updated_at)\n".
             "SELECT\n".
             "  tenant_id, COALESCE(terminal_id, 0) AS terminal_id, DATE_FORMAT(transaction_timestamp, '%Y-%m-%d %H:00:00') AS hour,\n".
             "  COUNT(*) AS tx_count,\n".
@@ -75,7 +79,8 @@ class ReportingRefreshCommand extends Command
             "  updated_at = VALUES(updated_at)";
 
         try {
-            $affected = DB::connection('reporting')->statement($sql);
+            // Run the aggregation on the primary DB connection (default) so we read the canonical transactions schema
+            DB::statement($sql);
             $this->info('Refresh executed (check rows via select)');
             Log::info('Reporting refresh executed for transactions_hourly', ['hours' => $hours]);
         } catch (\Exception $e) {
@@ -88,7 +93,10 @@ class ReportingRefreshCommand extends Command
     {
         $this->info('Refreshing transactions_daily for last 2 days (default)');
 
-        $sql = "INSERT INTO transactions_daily (tenant_id, terminal_id, date, tx_count, total_amount, avg_amount, issues_count, issues_amount, created_at, updated_at)\n".
+        $reportingDb = DB::connection('reporting')->getDatabaseName();
+        $insertIntoDaily = sprintf('`%s`.transactions_daily', $reportingDb);
+
+        $sql = "INSERT INTO " . $insertIntoDaily . " (tenant_id, terminal_id, date, tx_count, total_amount, avg_amount, issues_count, issues_amount, created_at, updated_at)\n".
             "SELECT\n".
             "  tenant_id, COALESCE(terminal_id, 0) AS terminal_id, DATE(transaction_timestamp) AS date,\n".
             "  COUNT(*) AS tx_count, SUM(gross_sales) AS total_amount, AVG(gross_sales) AS avg_amount,\n".
@@ -107,7 +115,8 @@ class ReportingRefreshCommand extends Command
             "  updated_at = VALUES(updated_at)";
 
         try {
-            DB::connection('reporting')->statement($sql);
+            // Execute on primary connection and write into reporting DB via fully-qualified table name
+            DB::statement($sql);
             $this->info('transactions_daily refresh executed');
             Log::info('Reporting refresh executed for transactions_daily');
         } catch (\Exception $e) {
