@@ -201,6 +201,28 @@ class ReportsController extends Controller
             'sample_primary_category' => $row->sample_primary_category,
         ];
 
+        // If we have a sample_transaction_id, try to resolve it into a full
+        // transaction payload from the primary (authoritative) DB so the
+        // Webapp can display full details for drilldown. This is optional and
+        // best-effort: failures are silently ignored and the sample remains.
+        if (! empty($row->sample_transaction_id)) {
+            try {
+                $primary = DB::connection();
+                $tx = $primary->table('transactions')->where('id', $row->sample_transaction_id)->first();
+                if ($tx) {
+                    // Convert stdClass -> associative array for JSON friendliness
+                    $sample['transaction'] = (array) $tx;
+                } else {
+                    $sample['transaction'] = null;
+                }
+            } catch (\Throwable $e) {
+                // don't fail the entire endpoint for a lookup error
+                $sample['transaction'] = null;
+            }
+        } else {
+            $sample['transaction'] = null;
+        }
+
         $payload = [
             'bucket' => [
                 'tenant_id' => $row->tenant_id,
