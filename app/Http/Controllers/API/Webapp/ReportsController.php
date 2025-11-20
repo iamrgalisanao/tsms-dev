@@ -29,21 +29,81 @@ class ReportsController extends Controller
 
         if ($period === 'hourly') {
             $table = 'transactions_hourly';
-            $select = ['hour as period_start', 'tx_count', 'total_amount'];
-            $query = $conn->table($table)->selectRaw('hour as period_start, tx_count, total_amount');
+
+            // Build a defensive select list based on which columns exist in the
+            // reporting summary table. This avoids hard failures when optional
+            // aggregates are absent in a given environment.
+            $schema = $conn->getSchemaBuilder();
+
+            $selectParts = [
+                'hour as period_start',
+                'tenant_id',
+                'terminal_id',
+                'tx_count',
+                'total_amount as gross_sales',
+            ];
+
+            // Optional aggregate columns added by migration
+            if ($schema->hasColumn($table, 'total_gross_amount')) {
+                $selectParts[] = 'total_gross_amount';
+            }
+            if ($schema->hasColumn($table, 'total_net_amount')) {
+                $selectParts[] = 'total_net_amount';
+            }
+            if ($schema->hasColumn($table, 'total_discount_amount')) {
+                $selectParts[] = 'total_discount_amount';
+            }
+            if ($schema->hasColumn($table, 'total_tax_amount')) {
+                $selectParts[] = 'total_tax_amount';
+            }
+            if ($schema->hasColumn($table, 'total_service_charge_amount')) {
+                $selectParts[] = 'total_service_charge_amount';
+            }
+            if ($schema->hasColumn($table, 'void_count')) {
+                $selectParts[] = 'void_count';
+            }
+            if ($schema->hasColumn($table, 'refunded_count')) {
+                $selectParts[] = 'refunded_count';
+            }
+
+            // Optionally include small human-friendly references from
+            // tenants/pos_terminals if they exist in the reporting DB.
+            $joinTenants = $schema->hasTable('tenants');
+            $joinTerminals = $schema->hasTable('pos_terminals');
+            if ($joinTenants) {
+                $selectParts[] = 'tenants.name as tenant_name';
+            }
+            if ($joinTerminals) {
+                $selectParts[] = 'pos_terminals.serial_number as terminal_uid';
+                // include a zone/label if available
+                if ($schema->hasColumn('pos_terminals', 'zone')) {
+                    $selectParts[] = 'pos_terminals.zone as terminal_zone';
+                }
+            }
+
+            $query = $conn->table($table)->selectRaw(implode(', ', $selectParts));
+
+            if ($joinTenants) {
+                $query->leftJoin('tenants', $table . '.tenant_id', '=', 'tenants.id');
+            }
+            if ($joinTerminals) {
+                $query->leftJoin('pos_terminals', $table . '.terminal_id', '=', 'pos_terminals.id');
+            }
+
             if ($tenantId) {
-                $query->where('tenant_id', $tenantId);
+                $query->where($table . '.tenant_id', $tenantId);
             }
             if ($terminalId) {
-                $query->where('terminal_id', $terminalId);
+                $query->where($table . '.terminal_id', $terminalId);
             }
             if ($start) {
-                $query->where('hour', '>=', $start);
+                $query->where($table . '.hour', '>=', $start);
             }
             if ($end) {
-                $query->where('hour', '<=', $end);
+                $query->where($table . '.hour', '<=', $end);
             }
-            $rows = $query->orderBy('hour', 'asc')->get();
+
+            $rows = $query->orderBy($table . '.hour', 'asc')->get();
         } else {
             // Use daily as base for daily/weekly/monthly/yearly
             $table = 'transactions_daily';
@@ -102,8 +162,20 @@ class ReportsController extends Controller
         $data = $rows->map(function ($r) {
             return [
                 'period_start' => \Carbon\Carbon::parse($r->period_start)->toIso8601String(),
+                'tenant_id' => $r->tenant_id ?? null,
+                'tenant_name' => $r->tenant_name ?? null,
+                'terminal_id' => $r->terminal_id ?? null,
+                'terminal_uid' => $r->terminal_uid ?? null,
+                'terminal_zone' => $r->terminal_zone ?? null,
                 'transactions' => (int) ($r->tx_count ?? 0),
-                'gross_sales' => (float) ($r->total_amount ?? 0),
+                'gross_sales' => (float) ($r->gross_sales ?? $r->total_amount ?? 0),
+                'total_gross_amount' => (float) ($r->total_gross_amount ?? 0),
+                'total_net_amount' => (float) ($r->total_net_amount ?? 0),
+                'total_discount_amount' => (float) ($r->total_discount_amount ?? 0),
+                'total_tax_amount' => (float) ($r->total_tax_amount ?? 0),
+                'total_service_charge_amount' => (float) ($r->total_service_charge_amount ?? 0),
+                'void_count' => (int) ($r->void_count ?? 0),
+                'refunded_count' => (int) ($r->refunded_count ?? 0),
             ];
         })->values();
 
