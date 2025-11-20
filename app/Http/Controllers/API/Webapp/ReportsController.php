@@ -133,35 +133,97 @@ class ReportsController extends Controller
         if (! $date) {
             return response()->json(['message' => 'date parameter required'], 422);
         }
+        $reporting = DB::connection('reporting');
 
-        // For simplicity return transactions from the main table for drilldown
-        $conn = DB::connection('reporting');
-        $query = $conn->table('transactions')->whereDate('created_at', $date);
-        if ($tenantId) {
-            $query->where('tenant_id', $tenantId);
+        // If the reporting DB contains a raw `transactions` table, return paginated transactions there.
+        try {
+            $schema = $reporting->getSchemaBuilder();
+            if ($schema->hasTable('transactions')) {
+                $query = $reporting->table('transactions')->whereDate('created_at', $date);
+                if ($tenantId) {
+                    $query->where('tenant_id', $tenantId);
+                }
+
+                $total = $query->count();
+                $rows = $query->orderBy('created_at', 'desc')->forPage($page, $perPage)->get();
+
+                return response()->json([
+                    'data' => $rows,
+                    'links' => [
+                        'first' => url()->current() . '?page=1',
+                        'last' => url()->current() . '?page=' . max(1, ceil($total / $perPage)),
+                        'prev' => $page > 1 ? url()->current() . '?page=' . ($page - 1) : null,
+                        'next' => $page * $perPage < $total ? url()->current() . '?page=' . ($page + 1) : null,
+                    ],
+                    'meta' => [
+                        'current_page' => $page,
+                        'from' => ($page - 1) * $perPage + 1,
+                        'last_page' => max(1, ceil($total / $perPage)),
+                        'path' => url()->current(),
+                        'per_page' => $perPage,
+                        'to' => min($page * $perPage, $total),
+                        'total' => $total,
+                    ],
+                ]);
+            }
+        } catch (\Throwable $e) {
+            // Fall back to summary buckets if the reporting DB doesn't expose raw transactions
         }
 
-        $total = $query->count();
-        $rows = $query->orderBy('created_at', 'desc')->forPage($page, $perPage)->get();
-
-        return response()->json([
-            'data' => $rows,
-            'links' => [
-                'first' => url()->current() . '?page=1',
-                'last' => url()->current() . '?page=' . max(1, ceil($total / $perPage)),
-                'prev' => $page > 1 ? url()->current() . '?page=' . ($page - 1) : null,
-                'next' => $page * $perPage < $total ? url()->current() . '?page=' . ($page + 1) : null,
-            ],
-            'meta' => [
-                'current_page' => $page,
-                'from' => ($page - 1) * $perPage + 1,
-                'last_page' => max(1, ceil($total / $perPage)),
-                'path' => url()->current(),
-                'per_page' => $perPage,
-                'to' => min($page * $perPage, $total),
-                'total' => $total,
-            ],
+        // Fallback: return the hourly/daily bucket sample stored in summary tables.
+        // If $date includes a time component, match exact hour; otherwise match date portion.
+        $hourlyTable = 'transactions_hourly';
+        $q = $reporting->table($hourlyTable)->select([
+            'tenant_id', 'terminal_id', 'hour', 'tx_count', 'total_amount', 'total_gross_amount', 'total_net_amount', 'total_discount_amount', 'total_tax_amount', 'total_service_charge_amount', 'void_count', 'refunded_count', 'sample_transaction_id', 'sample_completed_at', 'sample_payment_method', 'sample_channel', 'sample_primary_category'
         ]);
+        if ($tenantId) {
+            $q->where('tenant_id', $tenantId);
+        }
+
+        // detect if date is an hour-like value (contains a space or T or colon)
+        if (strpos($date, 'T') !== false || strpos($date, ' ') !== false || strpos($date, ':') !== false) {
+            $q->where('hour', $date);
+        } else {
+            $q->whereDate('hour', $date);
+        }
+
+        $row = $q->first();
+        if (! $row) {
+            return response()->json(['data' => [], 'meta' => ['total' => 0]]);
+        }
+
+        // Build a single-item response that contains the bucket counts and a sample transaction detail
+        $sample = [
+            'sample_transaction_id' => $row->sample_transaction_id,
+            'sample_completed_at' => $row->sample_completed_at ? \Carbon\Carbon::parse($row->sample_completed_at)->toIso8601String() : null,
+            'sample_payment_method' => $row->sample_payment_method,
+            'sample_channel' => $row->sample_channel,
+            'sample_primary_category' => $row->sample_primary_category,
+        ];
+
+        $payload = [
+            'bucket' => [
+                'tenant_id' => $row->tenant_id,
+                'terminal_id' => $row->terminal_id,
+                'hour' => \Carbon\Carbon::parse($row->hour)->toIso8601String(),
+                'transactions' => (int) $row->tx_count,
+                'gross_sales' => (float) $row->total_amount,
+                'total_gross_amount' => (float) ($row->total_gross_amount ?? 0),
+                'total_net_amount' => (float) ($row->total_net_amount ?? 0),
+                'total_discount_amount' => (float) ($row->total_discount_amount ?? 0),
+                'total_tax_amount' => (float) ($row->total_tax_amount ?? 0),
+                'total_service_charge_amount' => (float) ($row->total_service_charge_amount ?? 0),
+                'void_count' => (int) ($row->void_count ?? 0),
+                'refunded_count' => (int) ($row->refunded_count ?? 0),
+            ],
+            'sample' => $sample,
+            'meta' => [
+                'generated_at' => now()->toIso8601String(),
+                'source' => 'summary_tables'
+            ]
+        ];
+
+        return response()->json($payload);
     }
 
     /**

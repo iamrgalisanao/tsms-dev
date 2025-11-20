@@ -18,6 +18,23 @@ class CreateTransactionsHourlyTable extends Migration
             $table->decimal('avg_amount', 18, 4)->default(0);
             $table->decimal('min_amount', 18, 4)->nullable();
             $table->decimal('max_amount', 18, 4)->nullable();
+            // Financial breakdowns (minimum per-transaction money fields aggregated)
+            $table->decimal('total_gross_amount', 18, 4)->default(0);
+            $table->decimal('total_net_amount', 18, 4)->default(0);
+            $table->decimal('total_discount_amount', 18, 4)->default(0);
+            $table->decimal('total_tax_amount', 18, 4)->default(0);
+            $table->decimal('total_service_charge_amount', 18, 4)->default(0);
+
+            // Status / count fields
+            $table->bigInteger('void_count')->default(0);
+            $table->bigInteger('refunded_count')->default(0);
+
+            // Optional sample/detail columns to support drilldowns (nullable)
+            $table->unsignedBigInteger('sample_transaction_id')->nullable();
+            $table->dateTime('sample_completed_at')->nullable();
+            $table->string('sample_payment_method', 64)->nullable();
+            $table->string('sample_channel', 64)->nullable();
+            $table->string('sample_primary_category', 128)->nullable();
 
             $table->bigInteger('success_count')->default(0);
             $table->bigInteger('decline_count')->default(0);

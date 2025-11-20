@@ -62,11 +62,49 @@ class ReportingRefreshCommand extends Command
             ? "SUM(CASE WHEN COALESCE(is_duplicate, 0) = 1 THEN 1 ELSE 0 END) AS duplicate_count,\n"
             : "0 AS duplicate_count,\n";
 
-        $sql = "INSERT INTO " . $insertInto . " (tenant_id, terminal_id, hour, tx_count, total_amount, avg_amount, min_amount, max_amount, success_count, decline_count, issues_count, issues_amount, duplicate_count, created_at, updated_at)\n".
+        // Build select fragments with runtime guards so we don't fail if the raw
+        // `transactions` table in some deployments lacks optional columns.
+        $hasNet = false; $hasDiscount = false; $hasVat = false; $hasSc = false;
+        $hasVoided = false; $hasRefund = false; $hasPaymentMethod = false; $hasChannel = false; $hasPrimary = false; $hasTxId = false; $hasCompletedAt = false;
+        try {
+            $schema = \Illuminate\Support\Facades\Schema::getFacadeRoot();
+            $hasNet = \Illuminate\Support\Facades\Schema::hasColumn('transactions', 'net_sales');
+            $hasDiscount = \Illuminate\Support\Facades\Schema::hasColumn('transactions', 'discount_total') || \Illuminate\Support\Facades\Schema::hasColumn('transactions', 'promo_discount');
+            $hasVat = \Illuminate\Support\Facades\Schema::hasColumn('transactions', 'vat_amount') || \Illuminate\Support\Facades\Schema::hasColumn('transactions', 'tax_amount');
+            $hasSc = \Illuminate\Support\Facades\Schema::hasColumn('transactions', 'service_charge');
+            $hasVoided = \Illuminate\Support\Facades\Schema::hasColumn('transactions', 'voided_at');
+            $hasRefund = \Illuminate\Support\Facades\Schema::hasColumn('transactions', 'refund_amount') || \Illuminate\Support\Facades\Schema::hasColumn('transactions', 'refund_status');
+            $hasPaymentMethod = \Illuminate\Support\Facades\Schema::hasColumn('transactions', 'payment_method');
+            $hasChannel = \Illuminate\Support\Facades\Schema::hasColumn('transactions', 'channel');
+            $hasPrimary = \Illuminate\Support\Facades\Schema::hasColumn('transactions', 'primary_category');
+            $hasTxId = \Illuminate\Support\Facades\Schema::hasColumn('transactions', 'id') || \Illuminate\Support\Facades\Schema::hasColumn('transactions', 'transaction_pk');
+            $hasCompletedAt = \Illuminate\Support\Facades\Schema::hasColumn('transactions', 'completed_at') || \Illuminate\Support\Facades\Schema::hasColumn('transactions', 'transaction_timestamp');
+        } catch (\Throwable $e) {
+            // ignore and leave flags false
+        }
+
+        $netSelect = $hasNet ? "SUM(COALESCE(net_sales,0)) AS total_net_amount,\n" : "0 AS total_net_amount,\n";
+        $discountSelect = $hasDiscount ? "SUM(COALESCE(discount_total, COALESCE(promo_discount,0),0)) AS total_discount_amount,\n" : "0 AS total_discount_amount,\n";
+        $vatSelect = $hasVat ? "SUM(COALESCE(vat_amount, COALESCE(tax_amount,0),0)) AS total_tax_amount,\n" : "0 AS total_tax_amount,\n";
+        $scSelect = $hasSc ? "SUM(COALESCE(service_charge,0)) AS total_service_charge_amount,\n" : "0 AS total_service_charge_amount,\n";
+        $voidSelect = $hasVoided ? "SUM(CASE WHEN voided_at IS NOT NULL THEN 1 ELSE 0 END) AS void_count,\n" : "0 AS void_count,\n";
+        $refSelect = $hasRefund ? "SUM(CASE WHEN COALESCE(refund_amount,0) > 0 OR refund_status = 'REFUNDED' THEN 1 ELSE 0 END) AS refunded_count,\n" : "0 AS refunded_count,\n";
+        $sampleTxIdSelect = $hasTxId ? "MIN(id) AS sample_transaction_id,\n" : "NULL AS sample_transaction_id,\n";
+        $sampleCompletedAtSelect = $hasCompletedAt ? "MIN(COALESCE(completed_at, transaction_timestamp)) AS sample_completed_at,\n" : "NULL AS sample_completed_at,\n";
+        $samplePaymentSelect = $hasPaymentMethod ? "SUBSTRING_INDEX(GROUP_CONCAT(payment_method ORDER BY transaction_timestamp DESC SEPARATOR '|'), '|', 1) AS sample_payment_method,\n" : "NULL AS sample_payment_method,\n";
+        $sampleChannelSelect = $hasChannel ? "SUBSTRING_INDEX(GROUP_CONCAT(channel ORDER BY transaction_timestamp DESC SEPARATOR '|'), '|', 1) AS sample_channel,\n" : "NULL AS sample_channel,\n";
+        $samplePrimarySelect = $hasPrimary ? "SUBSTRING_INDEX(GROUP_CONCAT(primary_category ORDER BY transaction_timestamp DESC SEPARATOR '|'), '|', 1) AS sample_primary_category,\n" : "NULL AS sample_primary_category,\n";
+
+        $sql = "INSERT INTO " . $insertInto . " (tenant_id, terminal_id, hour, tx_count, total_amount, total_gross_amount, total_net_amount, total_discount_amount, total_tax_amount, total_service_charge_amount, avg_amount, min_amount, max_amount, success_count, decline_count, issues_count, issues_amount, void_count, refunded_count, sample_transaction_id, sample_completed_at, sample_payment_method, sample_channel, sample_primary_category, duplicate_count, created_at, updated_at)\n".
             "SELECT\n".
             "  tenant_id, COALESCE(terminal_id, 0) AS terminal_id, DATE_FORMAT(transaction_timestamp, '%Y-%m-%d %H:00:00') AS hour,\n".
             "  COUNT(*) AS tx_count,\n".
             "  SUM(gross_sales) AS total_amount,\n".
+            "  SUM(gross_sales) AS total_gross_amount,\n".
+            $netSelect.
+            $discountSelect.
+            $vatSelect.
+            $scSelect.
             "  AVG(gross_sales) AS avg_amount,\n".
             "  MIN(gross_sales) AS min_amount,\n".
             "  MAX(gross_sales) AS max_amount,\n".
@@ -74,6 +112,13 @@ class ReportingRefreshCommand extends Command
             "  SUM(CASE WHEN transaction_type = 'decline' THEN 1 ELSE 0 END) AS decline_count,\n".
             "  SUM(CASE WHEN validation_status = 'WITH_ISSUES' THEN 1 ELSE 0 END) AS issues_count,\n".
             "  SUM(CASE WHEN validation_status = 'WITH_ISSUES' THEN gross_sales ELSE 0 END) AS issues_amount,\n".
+            $voidSelect.
+            $refSelect.
+            $sampleTxIdSelect.
+            $sampleCompletedAtSelect.
+            $samplePaymentSelect.
+            $sampleChannelSelect.
+            $samplePrimarySelect.
             $duplicateSelect.
             "  NOW() AS created_at, NOW() AS updated_at\n".
             "FROM transactions\n".
@@ -82,6 +127,11 @@ class ReportingRefreshCommand extends Command
             "ON DUPLICATE KEY UPDATE\n".
             "  tx_count = VALUES(tx_count),\n".
             "  total_amount = VALUES(total_amount),\n".
+            "  total_gross_amount = VALUES(total_gross_amount),\n".
+            "  total_net_amount = VALUES(total_net_amount),\n".
+            "  total_discount_amount = VALUES(total_discount_amount),\n".
+            "  total_tax_amount = VALUES(total_tax_amount),\n".
+            "  total_service_charge_amount = VALUES(total_service_charge_amount),\n".
             "  avg_amount = VALUES(avg_amount),\n".
             "  min_amount = VALUES(min_amount),\n".
             "  max_amount = VALUES(max_amount),\n".
@@ -89,6 +139,13 @@ class ReportingRefreshCommand extends Command
             "  decline_count = VALUES(decline_count),\n".
             "  issues_count = VALUES(issues_count),\n".
             "  issues_amount = VALUES(issues_amount),\n".
+            "  void_count = VALUES(void_count),\n".
+            "  refunded_count = VALUES(refunded_count),\n".
+            "  sample_transaction_id = VALUES(sample_transaction_id),\n".
+            "  sample_completed_at = VALUES(sample_completed_at),\n".
+            "  sample_payment_method = VALUES(sample_payment_method),\n".
+            "  sample_channel = VALUES(sample_channel),\n".
+            "  sample_primary_category = VALUES(sample_primary_category),\n".
             "  duplicate_count = VALUES(duplicate_count),\n".
             "  updated_at = VALUES(updated_at)";
 
