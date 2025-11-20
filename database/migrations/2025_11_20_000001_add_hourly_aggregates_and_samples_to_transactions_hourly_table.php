@@ -15,25 +15,48 @@ class AddHourlyAggregatesAndSamplesToTransactionsHourlyTable extends Migration
      */
     public function up()
     {
-        Schema::connection('reporting')->table('transactions_hourly', function (Blueprint $table) {
-            // Financial aggregates (denormalized sums)
-            $table->decimal('total_gross_amount', 18, 4)->default(0)->after('total_amount');
-            $table->decimal('total_net_amount', 18, 4)->default(0)->after('total_gross_amount');
-            $table->decimal('total_discount_amount', 18, 4)->default(0)->after('total_net_amount');
-            $table->decimal('total_tax_amount', 18, 4)->default(0)->after('total_discount_amount');
-            $table->decimal('total_service_charge_amount', 18, 4)->default(0)->after('total_tax_amount');
+        // Add columns only if they don't yet exist (idempotent).
+        if (!Schema::hasColumn('transactions_hourly', 'total_gross_amount')) {
+            Schema::table('transactions_hourly', function (Blueprint $table) {
+                $table->decimal('total_gross_amount', 18, 4)->default(0)->after('total_amount');
+            });
+        }
 
-            // Status counts
-            $table->bigInteger('void_count')->default(0)->after('issues_amount');
-            $table->bigInteger('refunded_count')->default(0)->after('void_count');
+        if (!Schema::hasColumn('transactions_hourly', 'total_net_amount')) {
+            Schema::table('transactions_hourly', function (Blueprint $table) {
+                $table->decimal('total_net_amount', 18, 4)->default(0)->after('total_gross_amount');
+            });
+        }
 
-            // Optional sample/detail columns to support drilldowns
-            $table->unsignedBigInteger('sample_transaction_id')->nullable()->after('refunded_count');
-            $table->dateTime('sample_completed_at')->nullable()->after('sample_transaction_id');
-            $table->string('sample_payment_method', 64)->nullable()->after('sample_completed_at');
-            $table->string('sample_channel', 64)->nullable()->after('sample_payment_method');
-            $table->string('sample_primary_category', 128)->nullable()->after('sample_channel');
-        });
+        if (!Schema::hasColumn('transactions_hourly', 'total_discount_amount')) {
+            Schema::table('transactions_hourly', function (Blueprint $table) {
+                $table->decimal('total_discount_amount', 18, 4)->default(0)->after('total_net_amount');
+            });
+        }
+
+        if (!Schema::hasColumn('transactions_hourly', 'total_tax_amount')) {
+            Schema::table('transactions_hourly', function (Blueprint $table) {
+                $table->decimal('total_tax_amount', 18, 4)->default(0)->after('total_discount_amount');
+            });
+        }
+
+        if (!Schema::hasColumn('transactions_hourly', 'total_service_charge_amount')) {
+            Schema::table('transactions_hourly', function (Blueprint $table) {
+                $table->decimal('total_service_charge_amount', 18, 4)->default(0)->after('total_tax_amount');
+            });
+        }
+
+        if (!Schema::hasColumn('transactions_hourly', 'void_count')) {
+            Schema::table('transactions_hourly', function (Blueprint $table) {
+                $table->bigInteger('void_count')->default(0)->after('issues_amount');
+            });
+        }
+
+        if (!Schema::hasColumn('transactions_hourly', 'refunded_count')) {
+            Schema::table('transactions_hourly', function (Blueprint $table) {
+                $table->bigInteger('refunded_count')->default(0)->after('void_count');
+            });
+        }
     }
 
     /**
@@ -43,14 +66,14 @@ class AddHourlyAggregatesAndSamplesToTransactionsHourlyTable extends Migration
      */
     public function down()
     {
-        Schema::connection('reporting')->table('transactions_hourly', function (Blueprint $table) {
+        Schema::table('transactions_hourly', function (Blueprint $table) {
             $cols = [
                 'total_gross_amount', 'total_net_amount', 'total_discount_amount', 'total_tax_amount', 'total_service_charge_amount',
-                'void_count', 'refunded_count', 'sample_transaction_id', 'sample_completed_at', 'sample_payment_method', 'sample_channel', 'sample_primary_category'
+                'void_count', 'refunded_count'
             ];
 
             foreach ($cols as $c) {
-                if (Schema::connection('reporting')->hasColumn('transactions_hourly', $c)) {
+                if (Schema::hasColumn('transactions_hourly', $c)) {
                     $table->dropColumn($c);
                 }
             }
