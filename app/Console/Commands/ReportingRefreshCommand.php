@@ -48,6 +48,20 @@ class ReportingRefreshCommand extends Command
         $reportingDb = DB::connection('reporting')->getDatabaseName();
         $insertInto = sprintf('`%s`.transactions_hourly', $reportingDb);
 
+        // Some deployments may have divergent `transactions` schemas (e.g. missing is_duplicate).
+        // Detect optional columns and adapt the SELECT to avoid SQL errors on servers without the column.
+        $hasIsDuplicate = false;
+        try {
+            $hasIsDuplicate = \Illuminate\Support\Facades\Schema::hasColumn('transactions', 'is_duplicate');
+        } catch (\Throwable $e) {
+            // If Schema check fails, assume column is absent to be safe
+            $hasIsDuplicate = false;
+        }
+
+        $duplicateSelect = $hasIsDuplicate
+            ? "SUM(CASE WHEN COALESCE(is_duplicate, 0) = 1 THEN 1 ELSE 0 END) AS duplicate_count,\n"
+            : "0 AS duplicate_count,\n";
+
         $sql = "INSERT INTO " . $insertInto . " (tenant_id, terminal_id, hour, tx_count, total_amount, avg_amount, min_amount, max_amount, success_count, decline_count, issues_count, issues_amount, duplicate_count, created_at, updated_at)\n".
             "SELECT\n".
             "  tenant_id, COALESCE(terminal_id, 0) AS terminal_id, DATE_FORMAT(transaction_timestamp, '%Y-%m-%d %H:00:00') AS hour,\n".
@@ -60,7 +74,7 @@ class ReportingRefreshCommand extends Command
             "  SUM(CASE WHEN transaction_type = 'decline' THEN 1 ELSE 0 END) AS decline_count,\n".
             "  SUM(CASE WHEN validation_status = 'WITH_ISSUES' THEN 1 ELSE 0 END) AS issues_count,\n".
             "  SUM(CASE WHEN validation_status = 'WITH_ISSUES' THEN gross_sales ELSE 0 END) AS issues_amount,\n".
-            "  SUM(CASE WHEN COALESCE(is_duplicate, 0) = 1 THEN 1 ELSE 0 END) AS duplicate_count,\n".
+            $duplicateSelect.
             "  NOW() AS created_at, NOW() AS updated_at\n".
             "FROM transactions\n".
             "WHERE transaction_timestamp >= DATE_SUB(DATE_FORMAT(NOW(), '%Y-%m-%d %H:00:00'), INTERVAL {$hours} HOUR)\n".
