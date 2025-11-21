@@ -143,6 +143,6 @@ class HourlyTransactionsController extends Controller
             ];
         })->values();
 
-        return response()->json($data);
+        return response()->json(['data' => $data]);
     }
 }
