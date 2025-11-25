@@ -26,15 +26,16 @@ class UserController extends Controller
             'name' => 'required',
             'email' => 'required|email|unique:users',
             'password' => 'required|min:8',
-            'roles' => 'array'
+            'role' => 'nullable|string|exists:roles,name'
         ]);
         $user = User::create([
             'name' => $validated['name'],
             'email' => $validated['email'],
             'password' => bcrypt($validated['password']),
         ]);
-        if (!empty($validated['roles'])) {
-            $user->syncRoles($validated['roles']);
+        if (!empty($validated['role'])) {
+            // syncRoles expects array or list of roles; provide single role as array
+            $user->syncRoles([$validated['role']]);
         }
         return redirect()->route('users.index');
     }
@@ -50,11 +51,11 @@ class UserController extends Controller
         $validated = $request->validate([
             'name' => 'required',
             'email' => 'required|email|unique:users,email,' . $user->id,
-            'roles' => 'array'
+            'role' => 'nullable|string|exists:roles,name'
         ]);
         $user->update($validated);
-        if (!empty($validated['roles'])) {
-            $user->syncRoles($validated['roles']);
+        if (array_key_exists('role', $validated) && !empty($validated['role'])) {
+            $user->syncRoles([$validated['role']]);
         }
         return redirect()->route('users.index');
     }
