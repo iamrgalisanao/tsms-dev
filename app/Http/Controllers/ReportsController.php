@@ -29,10 +29,21 @@ class ReportsController extends Controller
      */
     public function data(Request $request)
     {
-        $year  = (int) $request->query('year', now()->year);
-        $month = str_pad($request->query('month', now()->format('m')), 2, '0', STR_PAD_LEFT);
-    // Accept either 'tenant' or legacy 'trade' parameter from the JS
-    $tenant = $request->query('tenant', $request->query('trade', null));
+        // Accept either 'tenant' or legacy 'trade' parameter from the JS
+        $tenant = $request->query('tenant', $request->query('trade', null));
+
+        // Accept month as either 'MM' or 'YYYY-MM' (the UI uses <input type="month">)
+        $rawMonth = $request->query('month', now()->format('m'));
+        $year = (int) $request->query('year', now()->year);
+        $month = null;
+        if (is_string($rawMonth) && str_contains($rawMonth, '-')) {
+            // format: YYYY-MM
+            [$y, $m] = explode('-', $rawMonth) + [null, null];
+            $year = (int) ($y ?? $year);
+            $month = str_pad(($m ?? now()->format('m')), 2, '0', STR_PAD_LEFT);
+        } else {
+            $month = str_pad($rawMonth, 2, '0', STR_PAD_LEFT);
+        }
 
         $query = Transaction::query();
         if ($tenant && $tenant !== 'all') {
