@@ -50,7 +50,7 @@
             </a>
         </li>
 
-    @if(auth()->user() && auth()->user()->hasAnyRole(['admin', 'manager']))
+    @if(auth()->user() && auth()->user()->hasAnyRole(['admin', 'manager', 'finance']))
     <li class="nav-item">
       <a href="{{ route('transactions.logs.index') }}"
       class="nav-link {{ Request::routeIs('transactions.logs.*') ? 'active' : '' }}">
@@ -76,12 +76,14 @@
             </a>
         </li> --}}
 
-        <li class="nav-item">
-            <a href="{{ route('system-logs.index') }}" class="nav-link {{ Request::routeIs('system-logs.*') ? 'active' : '' }}">
-            <i class="nav-icon fas fa-history text-white"></i> 
-            <p class="text-white">System Logs</p>
-            </a>
-        </li>
+    @if(auth()->user() && auth()->user()->hasRole('admin'))
+    <li class="nav-item">
+      <a href="{{ route('system-logs.index') }}" class="nav-link {{ Request::routeIs('system-logs.*') ? 'active' : '' }}">
+      <i class="nav-icon fas fa-history text-white"></i> 
+      <p class="text-white">System Logs</p>
+      </a>
+    </li>
+    @endif
 
         {{-- <li class="nav-item">
             <a href="{{ route('circuit-breakers') }}"
@@ -90,13 +92,15 @@
             </a>
         </li> --}}
 
-        <li class="nav-item">
-            <a href="{{ route('terminal-tokens') }}"
-            class="nav-link {{ Request::routeIs('terminal-tokens') ? 'active' : '' }}">
-            <i class="nav-icon fas fa-key text-white"></i> 
-            <p class="text-white">Terminal Tokens</p>
-            </a>
-        </li>
+    @if(auth()->user() && auth()->user()->hasRole('admin'))
+    <li class="nav-item">
+      <a href="{{ route('terminal-tokens') }}"
+      class="nav-link {{ Request::routeIs('terminal-tokens') ? 'active' : '' }}">
+      <i class="nav-icon fas fa-key text-white"></i> 
+      <p class="text-white">Terminal Tokens</p>
+      </a>
+    </li>
+    @endif
 
         {{-- User Management --}}
         @if(auth()->user() && auth()->user()->hasAnyRole(['admin', 'manager']))
@@ -107,6 +111,16 @@
             </a>
         </li>
         @endif
+        
+    {{-- Finance Reports (Finance role only) --}}
+    @if(auth()->user() && auth()->user()->hasRole('finance'))
+    <li class="nav-item">
+      <a href="{{ route('reports.index') }}" class="nav-link {{ Request::routeIs('reports.*') ? 'active' : '' }}">
+        <i class="nav-icon fas fa-chart-line text-white"></i>
+        <p class="text-white">Reports</p>
+      </a>
+    </li>
+    @endif
 
       {{-- Logout sticks to bottom --}}
       <li class="nav-item d-sm-inline-block mt-auto">
