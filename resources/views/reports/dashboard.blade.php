@@ -13,8 +13,14 @@
 <link rel="stylesheet" href="{{ asset('plugins/datatables-buttons/css/buttons.bootstrap4.min.css') }}">
 <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
 <style>
+/* Consolidated certified monthly sales report styles
+   - kept print-ready A4 portrait rules
+   - removed duplicate selectors and tightened spacing
+*/
+
 .print-btn { transition: all 0.3s ease; }
 .print-btn:hover { background-color: rgba(173, 216, 230, 0.2) !important; }
+
 .dashboard-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.5rem; }
 .dashboard-header h1 { font-size: 2rem; font-weight: 700; color: #2563eb; margin: 0; }
 .dashboard-header .search-bar { width: 320px; max-width: 100%; background: #f3f4f6; border-radius: 8px; padding: 0.5rem 1rem; border: 1px solid #e5e7eb; display: flex; align-items: center; }
@@ -22,143 +28,25 @@
 .dashboard-header .search-bar i { color: #2563eb; margin-right: 0.5rem; }
 
 /* Make the printable container full-width */
-.print-content {
-  width: 100% !important;
-  max-width: 100% !important;
-  padding: 0 !important;
-  margin: 0 auto !important;
-}
+.print-content { width: 100% !important; max-width: 100% !important; padding: 0 !important; margin: 0 auto !important; }
 
-/* Utility & layout */
-.print-btn {
-  transition: all 0.3s ease;
-}
-.print-btn:hover {
-  background-color: rgba(173, 216, 230, 0.2) !important;
-}
-.dashboard-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 1.5rem;
-}
-.dashboard-header h1 {
-  font-size: 2rem;
-  font-weight: 700;
-  color: #2563eb;
-  margin: 0;
-}
-.dashboard-header .search-bar {
-  width: 320px;
-  max-width: 100%;
-  background: #f3f4f6;
-  border-radius: 8px;
-  padding: 0.5rem 1rem;
-  border: 1px solid #e5e7eb;
-  display: flex;
-  align-items: center;
-}
-.dashboard-header .search-bar input {
-  border: none;
-  background: transparent;
-  outline: none;
-  width: 100%;
-  font-size: 1rem;
-  color: #22223b;
-}
-.dashboard-header .search-bar i {
-  color: #2563eb;
-  margin-right: 0.5rem;
-}
+.report-tabs { border-bottom: 2px solid #e74c3c; margin-bottom: 1.5rem; padding: 0.5rem 1rem 0 1rem; background: #fff; border-radius: 8px 8px 0 0; display: flex; align-items: center; }
+.report-tabs .nav-link { border: none; border-radius: 0; color: #22223b; font-weight: 500; background: transparent; margin-right: 0.5rem; }
+.report-tabs .nav-link.active { background: #fff; border-bottom: 2px solid #2563eb; color: #2563eb; font-weight: 700; }
 
-.report-tabs {
-  border-bottom: 2px solid #e74c3c;
-  margin-bottom: 1.5rem;
-  padding: 0.5rem 1rem 0 1rem;
-  background: #fff;
-  border-radius: 8px 8px 0 0;
-  display: flex;
-  align-items: center;
-}
-.report-tabs .nav-link {
-  border: none;
-  border-radius: 0;
-  color: #22223b;
-  font-weight: 500;
-  background: transparent;
-  margin-right: 0.5rem;
-}
-.report-tabs .nav-link.active {
-  background: #fff;
-  border-bottom: 2px solid #2563eb;
-  color: #2563eb;
-  font-weight: 700;
-}
-
-.report-header-row {
-  display: flex;
-  justify-content: flex-end;
-  align-items: center;
-  margin-bottom: 1rem;
-}
-.report-date {
-  background: #f3f4f6;
-  border-radius: 6px;
-  padding: 0.5rem 1rem;
-  font-size: 1rem;
-  color: #22223b;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-.report-logo {
-  height: 100px;
-  width: auto;
-  max-width: 160px;
-}
+.report-header-row { display: flex; justify-content: flex-end; align-items: center; margin-bottom: 1rem; }
+.report-date { background: #f3f4f6; border-radius: 6px; padding: 0.5rem 1rem; font-size: 1rem; color: #22223b; display: flex; align-items: center; gap: 0.5rem; }
+.report-logo { height: 100px; width: auto; max-width: 160px; }
 
 /* Header layout: center titles and position logo to the right */
-.report-header {
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin-bottom: 1rem;
-}
-.logo-wrap {
-  position: absolute;
-  right: 0.5rem;
-  top: 0;
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-}
+.report-header { position: relative; display: flex; align-items: center; justify-content: center; margin-bottom: 1rem; }
+.logo-wrap { position: absolute; right: 0.5rem; top: 0; display: flex; align-items: center; justify-content: flex-end; }
+.report-header .text-center { max-width: calc(100% - 140px); padding: 0 12px; text-align: center; white-space: normal; }
 
-/* Reserve horizontal space for the logo so titles wrap correctly */
-.report-header .text-center {
-  max-width: calc(100% - 140px); /* leave room for logo + padding (portrait uses narrower reserved space) */
-  padding: 0 12px;
-  text-align: center;
-  white-space: normal; /* allow wrapping */
-}
-
-/* Responsive: on narrow screens stack logo and titles to avoid overlap */
 @media (max-width: 768px) {
-  .report-header {
-    flex-direction: column;
-    align-items: center;
-  }
-  .logo-wrap {
-    position: static !important;
-    order: -1;
-    margin-bottom: 6px;
-    right: auto;
-    top: auto;
-  }
-  .report-header .text-center {
-    max-width: 100% !important;
-    padding: 0 6px !important;
-  }
+  .report-header { flex-direction: column; align-items: center; }
+  .logo-wrap { position: static !important; order: -1; margin-bottom: 6px; right: auto; top: auto; }
+  .report-header .text-center { max-width: 100% !important; padding: 0 6px !important; }
   .report-logo { height: 80px; }
 }
 
@@ -170,33 +58,10 @@
 }
 
 /* Table styling */
-.report-table th,
-.report-table td {
-  font-size: 0.95rem;
-  text-align: right;
-  vertical-align: middle;
-  border: 1px solid #dee2e6 !important;
-  padding: 0.4rem 0.6rem;
-}
-.report-table th {
-  background: #f8f9fa;
-  font-weight: 600;
-  color: #22223b;
-  text-align: center;
-  font-size: 0.82rem; /* slightly smaller so long headers fit */
-  line-height: 1.05;
-  padding: 0.35rem 0.45rem; /* tighter padding for header cells */
-  white-space: normal; /* allow wrapping */
-  overflow-wrap: break-word;
-  word-wrap: break-word;
-  hyphens: auto;
-}
-.report-table td:first-child,
-.report-table th:first-child {
-  text-align: center;
-}
+.report-table th, .report-table td { font-size: 0.95rem; text-align: right; vertical-align: middle; border: 1px solid #dee2e6 !important; padding: 0.4rem 0.6rem; }
+.report-table th { background: #f8f9fa; font-weight: 600; color: #22223b; text-align: center; font-size: 0.82rem; line-height: 1.05; padding: 0.35rem 0.45rem; white-space: normal; overflow-wrap: break-word; word-wrap: break-word; hyphens: auto; }
+.report-table td:first-child, .report-table th:first-child { text-align: center; }
 
-/* Desktop column width hints to avoid extremely narrow header columns */
 @media (min-width: 992px) {
   .report-table th:nth-child(1), .report-table td:nth-child(1) { width: 6%; }
   .report-table th:nth-child(2), .report-table td:nth-child(2) { width: 12%; }
@@ -215,139 +80,63 @@
 }
 
 /* Signature block */
-.report-signature {
-  margin-top: 2.5rem;
-  display: flex;
-  justify-content: space-between;
-  gap: 2rem;
-}
-.report-signature .sig-block {
-  width: 45%;
-  text-align: center;
-}
-.report-signature .sig-line {
-  border-bottom: 1px solid #22223b;
-  margin: 2.5rem 0 0.5rem 0;
-  width: 100%;
-  display: inline-block;
-}
+.report-signature { margin-top: 2.5rem; display: flex; justify-content: space-between; gap: 2rem; }
+.report-signature .sig-block { width: 45%; text-align: center; }
+.report-signature .sig-line { border-bottom: 1px solid #22223b; margin: 2.5rem 0 0.5rem 0; width: 100%; display: inline-block; }
 
 /* Sidebar & toolbar */
-.sticky-toolbar {
-  position: sticky;
-  top: 0;
-  z-index: 100;
-  background: #fff;
-  padding: 1rem;
-  border-bottom: 1px solid #dee2e6;
-}
-.filter-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  flex-wrap: wrap;
-}
-.filter-group {
-  flex: 1;
-  min-width: 200px;
-}
-select.select2-store {
-  width: 100%;
-}
+.sticky-toolbar { position: sticky; top: 0; z-index: 100; background: #fff; padding: 1rem; border-bottom: 1px solid #dee2e6; }
+.filter-toolbar { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
+.filter-group { flex: 1; min-width: 200px; }
+/* Select2 sizing + truncation for dropdown inside sticky toolbar */
+select.select2-store { width: 100%; }
+.select2-container { width: 100% !important; }
+.select2-container--default .select2-selection--single { height: calc(2.25rem + 2px); border-radius: 6px; padding: 0.25rem 0.5rem; }
+.select2-selection__rendered { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: inline-block; max-width: 100%; }
+.select2-selection__placeholder { color: #6b7280; }
 
-/* Responsive signature */
-@media (max-width: 991px) {
-  .report-signature {
-    flex-direction: column;
-    gap: 1.5rem;
-  }
-  .report-signature .sig-block {
-    width: 100%;
-  }
-}
-
-/* Global table defaults */
-table {
-  width: 100%;
-  border-collapse: collapse;
-}
-.sales-report-table {
-  width: 100%;
-  margin: 0;
-  padding: 0;
-}
 @media (max-width: 991px) {
   .report-signature { flex-direction: column; gap: 1.5rem; }
   .report-signature .sig-block { width: 100%; }
 }
+
+/* Global table defaults */
+table { width: 100%; border-collapse: collapse; }
+.sales-report-table { width: 100%; margin: 0; padding: 0; }
+
+/* Compact label/value rows used in Less/Add sections */
+.report-list { margin-top: 0.25rem; }
+.report-list .report-line { display: flex; justify-content: space-between; align-items: center; gap: 0.75rem; padding: 2px 0; white-space: nowrap; }
+.report-list .report-line .label { flex: 1 1 auto; text-align: left; overflow: hidden; text-overflow: ellipsis; }
+.report-list .report-line .value { flex: 0 0 auto; min-width: 90px; text-align: right; }
+.report-list .report-line .value span { display: inline-block; }
+
+@media (max-width: 575px) {
+  .report-list .report-line { gap: 0.4rem; }
+  .report-list .report-line .label { font-size: 0.95rem; }
+  .report-list .report-line .value { min-width: 70px; }
+}
+
 /* PRINT STYLES */
 @media print {
-  /* Use A4 portrait for certified report printouts */
-  @page {
-    size: A4 portrait;
-    margin: 10mm 10mm 10mm 10mm;
-  }
+  @page { size: A4 portrait; margin: 10mm; }
 
-  /* Normalize page canvas and use a readable serif for certified reports */
-  html, body, .print-content {
-    width: 100% !important;
-    height: auto !important;
-    margin: 0 !important;
-    padding: 0 !important;
-    font-family: "Times New Roman", Georgia, serif !important;
-    font-size: 10pt !important;
-    line-height: 1.25 !important;
-    color: #000 !important;
-    background: #fff !important;
-  }
+  html, body, .print-content { width: 100% !important; height: auto !important; margin: 0 !important; padding: 0 !important; font-family: "Times New Roman", Georgia, serif !important; font-size: 10pt !important; line-height: 1.25 !important; color: #000 !important; background: #fff !important; }
 
-  /* Remove UI chrome */
-  .sticky-toolbar,
-  .filter-toolbar,
-  .main-sidebar,
-  .main-header,
-  .content-header,
-  #errorAlert,
-  .export-btn,
-  .main-footer,
-  .btn { display: none !important; }
+  /* Hide UI chrome */
+  .sticky-toolbar, .filter-toolbar, .main-sidebar, .main-header, .content-header, #errorAlert, .export-btn, .main-footer, .btn { display: none !important; }
 
-  /* Remove shadows and panel borders that interfere with print layout */
   .card, .card-header, .card-body { box-shadow: none !important; border: none !important; background: transparent !important; }
-
-  /* Table: fixed layout, explicit widths, visible overflow so the table does not clip */
   .table-responsive { overflow: visible !important; }
-  .report-table, .sales-report-table {
-    width: 100% !important;
-    max-width: none !important;
-    table-layout: fixed !important;
-    border-collapse: collapse !important;
-  }
 
-  /* Tighter paddings and consistent borders for printed output */
-  .report-table th,
-  .report-table td {
-    padding: 2px 4px !important;
-    font-size: 9.5pt !important;
-    vertical-align: middle !important;
-    border: 1px solid #000 !important;
-    background: transparent !important;
-    white-space: nowrap !important; /* keep numeric cells on one line */
-  }
+  .report-table, .sales-report-table { width: 100% !important; max-width: none !important; table-layout: fixed !important; border-collapse: collapse !important; }
 
-  /* Tabular digits keep numbers aligned across rows */
-  .report-table th,
-  .report-table td,
-  .amount-field,
-  .report-table .numeric {
-    font-variant-numeric: tabular-nums;
-    -moz-font-feature-settings: "tnum" 1;
-    -webkit-font-feature-settings: "tnum" 1;
-    font-feature-settings: "tnum" 1;
-  }
+  .report-table th, .report-table td { padding: 2px 4px !important; font-size: 9.5pt !important; vertical-align: middle !important; border: 1px solid #000 !important; background: transparent !important; white-space: nowrap !important; }
 
-  /* Column widths: tuned for wide report. Adjust if columns overflow. */
-  .report-table th:nth-child(1), .report-table td:nth-child(1) { width: 6% !important; }
+  .report-table th, .report-table td, .amount-field, .report-table .numeric { font-variant-numeric: tabular-nums; -moz-font-feature-settings: "tnum" 1; -webkit-font-feature-settings: "tnum" 1; font-feature-settings: "tnum" 1; }
+
+  /* Print-specific column width hints */
+  /* .report-table th:nth-child(1), .report-table td:nth-child(1) { width: 6% !important; }
   .report-table th:nth-child(2), .report-table td:nth-child(2) { width: 10% !important; }
   .report-table th:nth-child(3), .report-table td:nth-child(3) { width: 9% !important; }
   .report-table th:nth-child(4), .report-table td:nth-child(4) { width: 7% !important; }
@@ -355,61 +144,21 @@ table {
   .report-table th:nth-child(6), .report-table td:nth-child(6) { width: 6% !important; }
   .report-table th:nth-child(7), .report-table td:nth-child(7) { width: 6% !important; }
   .report-table th:nth-child(8), .report-table td:nth-child(8) { width: 6% !important; }
-  .report-table th:nth-child(9), .report-table td:nth-child(9) { width: 6% !important; }
+  .report-table th:nth-child(9), .report-table td:nth-child(9) { width: 6% !important; } */
   .report-table th:nth-child(10), .report-table td:nth-child(10) { width: 6% !important; }
   .report-table th:nth-child(11), .report-table td:nth-child(11) { width: 6% !important; }
   .report-table th:nth-child(12), .report-table td:nth-child(12) { width: 6% !important; }
   .report-table th:nth-child(13), .report-table td:nth-child(13) { width: 6% !important; }
   .report-table th:nth-child(14), .report-table td:nth-child(14) { width: 16% !important; }
 
-  /* Keep the report together and avoid page-breaks inside the main blocks */
-  .print-content,
-  .card-body,
-  .table-responsive,
-  .report-table,
-  .report-signature { page-break-inside: avoid !important; break-inside: avoid-page !important; }
-
-  /* Signature block must be preserved on a single page row */
+  .print-content, .card-body, .table-responsive, .report-table, .report-signature { page-break-inside: avoid !important; break-inside: avoid-page !important; }
   .report-signature { display: flex !important; flex-direction: row !important; justify-content: space-between !important; gap: 1rem !important; }
   .report-signature .sig-block { flex: 1 1 45% !important; max-width: 45% !important; }
 
-  /* Tighten header spacing for print */
   .report-header > .d-flex.justify-content-end { margin-top: 0 !important; margin-bottom: 0.25rem !important; }
   .report-header .text-center h4, .report-header .text-center h5, .report-header .text-center h6 { margin: 0 !important; padding: 0 !important; }
 
-  /* Preserve color and border fidelity in print */
   body { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
-}
-
-table {
-    width: 100%;
-    border-collapse: collapse;
-}
-
-.sales-report-table {
-    width: 100%;
-    margin: 0;
-    padding: 0;
-}
-/* Compact label/value rows used in Less/Add sections */
-.report-list { margin-top: 0.25rem; }
-.report-list .report-line {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 2px 0;
-  white-space: nowrap; /* keep label and value on same line */
-}
-.report-list .report-line .label { flex: 1 1 auto; text-align: left; overflow: hidden; text-overflow: ellipsis; }
-.report-list .report-line .value { flex: 0 0 auto; min-width: 90px; text-align: right; }
-.report-list .report-line .value span { display: inline-block; }
-
-@media (max-width: 575px) {
-  /* On very small screens keep the pair on one line by shrinking labels and preserving values */
-  .report-list .report-line { gap: 0.4rem; }
-  .report-list .report-line .label { font-size: 0.95rem; }
-  .report-list .report-line .value { min-width: 70px; }
 }
 </style>
 @endpush
@@ -427,17 +176,18 @@ table {
 
     <div class="card-header bg-danger sticky-toolbar">
         <div class="filter-toolbar">
-            <div class="filter-group">
-                <label>Trade Name</label>
-                <select class="form-control select2-store" id="trade-filter" data-current="">
-                    <option value="">Select Tenant</option>
-                    @foreach($tenants as $tenantId => $tenantName)
-                        <option value="{{ $tenantId }}" {{ $selected_tenant == $tenantId ? 'selected' : '' }}>
-                            {{ $tenantName }}
-                        </option>
-                    @endforeach
-                </select>
-            </div>
+      <div class="filter-group">
+        <label>Trade Name</label>
+        <select class="form-control select2-store" id="trade-filter" data-current="" aria-label="Select Tenant">
+          <!-- empty option so Select2 placeholder displays correctly -->
+          <option value=""></option>
+          @foreach($tenants as $tenantId => $tenantName)
+            <option value="{{ $tenantId }}" {{ $selected_tenant == $tenantId ? 'selected' : '' }}>
+              {{ $tenantName }}
+            </option>
+          @endforeach
+        </select>
+      </div>
             
             <div class="filter-group">
                 <label>Report Month</label>
@@ -674,11 +424,13 @@ table {
 <script>
 $(function() {
     // Initialize Select2 with no default selection
-    $('.select2-store').select2({
-        placeholder: 'Select Tenant',
-        allowClear: true,
-        width: '100%'
-    });
+  $('.select2-store').select2({
+    placeholder: 'Select Tenant',
+    allowClear: true,
+    width: 'resolve',
+    dropdownParent: $('.filter-toolbar'),
+    dropdownAutoWidth: true
+  });
 
     // Prevent initial data load
     const tenantId = $('#trade-filter').val();
