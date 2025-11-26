@@ -8,6 +8,8 @@ use App\Models\Tenant;
 use App\Http\Controllers\Api\Webapp\HourlyTransactionsController as ApiHourlyController;
 use App\Http\Controllers\Finance\SalesReportExportController as FinanceExportController;
 use App\Services\Reports\HourlyReportService;
+use App\Models\AuditLog;
+use Illuminate\Support\Facades\Log;
 
 class CommercialReportsController extends Controller
 {
@@ -88,6 +90,26 @@ class CommercialReportsController extends Controller
         // Use HourlyReportService (direct call) to avoid controller-to-controller calls
         $service = new HourlyReportService();
         $data = $service->getHourlyAggregates($date, $date, $tenantId, null);
+
+        // Record a lightweight audit event so UI "Load Report" actions are visible in audit logs.
+        try {
+            AuditLog::create([
+                'user_id' => auth()->id(),
+                'action' => 'report.hourly_view',
+                'action_type' => 'view',
+                'resource_type' => 'report',
+                'resource_id' => null,
+                'ip_address' => $request->ip(),
+                'message' => "Viewed hourly report for {$date}",
+                'old_values' => null,
+                'new_values' => null,
+                'metadata' => ['date' => $date, 'tenant_id' => $tenantId],
+                'logged_at' => now(),
+            ]);
+        } catch (\Throwable $e) {
+            // Don't let audit failures block the UI; log for ops.
+            Log::warning('Failed to write AuditLog for hourly report view: ' . $e->getMessage(), ['date' => $date, 'tenant' => $tenantId]);
+        }
 
         return response()->json(['data' => $data]);
     }
