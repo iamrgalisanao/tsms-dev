@@ -32,6 +32,16 @@ class ReportingDispatchCommand extends Command
         }
 
         foreach ($windows as [$from, $to]) {
+            // Check runtime flag to disable dispatching of refresh jobs
+            try {
+                if (filter_var(env('DISABLE_REFRESH_HOURLY_WINDOW_JOB', 'true'), FILTER_VALIDATE_BOOLEAN)) {
+                    $this->info('RefreshHourlyWindowJob dispatching is disabled via DISABLE_REFRESH_HOURLY_WINDOW_JOB; no jobs were dispatched.');
+                    return 0;
+                }
+            } catch (\Throwable $e) {
+                // If env lookup fails, fall through and dispatch as before
+            }
+
             // Dispatch a job per window; queue name set in job constructor
             Bus::dispatch(new RefreshHourlyWindowJob($from, $to));
             $this->info("Dispatched reporting window $from -> $to");

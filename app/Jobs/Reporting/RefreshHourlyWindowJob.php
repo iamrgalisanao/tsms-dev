@@ -35,6 +35,16 @@ class RefreshHourlyWindowJob implements ShouldQueue
      */
     public function handle()
     {
+        // Short-circuit: allow runtime disabling of this job via env var.
+        // Set DISABLE_REFRESH_HOURLY_WINDOW_JOB=true to skip execution.
+        try {
+            if (filter_var(env('DISABLE_REFRESH_HOURLY_WINDOW_JOB', 'true'), FILTER_VALIDATE_BOOLEAN)) {
+                Log::info('RefreshHourlyWindowJob is disabled via DISABLE_REFRESH_HOURLY_WINDOW_JOB; skipping execution.', ['from' => $this->from, 'to' => $this->to, 'tenant' => $this->tenantId, 'terminal' => $this->terminalId]);
+                return;
+            }
+        } catch (\Throwable $e) {
+            // If something odd happens reading the env, proceed with normal execution
+        }
         try {
             // We'll run the aggregation on the primary (default) connection so
             // we always read the authoritative `transactions` schema and then
