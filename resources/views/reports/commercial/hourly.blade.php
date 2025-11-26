@@ -331,6 +331,31 @@ $(function() {
     icons: { time: 'far fa-clock', date: 'fa fa-calendar', up: 'fa fa-arrow-up', down: 'fa fa-arrow-down', previous: 'fa fa-chevron-left', next: 'fa fa-chevron-right', today: 'fa fa-calendar-check', clear: 'fa fa-trash', close: 'fa fa-times' }
   });
 
+  // Defensive checks: ensure the plugin instance exists (protects against double-includes
+  // or race conditions where the global event handler fires before initialization).
+  (function ensureDatepickerInstance() {
+    try {
+      // warn if tempusdominus library was loaded more than once
+      const tempusScripts = $('script[src*="tempusdominus"]').map((i,el)=>el.src).get();
+      if (tempusScripts.length > 1) {
+        console.warn('Multiple Tempus Dominus script tags detected:', tempusScripts);
+      }
+
+      const inst = $('#report-date-picker').data('datetimepicker');
+      if (!inst) {
+        console.warn('Datetimepicker instance missing on #report-date-picker — attempting re-init');
+        $('#report-date-picker').datetimepicker({
+          format: 'YYYY-MM-DD',
+          defaultDate: moment(),
+          icons: { time: 'far fa-clock', date: 'fa fa-calendar', up: 'fa fa-arrow-up', down: 'fa fa-arrow-down', previous: 'fa fa-chevron-left', next: 'fa fa-chevron-right', today: 'fa fa-calendar-check', clear: 'fa fa-trash', close: 'fa fa-times' }
+        });
+      }
+    } catch (err) {
+      // Non-fatal — log for diagnostics
+      console.error('Error during defensive datetimepicker init:', err);
+    }
+  })();
+
   // Set initial value
   $('#report-date').val(moment().format('YYYY-MM-DD'));
 
@@ -605,22 +630,4 @@ $(function() {
 });
 </script>
 @endpush
-@extends('layouts.master')
-@section('title', 'Hourly Commercial Report')
-@push('styles')
-<style>
-  /* Small scaffold styles for commercial reports */
-  .report-card { margin: 1rem 0; }
-  .report-placeholder { padding: 2rem; text-align: center; color: #6b7280; }
-</style>
-@endpush
-@section('content')
-<div class="card report-card">
-  <div class="card-header">
-    <h3 class="card-title">Hourly Commercial Report</h3>
-  </div>
-  <div class="card-body">
-    <div class="report-placeholder">Hourly report UI goes here. Use AJAX to load hourly metrics and provide export/print controls.</div>
-  </div>
-</div>
-@endsection
+
