@@ -356,6 +356,40 @@ $(function() {
     }
   })();
 
+  // Capture-phase handler: ensure any clicked toggle has an instance before
+  // Tempus Dominus's jQuery handlers run (these run in bubbling phase and
+  // may try to access an undefined instance). Using a native capture listener
+  // guarantees this runs first and prevents `_options` undefined errors.
+  document.addEventListener('click', function (ev) {
+    try {
+      const toggle = ev.target.closest && ev.target.closest('[data-toggle="datetimepicker"]');
+      if (!toggle) return;
+
+      // read data-target (can be selector like '#report-date-picker')
+      const selector = toggle.getAttribute('data-target') || toggle.dataset.target;
+      if (!selector) return;
+
+      const target = document.querySelector(selector);
+      if (!target) return;
+
+      // If the plugin instance is missing, initialize it safely
+      if (!window.jQuery) return;
+      const $target = window.jQuery(target);
+      if (!$target.data('datetimepicker')) {
+        // Use the same options used elsewhere on the page
+        $target.datetimepicker({
+          format: 'YYYY-MM-DD',
+          defaultDate: moment(),
+          icons: { time: 'far fa-clock', date: 'fa fa-calendar', up: 'fa fa-arrow-up', down: 'fa fa-arrow-down', previous: 'fa fa-chevron-left', next: 'fa fa-chevron-right', today: 'fa fa-calendar-check', clear: 'fa fa-trash', close: 'fa fa-times' }
+        });
+        console.info('Initialized missing datetimepicker instance for', selector);
+      }
+    } catch (err) {
+      // non-fatal — log for diagnostics
+      console.debug('datetimepicker capture-init error', err);
+    }
+  }, true);
+
   // Set initial value
   $('#report-date').val(moment().format('YYYY-MM-DD'));
 
