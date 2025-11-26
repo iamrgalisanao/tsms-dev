@@ -5,7 +5,6 @@ namespace App\Console\Commands;
 use Illuminate\Console\Command;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Bus;
-use App\Jobs\Reporting\RefreshHourlyWindowJob;
 
 class ReportingDispatchCommand extends Command
 {
@@ -31,21 +30,9 @@ class ReportingDispatchCommand extends Command
             $start = $end;
         }
 
-        foreach ($windows as [$from, $to]) {
-            // Check runtime flag to disable dispatching of refresh jobs
-            try {
-                if (filter_var(env('DISABLE_REFRESH_HOURLY_WINDOW_JOB', 'true'), FILTER_VALIDATE_BOOLEAN)) {
-                    $this->info('RefreshHourlyWindowJob dispatching is disabled via DISABLE_REFRESH_HOURLY_WINDOW_JOB; no jobs were dispatched.');
-                    return 0;
-                }
-            } catch (\Throwable $e) {
-                // If env lookup fails, fall through and dispatch as before
-            }
-
-            // Dispatch a job per window; queue name set in job constructor
-            Bus::dispatch(new RefreshHourlyWindowJob($from, $to));
-            $this->info("Dispatched reporting window $from -> $to");
-        }
+        // The RefreshHourlyWindowJob has been removed. This command is now a no-op.
+        $this->info('RefreshHourlyWindowJob has been removed — reporting:dispatch will not dispatch jobs.');
+        return 0;
 
         return 0;
     }
