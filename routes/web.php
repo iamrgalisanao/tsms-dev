@@ -19,6 +19,7 @@ use App\Http\Controllers\LogController;
 use App\Http\Controllers\McpController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\ReportsController;
+use App\Http\Controllers\Reports\CommercialReportsController;
 use App\Http\Controllers\Finance\SalesReportExportController;
 
 
@@ -177,6 +178,27 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/reports/data', [ReportsController::class, 'data'])->name('finance.reports');
         // Excel export endpoint
         Route::get('/finance/reports/export', [SalesReportExportController::class, 'export'])->name('finance.sales-report.export');
+    });
+
+    // Commercial Reports - commercial role only
+    Route::middleware(['role:commercial'])->group(function () {
+        Route::prefix('commercial')->name('commercial.')->group(function () {
+            Route::prefix('reports')->name('sales-report.')->group(function () {
+                Route::get('/hourly-sales-report', [CommercialReportsController::class, 'hourly'])->name('hourly');
+                // Proxy endpoint used by the hourly report view to fetch hourly aggregates (adapts single-date UI param)
+                Route::get('/transactions/hourly', [CommercialReportsController::class, 'hourlyData'])->name('tsms-proxy.transactions.hourly');
+                // Endpoint to fetch tenants for dropdown via AJAX
+                Route::get('/tenants', [CommercialReportsController::class, 'tenants'])->name('tenants');
+                // Export proxy: accept single-date & tenant_id from UI and adapt to finance export
+                Route::get('/export', [CommercialReportsController::class, 'exportProxy'])->name('export');
+                Route::get('/daily-sales-report', [CommercialReportsController::class, 'daily'])->name('daily');
+                Route::get('/weekly-sales-report', [CommercialReportsController::class, 'weekly'])->name('weekly');
+                Route::get('/weekday-sales-report', [CommercialReportsController::class, 'weekday'])->name('weekday');
+                Route::get('/weekend-sales-report', [CommercialReportsController::class, 'weekend'])->name('weekend');
+                Route::get('/monthly-sales-report', [CommercialReportsController::class, 'monthly'])->name('monthly');
+                Route::get('/yearly-sales-report', [CommercialReportsController::class, 'yearly'])->name('yearly');
+            });
+        });
     });
 
     // Logs export route
