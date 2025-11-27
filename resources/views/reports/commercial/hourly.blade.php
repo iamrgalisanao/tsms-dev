@@ -446,6 +446,21 @@ $(function() {
         tbody.empty();
         let totals = {};
 
+        // If the API returned no rows, show a helpful message
+        if (!Array.isArray(resp.data) || resp.data.length === 0) {
+          tbody.html(`
+            <tr>
+              <td colspan="21" class="text-center py-4 text-muted">
+                <i class="fas fa-info-circle me-2"></i>
+                No hourly sales data available for the selected date and tenant.
+              </td>
+            </tr>
+          `);
+          $('#total-row, #average-row').empty();
+          $('#export-excel').prop('disabled', true);
+          return;
+        }
+
         // Build a map of hour -> row for quick lookup
         const rowsByHour = {};
         resp.data.forEach(r => {
@@ -500,14 +515,15 @@ $(function() {
 
             if (value === undefined || value === null || value === '') {
               tr += `<td class="${cellClass}">-</td>`;
-            } else if (!isNaN(Number(value)) && index >= 6) {
-              // numeric
-              const rounded = (index === 19 || index === 20) ? String(Math.round(Number(value))) : Number(value).toFixed(2);
+            } else if (index >= 6 && !isNaN(Number(value))) {
+              // numeric (financial or counts)
+              const num = Number(value);
+              const rounded = (k === 'transaction_count' || k === 'guest_count') ? String(Math.round(num)) : num.toFixed(2);
               tr += `<td class="${cellClass}">${rounded}</td>`;
 
-              // totals
+              // totals (use numeric accumulation)
               if (!totals[k]) totals[k] = 0;
-              totals[k] += Number(value);
+              totals[k] += num;
             } else {
               tr += `<td class="${cellClass}">${value}</td>`;
             }
@@ -569,6 +585,10 @@ $(function() {
       error: function() {
         console.error('Failed to load sales data');
         $('#export-excel').prop('disabled', true);
+      },
+      complete: function() {
+        // No matter success/error, ensure Load Report button is re-enabled
+        $('#load-report').prop('disabled', false).html('<i class="fa fa-search"></i> Load Report');
       }
     });
   }
@@ -599,15 +619,10 @@ $(function() {
       </tr>
     `);
     
-    // Disable button during loading
+    // Disable button during loading (will be re-enabled in AJAX complete)
     $(this).prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> Loading...');
-    
+
     loadHourlySales(date, tenantId);
-    
-    // Re-enable button after loading
-    setTimeout(() => {
-      $(this).prop('disabled', false).html('<i class="fa fa-search"></i> Load Report');
-    }, 1000);
   });
 
   // On date change, clear table and show instruction message
