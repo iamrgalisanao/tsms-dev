@@ -70,32 +70,41 @@
       </div>
     </div>
 
-    <div class="table-responsive">
-      <table class="table table-bordered table-sm" id="daily-hourly-table" style="font-size: 13px;">
-        <thead>
-          <tr class="table-primary">
-            <th class="text-center">Hour</th>
-            <th class="text-end">Gross Sales</th>
-            <th class="text-end">Net Sales</th>
-            <th class="text-center">Transactions</th>
-            <th class="text-center">Guests</th>
-          </tr>
-        </thead>
-        <tbody id="daily-report-tbody">
-          <tr>
-            <td colspan="5" class="text-center py-4 text-muted">Please select a date and tenant, then click "Load Report" to view the daily sales summary.</td>
-          </tr>
-        </tbody>
-        <tfoot>
-          <tr class="table-warning fw-bold">
-            <td class="text-center">Total</td>
-            <td id="daily-total-gross" class="text-end">-</td>
-            <td id="daily-total-net" class="text-end">-</td>
-            <td id="daily-total-transactions" class="text-center">-</td>
-            <td id="daily-total-guests" class="text-center">-</td>
-          </tr>
-        </tfoot>
-      </table>
+    <div class="row mb-3">
+      <div class="col-md-4">
+        <div class="card">
+          <div class="card-body text-center">
+            <h6>VAT Amount</h6>
+            <div id="summary-vat" class="h5">-</div>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-4">
+        <div class="card">
+          <div class="card-body text-center">
+            <h6>Total Discounts</h6>
+            <div id="summary-discounts" class="h5">-</div>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-4">
+        <div class="card">
+          <div class="card-body text-center">
+            <h6>Payments (Cash / Card / Other)</h6>
+            <div id="summary-payments" class="h6">- / - / -</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="row">
+      <div class="col-md-12">
+        <div class="card">
+          <div class="card-body">
+            <p class="mb-0 text-muted">This report displays the aggregated daily sales totals for the selected date and tenant. For hourly breakdowns, use the Hourly Sales report.</p>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 </div>
@@ -150,51 +159,27 @@ $(function() {
       url: '{{ route('commercial.sales-report.tsms-proxy.transactions.daily') }}',
       data: { date: date, tenant_id: tenantId },
       success: function(resp) {
-        // Expect { summary: {...}, hours: [...] }
+        // Expect { summary: {...} }
         if (!resp || !resp.summary) {
           renderEmptyMessage();
           return;
         }
 
         const s = resp.summary;
-        $('#summary-gross').text((Number(s.gross_sales) || 0).toFixed(2));
-        $('#summary-net').text((Number(s.net_sales) || 0).toFixed(2));
-        $('#summary-transactions').text(String(Math.round(Number(s.transaction_count) || 0)));
-        $('#summary-guests').text(String(Math.round(Number(s.guest_count) || 0)));
+  $('#summary-gross').text((Number(s.gross_sales) || 0).toFixed(2));
+  $('#summary-net').text((Number(s.net_sales) || 0).toFixed(2));
+  $('#summary-transactions').text(String(Math.round(Number(s.transaction_count) || 0)));
+  $('#summary-guests').text(String(Math.round(Number(s.guest_count) || 0)));
 
-        // Render 24 rows
-        const rowsByHour = {};
-        if (Array.isArray(resp.hours)) {
-          resp.hours.forEach(r => { rowsByHour[r.hour] = r; });
-        }
-
-        const tbody = $('#daily-report-tbody');
-        tbody.empty();
-
-        let totalGross = 0, totalNet = 0, totalTxn = 0, totalGuests = 0;
-
-        for (let hour = 0; hour < 24; hour++) {
-          const hourFormatted = String(hour).padStart(2, '0') + ':00';
-          const row = rowsByHour[hourFormatted] || null;
-          if (!row) {
-            tbody.append(`<tr><td class="text-center">${hourFormatted}</td><td class="text-end">-</td><td class="text-end">-</td><td class="text-center">-</td><td class="text-center">-</td></tr>`);
-            continue;
-          }
-          const gross = Number(row.gross_sales) || 0;
-          const net = Number(row.net_sales) || 0;
-          const tx = Math.round(Number(row.transaction_count) || 0);
-          const guests = Math.round(Number(row.guest_count) || 0);
-
-          totalGross += gross; totalNet += net; totalTxn += tx; totalGuests += guests;
-
-          tbody.append(`<tr><td class="text-center">${hourFormatted}</td><td class="text-end">${gross.toFixed(2)}</td><td class="text-end">${net.toFixed(2)}</td><td class="text-center">${tx}</td><td class="text-center">${guests}</td></tr>`);
-        }
-
-        $('#daily-total-gross').text(totalGross.toFixed(2));
-        $('#daily-total-net').text(totalNet.toFixed(2));
-        $('#daily-total-transactions').text(String(totalTxn));
-        $('#daily-total-guests').text(String(totalGuests));
-
+  // Breakdown fields
+  $('#summary-vat').text((Number(s.vat_amount) || 0).toFixed(2));
+  const totalDiscounts = (Number(s.sc_pwd_discount) || 0) + (Number(s.regular_discount) || 0);
+  $('#summary-discounts').text(totalDiscounts.toFixed(2));
+  const cash = (Number(s.cash_payment) || 0).toFixed(2);
+  const card = (Number(s.card_payment) || 0).toFixed(2);
+  const other = (Number(s.other_tender) || 0).toFixed(2);
+  $('#summary-payments').text(`${cash} / ${card} / ${other}`);
+        // Enable export and update totals (summary-only view)
         $('#daily-export-excel').prop('disabled', false);
       },
       error: function() { renderEmptyMessage(); },

@@ -35,6 +35,16 @@ class DailyReportService
                 'net_sales' => 0.0,
                 'transaction_count' => 0,
                 'guest_count' => 0,
+                // breakdown fields
+                'vatable_sales' => 0.0,
+                'vat_exempt_sales' => 0.0,
+                'vat_amount' => 0.0,
+                'sc_pwd_discount' => 0.0,
+                'regular_discount' => 0.0,
+                'cash_payment' => 0.0,
+                'card_payment' => 0.0,
+                'other_tender' => 0.0,
+                'net_sales_percentage_rent' => 0.0,
             ];
 
             foreach ($hours as $h) {
@@ -42,11 +52,23 @@ class DailyReportService
                 $summary['net_sales'] += isset($h['net_sales']) ? (float) $h['net_sales'] : 0.0;
                 $summary['transaction_count'] += isset($h['transaction_count']) ? (int) $h['transaction_count'] : 0;
                 $summary['guest_count'] += isset($h['guest_count']) ? (int) $h['guest_count'] : 0;
+                // breakdown accumulators
+                $summary['vatable_sales'] += isset($h['vatable_sales']) ? (float) $h['vatable_sales'] : 0.0;
+                $summary['vat_exempt_sales'] += isset($h['vat_exempt_sales']) ? (float) $h['vat_exempt_sales'] : 0.0;
+                $summary['vat_amount'] += isset($h['vat_amount']) ? (float) $h['vat_amount'] : 0.0;
+                $summary['sc_pwd_discount'] += isset($h['sc_pwd_discount']) ? (float) $h['sc_pwd_discount'] : 0.0;
+                $summary['regular_discount'] += isset($h['regular_discount']) ? (float) $h['regular_discount'] : 0.0;
+                $summary['cash_payment'] += isset($h['cash_payment']) ? (float) $h['cash_payment'] : 0.0;
+                $summary['card_payment'] += isset($h['card_payment']) ? (float) $h['card_payment'] : 0.0;
+                $summary['other_tender'] += isset($h['other_tender']) ? (float) $h['other_tender'] : 0.0;
+                $summary['net_sales_percentage_rent'] += isset($h['net_sales_percentage_rent']) ? (float) $h['net_sales_percentage_rent'] : 0.0;
             }
 
             // Normalize numeric types
-            $summary['gross_sales'] = round($summary['gross_sales'], 2);
-            $summary['net_sales'] = round($summary['net_sales'], 2);
+            // Normalize numeric types
+            foreach (['gross_sales','net_sales','vatable_sales','vat_exempt_sales','vat_amount','sc_pwd_discount','regular_discount','cash_payment','card_payment','other_tender','net_sales_percentage_rent'] as $k) {
+                $summary[$k] = round($summary[$k], 2);
+            }
 
             return [
                 'summary' => $summary,
