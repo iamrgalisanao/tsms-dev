@@ -73,6 +73,46 @@ class CommercialReportsController extends Controller
         return response()->json($result);
     }
 
+    /**
+     * Proxy endpoint for weekday summary (Monday-Friday) used by the weekday sales UI.
+     * Behaves like weeklyData but excludes weekend dates from the aggregation.
+     */
+    public function weekdayData(Request $request)
+    {
+        $request->validate([
+            'date_from' => ['required', 'date'],
+            'date_to' => ['required', 'date'],
+            'tenant_id' => ['required']
+        ]);
+
+        $from = $request->input('date_from');
+        $to = $request->input('date_to');
+        $tenantId = $request->input('tenant_id');
+
+        $service = new WeeklyReportService();
+        $result = $service->getWeeklySummary($from, $to, $tenantId, true);
+
+        try {
+            AuditLog::create([
+                'user_id' => auth()->id(),
+                'action' => 'report.weekday_view',
+                'action_type' => 'view',
+                'resource_type' => 'report',
+                'resource_id' => null,
+                'ip_address' => $request->ip(),
+                'message' => "Viewed weekday report for {$from} to {$to}",
+                'old_values' => null,
+                'new_values' => null,
+                'metadata' => ['date_from' => $from, 'date_to' => $to, 'tenant_id' => $tenantId],
+                'logged_at' => now(),
+            ]);
+        } catch (\Throwable $e) {
+            Log::warning('Failed to write AuditLog for weekday report view: ' . $e->getMessage(), ['from' => $from, 'to' => $to, 'tenant' => $tenantId]);
+        }
+
+        return response()->json($result);
+    }
+
     // Show weekday report UI
     public function weekday()
     {
