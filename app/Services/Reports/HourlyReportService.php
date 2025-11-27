@@ -163,10 +163,18 @@ class HourlyReportService
             $hasVoided = $txSchema->hasColumn('transactions', 'voided_at');
             $hasRefund = $txSchema->hasColumn('transactions', 'refund_amount') || $txSchema->hasColumn('transactions', 'refund_status');
 
+            // Determine the best timestamp column to use for grouping/filtering (prefer transaction_timestamp, else completed_at, else created_at)
+            $timestampColumn = 'created_at'; // fallback
+            if ($txSchema->hasColumn('transactions', 'transaction_timestamp')) {
+                $timestampColumn = 'transaction_timestamp';
+            } elseif ($txSchema->hasColumn('transactions', 'completed_at')) {
+                $timestampColumn = 'completed_at';
+            }
+
             $selects = [
                 'tenant_id',
                 DB::raw("COALESCE(terminal_id, 0) AS terminal_id"),
-                DB::raw("DATE_FORMAT(transaction_timestamp, '%Y-%m-%d %H:00:00') AS hour"),
+                DB::raw("DATE_FORMAT({$timestampColumn}, '%Y-%m-%d %H:00:00') AS hour"),
                 DB::raw('COUNT(*) AS tx_count'),
                 DB::raw('SUM(COALESCE(gross_sales,0)) AS total_amount'),
                 DB::raw('SUM(COALESCE(gross_sales,0)) AS total_gross_amount'),
@@ -230,8 +238,8 @@ class HourlyReportService
 
             // Group & filter
             $query = $primary->table('transactions')->select($selects)
-                ->whereDate('transaction_timestamp', '>=', $dateFrom)
-                ->whereDate('transaction_timestamp', '<=', $dateTo)
+                ->whereDate($timestampColumn, '>=', $dateFrom)
+                ->whereDate($timestampColumn, '<=', $dateTo)
                 ->groupBy('tenant_id')->groupBy('terminal_id')->groupBy('hour')
                 ->orderBy('tenant_id')->orderBy('terminal_id')->orderBy('hour')
                 ->limit(1000);
