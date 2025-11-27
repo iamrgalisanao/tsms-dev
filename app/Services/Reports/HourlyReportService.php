@@ -26,129 +26,10 @@ class HourlyReportService
      */
     public function getHourlyAggregates(string $dateFrom, string $dateTo, ?string $tenantId = null, ?string $terminalId = null): array
     {
-        // Attempt to use the reporting summary table when available and populated.
-        try {
-            $reportConn = DB::connection($this->connectionName);
-            $reportSchema = $reportConn->getSchemaBuilder();
-            $useSummary = false;
-
-            if ($reportSchema->hasTable('transactions_hourly')) {
-                // If the summary table has rows for the requested range, prefer it.
-                try {
-                    $cnt = $reportConn->table('transactions_hourly')
-                        ->whereDate('hour', '>=', $dateFrom)
-                        ->whereDate('hour', '<=', $dateTo)
-                        ->limit(1)
-                        ->count();
-                    $useSummary = ($cnt > 0);
-                } catch (\Throwable $e) {
-                    // ignore and fall back to live aggregation
-                    $useSummary = false;
-                }
-            }
-        } catch (\Throwable $e) {
-            $reportConn = null;
-            $reportSchema = null;
-            $useSummary = false;
-        }
-
-        if (! empty($useSummary) && $reportConn) {
-            // Read from reporting.transactions_hourly (existing behavior)
-            $table = 'transactions_hourly';
-
-            $select = [
-                $table . '.tenant_id',
-                $table . '.terminal_id',
-                $table . '.hour',
-                $table . '.tx_count as tx_count',
-                $table . '.total_amount as total_amount',
-            ];
-
-            $optional = [
-                'total_gross_amount',
-                'total_net_amount',
-                'total_discount_amount',
-                'total_tax_amount',
-                'total_service_charge_amount',
-                'avg_amount',
-                'min_amount',
-                'max_amount',
-                'success_count',
-                'decline_count',
-                'issues_count',
-                'issues_amount',
-                'void_count',
-                'refunded_count',
-                'duplicate_count',
-            ];
-
-            foreach ($optional as $col) {
-                if ($reportSchema->hasColumn($table, $col)) {
-                    $select[] = $table . '.' . $col;
-                }
-            }
-
-            $joinTenants = $reportSchema->hasTable('tenants');
-            if ($joinTenants) {
-                $select[] = 'tenants.customer_code as customer_code';
-                if ($reportSchema->hasColumn('tenants', 'trade_name')) {
-                    $select[] = 'tenants.trade_name as tenant_name';
-                } else {
-                    $select[] = 'tenants.name as tenant_name';
-                }
-                if ($reportSchema->hasColumn('tenants', 'location')) {
-                    $select[] = 'tenants.location as location';
-                }
-                if ($reportSchema->hasColumn('tenants', 'zone')) {
-                    $select[] = 'tenants.zone as zone';
-                }
-            }
-
-            $query = $reportConn->table($table)->select($select)
-                ->whereDate('hour', '>=', $dateFrom)
-                ->whereDate('hour', '<=', $dateTo);
-
-            if (! empty($tenantId)) {
-                $query->where($table . '.tenant_id', $tenantId);
-            }
-            if (! empty($terminalId)) {
-                $query->where($table . '.terminal_id', $terminalId);
-            }
-
-            if (! empty($joinTenants)) {
-                $query->leftJoin('tenants', $table . '.tenant_id', '=', 'tenants.id');
-            }
-
-            $rows = $query->orderBy($table . '.tenant_id')->orderBy($table . '.terminal_id')->orderBy($table . '.hour')->limit(1000)->get();
-
-            $data = $rows->map(function ($r) {
-                return [
-                    'customer_code' => $r->customer_code ?? null,
-                    'tenant_name' => $r->tenant_name ?? null,
-                    'location' => $r->location ?? null,
-                    'zone' => $r->zone ?? null,
-                    'sales_date' => \Carbon\Carbon::parse($r->hour)->setTimezone(config('app.timezone'))->toDateString(),
-                    'hour' => \Carbon\Carbon::parse($r->hour)->setTimezone(config('app.timezone'))->format('H:00'),
-                    'gross_sales' => isset($r->total_gross_amount) ? (float) $r->total_gross_amount : (isset($r->total_amount) ? (float) $r->total_amount : 0.0),
-                    'vatable_sales' => isset($r->total_net_amount) ? (float) $r->total_net_amount : 0.0,
-                    'vat_exempt_sales' => 0.0,
-                    'vat_amount' => isset($r->total_tax_amount) ? (float) $r->total_tax_amount : 0.0,
-                    'sc_pwd_discount' => 0.0,
-                    'regular_discount' => isset($r->total_discount_amount) ? (float) $r->total_discount_amount : 0.0,
-                    'void' => isset($r->void_count) ? (float) $r->void_count : 0.0,
-                    'return' => isset($r->refunded_count) ? (float) $r->refunded_count : 0.0,
-                    'net_sales' => isset($r->total_net_amount) ? (float) $r->total_net_amount : 0.0,
-                    'cash_payment' => 0.0,
-                    'card_payment' => 0.0,
-                    'other_tender' => 0.0,
-                    'net_sales_percentage_rent' => 0.0,
-                    'transaction_count' => (int) ($r->tx_count ?? 0),
-                    'guest_count' => 0,
-                ];
-            })->values()->toArray();
-
-            return $data;
-        }
+        // Prefer live aggregation from the primary `transactions` table.
+        // The reporting summary table may be present in some deployments, but
+        // for consistent, authoritative results we always aggregate from the
+        // primary DB here.
 
         // Otherwise, fall back to live aggregation from the primary `transactions` table.
         try {
@@ -163,18 +44,24 @@ class HourlyReportService
             $hasVoided = $txSchema->hasColumn('transactions', 'voided_at');
             $hasRefund = $txSchema->hasColumn('transactions', 'refund_amount') || $txSchema->hasColumn('transactions', 'refund_status');
 
-            // Determine the best timestamp column to use for grouping/filtering (prefer transaction_timestamp, else completed_at, else created_at)
-            $timestampColumn = 'created_at'; // fallback
+            // Determine the best timestamp columns to use for grouping/filtering.
+            // Use a COALESCE expression so rows with NULL transaction_timestamp
+            // still get included using completed_at/created_at as fallback.
+            $tsParts = [];
             if ($txSchema->hasColumn('transactions', 'transaction_timestamp')) {
-                $timestampColumn = 'transaction_timestamp';
-            } elseif ($txSchema->hasColumn('transactions', 'completed_at')) {
-                $timestampColumn = 'completed_at';
+                $tsParts[] = 'transaction_timestamp';
             }
+            if ($txSchema->hasColumn('transactions', 'completed_at')) {
+                $tsParts[] = 'completed_at';
+            }
+            // always include created_at as last-resort
+            $tsParts[] = 'created_at';
+            $tsExpr = 'COALESCE(' . implode(', ', $tsParts) . ')';
 
             $selects = [
                 'tenant_id',
                 DB::raw("COALESCE(terminal_id, 0) AS terminal_id"),
-                DB::raw("DATE_FORMAT({$timestampColumn}, '%Y-%m-%d %H:00:00') AS hour"),
+                DB::raw("DATE_FORMAT({$tsExpr}, '%Y-%m-%d %H:00:00') AS hour"),
                 DB::raw('COUNT(*) AS tx_count'),
                 DB::raw('SUM(COALESCE(gross_sales,0)) AS total_amount'),
                 DB::raw('SUM(COALESCE(gross_sales,0)) AS total_gross_amount'),
@@ -236,10 +123,11 @@ class HourlyReportService
                 $selects[] = DB::raw('0 AS refunded_count');
             }
 
-            // Group & filter
+            // Group & filter using COALESCE-based date checks to match TransactionLog
+            // behavior and avoid missing rows when transaction_timestamp is NULL.
             $query = $primary->table('transactions')->select($selects)
-                ->whereDate($timestampColumn, '>=', $dateFrom)
-                ->whereDate($timestampColumn, '<=', $dateTo)
+                ->whereRaw('DATE(' . $tsExpr . ') >= ?', [$dateFrom])
+                ->whereRaw('DATE(' . $tsExpr . ') <= ?', [$dateTo])
                 ->groupBy('tenant_id')->groupBy('terminal_id')->groupBy('hour')
                 ->orderBy('tenant_id')->orderBy('terminal_id')->orderBy('hour')
                 ->limit(1000);
