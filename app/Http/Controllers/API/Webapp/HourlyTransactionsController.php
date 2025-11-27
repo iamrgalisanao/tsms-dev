@@ -7,6 +7,7 @@ use Illuminate\Routing\Controller;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use App\Services\Reports\HourlyReportService;
+use App\Models\AuditLog;
 
 class HourlyTransactionsController extends Controller
 {
@@ -34,6 +35,25 @@ class HourlyTransactionsController extends Controller
         // Delegate to the service
         $service = new HourlyReportService();
         $data = $service->getHourlyAggregates($dateFrom, $dateTo, $validated['tenant_id'] ?? null, $validated['terminal_id'] ?? null);
+
+        // Record API access for reporting views (non-blocking)
+        try {
+            AuditLog::create([
+                'user_id' => auth()->id(),
+                'action' => 'report.hourly_api_view',
+                'action_type' => 'view',
+                'resource_type' => 'report',
+                'resource_id' => null,
+                'ip_address' => $request->ip(),
+                'message' => sprintf('API hourly report viewed (%s to %s)', $dateFrom, $dateTo),
+                'old_values' => null,
+                'new_values' => null,
+                'metadata' => ['date_from' => $dateFrom, 'date_to' => $dateTo, 'tenant_id' => $validated['tenant_id'] ?? null, 'terminal_id' => $validated['terminal_id'] ?? null],
+                'logged_at' => now(),
+            ]);
+        } catch (\Throwable $e) {
+            Log::warning('Failed to write AuditLog for hourly API report view: ' . $e->getMessage(), ['date_from' => $dateFrom, 'date_to' => $dateTo]);
+        }
 
         return response()->json(['data' => $data]);
     }
