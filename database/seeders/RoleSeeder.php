@@ -20,17 +20,17 @@ class RoleSeeder extends Seeder
                 'description' => 'System Administrator with full access'
             ],
             [
-                'name' => 'operator',
+                'name' => 'commercial',
                 'guard_name' => 'web',
-                'description' => 'Terminal Operator with limited access'
+                'description' => 'Access to commercial reports and dashboards'
             ],
             [
-                'name' => 'terminal',
+                'name' => 'finance',
                 'guard_name' => 'web',
-                'description' => 'POS Terminal Service Account'
+                'description' => 'Access to finance reports and exports'
             ],
             [
-                'name' => 'viewer',
+                'name' => 'tenans',
                 'guard_name' => 'web',
                 'description' => 'Read-only access to dashboards'
             ]

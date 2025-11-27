@@ -43,12 +43,14 @@
         role="menu"
         data-accordion="false">
         {{-- Dashboard --}}
+         @if(auth()->user() && auth()->user()->hasAnyRole('admin'))
          <li class="nav-item">
             <a href="{{ route('dashboard') }}" class="nav-link {{ Request::routeIs('dashboard') ? 'active' : '' }}">
             <i class="nav-icon fas fa-tachometer-alt text-white"></i> 
             <p class="text-white">Dashboard</p>
             </a>
         </li>
+        @endif
 
     @if(auth()->user() && auth()->user()->hasAnyRole(['admin', 'manager', 'finance']))
     <li class="nav-item">
