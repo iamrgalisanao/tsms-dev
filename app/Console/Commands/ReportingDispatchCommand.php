@@ -5,7 +5,6 @@ namespace App\Console\Commands;
 use Illuminate\Console\Command;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Bus;
-use App\Jobs\Reporting\RefreshHourlyWindowJob;
 
 class ReportingDispatchCommand extends Command
 {
@@ -31,11 +30,9 @@ class ReportingDispatchCommand extends Command
             $start = $end;
         }
 
-        foreach ($windows as [$from, $to]) {
-            // Dispatch a job per window; queue name set in job constructor
-            Bus::dispatch(new RefreshHourlyWindowJob($from, $to));
-            $this->info("Dispatched reporting window $from -> $to");
-        }
+        // The RefreshHourlyWindowJob has been removed. This command is now a no-op.
+        $this->info('RefreshHourlyWindowJob has been removed — reporting:dispatch will not dispatch jobs.');
+        return 0;
 
         return 0;
     }

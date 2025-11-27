@@ -103,6 +103,8 @@ Route::prefix('v1/webapp')->middleware(['auth:sanctum', 'ensure.webapp.token', '
     Route::get('/transactions', [\App\Http\Controllers\Api\Webapp\TransactionController::class, 'index']);
     Route::get('/transactions/count', [\App\Http\Controllers\Api\Webapp\TransactionController::class, 'count']);
     Route::get('/transactions/{id}', [\App\Http\Controllers\Api\Webapp\TransactionController::class, 'show']);
+    // Hourly transactions contract endpoint
+    Route::get('/transactions/hourly', [\App\Http\Controllers\Api\Webapp\HourlyTransactionsController::class, 'index']);
     // Reporting endpoints (summary/aggregates for the Webapp)
     Route::get('/reports/sales', [\App\Http\Controllers\Api\Webapp\ReportsController::class, 'sales']);
     Route::get('/reports/sales/drilldown', [\App\Http\Controllers\Api\Webapp\ReportsController::class, 'drilldown']);

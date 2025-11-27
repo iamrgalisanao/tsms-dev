@@ -36,9 +36,12 @@ class RoleSeeder extends Seeder
             ]
         ];
 
-        // Create roles
+        // Create or update roles (idempotent)
         foreach ($roles as $role) {
-            Role::create($role);
+            Role::updateOrCreate(
+                ['name' => $role['name'], 'guard_name' => $role['guard_name']],
+                ['description' => $role['description'] ?? null]
+            );
         }
     }
 }

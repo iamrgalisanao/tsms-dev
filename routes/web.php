@@ -18,6 +18,9 @@ use App\Http\Controllers\SystemLogController;
 use App\Http\Controllers\LogController;
 use App\Http\Controllers\McpController;
 use App\Http\Controllers\UserController;
+use App\Http\Controllers\ReportsController;
+use App\Http\Controllers\Reports\CommercialReportsController;
+use App\Http\Controllers\Finance\SalesReportExportController;
 
 
 
@@ -93,8 +96,8 @@ Route::middleware(['auth'])->group(function () {
         
         Route::get('/', [TransactionController::class, 'index'])->name('index');
         
-        // Transaction logs routes (admin/manager only)
-        Route::middleware(['role:admin|manager'])->prefix('logs')->name('logs.')->group(function () {
+    // Transaction logs routes (admin/manager/finance)
+    Route::middleware(['role:admin|manager|finance'])->prefix('logs')->name('logs.')->group(function () {
             Route::get('/', [TransactionLogController::class, 'index'])->name('index');
             Route::get('/summary', [TransactionLogController::class, 'summary'])->name('summary');
             Route::get('/issues-count', [TransactionLogController::class, 'issuesCount'])->name('issues.count');
@@ -105,7 +108,7 @@ Route::middleware(['auth'])->group(function () {
 
         Route::get('/{id}', [TransactionController::class, 'show'])->name('show');
         Route::post('/{id}/retry', [TransactionController::class, 'retry'])
-            ->middleware(['role:admin|manager'])
+            ->middleware(['role:admin|manager|finance'])
             ->name('retry');
     });
 
@@ -168,6 +171,36 @@ Route::middleware(['auth'])->group(function () {
     // System Logs Route - renamed from logs to system-logs
     Route::get('/system-logs', [LogController::class, 'index'])->name('system-logs.index');
 
+    // Finance Reports (web UI) - finance role only
+    Route::middleware(['role:finance'])->group(function () {
+        Route::get('/reports', [ReportsController::class, 'index'])->name('reports.index');
+        // JSON API endpoint used by the reports dashboard (ajax)
+        Route::get('/reports/data', [ReportsController::class, 'data'])->name('finance.reports');
+        // Excel export endpoint
+        Route::get('/finance/reports/export', [SalesReportExportController::class, 'export'])->name('finance.sales-report.export');
+    });
+
+    // Commercial Reports - commercial role only
+    Route::middleware(['role:commercial'])->group(function () {
+        Route::prefix('commercial')->name('commercial.')->group(function () {
+            Route::prefix('reports')->name('sales-report.')->group(function () {
+                Route::get('/hourly-sales-report', [CommercialReportsController::class, 'hourly'])->name('hourly');
+                // Proxy endpoint used by the hourly report view to fetch hourly aggregates (adapts single-date UI param)
+                Route::get('/transactions/hourly', [CommercialReportsController::class, 'hourlyData'])->name('tsms-proxy.transactions.hourly');
+                // Endpoint to fetch tenants for dropdown via AJAX
+                Route::get('/tenants', [CommercialReportsController::class, 'tenants'])->name('tenants');
+                // Export proxy: accept single-date & tenant_id from UI and adapt to finance export
+                Route::get('/export', [CommercialReportsController::class, 'exportProxy'])->name('export');
+                Route::get('/daily-sales-report', [CommercialReportsController::class, 'daily'])->name('daily');
+                Route::get('/weekly-sales-report', [CommercialReportsController::class, 'weekly'])->name('weekly');
+                Route::get('/weekday-sales-report', [CommercialReportsController::class, 'weekday'])->name('weekday');
+                Route::get('/weekend-sales-report', [CommercialReportsController::class, 'weekend'])->name('weekend');
+                Route::get('/monthly-sales-report', [CommercialReportsController::class, 'monthly'])->name('monthly');
+                Route::get('/yearly-sales-report', [CommercialReportsController::class, 'yearly'])->name('yearly');
+            });
+        });
+    });
+
     // Logs export route
     Route::get('/logs/export/{format}', [App\Http\Controllers\LogExportController::class, 'export'])->name('logs.export');
 
@@ -180,5 +213,7 @@ Route::middleware(['auth'])->group(function () {
     Route::middleware(['role:admin'])->prefix('admin')->name('admin.')->group(function () {
         Route::get('/settings', [\App\Http\Controllers\Admin\SystemSettingsController::class, 'edit'])->name('settings.edit');
         Route::post('/settings', [\App\Http\Controllers\Admin\SystemSettingsController::class, 'update'])->name('settings.update');
+        // RBAC audit viewer
+        Route::get('/rbac-audits', [\App\Http\Controllers\Admin\RbacAuditController::class, 'index'])->name('rbac-audits.index');
     });
 });

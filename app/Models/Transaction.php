@@ -694,7 +694,15 @@ class Transaction extends Model
         });
 
         // After write operations we increment tenant_version and optionally dispatch a targeted cache invalidation
-        $handleWrite = function (Transaction $tx) {
+            $handleWrite = function (Transaction $tx) {
+            // Skip webapp-related cache/versioning and targeted invalidation when the
+            // WebApp integration is disabled. This preserves the transaction write
+            // behavior while stopping side-effects that relate to the external
+            // WebApp system (forwarding, cache invalidation, etc.).
+            if (! (bool) config('tsms.web_app.enabled', false)) {
+                return;
+            }
+
             $tenantId = $tx->tenant_id ?? optional($tx->terminal)->tenant_id ?? null;
             if ($tenantId) {
                 try {

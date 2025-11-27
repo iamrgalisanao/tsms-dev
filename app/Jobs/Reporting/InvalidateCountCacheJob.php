@@ -31,6 +31,12 @@ class InvalidateCountCacheJob implements ShouldQueue
 
     public function handle()
     {
+        // No-op if webapp integration is disabled; keep job safe to run even when
+        // feature turned off.
+        if (! (bool) config('tsms.web_app.enabled', false)) {
+            return;
+        }
+
         try {
             $tokenId = null;
             if ($this->token) {

@@ -11,6 +11,11 @@ use App\Listeners\LogAuthenticationEvent;
 use App\Listeners\LogAuthenticationFailure;
 use Illuminate\Foundation\Support\Providers\EventServiceProvider as ServiceProvider;
 use Illuminate\Support\Facades\Event;
+use Spatie\Permission\Events\RoleAttached;
+use Spatie\Permission\Events\RoleDetached;
+use Spatie\Permission\Events\PermissionAttached;
+use Spatie\Permission\Events\PermissionDetached;
+use App\Listeners\LogRbacEvent;
 
 class EventServiceProvider extends ServiceProvider
 {
@@ -32,6 +37,19 @@ class EventServiceProvider extends ServiceProvider
         Failed::class => [
             LogAuthenticationFailure::class,
             LogAuthenticationEvent::class,
+        ],
+        // RBAC attach/detach events from Spatie
+        RoleAttached::class => [
+            LogRbacEvent::class,
+        ],
+        RoleDetached::class => [
+            LogRbacEvent::class,
+        ],
+        PermissionAttached::class => [
+            LogRbacEvent::class,
+        ],
+        PermissionDetached::class => [
+            LogRbacEvent::class,
         ],
     ];
 

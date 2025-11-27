@@ -50,7 +50,7 @@
             </a>
         </li>
 
-    @if(auth()->user() && auth()->user()->hasAnyRole(['admin', 'manager']))
+    @if(auth()->user() && auth()->user()->hasAnyRole(['admin', 'manager', 'finance']))
     <li class="nav-item">
       <a href="{{ route('transactions.logs.index') }}"
       class="nav-link {{ Request::routeIs('transactions.logs.*') ? 'active' : '' }}">
@@ -76,12 +76,14 @@
             </a>
         </li> --}}
 
-        <li class="nav-item">
-            <a href="{{ route('system-logs.index') }}" class="nav-link {{ Request::routeIs('system-logs.*') ? 'active' : '' }}">
-            <i class="nav-icon fas fa-history text-white"></i> 
-            <p class="text-white">System Logs</p>
-            </a>
-        </li>
+    @if(auth()->user() && auth()->user()->hasRole('admin'))
+    <li class="nav-item">
+      <a href="{{ route('system-logs.index') }}" class="nav-link {{ Request::routeIs('system-logs.*') ? 'active' : '' }}">
+      <i class="nav-icon fas fa-history text-white"></i> 
+      <p class="text-white">System Logs</p>
+      </a>
+    </li>
+    @endif
 
         {{-- <li class="nav-item">
             <a href="{{ route('circuit-breakers') }}"
@@ -90,13 +92,15 @@
             </a>
         </li> --}}
 
-        <li class="nav-item">
-            <a href="{{ route('terminal-tokens') }}"
-            class="nav-link {{ Request::routeIs('terminal-tokens') ? 'active' : '' }}">
-            <i class="nav-icon fas fa-key text-white"></i> 
-            <p class="text-white">Terminal Tokens</p>
-            </a>
-        </li>
+    @if(auth()->user() && auth()->user()->hasRole('admin'))
+    <li class="nav-item">
+      <a href="{{ route('terminal-tokens') }}"
+      class="nav-link {{ Request::routeIs('terminal-tokens') ? 'active' : '' }}">
+      <i class="nav-icon fas fa-key text-white"></i> 
+      <p class="text-white">Terminal Tokens</p>
+      </a>
+    </li>
+    @endif
 
         {{-- User Management --}}
         @if(auth()->user() && auth()->user()->hasAnyRole(['admin', 'manager']))
@@ -107,6 +111,93 @@
             </a>
         </li>
         @endif
+        
+    {{-- Finance Reports (Finance role only) --}}
+    @if(auth()->user() && auth()->user()->hasRole('finance'))
+    <li class="nav-item">
+      <a href="{{ route('reports.index') }}" class="nav-link {{ Request::routeIs('reports.*') ? 'active' : '' }}">
+        <i class="nav-icon fas fa-chart-line text-white"></i>
+        <p class="text-white">Reports</p>
+      </a>
+    </li>
+    @endif
+    @if(auth()->user() && auth()->user()->hasRole('commercial'))
+      <li class="nav-item">
+          <a href="/commercial" class="nav-link {{ request()->is('commercial') ? 'active' : '' }}">
+            <i class="nav-icon fas fa-home text-white"></i>
+            <p class="text-white">Dashboard</p>
+          </a>
+        </li>
+        <li class="nav-item">
+          <a href="/commercial/tenants"
+             class="nav-link {{ request()->is('commercial/tenants*') ? 'active' : '' }}">
+            <i class="nav-icon fas fa-building text-white"></i>
+            <p class="text-white">Tenants</p>
+          </a>
+        </li>
+         <li class="nav-item {{ request()->is('commercial/reports/*') ? 'menu-open' : '' }}">
+          <a href="#"
+            class="nav-link {{ request()->is('commercial/reports/*') ? 'active' : '' }}">
+            <i class="nav-icon fas fa-chart-bar text-white"></i>
+            <p class="text-white">Reports
+              <i class="right fas fa-angle-left"></i>
+            </p>
+          </a>
+          <ul class="nav nav-treeview " style="{{ request()->is('commercial/reports/*') ? 'display: block;' : 'display: none;' }}">
+            <li class="nav-item">
+              <a href="/commercial/reports/hourly-sales-report"
+              class="nav-link {{ request()->is('commercial/reports/hourly-sales-report*') ? 'active' : '' }}">
+              <i class="fas fa-circle nav-icon ml-4 text-white"></i>
+              <p class="text-white">Hourly Sales</p>
+              </a>
+            </li>
+            <li class="nav-item">
+              <a href="/commercial/reports/daily-sales-report"
+                class="nav-link {{ request()->is('commercial/reports/daily-sales-report*') ? 'active' : '' }}">
+                <i class="fas fa-circle nav-icon ml-4 text-white"></i>
+                <p class="text-white">Daily Sales</p>
+              </a>
+            </li>
+            <li class="nav-item">
+              <a href="{{ route('commercial.sales-report.weekly') }}"
+                class="nav-link {{ request()->is('commercial/reports/weekly-sales-report*') ? 'active' : '' }}">
+                <i class="fas fa-circle nav-icon ml-4 text-white"></i>
+                <p class="text-white">Weekly Sales</p>
+              </a>
+            </li>
+            <li class="nav-item">
+              <a href="{{ route('commercial.sales-report.weekday') }}"
+                class="nav-link {{ request()->is('commercial/reports/weekday-sales-report*') ? 'active' : '' }}">
+                <i class="fas fa-circle nav-icon ml-4 text-white"></i>
+                <p class="text-white">Weekday Sales</p>
+              </a>
+            </li>
+            <li class="nav-item">
+              <a href="{{ route('commercial.sales-report.weekend') }}"
+                class="nav-link {{ request()->is('commercial/reports/weekend-sales-report*') ? 'active' : '' }}">
+                <i class="fas fa-circle nav-icon ml-4 text-white"></i>
+                <p class="text-white">Weekend Sales</p>
+              </a>
+            </li>
+            <li class="nav-item">
+              <a href="{{ route('commercial.sales-report.monthly') }}"
+                class="nav-link {{ request()->is('commercial/reports/monthly-sales-report*') ? 'active' : '' }}">
+                <i class="fas fa-circle nav-icon ml-4 text-white"></i>
+                <p class="text-white">Monthly Sales</p>
+              </a>
+            </li>
+            <li class="nav-item">
+              <a href="{{ route('commercial.sales-report.yearly') }}"
+                class="nav-link {{ request()->is('commercial/reports/yearly-sales-report*') ? 'active' : '' }}">
+                <i class="fas fa-circle nav-icon ml-4 text-white"></i>
+                <p class="text-white">Yearly Sales</p>
+              </a>
+            </li>
+            
+            
+          </ul>
+        </li>
+    @endif
 
       {{-- Logout sticks to bottom --}}
       <li class="nav-item d-sm-inline-block mt-auto">

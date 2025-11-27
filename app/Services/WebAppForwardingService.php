@@ -176,9 +176,11 @@ class WebAppForwardingService
     private int    $circuitBreakerCooldown;
     private string $circuitBreakerKey = 'webapp_forwarding_circuit_breaker';
     private TenantBreakerObserver $tenantObserver; // Phase 1 observational per-tenant metrics
+    private bool $enabled;
 
     public function __construct()
     {
+        $this->enabled = (bool) config('tsms.web_app.enabled', false);
         $this->webAppEndpoint           = config('tsms.web_app.endpoint', '');
         $this->timeout                  = config('tsms.web_app.timeout', 30);
         $this->batchSize                = config('tsms.web_app.batch_size', 50);
@@ -202,11 +204,19 @@ class WebAppForwardingService
 
     public function forwardUnsentTransactions(): array
     {
+        if (! $this->enabled) {
+            $this->log('warning', 'WebApp forwarding disabled (service-level)');
+            return ['success' => false, 'reason' => 'disabled'];
+        }
         return $this->processUnforwardedTransactions();
     }
 
     public function processUnforwardedTransactions(): array
     {
+        if (! $this->enabled) {
+            $this->log('warning', 'WebApp forwarding disabled (processUnforwardedTransactions)');
+            return ['success' => false, 'reason' => 'disabled'];
+        }
         $this->assertEndpoint();
 
         if ($this->circuitBreakerEnabled && $this->isCircuitBreakerOpen()) {

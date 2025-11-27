@@ -25,7 +25,7 @@
                 <div class="mb-3">
                     <label for="password" class="form-label">Password</label>
                     <div class="input-group">
-                        <input type="password" name="password" id="password" class="form-control" required>
+                        <input type="password" name="password" id="password" class="form-control mr-2" required>
                         <button type="button" class="btn btn-outline-secondary" onclick="togglePassword()">Show</button>
                     </div>
                     <small class="form-text text-muted">Minimum 8 characters, include letters and numbers.</small>
@@ -34,23 +34,20 @@
                     @enderror
                 </div>
                 <div class="mb-3">
-                    <label class="form-label">Roles</label>
-                    <div class="d-flex flex-wrap gap-2">
+                    <label for="role" class="form-label">Role</label>
+                    <select name="role" id="role" class="form-control">
+                        <option value="">-- Select role --</option>
                         @foreach($roles as $role)
-                            <div class="form-check">
-                                <input class="form-check-input" type="checkbox" name="roles[]" id="role_{{ $role->id }}" value="{{ $role->name }}"
-                                    {{ (is_array(old('roles')) && in_array($role->name, old('roles'))) ? 'checked' : '' }}>
-                                <label class="form-check-label" for="role_{{ $role->id }}">{{ $role->name }}</label>
-                            </div>
+                            <option value="{{ $role->name }}" {{ (old('role') == $role->name) ? 'selected' : '' }}>{{ $role->name }}</option>
                         @endforeach
-                    </div>
-                    <small class="form-text text-muted">Assign one or more roles to the user.</small>
-                    @error('roles')
+                    </select>
+                    <small class="form-text text-muted">Assign a single role to the user.</small>
+                    @error('role')
                         <div class="text-danger small">{{ $message }}</div>
                     @enderror
                 </div>
                 <div class="d-flex justify-content-end gap-2">
-                    <button type="submit" class="btn btn-success">Create</button>
+                    <button type="submit" class="btn btn-success mr-2">Create</button>
                     <a href="{{ route('users.index') }}" class="btn btn-secondary">Cancel</a>
                 </div>
             </form>
