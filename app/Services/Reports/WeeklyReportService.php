@@ -25,7 +25,7 @@ class WeeklyReportService
      * @param string|null $tenantId
      * @return array ['summary' => [...], 'days' => [...]]
      */
-    public function getWeeklySummary(string $dateFrom, string $dateTo, ?string $tenantId = null, bool $excludeWeekends = false): array
+    public function getWeeklySummary(string $dateFrom, string $dateTo, ?string $tenantId = null, bool $excludeWeekends = false, bool $onlyWeekends = false): array
     {
         try {
             $start = Carbon::parse($dateFrom)->startOfDay();
@@ -48,8 +48,11 @@ class WeeklyReportService
             ];
 
             for ($date = $start; $date->lte($end); $date->addDay()) {
-                // Optionally skip weekends when requested
+                // Optionally skip weekends when requested, or include only weekends
                 if ($excludeWeekends && $date->isWeekend()) {
+                    continue;
+                }
+                if ($onlyWeekends && !$date->isWeekend()) {
                     continue;
                 }
                 $d = $date->format('Y-m-d');
