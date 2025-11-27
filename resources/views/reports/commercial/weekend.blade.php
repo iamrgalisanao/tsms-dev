@@ -207,4 +207,4 @@ $(function() {
 });
 </script>
 @endpush
-@extends('layouts.master')
+
