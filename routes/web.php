@@ -187,6 +187,8 @@ Route::middleware(['auth'])->group(function () {
                 Route::get('/hourly-sales-report', [CommercialReportsController::class, 'hourly'])->name('hourly');
                 // Proxy endpoint used by the hourly report view to fetch hourly aggregates (adapts single-date UI param)
                 Route::get('/transactions/hourly', [CommercialReportsController::class, 'hourlyData'])->name('tsms-proxy.transactions.hourly');
+                // Proxy endpoint used by the daily report view to fetch daily summary + hourly breakdown
+                Route::get('/transactions/daily', [CommercialReportsController::class, 'dailyData'])->name('tsms-proxy.transactions.daily');
                 // Endpoint to fetch tenants for dropdown via AJAX
                 Route::get('/tenants', [CommercialReportsController::class, 'tenants'])->name('tenants');
                 // Export proxy: accept single-date & tenant_id from UI and adapt to finance export

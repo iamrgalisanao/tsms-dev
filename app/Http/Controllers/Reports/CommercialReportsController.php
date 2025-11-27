@@ -8,6 +8,7 @@ use App\Models\Tenant;
 use App\Http\Controllers\Api\Webapp\HourlyTransactionsController as ApiHourlyController;
 use App\Http\Controllers\Finance\SalesReportExportController as FinanceExportController;
 use App\Services\Reports\HourlyReportService;
+use App\Services\Reports\DailyReportService;
 use App\Models\AuditLog;
 use Illuminate\Support\Facades\Log;
 
@@ -112,6 +113,45 @@ class CommercialReportsController extends Controller
         }
 
         return response()->json(['data' => $data]);
+    }
+
+    /**
+     * Proxy endpoint for daily summary used by the daily sales UI.
+     * Accepts a single 'date' and 'tenant_id' and returns a summary + hourly breakdown.
+     */
+    public function dailyData(Request $request)
+    {
+        $request->validate([
+            'date' => ['required', 'date'],
+            'tenant_id' => ['required']
+        ]);
+
+        $date = $request->input('date');
+        $tenantId = $request->input('tenant_id');
+
+        $service = new DailyReportService();
+        $result = $service->getDailySummary($date, $tenantId, null);
+
+        // Audit the UI action (non-blocking)
+        try {
+            AuditLog::create([
+                'user_id' => auth()->id(),
+                'action' => 'report.daily_view',
+                'action_type' => 'view',
+                'resource_type' => 'report',
+                'resource_id' => null,
+                'ip_address' => $request->ip(),
+                'message' => "Viewed daily report for {$date}",
+                'old_values' => null,
+                'new_values' => null,
+                'metadata' => ['date' => $date, 'tenant_id' => $tenantId],
+                'logged_at' => now(),
+            ]);
+        } catch (\Throwable $e) {
+            Log::warning('Failed to write AuditLog for daily report view: ' . $e->getMessage(), ['date' => $date, 'tenant' => $tenantId]);
+        }
+
+        return response()->json($result);
     }
 
     /**
