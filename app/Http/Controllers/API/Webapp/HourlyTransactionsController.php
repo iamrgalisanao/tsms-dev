@@ -1,5 +1,4 @@
 <?php
-
 namespace App\Http\Controllers\Api\Webapp;
 
 use Illuminate\Http\Request;
@@ -48,7 +47,13 @@ class HourlyTransactionsController extends Controller
                 'message' => sprintf('API hourly report viewed (%s to %s)', $dateFrom, $dateTo),
                 'old_values' => null,
                 'new_values' => null,
-                'metadata' => ['date_from' => $dateFrom, 'date_to' => $dateTo, 'tenant_id' => $validated['tenant_id'] ?? null, 'terminal_id' => $validated['terminal_id'] ?? null],
+                'metadata' => [
+                    'date_from' => $dateFrom,
+                    'date_to' => $dateTo,
+                    'tenant_id' => $validated['tenant_id'] ?? null,
+                    'terminal_id' => $validated['terminal_id'] ?? null,
+                    'user_agent' => $request->header('User-Agent'),
+                ],
                 'logged_at' => now(),
             ]);
         } catch (\Throwable $e) {
