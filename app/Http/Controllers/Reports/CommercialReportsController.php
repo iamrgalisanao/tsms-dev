@@ -9,6 +9,7 @@ use App\Http\Controllers\Api\Webapp\HourlyTransactionsController as ApiHourlyCon
 use App\Http\Controllers\Finance\SalesReportExportController as FinanceExportController;
 use App\Services\Reports\HourlyReportService;
 use App\Services\Reports\DailyReportService;
+use App\Services\Reports\WeeklyReportService;
 use App\Models\AuditLog;
 use Illuminate\Support\Facades\Log;
 
@@ -30,6 +31,46 @@ class CommercialReportsController extends Controller
     public function weekly()
     {
         return view('reports.commercial.weekly');
+    }
+
+    /**
+     * Proxy endpoint for weekly summary used by the weekly sales UI.
+     * Accepts 'date_from' and 'date_to' and returns per-day aggregates.
+     */
+    public function weeklyData(Request $request)
+    {
+        $request->validate([
+            'date_from' => ['required', 'date'],
+            'date_to' => ['required', 'date'],
+            'tenant_id' => ['required']
+        ]);
+
+        $from = $request->input('date_from');
+        $to = $request->input('date_to');
+        $tenantId = $request->input('tenant_id');
+
+        $service = new WeeklyReportService();
+        $result = $service->getWeeklySummary($from, $to, $tenantId);
+
+        try {
+            AuditLog::create([
+                'user_id' => auth()->id(),
+                'action' => 'report.weekly_view',
+                'action_type' => 'view',
+                'resource_type' => 'report',
+                'resource_id' => null,
+                'ip_address' => $request->ip(),
+                'message' => "Viewed weekly report for {$from} to {$to}",
+                'old_values' => null,
+                'new_values' => null,
+                'metadata' => ['date_from' => $from, 'date_to' => $to, 'tenant_id' => $tenantId],
+                'logged_at' => now(),
+            ]);
+        } catch (\Throwable $e) {
+            Log::warning('Failed to write AuditLog for weekly report view: ' . $e->getMessage(), ['from' => $from, 'to' => $to, 'tenant' => $tenantId]);
+        }
+
+        return response()->json($result);
     }
 
     // Show weekday report UI
