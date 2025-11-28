@@ -233,7 +233,8 @@ class CommercialReportsController extends Controller
         $request->validate([
             'date_from' => ['required', 'date'],
             'date_to' => ['required', 'date'],
-            'tenant_id' => ['required']
+            // allow empty tenant_id to request aggregates for all tenants
+            'tenant_id' => ['nullable']
         ]);
 
         $from = $request->input('date_from');
