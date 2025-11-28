@@ -4,6 +4,20 @@
 <style>
   .report-card { margin: 1rem 0; }
   .report-placeholder { padding: 2rem; text-align: center; color: #6b7280; }
+  /* Loading overlay for report tables */
+  .report-loading-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255,255,255,0.8);
+    z-index: 20;
+  }
+  .report-loading-overlay.hidden { display: none; }
 </style>
 @endpush
 @section('content')
@@ -36,7 +50,13 @@
       </div>
     </div>
 
-    <div class="table-responsive">
+    <div class="table-responsive" style="position: relative;">
+      <div id="monthly-loading-overlay" class="report-loading-overlay hidden">
+        <div class="text-center">
+          <div class="spinner-border text-primary" role="status" aria-hidden="true"></div>
+          <div class="mt-2">Loading monthly report…</div>
+        </div>
+      </div>
       <table class="table table-bordered table-sm" id="monthly-sales-table" style="font-size: 12px;">
         <thead>
           <tr class="table-primary">
@@ -89,10 +109,18 @@ $(function() {
   const now = moment();
   const startOfMonth = now.clone().startOf('month');
   try {
-    // month-only picker: show months view
-    $('#month-picker-wrapper').datetimepicker({ format: 'YYYY-MM', defaultDate: startOfMonth, viewMode: 'months', icons: { time: 'far fa-clock', date: 'fa fa-calendar' } });
-    $('#month-picker').val(startOfMonth.format('YYYY-MM'));
+    // month-only picker: show months view (defensive init)
+    if (window.jQuery && window.jQuery.fn && window.jQuery.fn.datetimepicker) {
+      if (!$('#month-picker-wrapper').data('datetimepicker')) {
+        $('#month-picker-wrapper').datetimepicker({ format: 'YYYY-MM', defaultDate: startOfMonth, viewMode: 'months', icons: { time: 'far fa-clock', date: 'fa fa-calendar' } });
+      }
+      $('#month-picker').val(startOfMonth.format('YYYY-MM'));
+    } else {
+      console.warn('datetimepicker plugin not detected when initializing month picker');
+      $('#month-picker').val(startOfMonth.format('YYYY-MM'));
+    }
   } catch (err) {
+    console.debug('month picker init error', err);
     $('#month-picker').val(startOfMonth.format('YYYY-MM'));
   }
   $('#monthly-date-generated').text(now.format('MMM DD YYYY'));
@@ -105,6 +133,26 @@ $(function() {
     }, error: function() { console.error('Failed to load tenants'); } });
   }
   loadTenants();
+
+  // Capture-phase guard: ensure clicked toggle initializes the picker before plugin handlers run
+  document.addEventListener('click', function (ev) {
+    try {
+      const toggle = ev.target.closest && ev.target.closest('[data-toggle="datetimepicker"]');
+      if (!toggle) return;
+      const selector = toggle.getAttribute('data-target') || toggle.dataset.target;
+      if (!selector) return;
+      const target = document.querySelector(selector);
+      if (!target) return;
+      if (!window.jQuery) return;
+      const $target = window.jQuery(target);
+      if (!$target.data('datetimepicker') && window.jQuery.fn && window.jQuery.fn.datetimepicker) {
+        $target.datetimepicker({ format: 'YYYY-MM', viewMode: 'months', icons: { time: 'far fa-clock', date: 'fa fa-calendar' } });
+        console.info('Initialized missing month datetimepicker for', selector);
+      }
+    } catch (err) {
+      console.debug('monthly datetimepicker capture-init error', err);
+    }
+  }, true);
 
   function renderEmpty() {
     $('#monthly-report-tbody').html(`<tr><td colspan="13" class="text-center py-4 text-muted">No data available for the selected month/tenant.</td></tr>`);
@@ -121,7 +169,7 @@ $(function() {
     if (!m.isValid()) { renderEmpty(); return; }
     const from = m.clone().startOf('month').format('YYYY-MM-DD');
     const to = m.clone().endOf('month').format('YYYY-MM-DD');
-    $.ajax({
+    return $.ajax({
       url: '{{ route('commercial.sales-report.tsms-proxy.transactions.monthly') }}',
       data: { date_from: from, date_to: to, tenant_id: tenantId },
       success: function(resp) {
@@ -182,12 +230,27 @@ $(function() {
   }
 
   $('#monthly-load-report').on('click', function() {
+    const $btn = $(this);
     const month = $('#month-picker').val();
     const tenantId = $('#monthly-tenant-filter').val();
     if (!month) { alert('Please select a month'); return; }
-    $(this).prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> Loading...');
-    loadMonthly(month, tenantId);
-    $(this).prop('disabled', false).html('<i class="fa fa-search"></i> Load Report');
+
+    // show overlay and spinner
+    $('#monthly-loading-overlay').removeClass('hidden');
+    $btn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> Loading...');
+
+    const req = loadMonthly(month, tenantId);
+    if (req && req.always) {
+      req.always(function() {
+        $('#monthly-loading-overlay').addClass('hidden');
+        $btn.prop('disabled', false).html('<i class="fa fa-search"></i> Load Report');
+      });
+    } else {
+      setTimeout(function() {
+        $('#monthly-loading-overlay').addClass('hidden');
+        $btn.prop('disabled', false).html('<i class="fa fa-search"></i> Load Report');
+      }, 800);
+    }
   });
 
   $('#monthly-export-excel').on('click', function() {
@@ -206,21 +269,3 @@ $(function() {
 });
 </script>
 @endpush
-@extends('layouts.master')
-@section('title', 'Monthly Commercial Report')
-@push('styles')
-<style>
-  .report-card { margin: 1rem 0; }
-  .report-placeholder { padding: 2rem; text-align: center; color: #6b7280; }
-</style>
-@endpush
-@section('content')
-<div class="card report-card">
-  <div class="card-header">
-    <h3 class="card-title">Monthly Commercial Report</h3>
-  </div>
-  <div class="card-body">
-    <div class="report-placeholder">Monthly report UI goes here. Use month picker and include export/print actions.</div>
-  </div>
-</div>
-@endsection
