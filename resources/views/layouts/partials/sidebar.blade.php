@@ -124,12 +124,8 @@
     </li>
     @endif
     @if(auth()->user() && auth()->user()->hasRole('commercial'))
-      <li class="nav-item">
-      <a href="{{ route('commercial.dashboard') }}" class="nav-link {{ Request::routeIs('commercial.dashboard') || request()->is('commercial') ? 'active' : '' }}">
-            <i class="nav-icon fas fa-home text-white"></i>
-            <p class="text-white">Dashboard</p>
-          </a>
-        </li>
+        {{-- Commercial role: expose Tenants and Reports only. The commercial Dashboard
+             link has been removed because the main /dashboard route is reserved for admin. --}}
         <li class="nav-item">
           <a href="{{ route('commercial.sales-report.tenants') }}"
              class="nav-link {{ request()->is('commercial/reports/tenants*') ? 'active' : '' }}">

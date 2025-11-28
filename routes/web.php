@@ -24,11 +24,27 @@ use App\Http\Controllers\Finance\SalesReportExportController;
 
 
 
-// Home route redirects based on auth status
+// Home route redirects based on auth status. Commercial-role users go to the
+// commercial charts index so their primary landing page is the chart dashboard.
 Route::get('/', function () {
     if (Auth::check()) {
+        $user = Auth::user();
+        // If the app uses spatie/laravel-permission the hasRole method will exist.
+        // Fallback to checking a 'role' attribute if not.
+        $isCommercial = false;
+        if (method_exists($user, 'hasRole')) {
+            $isCommercial = $user->hasRole('commercial');
+        } elseif (isset($user->role) && $user->role === 'commercial') {
+            $isCommercial = true;
+        }
+
+        if ($isCommercial) {
+            return redirect('/commercial');
+        }
+
         return redirect('/dashboard');
     }
+
     return redirect('/login');
 });
 
@@ -41,8 +57,8 @@ Route::middleware('guest')->group(function () {
 });
 
 Route::middleware(['auth'])->group(function () {
-    // Main Dashboard Route
-    Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
+    // Main Dashboard Route (admin-only)
+    Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard')->middleware('role:admin');
 
     // Dashboard Group Routes
     Route::prefix('dashboard')->name('dashboard.')->group(function () {
@@ -56,8 +72,8 @@ Route::middleware(['auth'])->group(function () {
     });
     Route::post('/logout', [LoginController::class, 'logout'])->name('logout');
     
-    // Main Dashboard Route
-    Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
+    // Main Dashboard Route (admin-only) - duplicate entry made explicit with admin middleware
+    Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard')->middleware('role:admin');
     
     // Dashboard Group Routes
     Route::prefix('dashboard')->name('dashboard.')->group(function () {

@@ -26,8 +26,17 @@ class LoginController extends Controller
             }
 
             Log::info('User logged in successfully', ['email' => $request->email]);
-            
-            return redirect()->intended('/dashboard');
+
+            // Redirect commercial role users to the commercial charts index.
+            $isCommercial = false;
+            if ($user && method_exists($user, 'hasRole')) {
+                $isCommercial = $user->hasRole('commercial');
+            } elseif ($user && isset($user->role) && $user->role === 'commercial') {
+                $isCommercial = true;
+            }
+
+            $default = $isCommercial ? '/commercial' : '/dashboard';
+            return redirect()->intended($default);
         }
 
         Log::warning('Failed login attempt', ['email' => $request->email]);
