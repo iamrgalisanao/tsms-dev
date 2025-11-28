@@ -59,6 +59,20 @@ class CommercialReportsController extends Controller
         $service = new WeeklyReportService();
         $result = $service->getWeeklySummary($from, $to, $tenantId);
 
+        // Log result shape for debugging client 'No data' cases
+        try {
+            Log::info('commercial.weeklyData result', [
+                'from' => $from,
+                'to' => $to,
+                'tenant' => $tenantId,
+                'summary' => $result['summary'] ?? null,
+                'days_count' => is_array($result['days'] ?? null) ? count($result['days']) : null,
+                'sample_days' => array_slice($result['days'] ?? [], 0, 3),
+            ]);
+        } catch (\Throwable $__e) {
+            Log::warning('Failed to log weeklyData debug info: ' . $__e->getMessage());
+        }
+
         try {
             AuditLog::create([
                 'user_id' => auth()->id(),
@@ -198,6 +212,19 @@ class CommercialReportsController extends Controller
         $result = $service->getWeeklySummary($from, $to, $tenantId);
 
         try {
+            Log::info('commercial.monthlyData result', [
+                'from' => $from,
+                'to' => $to,
+                'tenant' => $tenantId,
+                'summary' => $result['summary'] ?? null,
+                'rows_count' => is_array($result['days'] ?? null) ? count($result['days']) : null,
+                'sample_rows' => array_slice($result['days'] ?? [], 0, 3),
+            ]);
+        } catch (\Throwable $__e) {
+            Log::warning('Failed to log monthlyData debug info: ' . $__e->getMessage());
+        }
+
+        try {
             AuditLog::create([
                 'user_id' => auth()->id(),
                 'action' => 'report.monthly_view',
@@ -307,6 +334,15 @@ class CommercialReportsController extends Controller
                 Log::warning('Failed to write AuditLog for yearly report view: ' . $e->getMessage(), ['from' => $from, 'to' => $to, 'tenant' => $tenantId]);
             }
 
+            Log::info('commercial.yearlyData result', [
+                'from' => $from,
+                'to' => $to,
+                'tenant' => $tenantId,
+                'summary' => $summary,
+                'months_count' => count($months),
+                'sample_months' => array_slice($months, 0, 3),
+            ]);
+
             return response()->json(['summary' => $summary, 'months' => $months]);
         } catch (\Throwable $e) {
             Log::warning('YearlyData failed: ' . $e->getMessage(), ['from' => $from, 'to' => $to, 'tenant' => $tenantId]);
@@ -328,6 +364,12 @@ class CommercialReportsController extends Controller
                     'customer_code' => $t->customer_code ?? '',
                 ];
             })->values();
+
+        try {
+            Log::info('commercial.tenants result', ['count' => $tenants->count(), 'sample' => $tenants->take(5)]);
+        } catch (\Throwable $__e) {
+            Log::warning('Failed to log tenants debug info: ' . $__e->getMessage());
+        }
 
         return response()->json($tenants);
     }
