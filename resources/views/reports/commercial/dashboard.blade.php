@@ -12,13 +12,13 @@
     </div>
   </div>
 
-  <div class="row">
-    <div class="col-md-3">
+  <div class="row mb-3">
+    <div class="col-md-6">
       <div class="card">
         <div class="card-body chart-card">
           <h5 class="card-title">Daily Sales</h5>
-          <div class="chart-wrapper" style="position:relative; min-height:140px;">
-            <canvas id="chart-daily" height="150"></canvas>
+          <div class="chart-wrapper" style="position:relative; min-height:180px;">
+            <canvas id="chart-daily" height="180"></canvas>
             <div id="spinner-daily" class="chart-spinner">
               <div class="spinner-border text-primary" role="status" aria-hidden="true"></div>
             </div>
@@ -27,12 +27,12 @@
         </div>
       </div>
     </div>
-    <div class="col-md-3">
+    <div class="col-md-6">
       <div class="card">
         <div class="card-body chart-card">
           <h5 class="card-title">Weekly Sales</h5>
-          <div class="chart-wrapper" style="position:relative; min-height:140px;">
-            <canvas id="chart-weekly" height="150"></canvas>
+          <div class="chart-wrapper" style="position:relative; min-height:180px;">
+            <canvas id="chart-weekly" height="180"></canvas>
             <div id="spinner-weekly" class="chart-spinner">
               <div class="spinner-border text-primary" role="status" aria-hidden="true"></div>
             </div>
@@ -41,12 +41,15 @@
         </div>
       </div>
     </div>
-    <div class="col-md-3">
+  </div>
+
+  <div class="row">
+    <div class="col-md-6">
       <div class="card">
         <div class="card-body chart-card">
           <h5 class="card-title">Monthly Sales</h5>
-          <div class="chart-wrapper" style="position:relative; min-height:140px;">
-            <canvas id="chart-monthly" height="150"></canvas>
+          <div class="chart-wrapper" style="position:relative; min-height:180px;">
+            <canvas id="chart-monthly" height="180"></canvas>
             <div id="spinner-monthly" class="chart-spinner">
               <div class="spinner-border text-primary" role="status" aria-hidden="true"></div>
             </div>
@@ -55,12 +58,12 @@
         </div>
       </div>
     </div>
-    <div class="col-md-3">
+    <div class="col-md-6">
       <div class="card">
         <div class="card-body chart-card">
           <h5 class="card-title">Yearly Sales</h5>
-          <div class="chart-wrapper" style="position:relative; min-height:140px;">
-            <canvas id="chart-yearly" height="150"></canvas>
+          <div class="chart-wrapper" style="position:relative; min-height:180px;">
+            <canvas id="chart-yearly" height="180"></canvas>
             <div id="spinner-yearly" class="chart-spinner">
               <div class="spinner-border text-primary" role="status" aria-hidden="true"></div>
             </div>
@@ -80,23 +83,44 @@
       const $select = $('#commercial-tenant-select');
       let charts = {};
 
+      // warn if Chart.js is not loaded - this helps debug missing library issues
+      if (typeof Chart === 'undefined') {
+        // do not block execution, but log so devs can check console/network
+        console.warn('Chart.js not found on page: charts will not render until Chart.js is loaded.');
+      }
+
       function initTenantSelect() {
         $.getJSON("{{ route('commercial.sales-report.tenants') }}")
-          .done(function(data){
+          .done(function(resp){
             $select.empty();
-            if (!Array.isArray(data) || data.length === 0) {
+            // support multiple response shapes: array, {data: [...]}, {rows: [...]}, {tenants: [...]}
+            let list = [];
+            if (Array.isArray(resp)) list = resp;
+            else if (resp && Array.isArray(resp.data)) list = resp.data;
+            else if (resp && Array.isArray(resp.rows)) list = resp.rows;
+            else if (resp && Array.isArray(resp.tenants)) list = resp.tenants;
+
+            if (!Array.isArray(list) || list.length === 0) {
               $select.append('<option value="">All Tenants</option>');
             } else {
-              data.forEach(function(t){
-                $select.append('<option value="'+t.id+'">'+(t.trade_name || t.customer_code || t.id)+'</option>');
+              list.forEach(function(t){
+                // allow tenant objects with id or tenant_id keys
+                const id = t.id || t.tenant_id || t.key || '';
+                const label = t.trade_name || t.customer_code || t.name || id;
+                $select.append('<option value="'+id+'">'+label+'</option>');
               });
             }
-            // default to first tenant if present
-            if ($select.find('option').length) $select.val($select.find('option').first().val());
+
+            // default to first tenant (or empty = All Tenants)
+            if ($select.find('option').length) {
+              $select.val($select.find('option').first().val());
+            }
+            // initial load
             loadAllCharts();
           })
-          .fail(function(){
-            $select.append('<option value="">All Tenants</option>');
+          .fail(function(jqX, status, err){
+            console.warn('Failed loading tenant list for commercial dashboard', status, err);
+            $select.empty().append('<option value="">All Tenants</option>');
             loadAllCharts();
           });
       }
