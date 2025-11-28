@@ -4,9 +4,9 @@
 <div class="container-fluid">
   <div class="row mb-3">
     <div class="col-12 d-flex justify-content-between align-items-center">
-      <h3 class="m-0">Commercial Dashboard</h3>
+      <h3 class="m-0">Finance Dashboard</h3>
       <div>
-        <small class="text-muted">Showing aggregated sales for all tenants</small>
+        <small class="text-muted">Finance view: aggregated commercial charts</small>
       </div>
     </div>
   </div>
@@ -25,5 +25,6 @@
 @endsection
 
 @push('scripts')
+  {{-- Reuse the same inline script as commercial dashboard to initialise charts. --}}
   @include('reports.commercial._dashboard_scripts')
 @endpush

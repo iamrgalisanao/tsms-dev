@@ -29,17 +29,27 @@ use App\Http\Controllers\Finance\SalesReportExportController;
 Route::get('/', function () {
     if (Auth::check()) {
         $user = Auth::user();
-        // If the app uses spatie/laravel-permission the hasRole method will exist.
-        // Fallback to checking a 'role' attribute if not.
+        // Role checks (spatie or legacy role attribute)
         $isCommercial = false;
+        $isFinance = false;
         if (method_exists($user, 'hasRole')) {
             $isCommercial = $user->hasRole('commercial');
-        } elseif (isset($user->role) && $user->role === 'commercial') {
-            $isCommercial = true;
+            $isFinance = $user->hasRole('finance');
+        } else {
+            $role = isset($user->role) ? strtolower($user->role) : '';
+            $isCommercial = $role === 'commercial';
+            $isFinance = $role === 'finance';
         }
 
         if ($isCommercial) {
             return redirect('/commercial');
+        }
+
+        // Finance users should land on the Transaction Logs page (admin logs view)
+        // rather than the admin /dashboard. Transaction logs are accessible to
+        // finance via the 'transactions/logs' routes (middleware: role:admin|manager|finance).
+        if ($isFinance) {
+            return redirect('/transactions/logs');
         }
 
         return redirect('/dashboard');

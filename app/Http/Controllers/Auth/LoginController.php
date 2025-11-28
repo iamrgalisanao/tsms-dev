@@ -28,14 +28,25 @@ class LoginController extends Controller
             Log::info('User logged in successfully', ['email' => $request->email]);
 
             // Redirect commercial role users to the commercial charts index.
+            // Finance users should land on the finance reports dashboard (/reports).
             $isCommercial = false;
+            $isFinance = false;
             if ($user && method_exists($user, 'hasRole')) {
                 $isCommercial = $user->hasRole('commercial');
-            } elseif ($user && isset($user->role) && $user->role === 'commercial') {
-                $isCommercial = true;
+                $isFinance = $user->hasRole('finance');
+            } elseif ($user && isset($user->role)) {
+                $isCommercial = $user->role === 'commercial';
+                $isFinance = $user->role === 'finance';
             }
 
-            $default = $isCommercial ? '/commercial' : '/dashboard';
+            // Priority: commercial -> /commercial, finance -> /reports, otherwise admin dashboard
+            if ($isCommercial) {
+                $default = '/commercial';
+            } elseif ($isFinance) {
+                $default = '/reports';
+            } else {
+                $default = '/dashboard';
+            }
             return redirect()->intended($default);
         }
 
