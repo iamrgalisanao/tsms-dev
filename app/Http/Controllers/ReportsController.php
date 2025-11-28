@@ -20,10 +20,10 @@ class ReportsController extends Controller
         $tenants = Tenant::orderBy('trade_name')->get(['id','trade_name'])->pluck('trade_name', 'id')->toArray();
         $selected_tenant = $request->get('tenant', '');
 
-    // Render the dedicated finance dashboard view. This file lives at
-    // resources/views/reports/finance/dashboard.blade.php and was added
-    // for finance role users.
-    return view('reports.finance.dashboard', compact('tenants', 'selected_tenant'));
+    // Render the finance reports dashboard view. Use the consolidated
+    // `reports.dashboard` view which contains the Finance Reports UI and
+    // shared chart/table scripts (resources/views/reports/dashboard.blade.php).
+    return view('reports.dashboard', compact('tenants', 'selected_tenant'));
     }
 
     /**
