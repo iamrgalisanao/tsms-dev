@@ -377,11 +377,13 @@ class CommercialReportsController extends Controller
             return response()->json($jsonTenants);
         }
 
-        // For regular web requests, render a tenants listing page with server-side pagination.
-        // This prevents rendering a huge table when the tenant count grows large.
-        $perPage = 25; // reasonable default; can be made configurable
-        $paginated = Tenant::orderBy('trade_name')->paginate($perPage)->withQueryString();
-        return view('reports.commercial.tenants.index', ['tenants' => $paginated]);
+    // For regular web requests, render a tenants listing page.
+    // Previously we returned a paginated result to avoid rendering very large
+    // tables; however, the UI now uses client-side DataTables for paging/search.
+    // If tenant counts become very large this may need to revert to server
+    // pagination or introduce server-side DataTables endpoints.
+    $allTenants = Tenant::orderBy('trade_name')->get();
+    return view('reports.commercial.tenants.index', ['tenants' => $allTenants]);
     }
 
     /**
