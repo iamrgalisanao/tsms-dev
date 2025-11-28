@@ -255,6 +255,34 @@ table { width: 100%; border-collapse: collapse; }
             </div>
         </div>
 
+        <!-- Dashboard charts: Daily / Weekly / Monthly / Yearly -->
+        <div class="row g-3 mb-3">
+          <div class="col-md-3">
+            <div class="card">
+              <div class="card-header bg-secondary text-white">Daily (Selected Month)</div>
+              <div class="card-body"><canvas id="chart-daily" height="140"></canvas></div>
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="card">
+              <div class="card-header bg-secondary text-white">Weekly (Recent)</div>
+              <div class="card-body"><canvas id="chart-weekly-mini" height="140"></canvas></div>
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="card">
+              <div class="card-header bg-secondary text-white">Monthly (Year)</div>
+              <div class="card-body"><canvas id="chart-monthly-mini" height="140"></canvas></div>
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="card">
+              <div class="card-header bg-secondary text-white">Yearly (Last 5 yrs)</div>
+              <div class="card-body"><canvas id="chart-yearly-mini" height="140"></canvas></div>
+            </div>
+          </div>
+        </div>
+
         <div class="table-responsive position-relative">
             <!-- Loading overlay -->
             <div id="loadingOverlay" class="overlay d-none">
@@ -413,6 +441,9 @@ table { width: 100%; border-collapse: collapse; }
 @push('scripts')
 <!-- Load Select2 after jQuery but before custom scripts -->
 <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+
+<!-- Chart.js CDN -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
 <!-- DataTables & Plugins -->
 <script src="{{ asset('plugins/datatables/jquery.dataTables.min.js') }}"></script>
@@ -938,6 +969,86 @@ $(function() {
             $('#reportMonthDisplay').text('-');
         }
     });
+
+        // === Charts: helpers and rendering ===
+        let _chartDaily, _chartWeeklyMini, _chartMonthlyMini, _chartYearlyMini;
+
+        function makeBarChartCtx(ctx, labels, data, color) {
+          return new Chart(ctx, {
+            type: 'bar',
+            data: { labels: labels, datasets: [{ label: 'Amount', data: data, backgroundColor: color || '#007bff' }] },
+            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
+          });
+        }
+
+        function extractSeries(resp) {
+          if (!resp || !resp.data) return { labels: [], values: [] };
+          const data = resp.data;
+          if (Array.isArray(data)) {
+            const first = data[0] || {};
+            const keys = Object.keys(first);
+            const dateKey = keys.find(k => /date|period|label|x|day/.test(k)) || keys[0];
+            const valueKey = keys.find(k => /total|amount|value|sum|count|sales/.test(k)) || keys[1] || keys[0];
+            const labels = data.map(it => it[dateKey] || it.period || it.label || '');
+            const values = data.map(it => Number(it[valueKey] || it.total_amount || it.total || it.sum || it.value || 0));
+            return { labels, values };
+          } else if (typeof data === 'object') {
+            const labels = Object.keys(data);
+            const values = labels.map(k => {
+              const v = data[k];
+              if (typeof v === 'number') return v;
+              if (v && typeof v === 'object') return Number(v.total_amount || v.total || v.net_sales || v.sum || 0);
+              return 0;
+            });
+            return { labels, values };
+          }
+          return { labels: [], values: [] };
+        }
+
+        function loadDashboardCharts(tenant, month) {
+          if (!tenant || !month) return;
+          // daily for selected month
+          const start = moment(month + '-01').format('YYYY-MM-DD');
+          const end = moment(start).endOf('month').format('YYYY-MM-DD');
+
+          $.when(
+            $.getJSON(`/api/v1/webapp/reports/sales?period=daily&start=${start}&end=${end}&tenant_id=${tenant}`),
+            $.getJSON(`/api/v1/webapp/reports/sales?period=weekly&start=${start}&end=${end}&tenant_id=${tenant}`),
+            $.getJSON(`/api/v1/webapp/reports/sales?period=monthly&start=${moment(month + '-01').startOf('year').format('YYYY-01-01')}&end=${moment(month + '-01').endOf('year').format('YYYY-12-31')}&tenant_id=${tenant}`),
+            $.getJSON(`/api/v1/webapp/reports/sales?period=yearly&start=${moment().subtract(5, 'years').startOf('year').format('YYYY-01-01')}&end=${moment().endOf('year').format('YYYY-12-31')}&tenant_id=${tenant}`)
+          ).done(function(dailyResp, weeklyResp, monthlyResp, yearlyResp) {
+            try {
+              const d = extractSeries(dailyResp[0]);
+              const w = extractSeries(weeklyResp[0]);
+              const m = extractSeries(monthlyResp[0]);
+              const y = extractSeries(yearlyResp[0]);
+
+              // Destroy old charts
+              if (_chartDaily) _chartDaily.destroy();
+              if (_chartWeeklyMini) _chartWeeklyMini.destroy();
+              if (_chartMonthlyMini) _chartMonthlyMini.destroy();
+              if (_chartYearlyMini) _chartYearlyMini.destroy();
+
+              _chartDaily = makeBarChartCtx(document.getElementById('chart-daily').getContext('2d'), d.labels, d.values, '#17a2b8');
+              _chartWeeklyMini = makeBarChartCtx(document.getElementById('chart-weekly-mini').getContext('2d'), w.labels, w.values, '#28a745');
+              _chartMonthlyMini = makeBarChartCtx(document.getElementById('chart-monthly-mini').getContext('2d'), m.labels, m.values, '#ffc107');
+              _chartYearlyMini = makeBarChartCtx(document.getElementById('chart-yearly-mini').getContext('2d'), y.labels, y.values, '#6f42c1');
+            } catch (err) {
+              console.error('Failed to render dashboard charts', err);
+            }
+          }).fail(function() {
+            console.warn('One or more chart data requests failed');
+          });
+        }
+
+        // Load charts initially if filters are valid
+        if ($('#trade-filter').val() && $('#report-month').val()) {
+          loadDashboardCharts($('#trade-filter').val(), $('#report-month').val());
+        }
+
+        // Reload charts when filters change or report generated
+        $('#trade-filter').on('change change.select2', function() { if ($('#report-month').val()) loadDashboardCharts($(this).val(), $('#report-month').val()); });
+        $('#report-month').on('change', function() { if ($('#trade-filter').val()) loadDashboardCharts($('#trade-filter').val(), $(this).val()); });
 
     // Add handleExport function
     window.handleExport = function(type) {
