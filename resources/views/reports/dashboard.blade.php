@@ -13,14 +13,8 @@
 <link rel="stylesheet" href="{{ asset('plugins/datatables-buttons/css/buttons.bootstrap4.min.css') }}">
 <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
 <style>
-/* Consolidated certified monthly sales report styles
-   - kept print-ready A4 portrait rules
-   - removed duplicate selectors and tightened spacing
-*/
-
 .print-btn { transition: all 0.3s ease; }
 .print-btn:hover { background-color: rgba(173, 216, 230, 0.2) !important; }
-
 .dashboard-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.5rem; }
 .dashboard-header h1 { font-size: 2rem; font-weight: 700; color: #2563eb; margin: 0; }
 .dashboard-header .search-bar { width: 320px; max-width: 100%; background: #f3f4f6; border-radius: 8px; padding: 0.5rem 1rem; border: 1px solid #e5e7eb; display: flex; align-items: center; }
@@ -28,137 +22,354 @@
 .dashboard-header .search-bar i { color: #2563eb; margin-right: 0.5rem; }
 
 /* Make the printable container full-width */
-.print-content { width: 100% !important; max-width: 100% !important; padding: 0 !important; margin: 0 auto !important; }
-
-.report-tabs { border-bottom: 2px solid #e74c3c; margin-bottom: 1.5rem; padding: 0.5rem 1rem 0 1rem; background: #fff; border-radius: 8px 8px 0 0; display: flex; align-items: center; }
-.report-tabs .nav-link { border: none; border-radius: 0; color: #22223b; font-weight: 500; background: transparent; margin-right: 0.5rem; }
-.report-tabs .nav-link.active { background: #fff; border-bottom: 2px solid #2563eb; color: #2563eb; font-weight: 700; }
-
-.report-header-row { display: flex; justify-content: flex-end; align-items: center; margin-bottom: 1rem; }
-.report-date { background: #f3f4f6; border-radius: 6px; padding: 0.5rem 1rem; font-size: 1rem; color: #22223b; display: flex; align-items: center; gap: 0.5rem; }
-.report-logo { height: 100px; width: auto; max-width: 160px; }
-
-/* Header layout: center titles and position logo to the right */
-.report-header { position: relative; display: flex; align-items: center; justify-content: center; margin-bottom: 1rem; }
-.logo-wrap { position: absolute; right: 0.5rem; top: 0; display: flex; align-items: center; justify-content: flex-end; }
-.report-header .text-center { max-width: calc(100% - 140px); padding: 0 12px; text-align: center; white-space: normal; }
-
-@media (max-width: 768px) {
-  .report-header { flex-direction: column; align-items: center; }
-  .logo-wrap { position: static !important; order: -1; margin-bottom: 6px; right: auto; top: auto; }
-  .report-header .text-center { max-width: 100% !important; padding: 0 6px !important; }
-  .report-logo { height: 80px; }
+.print-content {
+  width: 100% !important;
+  max-width: 100% !important;
+  padding: 0 !important;
+  margin: 0 auto !important;
 }
 
-@media (max-width: 420px) {
-  .report-logo { height: 60px; }
-  .report-header .text-center h4 { font-size: 1rem; }
-  .report-header .text-center h5 { font-size: 0.95rem; }
-  .report-header .text-center h6 { font-size: 0.85rem; }
+/* Utility & layout */
+.print-btn {
+  transition: all 0.3s ease;
+}
+.print-btn:hover {
+  background-color: rgba(173, 216, 230, 0.2) !important;
+}
+.dashboard-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 1.5rem;
+}
+.dashboard-header h1 {
+  font-size: 2rem;
+  font-weight: 700;
+  color: #2563eb;
+  margin: 0;
+}
+.dashboard-header .search-bar {
+  width: 320px;
+  max-width: 100%;
+  background: #f3f4f6;
+  border-radius: 8px;
+  padding: 0.5rem 1rem;
+  border: 1px solid #e5e7eb;
+  display: flex;
+  align-items: center;
+}
+.dashboard-header .search-bar input {
+  border: none;
+  background: transparent;
+  outline: none;
+  width: 100%;
+  font-size: 1rem;
+  color: #22223b;
+}
+.dashboard-header .search-bar i {
+  color: #2563eb;
+  margin-right: 0.5rem;
+}
+
+.report-tabs {
+  border-bottom: 2px solid #e74c3c;
+  margin-bottom: 1.5rem;
+  padding: 0.5rem 1rem 0 1rem;
+  background: #fff;
+  border-radius: 8px 8px 0 0;
+  display: flex;
+  align-items: center;
+}
+.report-tabs .nav-link {
+  border: none;
+  border-radius: 0;
+  color: #22223b;
+  font-weight: 500;
+  background: transparent;
+  margin-right: 0.5rem;
+}
+.report-tabs .nav-link.active {
+  background: #fff;
+  border-bottom: 2px solid #2563eb;
+  color: #2563eb;
+  font-weight: 700;
+}
+
+.report-header-row {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+.report-date {
+  background: #f3f4f6;
+  border-radius: 6px;
+  padding: 0.5rem 1rem;
+  font-size: 1rem;
+  color: #22223b;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+.report-logo {
+  max-width: 120px;
+  max-height: 60px;
 }
 
 /* Table styling */
-.report-table th, .report-table td { font-size: 0.95rem; text-align: right; vertical-align: middle; border: 1px solid #dee2e6 !important; padding: 0.4rem 0.6rem; }
-.report-table th { background: #f8f9fa; font-weight: 600; color: #22223b; text-align: center; font-size: 0.82rem; line-height: 1.05; padding: 0.35rem 0.45rem; white-space: normal; overflow-wrap: break-word; word-wrap: break-word; hyphens: auto; }
-.report-table td:first-child, .report-table th:first-child { text-align: center; }
-
-@media (min-width: 992px) {
-  .report-table th:nth-child(1), .report-table td:nth-child(1) { width: 6%; }
-  .report-table th:nth-child(2), .report-table td:nth-child(2) { width: 12%; }
-  .report-table th:nth-child(3), .report-table td:nth-child(3) { width: 10%; }
-  .report-table th:nth-child(4), .report-table td:nth-child(4) { width: 8%; }
-  .report-table th:nth-child(5), .report-table td:nth-child(5) { width: 7%; }
-  .report-table th:nth-child(6), .report-table td:nth-child(6) { width: 6%; }
-  .report-table th:nth-child(7), .report-table td:nth-child(7) { width: 6%; }
-  .report-table th:nth-child(8), .report-table td:nth-child(8) { width: 6%; }
-  .report-table th:nth-child(9), .report-table td:nth-child(9) { width: 6%; }
-  .report-table th:nth-child(10), .report-table td:nth-child(10) { width: 6%; }
-  .report-table th:nth-child(11), .report-table td:nth-child(11) { width: 6%; }
-  .report-table th:nth-child(12), .report-table td:nth-child(12) { width: 6%; }
-  .report-table th:nth-child(13), .report-table td:nth-child(13) { width: 6%; }
-  .report-table th:nth-child(14), .report-table td:nth-child(14) { width: 16%; }
+.report-table th,
+.report-table td {
+  font-size: 0.95rem;
+  text-align: right;
+  vertical-align: middle;
+  border: 1px solid #dee2e6 !important;
+  padding: 0.4rem 0.6rem;
+}
+.report-table th {
+  background: #f8f9fa;
+  font-weight: 600;
+  color: #22223b;
+  text-align: center;
+}
+.report-table td:first-child,
+.report-table th:first-child {
+  text-align: center;
 }
 
 /* Signature block */
-.report-signature { margin-top: 2.5rem; display: flex; justify-content: space-between; gap: 2rem; }
-.report-signature .sig-block { width: 45%; text-align: center; }
-.report-signature .sig-line { border-bottom: 1px solid #22223b; margin: 2.5rem 0 0.5rem 0; width: 100%; display: inline-block; }
+.report-signature {
+  margin-top: 2.5rem;
+  display: flex;
+  justify-content: space-between;
+  gap: 2rem;
+}
+.report-signature .sig-block {
+  width: 45%;
+  text-align: center;
+}
+.report-signature .sig-line {
+  border-bottom: 1px solid #22223b;
+  margin: 2.5rem 0 0.5rem 0;
+  width: 100%;
+  display: inline-block;
+}
 
 /* Sidebar & toolbar */
-.sticky-toolbar { position: sticky; top: 0; z-index: 100; background: #fff; padding: 1rem; border-bottom: 1px solid #dee2e6; }
-.filter-toolbar { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
-.filter-group { flex: 1; min-width: 200px; }
-/* Select2 sizing + truncation for dropdown inside sticky toolbar */
-select.select2-store { width: 100%; }
-.select2-container { width: 100% !important; }
-.select2-container--default .select2-selection--single { height: calc(2.25rem + 2px); border-radius: 6px; padding: 0.25rem 0.5rem; }
-.select2-selection__rendered { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: inline-block; max-width: 100%; }
-.select2-selection__placeholder { color: #6b7280; }
+.sticky-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  background: #fff;
+  padding: 1rem;
+  border-bottom: 1px solid #dee2e6;
+}
+.filter-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+.filter-group {
+  flex: 1;
+  min-width: 200px;
+}
+select.select2-store {
+  width: 100%;
+}
 
+/* Responsive signature */
+@media (max-width: 991px) {
+  .report-signature {
+    flex-direction: column;
+    gap: 1.5rem;
+  }
+  .report-signature .sig-block {
+    width: 100%;
+  }
+}
+
+/* Global table defaults */
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.sales-report-table {
+  width: 100%;
+  margin: 0;
+  padding: 0;
+}
 @media (max-width: 991px) {
   .report-signature { flex-direction: column; gap: 1.5rem; }
   .report-signature .sig-block { width: 100%; }
 }
-
-/* Global table defaults */
-table { width: 100%; border-collapse: collapse; }
-.sales-report-table { width: 100%; margin: 0; padding: 0; }
-
-/* Compact label/value rows used in Less/Add sections */
-.report-list { margin-top: 0.25rem; }
-.report-list .report-line { display: flex; justify-content: space-between; align-items: center; gap: 0.75rem; padding: 2px 0; white-space: nowrap; }
-.report-list .report-line .label { flex: 1 1 auto; text-align: left; overflow: hidden; text-overflow: ellipsis; }
-.report-list .report-line .value { flex: 0 0 auto; min-width: 90px; text-align: right; }
-.report-list .report-line .value span { display: inline-block; }
-
-@media (max-width: 575px) {
-  .report-list .report-line { gap: 0.4rem; }
-  .report-list .report-line .label { font-size: 0.95rem; }
-  .report-list .report-line .value { min-width: 70px; }
-}
-
 /* PRINT STYLES */
 @media print {
-  @page { size: A4 portrait; margin: 10mm; }
+  /* A4 landscape, small margins */
+   /* 1) A4 landscape, tiny margins */
+  @page {
+    size: A4 portrait;
+      margin: 2mm 2mm 2mm 2mm;
+  }
 
-  html, body, .print-content { width: 100% !important; height: auto !important; margin: 0 !important; padding: 0 !important; font-family: "Times New Roman", Georgia, serif !important; font-size: 10pt !important; line-height: 1.25 !important; color: #000 !important; background: #fff !important; }
+  /* 2) Full-width container */
+  html, body, .print-content {
+    width: 100%;
+    height: auto;
+    margin: 0;
+    padding: 0;
+     font-family: "Times New Roman", Georgia, serif !important;
+    font-size: 10pt !important;
+    line-height: 1.4 !important;
+  }
 
-  /* Hide UI chrome */
-  .sticky-toolbar, .filter-toolbar, .main-sidebar, .main-header, .content-header, #errorAlert, .export-btn, .main-footer, .btn { display: none !important; }
+  /* 3) Scale everything down so it fits on one page */
+  body {
+    zoom: 0.60; /* <- tweak between 0.60–0.75 as needed */
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+   .main-footer { 
+    display: none !important; 
+  }
 
-  .card, .card-header, .card-body { box-shadow: none !important; border: none !important; background: transparent !important; }
-  .table-responsive { overflow: visible !important; }
+  .content{
+    background: #fff !important;
+  }
 
-  .report-table, .sales-report-table { width: 100% !important; max-width: none !important; table-layout: fixed !important; border-collapse: collapse !important; }
+  .card-body.print-content {
+  background: #fff !important;
+  }
 
-  .report-table th, .report-table td { padding: 2px 4px !important; font-size: 9.5pt !important; vertical-align: middle !important; border: 1px solid #000 !important; background: transparent !important; white-space: nowrap !important; }
+  /* remove the gray header shade */
+  .report-table th {
+    background: #fff !important;
+  }
 
-  .report-table th, .report-table td, .amount-field, .report-table .numeric { font-variant-numeric: tabular-nums; -moz-font-feature-settings: "tnum" 1; -webkit-font-feature-settings: "tnum" 1; font-feature-settings: "tnum" 1; }
+  /* if you have any other gray panels inside the report, reset them too */
+  .report-tabs,
+  .report-date {
+    background: transparent !important;
+  }
 
-  /* Print-specific column width hints */
-  /* .report-table th:nth-child(1), .report-table td:nth-child(1) { width: 6% !important; }
-  .report-table th:nth-child(2), .report-table td:nth-child(2) { width: 10% !important; }
-  .report-table th:nth-child(3), .report-table td:nth-child(3) { width: 9% !important; }
-  .report-table th:nth-child(4), .report-table td:nth-child(4) { width: 7% !important; }
-  .report-table th:nth-child(5), .report-table td:nth-child(5) { width: 7% !important; }
-  .report-table th:nth-child(6), .report-table td:nth-child(6) { width: 6% !important; }
-  .report-table th:nth-child(7), .report-table td:nth-child(7) { width: 6% !important; }
-  .report-table th:nth-child(8), .report-table td:nth-child(8) { width: 6% !important; }
-  .report-table th:nth-child(9), .report-table td:nth-child(9) { width: 6% !important; } */
-  .report-table th:nth-child(10), .report-table td:nth-child(10) { width: 6% !important; }
-  .report-table th:nth-child(11), .report-table td:nth-child(11) { width: 6% !important; }
-  .report-table th:nth-child(12), .report-table td:nth-child(12) { width: 6% !important; }
-  .report-table th:nth-child(13), .report-table td:nth-child(13) { width: 6% !important; }
-  .report-table th:nth-child(14), .report-table td:nth-child(14) { width: 16% !important; }
+  /* ensure table rows stay white */
+  .report-table td {
+    background: #fff !important;
+  }
 
-  .print-content, .card-body, .table-responsive, .report-table, .report-signature { page-break-inside: avoid !important; break-inside: avoid-page !important; }
-  .report-signature { display: flex !important; flex-direction: row !important; justify-content: space-between !important; gap: 1rem !important; }
-  .report-signature .sig-block { flex: 1 1 45% !important; max-width: 45% !important; }
+  /* 4) Prevent any breaks inside the report area */
+  .print-content,
+  .card-body,
+  .table-responsive,
+  .report-table {
+    page-break-inside: avoid !important;
+    break-inside: avoid-page !important;
+    margin-bottom: 2mm !important;
+  }
+  .print-content .mb-2 {
+    margin-top: 0 !important;
+    padding-top: 0 !important;
+  }
 
-  .report-header > .d-flex.justify-content-end { margin-top: 0 !important; margin-bottom: 0.25rem !important; }
-  .report-header .text-center h4, .report-header .text-center h5, .report-header .text-center h6 { margin: 0 !important; padding: 0 !important; }
+  /* 5) Keep the signature block on the same page */
+  .report-signature {
+    page-break-before: avoid !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid-page !important;
+    margin-top: 3mm !important;
+    /* font-size: 12px !important; */
+  }
+  .report-signature .sig-line {
+    margin: 1mm 0 0.25mm 0 !important;
+  }
 
-  body { -webkit-print-color-adjust: exact !important; print-color-adjust: exact !important; }
+  /* 6) Make the table truly edge-to-edge */
+  .report-table,
+  .sales-report-table {
+    width: 100% !important;
+    max-width: none !important;
+    table-layout: auto;
+  }
+  .report-table th,
+  .report-table td {
+    padding: 1px 2px !important;
+    font-size: 10pt !important;
+    white-space: nowrap;
+    border: 1px solid #000 !important;
+    background-color: transparent !important;
+  }
+
+  /* 7) Hide any non-report UI */
+  .sticky-toolbar,
+  .filter-toolbar,
+  .main-sidebar,
+  .main-header,
+  .content-header,
+  #errorAlert,
+  .export-btn {
+    display: none !important;
+  }
+
+  /* ====================================
+   Force signature blocks onto one row
+   ==================================== */
+  .report-signature {
+    display: flex !important;
+    flex-direction: row !important;
+    justify-content: space-between !important;
+    flex-wrap: nowrap !important;      /* never wrap down to a second line */
+    width: 100% !important;            /* fill the container */
+    margin-top: 3rem !important;
+    page-break-inside: avoid !important;
+  }
+
+  .report-signature .sig-block {
+    flex: 1 1 45% !important;          /* each block takes ~45% of the width */
+    max-width: 45% !important;
+    box-sizing: border-box !important;
+    text-align: center;
+  }
+
+  /* if you need extra breathing room between them, tweak the 45% to 48% or add gap */
+  .report-signature {
+    gap: 1rem !important;
+  }
+
+  .mb-2 {
+  /* remove any top margin */
+  margin-top: 0 !important;
+  /* shrink bottom gap between logo + titles */
+  margin-bottom: 0.25rem !important;
+  }
+
+  /* Remove any built-in margins around the logo row */
+  .report-header > .d-flex.justify-content-end {
+    margin-top: 0 !important;
+    margin-bottom: 0.25rem !important;
+  }
+
+  /* Pull the <h4> up tight under the logo */
+  .report-header .text-center h4 {
+    margin-top: 0 !important;       /* no extra gap above */
+    margin-bottom: 0.25rem !important; /* small gap below */
+  }
+
+  /* And similarly tighten your subheadings if needed */
+  .report-header .text-center h5,
+  .report-header .text-center h6 {
+    margin-top: 0 !important;
+    margin-bottom: 0.25rem !important;
+  }
+}
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.sales-report-table {
+    width: 100%;
+    margin: 0;
+    padding: 0;
 }
 </style>
 @endpush
@@ -176,18 +387,17 @@ table { width: 100%; border-collapse: collapse; }
 
     <div class="card-header bg-danger sticky-toolbar">
         <div class="filter-toolbar">
-      <div class="filter-group">
-        <label>Trade Name</label>
-        <select class="form-control select2-store" id="trade-filter" data-current="" aria-label="Select Tenant">
-          <!-- empty option so Select2 placeholder displays correctly -->
-          <option value=""></option>
-          @foreach($tenants as $tenantId => $tenantName)
-            <option value="{{ $tenantId }}" {{ $selected_tenant == $tenantId ? 'selected' : '' }}>
-              {{ $tenantName }}
-            </option>
-          @endforeach
-        </select>
-      </div>
+            <div class="filter-group">
+                <label>Trade Name</label>
+                <select class="form-control select2-store" id="trade-filter" data-current="">
+                    <option value="">Select Tenant</option>
+                    @foreach($tenants as $tenantId => $tenantName)
+                        <option value="{{ $tenantId }}" {{ $selected_tenant == $tenantId ? 'selected' : '' }}>
+                            {{ $tenantName }}
+                        </option>
+                    @endforeach
+                </select>
+            </div>
             
             <div class="filter-group">
                 <label>Report Month</label>
@@ -242,20 +452,18 @@ table { width: 100%; border-collapse: collapse; }
         </div>
     </div>
 
-  <div class="card-body print-content">
+    <div class="card-body print.content">
         <!-- Updated report header with adjusted logo position -->
-    <div class="report-header">
-      <div class="logo-wrap">
-        <img src="{{ asset('images/mwm_logo.png') }}" alt="MWM Terminals Logo" class="report-logo">
-      </div>
-      <div class="text-center" style="width:100%;">
+        <div class="report-header">
+            <div class="d-flex justify-content-end">
+                <img src="{{ asset('images/mwm_logo.png') }}" alt="MWM Terminals Logo" style="height: 100px; width: auto;">
+            </div>
+            <div class="text-center">
                 <h4 class="mb-1" id="store-name-display">Tradename / Branch</h4>
                 <h5 class="mb-1">CERTIFIED MONTHLY SALES REPORT</h5>
                 <h6 class="text-muted">For the month of <span id="reportMonthDisplay">-</span></h6>
             </div>
         </div>
-
-        <!-- Summary charts removed as per UI update (Daily/Weekly/Monthly/Yearly) -->
 
         <div class="table-responsive position-relative">
             <!-- Loading overlay -->
@@ -334,19 +542,32 @@ table { width: 100%; border-collapse: collapse; }
         </div>
 
         <div class="row mt-2">
-          <div class="col-12">
+          <div class="col-md-2">
             <div>Less:</div>
-            <div class="report-list">
-              <div class="report-line"><div class="label">Promo Discounts With Approval</div><div class="value"><span id="less-promo-with-approval">₱0.00</span></div></div>
-              <div class="report-line"><div class="label">Promo Discounts Without Approval</div><div class="value"><span id="less-promo-without-approval">₱0.00</span></div></div>
-              <div class="report-line"><div class="label">Employee's Discount</div><div class="value"><span id="less-employees-discount">₱0.00</span></div></div>
-              <div class="report-line"><div class="label">Approved VIP Cards</div><div class="value"><span id="less-approved-vip-cards">₱0.00</span></div></div>
-              <div class="report-line"><div class="label">SC Vat Exempt Transactions</div><div class="value"><span id="less-sc-vat-exempt">₱0.00</span></div></div>
-              <div class="report-line"><div class="label">Senior Citizen/PWD Discounts</div><div class="value"><span id="less-senior-pwd">₱0.00</span></div></div>
-              <div class="report-line"><div class="label">Other Tax</div><div class="value"><span id="less-other-tax">₱0.00</span></div></div>
-              <div class="report-line"><div class="label">Service Charge Distributed to Employees</div><div class="value"><span id="less-service-charge-distributed">₱0.00</span></div></div>
-              <div class="report-line"><div class="label">Service Charge Retained by Management</div><div class="value"><span id="less-charge-retained">₱0.00</span></div></div>
-            </div>
+          </div>
+          <div class="col-md-6 text-left">
+            
+            <div style="text-align: left !important; display: block !important;">Promo Discounts With Approval</div>
+            <div style="text-align: left !important; display: block !important;">Promo Discounts Without Approval</div>
+            <div style="text-align: left !important; display: block !important;">Employee's Discount</div>
+            <div style="text-align: left !important; display: block !important;">Approved VIP Cards</div>
+            <div style="text-align: left !important; display: block !important;">SC Vat Exempt Transactions</div>
+            <div style="text-align: left !important; display: block !important;">Senior Citizen/PWD Discounts</div>
+            <div style="text-align: left !important; display: block !important;">Other Tax</div>
+            <div style="text-align: left !important; display: block !important;">Service Charge Distributed to Employees</div>
+            <div style="text-align: left !important; display: block !important;">Service Charge Retained by Management</div>
+          </div>
+          <div class="col-md-4 text-right ">
+            <div><span id="less-promo-with-approval">₱0.00</span></div>
+            <div><span id="less-promo-without-approval">₱0.00</span></div>
+            <div><span id="less-employees-discount">₱0.00</span></div>
+            <div><span id="less-approved-vip-cards">₱0.00</span></div>
+            <div><span id="less-sc-vat-exempt">₱0.00</span></div>
+            <div><span id="less-senior-pwd">₱0.00</span></div>
+            <div><span id="less-other-tax">₱0.00</span></div>
+            <div><span id="less-service-charge-distributed">₱0.00</span></div>
+            <div><span id="less-charge-retained">₱0.00</span></div>
+           
           </div>
         </div>
 
@@ -371,14 +592,22 @@ table { width: 100%; border-collapse: collapse; }
         </div>
 
         <div class="row mt-2">
-          <div class="col-12">
+          <div class="col-md-1">
             <div class="reporsection-title">Add:</div>
-            <div class="report-list">
-              <div class="report-line"><div class="label">SC Vat Exempt Transactions</div><div class="value"><span id="sc-vat-exempt">₱0.00</span></div></div>
-              <div class="report-line"><div class="label">Promo Discounts Without Approval</div><div class="value"><span id="promo-without-approval">₱0.00</span></div></div>
-              <div class="report-line"><div class="label">Other Tax</div><div class="value"><span id="other-tax">₱0.00</span></div></div>
-              <div class="report-line"><div class="label">Service Charge Retained by Management</div><div class="value"><span id="service-charge-retained">₱0.00</span></div></div>
-            </div>
+
+          </div>
+          <div class="col-md-6 text-left">
+            <div style="text-align: left !important; display: block !important;">SC Vat Exempt Transactions</div>
+            <div style="text-align: left !important; display: block !important;">Promo Discounts Without Approval</div>
+            <div style="text-align: left !important; display: block !important;">Other Tax</div>
+            <div style="text-align: left !important; display: block !important;">Service Charge Retained by Management</div>
+          </div>
+          
+          <div class="col-md-5 text-right">
+            <div><span id="sc-vat-exempt">₱0.00</span></div>
+            <div><span id="promo-without-approval">₱0.00</span></div>
+            <div><span id="other-tax">₱0.00</span></div>
+            <div><span id="service-charge-retained">₱0.00</span></div>
           </div>
         </div>
         
@@ -408,15 +637,13 @@ table { width: 100%; border-collapse: collapse; }
             <div style="font-size:0.9em;">(Position)</div>
           </div>
         </div>
-  </div>
+    </div>
 </div>
 @endsection
 
 @push('scripts')
 <!-- Load Select2 after jQuery but before custom scripts -->
 <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
-
-<!-- Chart.js is provided by the master layout (local asset) -->
 
 <!-- DataTables & Plugins -->
 <script src="{{ asset('plugins/datatables/jquery.dataTables.min.js') }}"></script>
@@ -428,13 +655,11 @@ table { width: 100%; border-collapse: collapse; }
 <script>
 $(function() {
     // Initialize Select2 with no default selection
-  $('.select2-store').select2({
-    placeholder: 'Select Tenant',
-    allowClear: true,
-    width: 'resolve',
-    dropdownParent: $('.filter-toolbar'),
-    dropdownAutoWidth: true
-  });
+    $('.select2-store').select2({
+        placeholder: 'Select Tenant',
+        allowClear: true,
+        width: '100%'
+    });
 
     // Prevent initial data load
     const tenantId = $('#trade-filter').val();
@@ -480,16 +705,16 @@ $(function() {
     }
 
     // Validate filters and enable/disable generate button
-  function validateFilters() {
-    const tenant = $('#trade-filter').val();
-    const month = $('#report-month').val();
-    console.log('validateFilters:', { tenant, month });
+    function validateFilters() {
+        const trade = $('#trade-filter').val();
+        const month = $('#report-month').val();
+        console.log('validateFilters:', { trade, month });
         
-    const isValid = Boolean(tenant && month);
-    $('#generateReport').prop('disabled', !isValid);
-    $('.export-btn').prop('disabled', true);
-    return isValid;
-  }
+        const isValid = Boolean(trade && month);
+        $('#generateReport').prop('disabled', !isValid);
+        $('.export-btn').prop('disabled', true);
+        return isValid;
+    }
 
     // Wire up both native and Select2 events
     $('#trade-filter').on('change change.select2', validateFilters);
@@ -553,7 +778,7 @@ $(function() {
             'Accept': 'application/json'
           },
           data: {
-            tenant: $('#trade-filter').val(),
+            trade: $('#trade-filter').val(),
             month: $('#report-month').val()
           },
           success(response) {
@@ -565,9 +790,9 @@ $(function() {
 
               // 3b) Build the export URL
               const [year, month] = $('#report-month').val().split('-');
-              const tenantId      = encodeURIComponent($('#trade-filter').val());
+              const trade         = encodeURIComponent($('#trade-filter').val());
               const base          = $('#excelExportLink').data('base');
-              const href          = `${base}?month=${month}&year=${year}&tenant=${tenantId}`;
+              const href          = `${base}?month=${month}&year=${year}&tenant=${trade}`;
 
               // 3c) Show & enable the Excel button
               $('#excelExportLink')
@@ -598,7 +823,7 @@ $(function() {
 
 
     // Consolidated fetch and render function
-    function fetchReport(tenant, month) {
+    function fetchReport(trade, month) {
         $('#loadingOverlay').removeClass('d-none');
         $('.export-btn').prop('disabled', true);
         
@@ -608,7 +833,7 @@ $(function() {
               'X-Requested-With': 'XMLHttpRequest',
               'Accept': 'application/json'
             },
-            data: { tenant, month },
+            data: { trade, month },
             success: function(response) {
                 console.log('Fetch report response:', response);
                 if (response.status === 'success') {
@@ -918,12 +1143,12 @@ $(function() {
     }
 
     // Initial load
-  if ($('#trade-filter').val() && $('#report-month').val()) {
-    fetchReport(
-      $('#trade-filter').val(),
-      $('#report-month').val()
-    );
-  }
+    if ($('#trade-filter').val() && $('#report-month').val()) {
+        fetchReport(
+            $('#trade-filter').val(),
+            $('#report-month').val()
+        );
+    }
 
     // Initialize month display
     const initialMonth = $('#report-month').val();
@@ -942,86 +1167,6 @@ $(function() {
             $('#reportMonthDisplay').text('-');
         }
     });
-
-        // === Charts: helpers and rendering ===
-        let _chartDaily, _chartWeeklyMini, _chartMonthlyMini, _chartYearlyMini;
-
-        function makeBarChartCtx(ctx, labels, data, color) {
-          return new Chart(ctx, {
-            type: 'bar',
-            data: { labels: labels, datasets: [{ label: 'Amount', data: data, backgroundColor: color || '#007bff' }] },
-            options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true } } }
-          });
-        }
-
-        function extractSeries(resp) {
-          if (!resp || !resp.data) return { labels: [], values: [] };
-          const data = resp.data;
-          if (Array.isArray(data)) {
-            const first = data[0] || {};
-            const keys = Object.keys(first);
-            const dateKey = keys.find(k => /date|period|label|x|day/.test(k)) || keys[0];
-            const valueKey = keys.find(k => /total|amount|value|sum|count|sales/.test(k)) || keys[1] || keys[0];
-            const labels = data.map(it => it[dateKey] || it.period || it.label || '');
-            const values = data.map(it => Number(it[valueKey] || it.total_amount || it.total || it.sum || it.value || 0));
-            return { labels, values };
-          } else if (typeof data === 'object') {
-            const labels = Object.keys(data);
-            const values = labels.map(k => {
-              const v = data[k];
-              if (typeof v === 'number') return v;
-              if (v && typeof v === 'object') return Number(v.total_amount || v.total || v.net_sales || v.sum || 0);
-              return 0;
-            });
-            return { labels, values };
-          }
-          return { labels: [], values: [] };
-        }
-
-        function loadDashboardCharts(tenant, month) {
-          if (!tenant || !month) return;
-          // daily for selected month
-          const start = moment(month + '-01').format('YYYY-MM-DD');
-          const end = moment(start).endOf('month').format('YYYY-MM-DD');
-
-          $.when(
-            $.getJSON(`/api/v1/webapp/reports/sales?period=daily&start=${start}&end=${end}&tenant_id=${tenant}`),
-            $.getJSON(`/api/v1/webapp/reports/sales?period=weekly&start=${start}&end=${end}&tenant_id=${tenant}`),
-            $.getJSON(`/api/v1/webapp/reports/sales?period=monthly&start=${moment(month + '-01').startOf('year').format('YYYY-01-01')}&end=${moment(month + '-01').endOf('year').format('YYYY-12-31')}&tenant_id=${tenant}`),
-            $.getJSON(`/api/v1/webapp/reports/sales?period=yearly&start=${moment().subtract(5, 'years').startOf('year').format('YYYY-01-01')}&end=${moment().endOf('year').format('YYYY-12-31')}&tenant_id=${tenant}`)
-          ).done(function(dailyResp, weeklyResp, monthlyResp, yearlyResp) {
-            try {
-              const d = extractSeries(dailyResp[0]);
-              const w = extractSeries(weeklyResp[0]);
-              const m = extractSeries(monthlyResp[0]);
-              const y = extractSeries(yearlyResp[0]);
-
-              // Destroy old charts
-              if (_chartDaily) _chartDaily.destroy();
-              if (_chartWeeklyMini) _chartWeeklyMini.destroy();
-              if (_chartMonthlyMini) _chartMonthlyMini.destroy();
-              if (_chartYearlyMini) _chartYearlyMini.destroy();
-
-              _chartDaily = makeBarChartCtx(document.getElementById('chart-daily').getContext('2d'), d.labels, d.values, '#17a2b8');
-              _chartWeeklyMini = makeBarChartCtx(document.getElementById('chart-weekly-mini').getContext('2d'), w.labels, w.values, '#28a745');
-              _chartMonthlyMini = makeBarChartCtx(document.getElementById('chart-monthly-mini').getContext('2d'), m.labels, m.values, '#ffc107');
-              _chartYearlyMini = makeBarChartCtx(document.getElementById('chart-yearly-mini').getContext('2d'), y.labels, y.values, '#6f42c1');
-            } catch (err) {
-              console.error('Failed to render dashboard charts', err);
-            }
-          }).fail(function() {
-            console.warn('One or more chart data requests failed');
-          });
-        }
-
-        // Load charts initially if filters are valid
-        if ($('#trade-filter').val() && $('#report-month').val()) {
-          loadDashboardCharts($('#trade-filter').val(), $('#report-month').val());
-        }
-
-        // Reload charts when filters change or report generated
-        $('#trade-filter').on('change change.select2', function() { if ($('#report-month').val()) loadDashboardCharts($(this).val(), $('#report-month').val()); });
-        $('#report-month').on('change', function() { if ($('#trade-filter').val()) loadDashboardCharts($('#trade-filter').val(), $(this).val()); });
 
     // Add handleExport function
     window.handleExport = function(type) {
