@@ -46,6 +46,15 @@
       background: rgba(255,255,255,0.65);
       z-index: 10;
       pointer-events: none;
+      transition: opacity 200ms ease-in-out;
+      opacity: 0;
+    }
+    /* When the wrapper is marked loading, show the overlay and allow it to block interactions */
+    .chart-wrapper.is-loading .chart-spinner,
+    .chart-wrapper.is-loading .chart-no-data {
+      display: flex;
+      opacity: 1;
+      pointer-events: auto;
     }
     .chart-no-data {
       background: rgba(255,255,255,0.9);

@@ -36,8 +36,7 @@
       // show initial spinners immediately so users see loading state before XHRs
       try {
         ['daily','weekly','monthly','yearly'].forEach(function(k){
-          var s = document.getElementById('spinner-'+k); if (s) s.style.display = 'flex';
-          var n = document.getElementById('nodata-'+k); if (n) n.style.display = 'none';
+          showChartLoading(k);
         });
       } catch(e){}
       const $select = $('#commercial-tenant-select');
@@ -219,6 +218,57 @@
         return new Chart(ctx, cfg3);
       }
 
+      // Loading overlay helpers: toggle .is-loading on the wrapper so the shared CSS
+      // overlay (spinner / no-data) fades in and blocks interactions while loading.
+      function showChartLoading(key) {
+        try {
+          var spinner = document.getElementById('spinner-'+key);
+          var nodata = document.getElementById('nodata-'+key);
+          if (spinner) spinner.style.display = 'flex';
+          if (nodata) nodata.style.display = 'none';
+          // add class to wrapper (canvas -> .chart-wrapper)
+          var canvas = document.getElementById('chart-'+key);
+          if (canvas) {
+            var wrap = canvas.closest('.chart-wrapper');
+            if (wrap) wrap.classList.add('is-loading');
+          } else if (spinner) {
+            var wrap2 = spinner.closest('.chart-wrapper'); if (wrap2) wrap2.classList.add('is-loading');
+          }
+        } catch(e){}
+      }
+
+      function hideChartLoading(key) {
+        try {
+          var spinner = document.getElementById('spinner-'+key);
+          var nodata = document.getElementById('nodata-'+key);
+          if (spinner) spinner.style.display = 'none';
+          if (nodata) nodata.style.display = 'none';
+          var canvas = document.getElementById('chart-'+key);
+          if (canvas) {
+            var wrap = canvas.closest('.chart-wrapper');
+            if (wrap) wrap.classList.remove('is-loading');
+          } else if (spinner) {
+            var wrap2 = spinner.closest('.chart-wrapper'); if (wrap2) wrap2.classList.remove('is-loading');
+          }
+        } catch(e){}
+      }
+
+      function showChartNoData(key) {
+        try {
+          var spinner = document.getElementById('spinner-'+key);
+          var nodata = document.getElementById('nodata-'+key);
+          if (spinner) spinner.style.display = 'none';
+          if (nodata) nodata.style.display = 'flex';
+          var canvas = document.getElementById('chart-'+key);
+          if (canvas) {
+            var wrap = canvas.closest('.chart-wrapper');
+            if (wrap) wrap.classList.add('is-loading');
+          } else if (nodata) {
+            var wrap2 = nodata.closest('.chart-wrapper'); if (wrap2) wrap2.classList.add('is-loading');
+          }
+        } catch(e){}
+      }
+
       // Create a line chart similar to admin dashboard: supports multiple datasets
       function makeLine(ctx, labels, datasets, opts) {
         opts = opts || {};
@@ -285,9 +335,8 @@
       // Daily: single-value summary for today
       function loadDaily(tenantId) {
         const date = new Date().toISOString().slice(0,10);
-  // prepare UI
-  $('#nodata-daily').hide();
-  $('#spinner-daily').show();
+  // prepare UI: show loading overlay
+  showChartLoading('daily');
         $.getJSON("{{ url('commercial/reports/transactions/daily') }}", { date: date, tenant_id: tenantId })
           .done(function(resp){
             console.debug('daily report response:', resp);
@@ -296,21 +345,19 @@
             destroyIfExists('chart-daily');
             if (!gross || gross === 0) {
               // show no-data overlay instead of a zero-chart
-              $('#nodata-daily').show();
+              showChartNoData('daily');
             } else {
-              $('#nodata-daily').hide();
               charts['chart-daily'] = makeBar(document.getElementById('chart-daily').getContext('2d'), [date], [gross]);
+              hideChartLoading('daily');
             }
           })
           .fail(function(jqX, status, err){
             console.warn('daily report failed:', status, err, jqX && jqX.responseText);
             updateDebug('daily', { ok: false, status: jqX && jqX.status, body: jqX && jqX.responseText });
             destroyIfExists('chart-daily');
-            $('#nodata-daily').show();
+            showChartNoData('daily');
           })
-          .always(function(){
-            $('#spinner-daily').hide();
-          });
+          .always(function(){ });
       }
 
       // Weekly: last 7 days
@@ -319,9 +366,8 @@
         const from = new Date(); from.setDate(to.getDate()-6);
         const date_from = from.toISOString().slice(0,10);
         const date_to = to.toISOString().slice(0,10);
-  // prepare UI
-  $('#nodata-weekly').hide();
-  $('#spinner-weekly').show();
+  // prepare UI: show loading overlay
+  showChartLoading('weekly');
         $.getJSON("{{ url('commercial/reports/transactions/weekly') }}", { date_from: date_from, date_to: date_to, tenant_id: tenantId })
           .done(function(resp){
             console.debug('weekly report response:', resp);
@@ -340,9 +386,8 @@
             destroyIfExists('chart-weekly');
             const total = values.reduce(function(a,b){ return a + (isNaN(b) ? 0 : Number(b)); }, 0);
             if (!values.length || total === 0) {
-              $('#nodata-weekly').show();
+              showChartNoData('weekly');
             } else {
-              $('#nodata-weekly').hide();
               // If the response contains volume/count information, prefer admin-style line with two datasets
               const hasVolume = rows.some(r => (r.volume || r.count || r.tx_count));
               if (resp.labels && resp.sales) {
@@ -350,6 +395,7 @@
                 const ds = [{ label: 'Sales', data: resp.sales, borderColor: 'rgb(59,130,246)', backgroundColor: 'rgba(59,130,246,0.1)', fill: true }];
                 if (Array.isArray(resp.volume)) ds.push({ label: 'Volume', data: resp.volume, borderColor: 'rgb(16,185,129)', backgroundColor: 'rgba(16,185,129,0.1)', fill: true });
                 charts['chart-weekly'] = makeLine(document.getElementById('chart-weekly').getContext('2d'), resp.labels, ds);
+                hideChartLoading('weekly');
               } else if (hasVolume) {
                 const vol = rows.map(r => Number(r.volume || r.count || r.tx_count || 0));
                 const ds = [
@@ -357,8 +403,10 @@
                   { label: 'Volume', data: vol, borderColor: 'rgb(16,185,129)', backgroundColor: 'rgba(16,185,129,0.1)', fill: true }
                 ];
                 charts['chart-weekly'] = makeLine(document.getElementById('chart-weekly').getContext('2d'), labels, ds);
+                hideChartLoading('weekly');
               } else {
                 charts['chart-weekly'] = makeBar(document.getElementById('chart-weekly').getContext('2d'), labels, values);
+                hideChartLoading('weekly');
               }
             }
           })
@@ -366,11 +414,9 @@
             console.warn('weekly report failed:', status, err, jqX && jqX.responseText);
             updateDebug('weekly', { ok: false, status: jqX && jqX.status, body: jqX && jqX.responseText });
             destroyIfExists('chart-weekly');
-            $('#nodata-weekly').show();
+            showChartNoData('weekly');
           })
-          .always(function(){
-            $('#spinner-weekly').hide();
-          });
+          .always(function(){ });
       }
 
       // Monthly: current month per-day
@@ -380,9 +426,8 @@
         const mm = String(now.getMonth()+1).padStart(2,'0');
         const first = yyyy+'-'+mm+'-01';
         const last = new Date(yyyy, now.getMonth()+1, 0).toISOString().slice(0,10);
-  // prepare UI
-  $('#nodata-monthly').hide();
-  $('#spinner-monthly').show();
+  // prepare UI: show loading overlay
+  showChartLoading('monthly');
         $.getJSON("{{ url('commercial/reports/transactions/monthly') }}", { date_from: first, date_to: last, tenant_id: tenantId })
           .done(function(resp){
             console.debug('monthly report response:', resp);
@@ -399,16 +444,17 @@
             destroyIfExists('chart-monthly');
             const total = values.reduce(function(a,b){ return a + (isNaN(b) ? 0 : Number(b)); }, 0);
             if (!values.length || total === 0) {
-              $('#nodata-monthly').show();
+              showChartNoData('monthly');
             } else {
-              $('#nodata-monthly').hide();
               // monthly: prefer line chart if dataset contains sales + volume shape
               if (resp.labels && resp.sales) {
                 const ds = [{ label: 'Sales', data: resp.sales, borderColor: 'rgb(59,130,246)', backgroundColor: 'rgba(59,130,246,0.1)', fill: true }];
                 if (Array.isArray(resp.volume)) ds.push({ label: 'Volume', data: resp.volume, borderColor: 'rgb(16,185,129)', backgroundColor: 'rgba(16,185,129,0.1)', fill: true });
                 charts['chart-monthly'] = makeLine(document.getElementById('chart-monthly').getContext('2d'), resp.labels, ds);
+                hideChartLoading('monthly');
               } else {
                 charts['chart-monthly'] = makeBar(document.getElementById('chart-monthly').getContext('2d'), labels, values, {backgroundColor: 'rgba(75,192,192,0.6)', borderColor: 'rgba(75,192,192,1)'});
+                hideChartLoading('monthly');
               }
             }
           })
@@ -416,11 +462,9 @@
             console.warn('monthly report failed:', status, err, jqX && jqX.responseText);
             updateDebug('monthly', { ok: false, status: jqX && jqX.status, body: jqX && jqX.responseText });
             destroyIfExists('chart-monthly');
-            $('#nodata-monthly').show();
+            showChartNoData('monthly');
           })
-          .always(function(){
-            $('#spinner-monthly').hide();
-          });
+          .always(function(){ });
       }
 
       // Yearly: months in current year
@@ -429,9 +473,8 @@
         const year = now.getFullYear();
         const first = year + '-01-01';
         const last = year + '-12-31';
-  // prepare UI
-  $('#nodata-yearly').hide();
-  $('#spinner-yearly').show();
+  // prepare UI: show loading overlay
+  showChartLoading('yearly');
         $.getJSON("{{ url('commercial/reports/transactions/yearly') }}", { date_from: first, date_to: last, tenant_id: tenantId })
           .done(function(resp){
             console.debug('yearly report response:', resp);
@@ -446,16 +489,17 @@
             destroyIfExists('chart-yearly');
             const total = values.reduce(function(a,b){ return a + (isNaN(b) ? 0 : Number(b)); }, 0);
             if (!values.length || total === 0) {
-              $('#nodata-yearly').show();
+              showChartNoData('yearly');
             } else {
-              $('#nodata-yearly').hide();
               // yearly: if response provides sales + volume arrays, show admin-style line chart
               if (resp.labels && resp.sales) {
                 const ds = [{ label: 'Sales', data: resp.sales, borderColor: 'rgb(59,130,246)', backgroundColor: 'rgba(59,130,246,0.1)', fill: true }];
                 if (Array.isArray(resp.volume)) ds.push({ label: 'Volume', data: resp.volume, borderColor: 'rgb(16,185,129)', backgroundColor: 'rgba(16,185,129,0.1)', fill: true });
                 charts['chart-yearly'] = makeLine(document.getElementById('chart-yearly').getContext('2d'), resp.labels, ds);
+                hideChartLoading('yearly');
               } else {
                 charts['chart-yearly'] = makeBar(document.getElementById('chart-yearly').getContext('2d'), labels, values, {backgroundColor: 'rgba(255,159,64,0.6)', borderColor: 'rgba(255,159,64,1)'});
+                hideChartLoading('yearly');
               }
             }
           })
@@ -463,11 +507,9 @@
             console.warn('yearly report failed:', status, err, jqX && jqX.responseText);
             updateDebug('yearly', { ok: false, status: jqX && jqX.status, body: jqX && jqX.responseText });
             destroyIfExists('chart-yearly');
-            $('#nodata-yearly').show();
+            showChartNoData('yearly');
           })
-          .always(function(){
-            $('#spinner-yearly').hide();
-          });
+          .always(function(){ });
       }
 
       // Wire-up
