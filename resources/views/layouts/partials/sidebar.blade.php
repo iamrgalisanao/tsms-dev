@@ -62,6 +62,16 @@
     </li>
     @endif
 
+    {{-- Finance users: add a top-level dashboard button for quick access back to finance reports/dashboard --}}
+    @if(auth()->user() && auth()->user()->hasRole('finance'))
+    <li class="nav-item">
+      <a href="{{ route('reports.index') }}" class="nav-link {{ Request::routeIs('reports.*') ? 'active' : '' }}">
+        <i class="nav-icon fas fa-chart-pie text-white"></i>
+        <p class="text-white">Finance Dashboard</p>
+      </a>
+    </li>
+    @endif
+
         {{-- <li class="nav-item">
             <a href="{{ route('transactions.logs.index') }}"
             class="nav-link {{ Request::routeIs('transactions.logs.*') ? 'active' : '' }}">
