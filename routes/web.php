@@ -209,7 +209,7 @@ Route::middleware(['auth'])->group(function () {
     // Commercial Reports - accessible to commercial users and finance users for cross-team reporting
     // Note: we intentionally allow 'finance' role here so finance users can view commercial dashboards/reports.
     // If you prefer to allow access to only specific routes, we can narrow this to a subset instead.
-    Route::middleware(['role:commercial'])->group(function () {
+    Route::middleware(['role:commercial|finance'])->group(function () {
         Route::prefix('commercial')->name('commercial.')->group(function () {
             // Commercial dashboard root - show dedicated commercial dashboard (charts + tenant selector)
             Route::get('/', [CommercialReportsController::class, 'dashboard'])->name('dashboard');
