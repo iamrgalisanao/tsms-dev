@@ -167,8 +167,12 @@
   <script src="{{ asset('plugins/jquery/jquery.min.js') }}"></script>
   <!-- Bootstrap 4 -->
   <script src="{{ asset('plugins/bootstrap/js/bootstrap.bundle.min.js') }}"></script>
-  <!-- ChartJS (loaded from Vite bundle) -->
-  @vite(['resources/js/app.js'])
+  <!-- ChartJS: prefer Vite bundle when present, otherwise fall back to static plugin for servers without a build step -->
+  @if (file_exists(public_path('build/manifest.json')))
+    @vite(['resources/js/app.js'])
+  @else
+    <script src="{{ asset('plugins/chart.js/Chart.min.js') }}"></script>
+  @endif
   <!-- Sparkline -->
   <script src="{{ asset('plugins/sparklines/sparkline.js') }}"></script>
   <!-- JQVMap -->
