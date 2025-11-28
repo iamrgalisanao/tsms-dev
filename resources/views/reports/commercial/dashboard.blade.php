@@ -41,6 +41,7 @@
         $.getJSON("{{ route('commercial.sales-report.tenants') }}")
           .done(function(resp){
             console.debug('commercial.tenants response:', resp);
+            updateDebug('tenants', { ok: true, body: resp });
             $select.empty();
             // support multiple response shapes: array, {data: [...]}, {rows: [...]}, {tenants: [...]}
             let list = [];
@@ -69,6 +70,7 @@
           })
           .fail(function(jqX, status, err){
             console.warn('Failed loading tenant list for commercial dashboard', status, err, jqX && jqX.responseText);
+            updateDebug('tenants', { ok: false, status: jqX && jqX.status, body: jqX && jqX.responseText });
             $select.empty().append('<option value="">All Tenants</option>');
             loadAllCharts();
           });
@@ -187,6 +189,7 @@
         $.getJSON("{{ url('commercial/reports/transactions/daily') }}", { date: date, tenant_id: tenantId })
           .done(function(resp){
             console.debug('daily report response:', resp);
+            updateDebug('daily', { ok: true, body: resp });
             const gross = (resp.summary && resp.summary.gross_sales) ? Number(resp.summary.gross_sales) : 0;
             destroyIfExists('chart-daily');
             if (!gross || gross === 0) {
@@ -199,6 +202,7 @@
           })
           .fail(function(jqX, status, err){
             console.warn('daily report failed:', status, err, jqX && jqX.responseText);
+            updateDebug('daily', { ok: false, status: jqX && jqX.status, body: jqX && jqX.responseText });
             destroyIfExists('chart-daily');
             $('#nodata-daily').show();
           })
@@ -219,6 +223,7 @@
         $.getJSON("{{ url('commercial/reports/transactions/weekly') }}", { date_from: date_from, date_to: date_to, tenant_id: tenantId })
           .done(function(resp){
             console.debug('weekly report response:', resp);
+            updateDebug('weekly', { ok: true, body: resp });
             let rows = resp.rows || resp.data || resp.days || resp.period || resp || [];
             // try to handle several shapes
             if (resp && resp.summary && Array.isArray(resp.rows)) rows = resp.rows;
@@ -241,6 +246,7 @@
           })
           .fail(function(jqX, status, err){
             console.warn('weekly report failed:', status, err, jqX && jqX.responseText);
+            updateDebug('weekly', { ok: false, status: jqX && jqX.status, body: jqX && jqX.responseText });
             destroyIfExists('chart-weekly');
             $('#nodata-weekly').show();
           })
@@ -262,6 +268,7 @@
         $.getJSON("{{ url('commercial/reports/transactions/monthly') }}", { date_from: first, date_to: last, tenant_id: tenantId })
           .done(function(resp){
             console.debug('monthly report response:', resp);
+            updateDebug('monthly', { ok: true, body: resp });
             let rows = resp.rows || resp.data || resp.days || resp.period || resp || [];
             if (resp && resp.summary && Array.isArray(resp.rows)) rows = resp.rows;
             if (!Array.isArray(rows)) rows = [];
@@ -282,6 +289,7 @@
           })
           .fail(function(jqX, status, err){
             console.warn('monthly report failed:', status, err, jqX && jqX.responseText);
+            updateDebug('monthly', { ok: false, status: jqX && jqX.status, body: jqX && jqX.responseText });
             destroyIfExists('chart-monthly');
             $('#nodata-monthly').show();
           })
@@ -302,6 +310,7 @@
         $.getJSON("{{ url('commercial/reports/transactions/yearly') }}", { date_from: first, date_to: last, tenant_id: tenantId })
           .done(function(resp){
             console.debug('yearly report response:', resp);
+            updateDebug('yearly', { ok: true, body: resp });
             const months = resp.months || resp.data || resp.rows || [];
             const labels = [];
             const values = [];
@@ -320,6 +329,7 @@
           })
           .fail(function(jqX, status, err){
             console.warn('yearly report failed:', status, err, jqX && jqX.responseText);
+            updateDebug('yearly', { ok: false, status: jqX && jqX.status, body: jqX && jqX.responseText });
             destroyIfExists('chart-yearly');
             $('#nodata-yearly').show();
           })
@@ -330,6 +340,16 @@
 
       // Wire-up
       $(function(){
+        // add lightweight in-page debug panel for troubleshooting XHRs
+        const dbg = $('<pre id="chart-debug" style="display:none; position:fixed; right:10px; bottom:10px; z-index:9999; max-width:420px; max-height:60vh; overflow:auto; background:#fff; border:1px solid #ddd; padding:8px; font-size:12px; box-shadow:0 6px 18px rgba(0,0,0,0.08);"></pre>');
+        $('body').append(dbg);
+        window.toggleChartDebug = function(){ $('#chart-debug').toggle(); };
+        window.updateChartDebug = function(obj){ $('#chart-debug').text(JSON.stringify(obj, null, 2)); };
+
+        // internal state for debug info
+        window._chartDebugState = { chartVersion: (window.Chart && Chart.version) ? Chart.version : null };
+        function updateDebug(key, info){ window._chartDebugState[key] = info; window._chartDebugState.chartVersion = (window.Chart && Chart.version) ? Chart.version : null; updateChartDebug(window._chartDebugState); }
+        window.updateDebug = updateDebug;
         initTenantSelect();
         $select.on('change', function(){ loadAllCharts(); });
       });
