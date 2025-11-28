@@ -355,7 +355,8 @@ class CommercialReportsController extends Controller
      */
     public function tenants(Request $request)
     {
-        $tenants = Tenant::orderBy('trade_name')
+        // JSON payload used by AJAX dropdowns (compact list)
+        $jsonTenants = Tenant::orderBy('trade_name')
             ->get(['id', 'trade_name', 'customer_code'])
             ->map(function ($t) {
                 return [
@@ -366,12 +367,87 @@ class CommercialReportsController extends Controller
             })->values();
 
         try {
-            Log::info('commercial.tenants result', ['count' => $tenants->count(), 'sample' => $tenants->take(5)]);
+            Log::info('commercial.tenants result', ['count' => $jsonTenants->count(), 'sample' => $jsonTenants->take(5)]);
         } catch (\Throwable $__e) {
             Log::warning('Failed to log tenants debug info: ' . $__e->getMessage());
         }
 
-        return response()->json($tenants);
+        // Keep existing AJAX/json contract for other pages that call this endpoint.
+        if ($request->wantsJson() || $request->ajax() || str_contains($request->header('Accept') ?? '', 'application/json')) {
+            return response()->json($jsonTenants);
+        }
+
+        // For regular web requests, render a tenants listing page with server-side pagination.
+        // This prevents rendering a huge table when the tenant count grows large.
+        $perPage = 25; // reasonable default; can be made configurable
+        $paginated = Tenant::orderBy('trade_name')->paginate($perPage)->withQueryString();
+        return view('reports.commercial.tenants.index', ['tenants' => $paginated]);
+    }
+
+    /**
+     * Show tenant details page for a single tenant.
+     */
+    public function tenantShow($id)
+    {
+        $tenant = Tenant::with('posTerminals')->findOrFail($id);
+        return view('reports.commercial.tenants.show', compact('tenant'));
+    }
+
+    /**
+     * Stream CSV export of tenants. Uses chunking to avoid high memory usage.
+     */
+    public function tenantsExport(Request $request)
+    {
+        // Only allow admin or manager users to perform tenant exports.
+        $user = auth()->user();
+        $allowed = false;
+        if ($user) {
+            if (method_exists($user, 'hasAnyRole')) {
+                $allowed = $user->hasAnyRole(['admin', 'manager']);
+            } elseif (isset($user->role)) {
+                $r = is_object($user->role) ? strtolower($user->role->name ?? '') : strtolower($user->role ?? '');
+                $allowed = in_array($r, ['admin','manager']);
+            }
+        }
+        if (! $allowed) {
+            abort(403, 'Unauthorized to export tenants');
+        }
+        $filename = 'tenants_' . now()->format('Ymd_His') . '.csv';
+        $headers = [
+            'Content-Type' => 'text/csv',
+            'Content-Disposition' => "attachment; filename=\"{$filename}\"",
+        ];
+
+        $columns = ['tenant_code','tenant_id','trade_name','location_type','level','unit_no','status','category','zone','created_at'];
+
+        $callback = function() use ($columns) {
+            $handle = fopen('php://output', 'w');
+            // header row
+            fputcsv($handle, $columns);
+
+            Tenant::orderBy('trade_name')
+                ->select(['customer_code','id','trade_name','location_type','level','unit_no','status','category','zone','created_at'])
+                ->chunk(500, function($rows) use ($handle) {
+                    foreach ($rows as $r) {
+                        fputcsv($handle, [
+                            $r->customer_code,
+                            $r->id,
+                            $r->trade_name,
+                            $r->location_type,
+                            $r->level,
+                            $r->unit_no,
+                            $r->status,
+                            $r->category,
+                            $r->zone,
+                            $r->created_at ? $r->created_at->format('Y-m-d H:i:s') : '',
+                        ]);
+                    }
+                });
+
+            fclose($handle);
+        };
+
+        return response()->stream($callback, 200, $headers);
     }
 
     /**

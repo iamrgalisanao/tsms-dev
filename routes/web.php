@@ -219,6 +219,14 @@ Route::middleware(['auth'])->group(function () {
                 Route::get('/transactions/weekend', [CommercialReportsController::class, 'weekendData'])->name('tsms-proxy.transactions.weekend');
                 // Endpoint to fetch tenants for dropdown via AJAX
                 Route::get('/tenants', [CommercialReportsController::class, 'tenants'])->name('tenants');
+                // Export tenants CSV (web UI action)
+                // Export should be more restricted — only admin or manager can export tenant CSVs.
+                Route::get('/tenants/export', [CommercialReportsController::class, 'tenantsExport'])
+                    ->name('tenants.export')
+                    ->middleware('role:admin|manager');
+                // Tenant details page (web UI). Keep this under the same 'tenants' prefix so
+                // the sidebar link continues to work and ajax callers still receive JSON.
+                Route::get('/tenants/{id}', [CommercialReportsController::class, 'tenantShow'])->name('tenants.show');
                 // Export proxy: accept single-date & tenant_id from UI and adapt to finance export
                 Route::get('/export', [CommercialReportsController::class, 'exportProxy'])->name('export');
                 Route::get('/daily-sales-report', [CommercialReportsController::class, 'daily'])->name('daily');
