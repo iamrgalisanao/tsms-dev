@@ -27,14 +27,24 @@
 
 @section('scripts')
   <script>
+    // Ensure this dashboard uses the AdminLTE-bundled Chart.js runtime (v2) that is
+    // loaded in the master layout via plugins/chart.js/Chart.min.js. We avoid
+    // importing Chart.js via the Vite bundle so there is a single global Chart.
     (function(){
+      // show initial spinners immediately so users see loading state before XHRs
+      try {
+        ['daily','weekly','monthly','yearly'].forEach(function(k){
+          var s = document.getElementById('spinner-'+k); if (s) s.style.display = 'flex';
+          var n = document.getElementById('nodata-'+k); if (n) n.style.display = 'none';
+        });
+      } catch(e){}
       const $select = $('#commercial-tenant-select');
       let charts = {};
 
-      // warn if Chart.js is not loaded - this helps debug missing library issues
+      // warn if Chart.js is not loaded - AdminLTE's Chart.min.js should be present
       if (typeof Chart === 'undefined') {
         // do not block execution, but log so devs can check console/network
-        console.warn('Chart.js not found on page: charts will not render until Chart.js is loaded.');
+        console.error('AdminLTE Chart.js not found on page: ensure plugins/chart.js/Chart.min.js is included in the layout.');
       }
 
       function initTenantSelect() {
@@ -165,6 +175,32 @@
         return new Chart(ctx, cfg3);
       }
 
+      // Create a line chart similar to admin dashboard: supports multiple datasets
+      function makeLine(ctx, labels, datasets, opts) {
+        opts = opts || {};
+        const cfg = {
+          type: 'line',
+          data: { labels: labels, datasets: datasets },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { position: opts.legendPosition || 'top' } },
+            scales: { y: { beginAtZero: true } }
+          }
+        };
+        // If Chart.js v2 is present, adapt options
+        const version = (window.Chart && Chart.version) ? String(Chart.version).split('.')[0] : null;
+        if (version && parseInt(version,10) < 3) {
+          cfg.options = {
+            responsive: true,
+            maintainAspectRatio: false,
+            legend: { position: opts.legendPosition || 'top' },
+            scales: { yAxes: [{ ticks: { beginAtZero: true } }] }
+          };
+        }
+        return new Chart(ctx, cfg);
+      }
+
       function destroyIfExists(id) {
         if (charts[id]) {
           try { charts[id].destroy(); } catch(e){}
@@ -241,7 +277,23 @@
               $('#nodata-weekly').show();
             } else {
               $('#nodata-weekly').hide();
-              charts['chart-weekly'] = makeBar(document.getElementById('chart-weekly').getContext('2d'), labels, values);
+              // If the response contains volume/count information, prefer admin-style line with two datasets
+              const hasVolume = rows.some(r => (r.volume || r.count || r.tx_count));
+              if (resp.labels && resp.sales) {
+                // preferred shape: { labels: [...], sales: [...], volume: [...] }
+                const ds = [{ label: 'Sales', data: resp.sales, borderColor: 'rgb(59,130,246)', backgroundColor: 'rgba(59,130,246,0.1)', fill: true }];
+                if (Array.isArray(resp.volume)) ds.push({ label: 'Volume', data: resp.volume, borderColor: 'rgb(16,185,129)', backgroundColor: 'rgba(16,185,129,0.1)', fill: true });
+                charts['chart-weekly'] = makeLine(document.getElementById('chart-weekly').getContext('2d'), resp.labels, ds);
+              } else if (hasVolume) {
+                const vol = rows.map(r => Number(r.volume || r.count || r.tx_count || 0));
+                const ds = [
+                  { label: 'Sales', data: values, borderColor: 'rgb(59,130,246)', backgroundColor: 'rgba(59,130,246,0.1)', fill: true },
+                  { label: 'Volume', data: vol, borderColor: 'rgb(16,185,129)', backgroundColor: 'rgba(16,185,129,0.1)', fill: true }
+                ];
+                charts['chart-weekly'] = makeLine(document.getElementById('chart-weekly').getContext('2d'), labels, ds);
+              } else {
+                charts['chart-weekly'] = makeBar(document.getElementById('chart-weekly').getContext('2d'), labels, values);
+              }
             }
           })
           .fail(function(jqX, status, err){
@@ -284,7 +336,14 @@
               $('#nodata-monthly').show();
             } else {
               $('#nodata-monthly').hide();
-              charts['chart-monthly'] = makeBar(document.getElementById('chart-monthly').getContext('2d'), labels, values, {backgroundColor: 'rgba(75,192,192,0.6)', borderColor: 'rgba(75,192,192,1)'});
+              // monthly: prefer line chart if dataset contains sales + volume shape
+              if (resp.labels && resp.sales) {
+                const ds = [{ label: 'Sales', data: resp.sales, borderColor: 'rgb(59,130,246)', backgroundColor: 'rgba(59,130,246,0.1)', fill: true }];
+                if (Array.isArray(resp.volume)) ds.push({ label: 'Volume', data: resp.volume, borderColor: 'rgb(16,185,129)', backgroundColor: 'rgba(16,185,129,0.1)', fill: true });
+                charts['chart-monthly'] = makeLine(document.getElementById('chart-monthly').getContext('2d'), resp.labels, ds);
+              } else {
+                charts['chart-monthly'] = makeBar(document.getElementById('chart-monthly').getContext('2d'), labels, values, {backgroundColor: 'rgba(75,192,192,0.6)', borderColor: 'rgba(75,192,192,1)'});
+              }
             }
           })
           .fail(function(jqX, status, err){
@@ -324,7 +383,14 @@
               $('#nodata-yearly').show();
             } else {
               $('#nodata-yearly').hide();
-              charts['chart-yearly'] = makeBar(document.getElementById('chart-yearly').getContext('2d'), labels, values, {backgroundColor: 'rgba(255,159,64,0.6)', borderColor: 'rgba(255,159,64,1)'});
+              // yearly: if response provides sales + volume arrays, show admin-style line chart
+              if (resp.labels && resp.sales) {
+                const ds = [{ label: 'Sales', data: resp.sales, borderColor: 'rgb(59,130,246)', backgroundColor: 'rgba(59,130,246,0.1)', fill: true }];
+                if (Array.isArray(resp.volume)) ds.push({ label: 'Volume', data: resp.volume, borderColor: 'rgb(16,185,129)', backgroundColor: 'rgba(16,185,129,0.1)', fill: true });
+                charts['chart-yearly'] = makeLine(document.getElementById('chart-yearly').getContext('2d'), resp.labels, ds);
+              } else {
+                charts['chart-yearly'] = makeBar(document.getElementById('chart-yearly').getContext('2d'), labels, values, {backgroundColor: 'rgba(255,159,64,0.6)', borderColor: 'rgba(255,159,64,1)'});
+              }
             }
           })
           .fail(function(jqX, status, err){
