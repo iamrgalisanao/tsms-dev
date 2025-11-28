@@ -171,10 +171,139 @@ class CommercialReportsController extends Controller
         return view('reports.commercial.monthly');
     }
 
+    /**
+     * Proxy endpoint for monthly summary (per-day rows for a chosen month).
+     * Accepts 'date_from' and 'date_to' (month bounds) and 'tenant_id'.
+     */
+    public function monthlyData(Request $request)
+    {
+        $request->validate([
+            'date_from' => ['required', 'date'],
+            'date_to' => ['required', 'date'],
+            'tenant_id' => ['required']
+        ]);
+
+        $from = $request->input('date_from');
+        $to = $request->input('date_to');
+        $tenantId = $request->input('tenant_id');
+
+        $service = new WeeklyReportService();
+        $result = $service->getWeeklySummary($from, $to, $tenantId);
+
+        try {
+            AuditLog::create([
+                'user_id' => auth()->id(),
+                'action' => 'report.monthly_view',
+                'action_type' => 'view',
+                'resource_type' => 'report',
+                'resource_id' => null,
+                'ip_address' => $request->ip(),
+                'message' => "Viewed monthly report for {$from} to {$to}",
+                'old_values' => null,
+                'new_values' => null,
+                'metadata' => ['date_from' => $from, 'date_to' => $to, 'tenant_id' => $tenantId],
+                'logged_at' => now(),
+            ]);
+        } catch (\Throwable $e) {
+            Log::warning('Failed to write AuditLog for monthly report view: ' . $e->getMessage(), ['from' => $from, 'to' => $to, 'tenant' => $tenantId]);
+        }
+
+        return response()->json($result);
+    }
+
     // Show yearly report UI
     public function yearly()
     {
         return view('reports.commercial.yearly');
+    }
+
+    /**
+     * Proxy endpoint for yearly summary (monthly rows for a selected year).
+     * Accepts 'date_from' and 'date_to' (year bounds) and 'tenant_id'.
+     */
+    public function yearlyData(Request $request)
+    {
+        $request->validate([
+            'date_from' => ['required', 'date'],
+            'date_to' => ['required', 'date'],
+            'tenant_id' => ['required']
+        ]);
+
+        $from = $request->input('date_from');
+        $to = $request->input('date_to');
+        $tenantId = $request->input('tenant_id');
+
+        $service = new WeeklyReportService();
+
+        // Iterate month-by-month and aggregate per-month summaries
+        try {
+            $start = \Carbon\Carbon::parse($from)->startOfMonth();
+            $end = \Carbon\Carbon::parse($to)->startOfMonth();
+
+            $months = [];
+            $summary = [
+                'gross_sales' => 0.0,
+                'net_sales' => 0.0,
+                'transaction_count' => 0,
+                'guest_count' => 0,
+                'vatable_sales' => 0.0,
+                'vat_exempt_sales' => 0.0,
+                'vat_amount' => 0.0,
+                'sc_pwd_discount' => 0.0,
+                'regular_discount' => 0.0,
+                'cash_payment' => 0.0,
+                'card_payment' => 0.0,
+                'other_tender' => 0.0,
+            ];
+
+            for ($d = $start; $d->lte($end); $d->addMonth()) {
+                $mFrom = $d->copy()->startOfMonth()->format('Y-m-d');
+                $mTo = $d->copy()->endOfMonth()->format('Y-m-d');
+                $res = $service->getWeeklySummary($mFrom, $mTo, $tenantId);
+                $s = $res['summary'] ?? ['gross_sales' => 0.0, 'net_sales' => 0.0, 'transaction_count' => 0, 'guest_count' => 0];
+
+                foreach (['vatable_sales','vat_exempt_sales','vat_amount','sc_pwd_discount','regular_discount','cash_payment','card_payment','other_tender'] as $k) {
+                    if (!isset($s[$k])) $s[$k] = 0.0;
+                }
+
+                $months[] = array_merge(['month' => $d->format('Y-m')], $s);
+
+                $summary['gross_sales'] += (float) ($s['gross_sales'] ?? 0.0);
+                $summary['net_sales'] += (float) ($s['net_sales'] ?? 0.0);
+                $summary['transaction_count'] += (int) ($s['transaction_count'] ?? 0);
+                $summary['guest_count'] += (int) ($s['guest_count'] ?? 0);
+                foreach (['vatable_sales','vat_exempt_sales','vat_amount','sc_pwd_discount','regular_discount','cash_payment','card_payment','other_tender'] as $k) {
+                    $summary[$k] += (float) ($s[$k] ?? 0.0);
+                }
+            }
+
+            foreach (['gross_sales','net_sales','vatable_sales','vat_exempt_sales','vat_amount','sc_pwd_discount','regular_discount','cash_payment','card_payment','other_tender'] as $k) {
+                $summary[$k] = round($summary[$k], 2);
+            }
+
+            try {
+                AuditLog::create([
+                    'user_id' => auth()->id(),
+                    'action' => 'report.yearly_view',
+                    'action_type' => 'view',
+                    'resource_type' => 'report',
+                    'resource_id' => null,
+                    'ip_address' => $request->ip(),
+                    'message' => "Viewed yearly report for {$from} to {$to}",
+                    'old_values' => null,
+                    'new_values' => null,
+                    'metadata' => ['date_from' => $from, 'date_to' => $to, 'tenant_id' => $tenantId],
+                    'logged_at' => now(),
+                ]);
+            } catch (\Throwable $e) {
+                Log::warning('Failed to write AuditLog for yearly report view: ' . $e->getMessage(), ['from' => $from, 'to' => $to, 'tenant' => $tenantId]);
+            }
+
+            return response()->json(['summary' => $summary, 'months' => $months]);
+        } catch (\Throwable $e) {
+            Log::warning('YearlyData failed: ' . $e->getMessage(), ['from' => $from, 'to' => $to, 'tenant' => $tenantId]);
+            return response()->json(['summary' => ['gross_sales' => 0.0, 'net_sales' => 0.0, 'transaction_count' => 0, 'guest_count' => 0], 'months' => []]);
+        }
     }
 
     /**

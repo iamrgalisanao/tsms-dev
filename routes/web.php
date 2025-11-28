@@ -191,6 +191,10 @@ Route::middleware(['auth'])->group(function () {
                 Route::get('/transactions/daily', [CommercialReportsController::class, 'dailyData'])->name('tsms-proxy.transactions.daily');
                 // Proxy endpoint used by the weekly report view to fetch per-day aggregates
                 Route::get('/transactions/weekly', [CommercialReportsController::class, 'weeklyData'])->name('tsms-proxy.transactions.weekly');
+                // Proxy endpoint used by the monthly report view to fetch per-day aggregates for a month
+                Route::get('/transactions/monthly', [CommercialReportsController::class, 'monthlyData'])->name('tsms-proxy.transactions.monthly');
+                // Proxy endpoint used by the yearly report view to fetch per-month aggregates for a year
+                Route::get('/transactions/yearly', [CommercialReportsController::class, 'yearlyData'])->name('tsms-proxy.transactions.yearly');
                 // Proxy endpoint used by the weekday report view to fetch per-day aggregates excluding weekends
                 Route::get('/transactions/weekday', [CommercialReportsController::class, 'weekdayData'])->name('tsms-proxy.transactions.weekday');
                 // Proxy endpoint used by the weekend report view to fetch per-day aggregates for weekends only
