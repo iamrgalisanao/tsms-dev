@@ -84,46 +84,82 @@
 
       function makeBar(ctx, labels, values, opts) {
         opts = opts || {};
-        const bg = opts.backgroundColor || 'rgba(54,162,235,0.6)';
-        const border = opts.borderColor || 'rgba(54,162,235,1)';
-        return new Chart(ctx, {
+        // support both Chart.js v2 (AdminLTE bundled) and v3+ (vite bundle)
+        const version = (window.Chart && Chart.version) ? String(Chart.version).split('.')[0] : null;
+        // create optional gradient if requested
+        let background = opts.backgroundColor || 'rgba(54,162,235,0.6)';
+        try {
+          if (opts.useGradient && ctx && ctx.createLinearGradient) {
+            const g = ctx.createLinearGradient(0, 0, 0, ctx.canvas.height || 200);
+            g.addColorStop(0, 'rgba(54,162,235,0.85)');
+            g.addColorStop(1, 'rgba(54,162,235,0.25)');
+            background = g;
+          }
+        } catch (e) {
+          // ignore gradient errors
+        }
+
+        const dataset = {
+          label: opts.label || 'Gross Sales',
+          data: values,
+          backgroundColor: background,
+          borderColor: opts.borderColor || 'rgba(54,162,235,1)',
+          borderWidth: 1
+        };
+
+        // Chart.js v2.x options (AdminLTE default)
+        if (version && parseInt(version, 10) < 3) {
+          const cfg = {
+            type: 'bar',
+            data: { labels: labels, datasets: [dataset] },
+            options: {
+              responsive: true,
+              maintainAspectRatio: false,
+              scales: {
+                xAxes: [{ gridLines: { display: false } }],
+                yAxes: [{ ticks: { beginAtZero: true, callback: function(value) { return value >= 1000 ? (value/1000)+'k' : value; } } }]
+              },
+              legend: { display: false },
+              tooltips: {
+                callbacks: {
+                  label: function(tooltipItem, data) {
+                    var v = tooltipItem.yLabel !== undefined ? tooltipItem.yLabel : tooltipItem.value;
+                    var label = (dataset.label ? dataset.label + ': ' : '') + formatCurrency(Number(v));
+                    return label;
+                  }
+                }
+              }
+            }
+          };
+          return new Chart(ctx, cfg);
+        }
+
+        // Chart.js v3+ options
+        const cfg3 = {
           type: 'bar',
-          data: {
-            labels: labels,
-            datasets: [{
-              label: opts.label || 'Gross Sales',
-              data: values,
-              backgroundColor: bg,
-              borderColor: border,
-              borderWidth: 1
-            }]
-          },
+          data: { labels: labels, datasets: [dataset] },
           options: {
             responsive: true,
             maintainAspectRatio: false,
             interaction: { mode: 'index', intersect: false },
             scales: {
               x: { grid: { display: false } },
-              y: {
-                beginAtZero: true,
-                ticks: {
-                  callback: function(value) { return value >= 1000 ? (value/1000)+'k' : value; }
-                }
-              }
+              y: { beginAtZero: true, ticks: { callback: function(value) { return value >= 1000 ? (value/1000)+'k' : value; } } }
             },
             plugins: {
               legend: { display: false },
               tooltip: {
                 callbacks: {
                   label: function(context) {
-                    const v = context.parsed.y ?? context.raw ?? 0;
+                    const v = (context.parsed && context.parsed.y) != null ? context.parsed.y : (context.raw || 0);
                     return (context.dataset.label ? context.dataset.label + ': ' : '') + formatCurrency(Number(v));
                   }
                 }
               }
             }
           }
-        });
+        };
+        return new Chart(ctx, cfg3);
       }
 
       function destroyIfExists(id) {
