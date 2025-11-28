@@ -7,8 +7,9 @@
 import "./bootstrap";
 
 // Bundle Chart.js with Vite and expose it globally for legacy inline scripts
-import Chart from 'chart.js/auto';
-window.Chart = Chart;
+// Use AdminLTE's Chart.js (static plugin) on the page instead of bundling it here.
+// Do NOT import Chart.js in this entry to avoid bundling a different Chart.js build
+// that can conflict with AdminLTE's bundled Chart.js (v2).
 
 /**
  * Next, we will create a fresh React component instance and attach it to

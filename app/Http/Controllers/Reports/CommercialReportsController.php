@@ -48,7 +48,8 @@ class CommercialReportsController extends Controller
         $request->validate([
             'date_from' => ['required', 'date'],
             'date_to' => ['required', 'date'],
-            'tenant_id' => ['required']
+            // tenant_id may be omitted to request "All Tenants" aggregates from the service
+            'tenant_id' => ['nullable']
         ]);
 
         $from = $request->input('date_from');
@@ -88,7 +89,7 @@ class CommercialReportsController extends Controller
         $request->validate([
             'date_from' => ['required', 'date'],
             'date_to' => ['required', 'date'],
-            'tenant_id' => ['required']
+            'tenant_id' => ['nullable']
         ]);
 
         $from = $request->input('date_from');
@@ -128,7 +129,7 @@ class CommercialReportsController extends Controller
         $request->validate([
             'date_from' => ['required', 'date'],
             'date_to' => ['required', 'date'],
-            'tenant_id' => ['required']
+            'tenant_id' => ['nullable']
         ]);
 
         $from = $request->input('date_from');
@@ -186,7 +187,7 @@ class CommercialReportsController extends Controller
         $request->validate([
             'date_from' => ['required', 'date'],
             'date_to' => ['required', 'date'],
-            'tenant_id' => ['required']
+            'tenant_id' => ['nullable']
         ]);
 
         $from = $request->input('date_from');
@@ -338,7 +339,7 @@ class CommercialReportsController extends Controller
     {
         $request->validate([
             'date' => ['required', 'date'],
-            'tenant_id' => ['required']
+            'tenant_id' => ['nullable']
         ]);
 
         $date = $request->input('date');
@@ -379,7 +380,7 @@ class CommercialReportsController extends Controller
     {
         $request->validate([
             'date' => ['required', 'date'],
-            'tenant_id' => ['required']
+            'tenant_id' => ['nullable']
         ]);
 
         $date = $request->input('date');

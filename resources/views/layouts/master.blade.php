@@ -4,6 +4,8 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <!-- CSRF token for JS (axios) and other libraries -->
+  <meta name="csrf-token" content="{{ csrf_token() }}">
   <title>TSMS</title>
 
   <!-- Google Font: Source Sans Pro -->
@@ -163,15 +165,21 @@
   </div>
   <!-- ./wrapper -->
 
+  <!-- Expose authenticated user (if any) to client scripts -->
+  <script>
+    window.authUser = @json(Auth::user());
+  </script>
+
   <!-- jQuery -->
   <script src="{{ asset('plugins/jquery/jquery.min.js') }}"></script>
   <!-- Bootstrap 4 -->
   <script src="{{ asset('plugins/bootstrap/js/bootstrap.bundle.min.js') }}"></script>
   <!-- ChartJS: prefer Vite bundle when present, otherwise fall back to static plugin for servers without a build step -->
+  <!-- Always load AdminLTE's Chart.js (v2) so inline legacy scripts and AdminLTE components use the same runtime. -->
+  <script src="{{ asset('plugins/chart.js/Chart.min.js') }}"></script>
   @if (file_exists(public_path('build/manifest.json')))
+    {{-- Load Vite-built app.js (it should NOT include Chart.js) --}}
     @vite(['resources/js/app.js'])
-  @else
-    <script src="{{ asset('plugins/chart.js/Chart.min.js') }}"></script>
   @endif
   <!-- Sparkline -->
   <script src="{{ asset('plugins/sparklines/sparkline.js') }}"></script>
