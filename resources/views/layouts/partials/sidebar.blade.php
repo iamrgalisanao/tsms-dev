@@ -125,14 +125,14 @@
     @endif
     @if(auth()->user() && auth()->user()->hasRole('commercial'))
       <li class="nav-item">
-          <a href="/commercial" class="nav-link {{ request()->is('commercial') ? 'active' : '' }}">
+      <a href="{{ route('commercial.dashboard') }}" class="nav-link {{ Request::routeIs('commercial.dashboard') || request()->is('commercial') ? 'active' : '' }}">
             <i class="nav-icon fas fa-home text-white"></i>
             <p class="text-white">Dashboard</p>
           </a>
         </li>
         <li class="nav-item">
-          <a href="/commercial/tenants"
-             class="nav-link {{ request()->is('commercial/tenants*') ? 'active' : '' }}">
+          <a href="{{ route('commercial.sales-report.tenants') }}"
+             class="nav-link {{ request()->is('commercial/reports/tenants*') ? 'active' : '' }}">
             <i class="nav-icon fas fa-building text-white"></i>
             <p class="text-white">Tenants</p>
           </a>
@@ -147,14 +147,14 @@
           </a>
           <ul class="nav nav-treeview " style="{{ request()->is('commercial/reports/*') ? 'display: block;' : 'display: none;' }}">
             <li class="nav-item">
-              <a href="/commercial/reports/hourly-sales-report"
+              <a href="{{ route('commercial.sales-report.hourly') }}"
               class="nav-link {{ request()->is('commercial/reports/hourly-sales-report*') ? 'active' : '' }}">
               <i class="fas fa-circle nav-icon ml-4 text-white"></i>
               <p class="text-white">Hourly Sales</p>
               </a>
             </li>
             <li class="nav-item">
-              <a href="/commercial/reports/daily-sales-report"
+              <a href="{{ route('commercial.sales-report.daily') }}"
                 class="nav-link {{ request()->is('commercial/reports/daily-sales-report*') ? 'active' : '' }}">
                 <i class="fas fa-circle nav-icon ml-4 text-white"></i>
                 <p class="text-white">Daily Sales</p>

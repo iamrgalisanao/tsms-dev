@@ -4,7 +4,11 @@
  * building robust, powerful web applications using React and Laravel.
  */
 
-require("./bootstrap");
+import "./bootstrap";
+
+// Bundle Chart.js with Vite and expose it globally for legacy inline scripts
+import Chart from 'chart.js/auto';
+window.Chart = Chart;
 
 /**
  * Next, we will create a fresh React component instance and attach it to

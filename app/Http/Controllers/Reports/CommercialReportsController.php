@@ -21,6 +21,12 @@ class CommercialReportsController extends Controller
         return view('reports.commercial.hourly');
     }
 
+    // Show commercial dashboard UI (charts for daily/weekly/monthly/yearly)
+    public function dashboard()
+    {
+        return view('reports.commercial.dashboard');
+    }
+
     // Show daily report UI
     public function daily()
     {

@@ -442,8 +442,7 @@ table { width: 100%; border-collapse: collapse; }
 <!-- Load Select2 after jQuery but before custom scripts -->
 <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 
-<!-- Chart.js CDN -->
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<!-- Chart.js is provided by the master layout (local asset) -->
 
 <!-- DataTables & Plugins -->
 <script src="{{ asset('plugins/datatables/jquery.dataTables.min.js') }}"></script>

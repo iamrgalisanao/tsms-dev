@@ -183,6 +183,8 @@ Route::middleware(['auth'])->group(function () {
     // Commercial Reports - commercial role only
     Route::middleware(['role:commercial'])->group(function () {
         Route::prefix('commercial')->name('commercial.')->group(function () {
+            // Commercial dashboard root - show dedicated commercial dashboard (charts + tenant selector)
+            Route::get('/', [CommercialReportsController::class, 'dashboard'])->name('dashboard');
             Route::prefix('reports')->name('sales-report.')->group(function () {
                 Route::get('/hourly-sales-report', [CommercialReportsController::class, 'hourly'])->name('hourly');
                 // Proxy endpoint used by the hourly report view to fetch hourly aggregates (adapts single-date UI param)

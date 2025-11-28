@@ -63,8 +63,6 @@
 </div>
 
 @push('scripts')
-<!-- Chart.js CDN -->
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <script>
     // Simple helper: try to fetch JSON, otherwise return fallback sample data
     async function fetchJsonOrFallback(url, fallback) {

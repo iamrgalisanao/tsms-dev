@@ -64,7 +64,7 @@
     </div>
 
     <!-- Scripts -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.7.0/dist/chart.min.js"></script>
+    <script src="{{ asset('plugins/chart.js/Chart.min.js') }}"></script>
     @stack('scripts')
 </body>
 </html>

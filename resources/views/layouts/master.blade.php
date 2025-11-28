@@ -31,6 +31,30 @@
   <!-- Stack for page-specific styles -->
   @stack('styles')
 
+  <!-- Shared chart spinner & no-data styles -->
+  <style>
+    .chart-wrapper { position: relative; }
+    .chart-spinner, .chart-no-data {
+      display: none;
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: rgba(255,255,255,0.65);
+      z-index: 10;
+      pointer-events: none;
+    }
+    .chart-no-data {
+      background: rgba(255,255,255,0.9);
+      color: #6c757d;
+      font-weight: 600;
+      font-size: 0.95rem;
+      pointer-events: none;
+    }
+    .chart-spinner .spinner-border { width: 2rem; height: 2rem; }
+  </style>
+
   <!-- Add this CSS in the head section or in your CSS file -->
 
 </head>
