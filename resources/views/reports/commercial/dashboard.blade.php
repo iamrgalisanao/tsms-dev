@@ -6,8 +6,7 @@
     <div class="col-12 d-flex justify-content-between align-items-center">
       <h3 class="m-0">Commercial Dashboard</h3>
       <div>
-        <label class="text-muted mr-2">Tenant</label>
-        <select id="commercial-tenant-select" class="form-control d-inline-block" style="width: 240px"></select>
+        <small class="text-muted">Showing aggregated sales for all tenants</small>
       </div>
     </div>
   </div>
@@ -39,7 +38,8 @@
           showChartLoading(k);
         });
       } catch(e){}
-      const $select = $('#commercial-tenant-select');
+  // dashboard is aggregated across all tenants; no tenant selection required
+  const tenantIdDefault = null;
       let charts = {};
 
       // warn if Chart.js is not loaded - AdminLTE's Chart.min.js should be present
@@ -48,44 +48,7 @@
         console.error('AdminLTE Chart.js not found on page: ensure plugins/chart.js/Chart.min.js is included in the layout.');
       }
 
-      function initTenantSelect() {
-        $.getJSON("{{ route('commercial.sales-report.tenants') }}")
-          .done(function(resp){
-            console.debug('commercial.tenants response:', resp);
-            updateDebug('tenants', { ok: true, body: resp });
-            $select.empty();
-            // support multiple response shapes: array, {data: [...]}, {rows: [...]}, {tenants: [...]}
-            let list = [];
-            if (Array.isArray(resp)) list = resp;
-            else if (resp && Array.isArray(resp.data)) list = resp.data;
-            else if (resp && Array.isArray(resp.rows)) list = resp.rows;
-            else if (resp && Array.isArray(resp.tenants)) list = resp.tenants;
-
-            if (!Array.isArray(list) || list.length === 0) {
-              $select.append('<option value="">All Tenants</option>');
-            } else {
-              list.forEach(function(t){
-                // allow tenant objects with id or tenant_id keys
-                const id = t.id || t.tenant_id || t.key || '';
-                const label = t.trade_name || t.customer_code || t.name || id;
-                $select.append('<option value="'+id+'">'+label+'</option>');
-              });
-            }
-
-            // default to first tenant (or empty = All Tenants)
-            if ($select.find('option').length) {
-              $select.val($select.find('option').first().val());
-            }
-            // initial load
-            loadAllCharts();
-          })
-          .fail(function(jqX, status, err){
-            console.warn('Failed loading tenant list for commercial dashboard', status, err, jqX && jqX.responseText);
-            updateDebug('tenants', { ok: false, status: jqX && jqX.status, body: jqX && jqX.responseText });
-            $select.empty().append('<option value="">All Tenants</option>');
-            loadAllCharts();
-          });
-      }
+      // no tenant selection; charts will show aggregates for all tenants
 
       // AdminLTE-style bar chart helper: uses nice palette and currency tooltips
       function formatCurrency(n) {
@@ -371,11 +334,11 @@
       }
 
       function loadAllCharts() {
-        const tenantId = $select.val();
-        loadDaily(tenantId);
-        loadWeekly(tenantId);
-        loadMonthly(tenantId);
-        loadYearly(tenantId);
+        // aggregate across all tenants (no tenant_id param)
+        loadDaily(null);
+        loadWeekly(null);
+        loadMonthly(null);
+        loadYearly(null);
       }
 
       // Daily: single-value summary for today
@@ -383,7 +346,7 @@
         const date = new Date().toISOString().slice(0,10);
   // prepare UI: show loading overlay
   showChartLoading('daily');
-        $.getJSON("{{ url('commercial/reports/transactions/daily') }}", { date: date, tenant_id: tenantId })
+  $.getJSON("{{ url('commercial/reports/transactions/daily') }}", { date: date })
           .done(function(resp){
             console.debug('daily report response:', resp);
             updateDebug('daily', { ok: true, body: resp });
@@ -415,7 +378,7 @@
         const date_to = to.toISOString().slice(0,10);
   // prepare UI: show loading overlay
   showChartLoading('weekly');
-        $.getJSON("{{ url('commercial/reports/transactions/weekly') }}", { date_from: date_from, date_to: date_to, tenant_id: tenantId })
+  $.getJSON("{{ url('commercial/reports/transactions/weekly') }}", { date_from: date_from, date_to: date_to })
           .done(function(resp){
             console.debug('weekly report response:', resp);
             updateDebug('weekly', { ok: true, body: resp });
@@ -477,7 +440,7 @@
         const last = new Date(yyyy, now.getMonth()+1, 0).toISOString().slice(0,10);
   // prepare UI: show loading overlay
   showChartLoading('monthly');
-        $.getJSON("{{ url('commercial/reports/transactions/monthly') }}", { date_from: first, date_to: last, tenant_id: tenantId })
+  $.getJSON("{{ url('commercial/reports/transactions/monthly') }}", { date_from: first, date_to: last })
           .done(function(resp){
             console.debug('monthly report response:', resp);
             updateDebug('monthly', { ok: true, body: resp });
@@ -525,7 +488,7 @@
         const last = year + '-12-31';
   // prepare UI: show loading overlay
   showChartLoading('yearly');
-        $.getJSON("{{ url('commercial/reports/transactions/yearly') }}", { date_from: first, date_to: last, tenant_id: tenantId })
+  $.getJSON("{{ url('commercial/reports/transactions/yearly') }}", { date_from: first, date_to: last })
           .done(function(resp){
             console.debug('yearly report response:', resp);
             updateDebug('yearly', { ok: true, body: resp });
@@ -575,8 +538,8 @@
         window._chartDebugState = { chartVersion: (window.Chart && Chart.version) ? Chart.version : null };
         function updateDebug(key, info){ window._chartDebugState[key] = info; window._chartDebugState.chartVersion = (window.Chart && Chart.version) ? Chart.version : null; updateChartDebug(window._chartDebugState); }
         window.updateDebug = updateDebug;
-        initTenantSelect();
-        $select.on('change', function(){ loadAllCharts(); });
+        // load charts aggregated for all tenants
+        loadAllCharts();
       });
     })();
   </script>
