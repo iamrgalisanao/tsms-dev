@@ -44,7 +44,7 @@
   </div>
 
   <x-slot name="scripts">
-  <script src="{{ asset('plugins/chart.js/Chart.min.js') }}"></script>
+  {{-- Chart.js is provided by the master layout via Vite or fallback; remove duplicate include --}}
     <script>
     document.addEventListener('DOMContentLoaded', function() {
       const ctx = document.getElementById('enrollmentChart').getContext('2d');

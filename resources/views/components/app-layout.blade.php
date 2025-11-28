@@ -64,7 +64,7 @@
     </div>
 
     <!-- Scripts -->
-    <script src="{{ asset('plugins/chart.js/Chart.min.js') }}"></script>
+    {{-- Chart.js is provided by the master layout via Vite or fallback; remove duplicate include --}}
     @stack('scripts')
 </body>
 </html>

@@ -13,65 +13,13 @@
   </div>
 
   <div class="row mb-3">
-    <div class="col-md-6">
-      <div class="card">
-        <div class="card-body chart-card">
-          <h5 class="card-title">Daily Sales</h5>
-          <div class="chart-wrapper" style="position:relative; min-height:180px;">
-            <canvas id="chart-daily" height="180"></canvas>
-            <div id="spinner-daily" class="chart-spinner">
-              <div class="spinner-border text-primary" role="status" aria-hidden="true"></div>
-            </div>
-            <div id="nodata-daily" class="chart-no-data">No data</div>
-          </div>
-        </div>
-      </div>
-    </div>
-    <div class="col-md-6">
-      <div class="card">
-        <div class="card-body chart-card">
-          <h5 class="card-title">Weekly Sales</h5>
-          <div class="chart-wrapper" style="position:relative; min-height:180px;">
-            <canvas id="chart-weekly" height="180"></canvas>
-            <div id="spinner-weekly" class="chart-spinner">
-              <div class="spinner-border text-primary" role="status" aria-hidden="true"></div>
-            </div>
-            <div id="nodata-weekly" class="chart-no-data">No data</div>
-          </div>
-        </div>
-      </div>
-    </div>
+    @include('components.adminlte-chart', ['id' => 'chart-daily', 'key' => 'daily', 'title' => 'Daily Sales'])
+    @include('components.adminlte-chart', ['id' => 'chart-weekly', 'key' => 'weekly', 'title' => 'Weekly Sales'])
   </div>
 
   <div class="row">
-    <div class="col-md-6">
-      <div class="card">
-        <div class="card-body chart-card">
-          <h5 class="card-title">Monthly Sales</h5>
-          <div class="chart-wrapper" style="position:relative; min-height:180px;">
-            <canvas id="chart-monthly" height="180"></canvas>
-            <div id="spinner-monthly" class="chart-spinner">
-              <div class="spinner-border text-primary" role="status" aria-hidden="true"></div>
-            </div>
-            <div id="nodata-monthly" class="chart-no-data">No data</div>
-          </div>
-        </div>
-      </div>
-    </div>
-    <div class="col-md-6">
-      <div class="card">
-        <div class="card-body chart-card">
-          <h5 class="card-title">Yearly Sales</h5>
-          <div class="chart-wrapper" style="position:relative; min-height:180px;">
-            <canvas id="chart-yearly" height="180"></canvas>
-            <div id="spinner-yearly" class="chart-spinner">
-              <div class="spinner-border text-primary" role="status" aria-hidden="true"></div>
-            </div>
-            <div id="nodata-yearly" class="chart-no-data">No data</div>
-          </div>
-        </div>
-      </div>
-    </div>
+    @include('components.adminlte-chart', ['id' => 'chart-monthly', 'key' => 'monthly', 'title' => 'Monthly Sales'])
+    @include('components.adminlte-chart', ['id' => 'chart-yearly', 'key' => 'yearly', 'title' => 'Yearly Sales'])
   </div>
 </div>
 
@@ -125,8 +73,19 @@
           });
       }
 
+      // AdminLTE-style bar chart helper: uses nice palette and currency tooltips
+      function formatCurrency(n) {
+        try {
+          return new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD', maximumFractionDigits: 2 }).format(n);
+        } catch (e) {
+          return n.toLocaleString();
+        }
+      }
+
       function makeBar(ctx, labels, values, opts) {
         opts = opts || {};
+        const bg = opts.backgroundColor || 'rgba(54,162,235,0.6)';
+        const border = opts.borderColor || 'rgba(54,162,235,1)';
         return new Chart(ctx, {
           type: 'bar',
           data: {
@@ -134,16 +93,35 @@
             datasets: [{
               label: opts.label || 'Gross Sales',
               data: values,
-              backgroundColor: opts.backgroundColor || 'rgba(54,162,235,0.6)',
-              borderColor: opts.borderColor || 'rgba(54,162,235,1)',
+              backgroundColor: bg,
+              borderColor: border,
               borderWidth: 1
             }]
           },
           options: {
             responsive: true,
             maintainAspectRatio: false,
-            scales: { y: { beginAtZero: true } },
-            plugins: { legend: { display: false } }
+            interaction: { mode: 'index', intersect: false },
+            scales: {
+              x: { grid: { display: false } },
+              y: {
+                beginAtZero: true,
+                ticks: {
+                  callback: function(value) { return value >= 1000 ? (value/1000)+'k' : value; }
+                }
+              }
+            },
+            plugins: {
+              legend: { display: false },
+              tooltip: {
+                callbacks: {
+                  label: function(context) {
+                    const v = context.parsed.y ?? context.raw ?? 0;
+                    return (context.dataset.label ? context.dataset.label + ': ' : '') + formatCurrency(Number(v));
+                  }
+                }
+              }
+            }
           }
         });
       }
