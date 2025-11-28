@@ -255,33 +255,7 @@ table { width: 100%; border-collapse: collapse; }
             </div>
         </div>
 
-        <!-- Dashboard charts: Daily / Weekly / Monthly / Yearly -->
-        <div class="row g-3 mb-3">
-          <div class="col-md-3">
-            <div class="card">
-              <div class="card-header bg-secondary text-white">Daily (Selected Month)</div>
-              <div class="card-body"><canvas id="chart-daily" height="140"></canvas></div>
-            </div>
-          </div>
-          <div class="col-md-3">
-            <div class="card">
-              <div class="card-header bg-secondary text-white">Weekly (Recent)</div>
-              <div class="card-body"><canvas id="chart-weekly-mini" height="140"></canvas></div>
-            </div>
-          </div>
-          <div class="col-md-3">
-            <div class="card">
-              <div class="card-header bg-secondary text-white">Monthly (Year)</div>
-              <div class="card-body"><canvas id="chart-monthly-mini" height="140"></canvas></div>
-            </div>
-          </div>
-          <div class="col-md-3">
-            <div class="card">
-              <div class="card-header bg-secondary text-white">Yearly (Last 5 yrs)</div>
-              <div class="card-body"><canvas id="chart-yearly-mini" height="140"></canvas></div>
-            </div>
-          </div>
-        </div>
+        <!-- Summary charts removed as per UI update (Daily/Weekly/Monthly/Yearly) -->
 
         <div class="table-responsive position-relative">
             <!-- Loading overlay -->
