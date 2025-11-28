@@ -2,8 +2,14 @@
 @section('title', 'Tenants List')
 @push('styles')
 <style>
+  /* Keep action buttons from wrapping and ensure header controls align */
   .tenants-table .btn { white-space: nowrap; }
-  .tenants-header { display:flex; align-items:center; justify-content:space-between; }
+  .tenants-header { display:flex; align-items:center; justify-content:space-between; gap:12px; }
+  .tenants-controls { display:flex; align-items:center; gap:8px; }
+  /* Ensure DataTables responsive container doesn't leave large whitespace */
+  .dataTables_wrapper .row { margin: 0; }
+  /* Small tweak to align the export button with other controls */
+  .btn-export { min-width: 90px; }
 </style>
 @endpush
 @section('content')
@@ -14,18 +20,19 @@
   <div class="card-body">
       <div class="tenants-header mb-3">
       <div>
-        <label>Showing all tenants in the system</label>
+        <label class="mb-0">Showing all tenants in the system</label>
       </div>
-      <div class="d-flex gap-2">
-        <a href="{{ route('commercial.sales-report.tenants.export') }}" class="btn btn-success btn-sm mr-2" title="Export CSV">
+      <div class="tenants-controls">
+        <a href="{{ route('commercial.sales-report.tenants.export') }}" class="btn btn-success btn-sm btn-export" title="Export CSV">
           <i class="fa fa-file-csv"></i> Export
         </a>
+        {{-- Keep a lightweight search for server-paginated view; DataTables will render its own search when enabled --}} 
         <input id="tenant-search" class="form-control form-control-sm" placeholder="Search..." style="max-width:260px;" />
       </div>
     </div>
 
     <div class="table-responsive">
-      <table class="table table-bordered table-sm tenants-table" id="tenants-table">
+      <table class="table table-striped table-hover table-bordered table-sm tenants-table" id="tenants-table" data-server-paginated="{{ method_exists($tenants, 'lastPage') ? 'true' : 'false' }}">
         <thead>
           <tr class="table-primary">
             <th>Tenant Code</th>
@@ -63,7 +70,7 @@
       </div>
       <div>
         @if(method_exists($tenants, 'links'))
-          {{ $tenants->links() }}
+          <div class="server-paginator">{{ $tenants->links() }}</div>
         @endif
       </div>
     </div>
@@ -73,10 +80,14 @@
 @push('scripts')
 <script>
   (function(){
-    // Wire a lightweight search input to filter the table rows if DataTables isn't loaded.
+    // Wire a lightweight search input to filter the table rows when server-paginated
     const search = document.getElementById('tenant-search');
     const table = document.getElementById('tenants-table');
-    if (search && table) {
+    if (!table) return;
+
+    const serverPaginated = table.dataset.serverPaginated === 'true';
+
+    if (search && serverPaginated) {
       search.addEventListener('input', function(e){
         const q = (e.target.value || '').toLowerCase();
         Array.from(table.tBodies[0].rows).forEach(row => {
@@ -86,18 +97,41 @@
       });
     }
 
-    // If DataTables is present use it to enhance the table
+    // If DataTables is available, initialize it. When server pagination is used
+    // we disable paging so Laravel's paginator is the single source of truth.
     if (window.jQuery && $.fn.DataTable) {
-      // If we have server-side pagination enabled, defer to the rendered paginator
-      // and disable DataTables' pagination to avoid double-paging.
-      $('#tenants-table').DataTable({
-        paging: false,
-        searching: false,
-        info: false,
+      const dtOptions = {
+        paging: !serverPaginated,
+        searching: !serverPaginated, // let DataTables render its own search when it handles paging
+        info: !serverPaginated,
         responsive: true,
-        dom: 'Bfrtip',
-        buttons: ['copy','csv','excel','pdf','print']
-      });
+        autoWidth: false,
+        lengthChange: true,
+        ordering: false,
+        dom: "<'row'<'col-sm-12 col-md-6'l><'col-sm-12 col-md-6'f>>" +
+             "<'row'<'col-sm-12'tr>>" +
+             "<'row'<'col-sm-12 col-md-5'i><'col-sm-12 col-md-7'p>>",
+      };
+
+      const dt = $('#tenants-table').DataTable(dtOptions);
+
+      // If DataTables handles paging, hide the server-side paginator to avoid duplicate controls
+      if (!serverPaginated) {
+        document.querySelectorAll('.server-paginator').forEach(el => el.style.display = 'none');
+      }
+
+      // Move DataTables' search input into our header area for consistent layout
+      try {
+        const dtSearch = document.querySelector('#tenants-table_filter');
+        const headerControls = document.querySelector('.tenants-controls');
+        if (dtSearch && headerControls) {
+          headerControls.appendChild(dtSearch);
+          // remove the default label wrapper
+          dtSearch.classList.add('ml-2');
+        }
+      } catch (err) {
+        // ignore DOM move errors
+      }
     }
   })();
 </script>

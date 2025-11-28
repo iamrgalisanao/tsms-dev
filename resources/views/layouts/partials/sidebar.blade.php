@@ -133,15 +133,17 @@
             <p class="text-white">Tenants</p>
           </a>
         </li>
-         <li class="nav-item {{ request()->is('commercial/reports/*') ? 'menu-open' : '' }}">
+         {{-- Only mark the Reports tree open/active when we're inside commercial report pages
+              but NOT when we're on the Tenants list (so Tenants can be highlighted alone) --}}
+         <li class="nav-item {{ (request()->is('commercial/reports/*') && !request()->is('commercial/reports/tenants*')) ? 'menu-open' : '' }}">
           <a href="#"
-            class="nav-link {{ request()->is('commercial/reports/*') ? 'active' : '' }}">
+            class="nav-link {{ (request()->is('commercial/reports/*') && !request()->is('commercial/reports/tenants*')) ? 'active' : '' }}">
             <i class="nav-icon fas fa-chart-bar text-white"></i>
             <p class="text-white">Reports
               <i class="right fas fa-angle-left"></i>
             </p>
           </a>
-          <ul class="nav nav-treeview " style="{{ request()->is('commercial/reports/*') ? 'display: block;' : 'display: none;' }}">
+          <ul class="nav nav-treeview " style="{{ (request()->is('commercial/reports/*') && !request()->is('commercial/reports/tenants*')) ? 'display: block;' : 'display: none;' }}">
             <li class="nav-item">
               <a href="{{ route('commercial.sales-report.hourly') }}"
               class="nav-link {{ request()->is('commercial/reports/hourly-sales-report*') ? 'active' : '' }}">
