@@ -4,6 +4,20 @@
 <style>
   .report-card { margin: 1rem 0; }
   .report-placeholder { padding: 2rem; text-align: center; color: #6b7280; }
+  /* Loading overlay for report tables */
+  .report-loading-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(255,255,255,0.8);
+    z-index: 20;
+  }
+  .report-loading-overlay.hidden { display: none; }
 </style>
 @endpush
 @section('content')
@@ -35,7 +49,13 @@
       </div>
     </div>
 
-    <div class="table-responsive">
+    <div class="table-responsive" style="position: relative;">
+      <div id="yearly-loading-overlay" class="report-loading-overlay hidden">
+        <div class="text-center">
+          <div class="spinner-border text-primary" role="status" aria-hidden="true"></div>
+          <div class="mt-2">Loading yearly report…</div>
+        </div>
+      </div>
       <table class="table table-bordered table-sm" id="yearly-sales-table" style="font-size: 12px;">
         <thead>
           <tr class="table-primary">
@@ -149,7 +169,7 @@ $(function() {
     if (!year) { renderEmpty(); return; }
     const from = moment(year + '-01-01').format('YYYY-MM-DD');
     const to = moment(year + '-12-31').format('YYYY-MM-DD');
-    $.ajax({
+    return $.ajax({
       url: '{{ route('commercial.sales-report.tsms-proxy.transactions.yearly') }}',
       data: { date_from: from, date_to: to, tenant_id: tenantId },
       success: function(resp) {
@@ -210,12 +230,29 @@ $(function() {
   }
 
   $('#yearly-load-report').on('click', function() {
+    const $btn = $(this);
     const year = $('#year-picker').val();
     const tenantId = $('#yearly-tenant-filter').val();
     if (!year) { alert('Please select a year'); return; }
-    $(this).prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> Loading...');
-    loadYearly(year, tenantId);
-    $(this).prop('disabled', false).html('<i class="fa fa-search"></i> Load Report');
+
+    // show spinner overlay and set button state
+    $('#yearly-loading-overlay').removeClass('hidden');
+    $btn.prop('disabled', true).html('<i class="fas fa-spinner fa-spin"></i> Loading...');
+
+    // call loader and hide spinner when request finishes
+    const req = loadYearly(year, tenantId);
+    if (req && req.always) {
+      req.always(function() {
+        $('#yearly-loading-overlay').addClass('hidden');
+        $btn.prop('disabled', false).html('<i class="fa fa-search"></i> Load Report');
+      });
+    } else {
+      // fallback: hide overlay after a short delay
+      setTimeout(function() {
+        $('#yearly-loading-overlay').addClass('hidden');
+        $btn.prop('disabled', false).html('<i class="fa fa-search"></i> Load Report');
+      }, 800);
+    }
   });
 
   $('#yearly-export-excel').on('click', function() {
