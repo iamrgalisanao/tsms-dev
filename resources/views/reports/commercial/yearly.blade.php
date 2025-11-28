@@ -86,11 +86,24 @@
 <script>
 $(function() {
   const now = moment();
-  const thisYear = now.clone().year();
   try {
-    $('#year-picker-wrapper').datetimepicker({ format: 'YYYY', defaultDate: now, viewMode: 'years', icons: { time: 'far fa-clock', date: 'fa fa-calendar' } });
-    $('#year-picker').val(now.format('YYYY'));
+    // warn if tempusdominus library was loaded more than once
+    if (window.jQuery && window.jQuery.fn && window.jQuery.fn.datetimepicker) {
+      const tempusScripts = $('script[src*="tempusdominus"]').map((i,el)=>el.src).get();
+      if (tempusScripts.length > 1) {
+        console.warn('Multiple Tempus Dominus script tags detected:', tempusScripts);
+      }
+
+      if (!$('#year-picker-wrapper').data('datetimepicker')) {
+        $('#year-picker-wrapper').datetimepicker({ format: 'YYYY', defaultDate: now, viewMode: 'years', icons: { time: 'far fa-clock', date: 'fa fa-calendar' } });
+      }
+      $('#year-picker').val(now.format('YYYY'));
+    } else {
+      console.warn('datetimepicker plugin not detected when initializing year picker');
+      $('#year-picker').val(now.format('YYYY'));
+    }
   } catch (err) {
+    console.debug('Year picker init error', err);
     $('#year-picker').val(now.format('YYYY'));
   }
   $('#yearly-date-generated').text(now.format('MMM DD YYYY'));
@@ -103,6 +116,26 @@ $(function() {
     }, error: function() { console.error('Failed to load tenants'); } });
   }
   loadTenants();
+
+  // Capture-phase guard: ensure any clicked toggle has an initialized instance
+  document.addEventListener('click', function (ev) {
+    try {
+      const toggle = ev.target.closest && ev.target.closest('[data-toggle="datetimepicker"]');
+      if (!toggle) return;
+      const selector = toggle.getAttribute('data-target') || toggle.dataset.target;
+      if (!selector) return;
+      const target = document.querySelector(selector);
+      if (!target) return;
+      if (!window.jQuery) return;
+      const $target = window.jQuery(target);
+      if (!$target.data('datetimepicker') && window.jQuery.fn && window.jQuery.fn.datetimepicker) {
+        $target.datetimepicker({ format: 'YYYY', defaultDate: now, viewMode: 'years', icons: { time: 'far fa-clock', date: 'fa fa-calendar' } });
+        console.info('Initialized missing datetimepicker instance for', selector);
+      }
+    } catch (err) {
+      console.debug('yearly datetimepicker capture-init error', err);
+    }
+  }, true);
 
   function renderEmpty() {
     $('#yearly-report-tbody').html(`<tr><td colspan="13" class="text-center py-4 text-muted">No data available for the selected year/tenant.</td></tr>`);
@@ -200,21 +233,3 @@ $(function() {
 });
 </script>
 @endpush
-@extends('layouts.master')
-@section('title', 'Yearly Commercial Report')
-@push('styles')
-<style>
-  .report-card { margin: 1rem 0; }
-  .report-placeholder { padding: 2rem; text-align: center; color: #6b7280; }
-</style>
-@endpush
-@section('content')
-<div class="card report-card">
-  <div class="card-header">
-    <h3 class="card-title">Yearly Commercial Report</h3>
-  </div>
-  <div class="card-body">
-    <div class="report-placeholder">Yearly report UI goes here. Include year selector and aggregated summaries per month.</div>
-  </div>
-</div>
-@endsection
