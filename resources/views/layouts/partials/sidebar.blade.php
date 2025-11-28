@@ -54,7 +54,7 @@
     {{-- Finance users: add a top-level dashboard button for quick access back to finance reports/dashboard --}}
     @if(auth()->user() && auth()->user()->hasRole('finance'))
     <li class="nav-item">
-        <a href="{{ route('reports.index') }}" class="nav-link {{ Request::routeIs('reports.index') ? 'active' : '' }}">
+      <a href="{{ route('commercial.dashboard') }}" class="nav-link {{ Request::routeIs('commercial.dashboard') ? 'active' : '' }}">
         <i class="nav-icon fas fa-chart-pie text-white"></i>
         <p class="text-white"> Dashboard</p>
       </a>
