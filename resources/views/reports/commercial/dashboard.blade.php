@@ -173,7 +173,17 @@
               maintainAspectRatio: false,
               scales: {
                   xAxes: [{ gridLines: { display: false } }],
-                  yAxes: [{ ticks: { beginAtZero: true, callback: function(value) { return scaleFactor === 1000000 ? Number(value).toFixed(2) : formatShortNumber(value); }, suggestedMax: axisMax ? (axisMax/scaleFactor) : undefined, stepSize: axisMax ? (axisMax/scaleFactor/5) : undefined }, { scaleLabel: { display: scaleFactor===1000000, labelString: 'Millions Php' } }]
+                  yAxes: [
+                    {
+                      ticks: {
+                        beginAtZero: true,
+                        callback: function(value) { return scaleFactor === 1000000 ? Number(value).toFixed(2) : formatShortNumber(value); }
+                      },
+                      suggestedMax: axisMax ? (axisMax/scaleFactor) : undefined,
+                      stepSize: axisMax ? (axisMax/scaleFactor/5) : undefined,
+                      scaleLabel: { display: scaleFactor===1000000, labelString: 'Millions Php' }
+                    }
+                  ]
               },
               legend: { display: false },
               tooltips: {
@@ -198,14 +208,21 @@
         const cfg3 = {
           type: 'bar',
           data: { labels: labels, datasets: [datasetToUse] },
-          options: {
+            options: {
             responsive: true,
             maintainAspectRatio: false,
             interaction: { mode: 'index', intersect: false },
             scales: {
               x: { grid: { display: false } },
-              y: { beginAtZero: true, ticks: { callback: function(value) { return scaleFactor === 1000000 ? Number(value).toFixed(2) : formatShortNumber(value); }, suggestedMax: axisMax ? (axisMax/scaleFactor) : undefined, stepSize: axisMax ? (axisMax/scaleFactor/5) : undefined },
-              },
+              y: {
+                beginAtZero: true,
+                ticks: {
+                  callback: function(value) { return scaleFactor === 1000000 ? Number(value).toFixed(2) : formatShortNumber(value); }
+                },
+                suggestedMax: axisMax ? (axisMax/scaleFactor) : undefined,
+                stepSize: axisMax ? (axisMax/scaleFactor/5) : undefined
+              }
+            },
             plugins: {
               legend: { display: false },
               tooltip: {
@@ -326,7 +343,16 @@
             responsive: true,
             maintainAspectRatio: false,
             legend: { position: opts.legendPosition || 'top' },
-            scales: { yAxes: [{ ticks: { beginAtZero: true, callback: function(v){ return scaleFactor===1000000 ? Number(v).toFixed(2) : formatShortNumber(v); }, suggestedMax: axisMax ? (axisMax/scaleFactor) : undefined, stepSize: axisMax ? (axisMax/scaleFactor/5) : undefined }, { scaleLabel: { display: scaleFactor===1000000, labelString: 'Millions Php' } }] }
+            scales: {
+              yAxes: [
+                {
+                  ticks: { beginAtZero: true, callback: function(v){ return scaleFactor===1000000 ? Number(v).toFixed(2) : formatShortNumber(v); } },
+                  suggestedMax: axisMax ? (axisMax/scaleFactor) : undefined,
+                  stepSize: axisMax ? (axisMax/scaleFactor/5) : undefined,
+                  scaleLabel: { display: scaleFactor===1000000, labelString: 'Millions Php' }
+                }
+              ]
+            }
           };
         }
         return new Chart(ctx, cfg);
