@@ -97,6 +97,24 @@
         }
       }
 
+      // Short number formatter: show thousands as 'k' and millions as 'M'
+      function formatShortNumber(n) {
+        try {
+          const num = Number(n) || 0;
+          const abs = Math.abs(num);
+          if (abs >= 1000000) {
+            // one decimal when helpful
+            return (Math.round((num / 1000000) * 10) / 10) + 'M';
+          }
+          if (abs >= 1000) {
+            return (Math.round((num / 1000) * 10) / 10) + 'k';
+          }
+          return String(num);
+        } catch (e) {
+          return String(n);
+        }
+      }
+
       function makeBar(ctx, labels, values, opts) {
         opts = opts || {};
         // support both Chart.js v2 (AdminLTE bundled) and v3+ (vite bundle)
@@ -122,6 +140,26 @@
           borderWidth: 1
         };
 
+        // Compute a "nice" max for the Y axis to avoid one large value
+        // stretching the chart. Uses a 1-2-2.5-5-10 series algorithm.
+        function niceMax(arr) {
+          if (!Array.isArray(arr) || arr.length === 0) return null;
+          const max = arr.reduce((a,b) => Math.max(a, Number(b) || 0), 0);
+          if (!isFinite(max) || max <= 0) return null;
+          const exp = Math.floor(Math.log10(max));
+          const mag = Math.pow(10, exp);
+          const normalized = max / mag;
+          let niceNorm = 1;
+          if (normalized <= 1) niceNorm = 1;
+          else if (normalized <= 2) niceNorm = 2;
+          else if (normalized <= 2.5) niceNorm = 2.5;
+          else if (normalized <= 5) niceNorm = 5;
+          else niceNorm = 10;
+          return niceNorm * mag;
+        }
+
+        const axisMax = niceMax(values);
+
         // Chart.js v2.x options (AdminLTE default)
         if (version && parseInt(version, 10) < 3) {
           const cfg = {
@@ -131,8 +169,8 @@
               responsive: true,
               maintainAspectRatio: false,
               scales: {
-                xAxes: [{ gridLines: { display: false } }],
-                yAxes: [{ ticks: { beginAtZero: true, callback: function(value) { return value >= 1000 ? (value/1000)+'k' : value; } } }]
+                  xAxes: [{ gridLines: { display: false } }],
+                  yAxes: [{ ticks: { beginAtZero: true, callback: function(value) { return formatShortNumber(value); }, suggestedMax: axisMax, stepSize: axisMax ? axisMax/5 : undefined } }]
               },
               legend: { display: false },
               tooltips: {
@@ -140,6 +178,8 @@
                   label: function(tooltipItem, data) {
                     var v = tooltipItem.yLabel !== undefined ? tooltipItem.yLabel : tooltipItem.value;
                     var label = (dataset.label ? dataset.label + ': ' : '') + formatCurrency(Number(v));
+                    // also show abbreviated value in tooltip for quick reading
+                    label += ' (' + formatShortNumber(Number(v)) + ')';
                     return label;
                   }
                 }
@@ -159,7 +199,7 @@
             interaction: { mode: 'index', intersect: false },
             scales: {
               x: { grid: { display: false } },
-              y: { beginAtZero: true, ticks: { callback: function(value) { return value >= 1000 ? (value/1000)+'k' : value; } } }
+              y: { beginAtZero: true, ticks: { callback: function(value) { return formatShortNumber(value); }, suggestedMax: axisMax, stepSize: axisMax ? axisMax/5 : undefined } }
             },
             plugins: {
               legend: { display: false },
@@ -167,7 +207,9 @@
                 callbacks: {
                   label: function(context) {
                     const v = (context.parsed && context.parsed.y) != null ? context.parsed.y : (context.raw || 0);
-                    return (context.dataset.label ? context.dataset.label + ': ' : '') + formatCurrency(Number(v));
+                    var lbl = (context.dataset.label ? context.dataset.label + ': ' : '') + formatCurrency(Number(v));
+                    lbl += ' (' + formatShortNumber(Number(v)) + ')';
+                    return lbl;
                   }
                 }
               }
@@ -180,6 +222,28 @@
       // Create a line chart similar to admin dashboard: supports multiple datasets
       function makeLine(ctx, labels, datasets, opts) {
         opts = opts || {};
+        // compute max across datasets
+        const allVals = [];
+        if (Array.isArray(datasets)) {
+          datasets.forEach(function(d){ if (Array.isArray(d.data)) d.data.forEach(function(v){ allVals.push(Number(v)||0); }); });
+        }
+        function niceMaxFromArray(arr) {
+          if (!arr || arr.length === 0) return null;
+          const max = arr.reduce((a,b)=>Math.max(a,b), 0);
+          if (!isFinite(max) || max <= 0) return null;
+          const exp = Math.floor(Math.log10(max));
+          const mag = Math.pow(10, exp);
+          const normalized = max / mag;
+          let niceNorm = 1;
+          if (normalized <= 1) niceNorm = 1;
+          else if (normalized <= 2) niceNorm = 2;
+          else if (normalized <= 2.5) niceNorm = 2.5;
+          else if (normalized <= 5) niceNorm = 5;
+          else niceNorm = 10;
+          return niceNorm * mag;
+        }
+        const axisMax = niceMaxFromArray(allVals);
+
         const cfg = {
           type: 'line',
           data: { labels: labels, datasets: datasets },
@@ -187,7 +251,7 @@
             responsive: true,
             maintainAspectRatio: false,
             plugins: { legend: { position: opts.legendPosition || 'top' } },
-            scales: { y: { beginAtZero: true } }
+            scales: { y: { beginAtZero: true, suggestedMax: axisMax, ticks: { callback: function(value) { return formatShortNumber(value); }, stepSize: axisMax ? axisMax/5 : undefined } } }
           }
         };
         // If Chart.js v2 is present, adapt options
@@ -197,7 +261,7 @@
             responsive: true,
             maintainAspectRatio: false,
             legend: { position: opts.legendPosition || 'top' },
-            scales: { yAxes: [{ ticks: { beginAtZero: true } }] }
+            scales: { yAxes: [{ ticks: { beginAtZero: true, callback: function(value) { return formatShortNumber(value); }, suggestedMax: axisMax, stepSize: axisMax ? axisMax/5 : undefined } }] }
           };
         }
         return new Chart(ctx, cfg);
