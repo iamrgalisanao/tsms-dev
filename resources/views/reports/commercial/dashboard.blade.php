@@ -158,27 +158,33 @@
         }
 
         const axisMax = niceMax(values);
+        // If the data is large, scale down by millions for display
+        const scaleFactor = axisMax && axisMax >= 1000000 ? 1000000 : 1;
+        const scaledValues = scaleFactor === 1 ? values : values.map(v => (Number(v)||0) / scaleFactor);
+        const datasetToUse = Object.assign({}, dataset, { data: scaledValues });
 
         // Chart.js v2.x options (AdminLTE default)
         if (version && parseInt(version, 10) < 3) {
           const cfg = {
             type: 'bar',
-            data: { labels: labels, datasets: [dataset] },
+            data: { labels: labels, datasets: [datasetToUse] },
             options: {
               responsive: true,
               maintainAspectRatio: false,
               scales: {
                   xAxes: [{ gridLines: { display: false } }],
-                  yAxes: [{ ticks: { beginAtZero: true, callback: function(value) { return formatShortNumber(value); }, suggestedMax: axisMax, stepSize: axisMax ? axisMax/5 : undefined } }]
+                  yAxes: [{ ticks: { beginAtZero: true, callback: function(value) { return scaleFactor === 1000000 ? Number(value).toFixed(2) : formatShortNumber(value); }, suggestedMax: axisMax ? (axisMax/scaleFactor) : undefined, stepSize: axisMax ? (axisMax/scaleFactor/5) : undefined }, { scaleLabel: { display: scaleFactor===1000000, labelString: 'Millions Php' } }]
               },
               legend: { display: false },
               tooltips: {
                 callbacks: {
                   label: function(tooltipItem, data) {
-                    var v = tooltipItem.yLabel !== undefined ? tooltipItem.yLabel : tooltipItem.value;
-                    var label = (dataset.label ? dataset.label + ': ' : '') + formatCurrency(Number(v));
-                    // also show abbreviated value in tooltip for quick reading
-                    label += ' (' + formatShortNumber(Number(v)) + ')';
+                    // tooltip shows the full currency plus scaled (M) when applicable
+                    var raw = tooltipItem.yLabel !== undefined ? tooltipItem.yLabel : tooltipItem.value;
+                    var fullVal = scaleFactor === 1000000 ? (Number(raw) * scaleFactor) : Number(raw);
+                    var label = (dataset.label ? dataset.label + ': ' : '') + formatCurrency(Number(fullVal));
+                    if (scaleFactor === 1000000) label += ' (' + (Number(fullVal)/1000000).toFixed(2) + 'M)';
+                    else label += ' (' + formatShortNumber(Number(fullVal)) + ')';
                     return label;
                   }
                 }
@@ -191,23 +197,25 @@
         // Chart.js v3+ options
         const cfg3 = {
           type: 'bar',
-          data: { labels: labels, datasets: [dataset] },
+          data: { labels: labels, datasets: [datasetToUse] },
           options: {
             responsive: true,
             maintainAspectRatio: false,
             interaction: { mode: 'index', intersect: false },
             scales: {
               x: { grid: { display: false } },
-              y: { beginAtZero: true, ticks: { callback: function(value) { return formatShortNumber(value); }, suggestedMax: axisMax, stepSize: axisMax ? axisMax/5 : undefined } }
-            },
+              y: { beginAtZero: true, ticks: { callback: function(value) { return scaleFactor === 1000000 ? Number(value).toFixed(2) : formatShortNumber(value); }, suggestedMax: axisMax ? (axisMax/scaleFactor) : undefined, stepSize: axisMax ? (axisMax/scaleFactor/5) : undefined },
+              },
             plugins: {
               legend: { display: false },
               tooltip: {
                 callbacks: {
                   label: function(context) {
                     const v = (context.parsed && context.parsed.y) != null ? context.parsed.y : (context.raw || 0);
-                    var lbl = (context.dataset.label ? context.dataset.label + ': ' : '') + formatCurrency(Number(v));
-                    lbl += ' (' + formatShortNumber(Number(v)) + ')';
+                    const fullVal = scaleFactor === 1000000 ? (Number(v) * scaleFactor) : Number(v);
+                    var lbl = (context.dataset.label ? context.dataset.label + ': ' : '') + formatCurrency(Number(fullVal));
+                    if (scaleFactor === 1000000) lbl += ' (' + (Number(fullVal)/1000000).toFixed(2) + 'M)';
+                    else lbl += ' (' + formatShortNumber(Number(fullVal)) + ')';
                     return lbl;
                   }
                 }
@@ -293,15 +301,22 @@
           return niceNorm * mag;
         }
         const axisMax = niceMaxFromArray(allVals);
+        // scale to millions when appropriate
+        const scaleFactor = axisMax && axisMax >= 1000000 ? 1000000 : 1;
+        const scaledDatasets = Array.isArray(datasets) ? datasets.map(function(d){
+          const copy = Object.assign({}, d);
+          if (Array.isArray(copy.data) && scaleFactor === 1000000) copy.data = copy.data.map(v => (Number(v)||0) / scaleFactor);
+          return copy;
+        }) : datasets;
 
         const cfg = {
           type: 'line',
-          data: { labels: labels, datasets: datasets },
+          data: { labels: labels, datasets: scaledDatasets },
           options: {
             responsive: true,
             maintainAspectRatio: false,
             plugins: { legend: { position: opts.legendPosition || 'top' } },
-            scales: { y: { beginAtZero: true, suggestedMax: axisMax, ticks: { callback: function(value) { return formatShortNumber(value); }, stepSize: axisMax ? axisMax/5 : undefined } } }
+            scales: { y: { beginAtZero: true, suggestedMax: axisMax ? (axisMax/scaleFactor) : undefined, ticks: { callback: function(v){ return scaleFactor===1000000 ? Number(v).toFixed(2) : formatShortNumber(v); }, stepSize: axisMax ? (axisMax/scaleFactor/5) : undefined } } }
           }
         };
         // If Chart.js v2 is present, adapt options
@@ -311,7 +326,7 @@
             responsive: true,
             maintainAspectRatio: false,
             legend: { position: opts.legendPosition || 'top' },
-            scales: { yAxes: [{ ticks: { beginAtZero: true, callback: function(value) { return formatShortNumber(value); }, suggestedMax: axisMax, stepSize: axisMax ? axisMax/5 : undefined } }] }
+            scales: { yAxes: [{ ticks: { beginAtZero: true, callback: function(v){ return scaleFactor===1000000 ? Number(v).toFixed(2) : formatShortNumber(v); }, suggestedMax: axisMax ? (axisMax/scaleFactor) : undefined, stepSize: axisMax ? (axisMax/scaleFactor/5) : undefined }, { scaleLabel: { display: scaleFactor===1000000, labelString: 'Millions Php' } }] }
           };
         }
         return new Chart(ctx, cfg);
