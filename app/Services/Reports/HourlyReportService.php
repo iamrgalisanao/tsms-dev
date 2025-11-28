@@ -3,6 +3,7 @@
 namespace App\Services\Reports;
 
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Carbon;
 
 /**
@@ -24,7 +25,7 @@ class HourlyReportService
      * @param string|null $terminalId
      * @return array
      */
-    public function getHourlyAggregates(string $dateFrom, string $dateTo, ?string $tenantId = null, ?string $terminalId = null): array
+    public function getHourlyAggregates(string $dateFrom, string $dateTo, ?string $tenantId = null, ?string $terminalId = null, bool $scaleToMillions = false): array
     {
         // Prefer live aggregation from the primary `transactions` table.
         // The reporting summary table may be present in some deployments, but
@@ -33,21 +34,46 @@ class HourlyReportService
 
         // Otherwise, fall back to live aggregation from the primary `transactions` table.
         try {
-            $primary = DB::connection();
-            $txSchema = $primary->getSchemaBuilder();
+            // prefer the configured reporting connection if present
+            $primary = DB::connection($this->connectionName);
+            // build a cache key so frequently re-opened dashboards don't re-run heavy queries
+            $cacheKey = sprintf('reports:hourly:%s:%s:tenant:%s:terminal:%s:scale:%s', $dateFrom, $dateTo, $tenantId ?? 'all', $terminalId ?? 'all', $scaleToMillions ? '1' : '0');
+            // short TTL - dashboard should show near-real-time data but we avoid repeated identical queries
+            $ttl = 60; // seconds
 
-            // Defensive optional column detection (similar to reporting:refresh)
-            $hasNet = $txSchema->hasColumn('transactions', 'net_sales');
-            $hasDiscount = $txSchema->hasColumn('transactions', 'discount_total') || $txSchema->hasColumn('transactions', 'promo_discount');
-            $hasVat = $txSchema->hasColumn('transactions', 'vat_amount') || $txSchema->hasColumn('transactions', 'tax_amount');
-            $hasSc = $txSchema->hasColumn('transactions', 'service_charge');
-            $hasVoided = $txSchema->hasColumn('transactions', 'voided_at');
-            $hasRefund = $txSchema->hasColumn('transactions', 'refund_amount') || $txSchema->hasColumn('transactions', 'refund_status');
+            return Cache::remember($cacheKey, $ttl, function() use ($primary, $dateFrom, $dateTo, $tenantId, $terminalId, $scaleToMillions) {
+                $txSchema = $primary->getSchemaBuilder();
+
+                // cache hasColumn checks in a static to reduce repeated schema introspection costs
+                static $schemaCache = [];
+                $schemaKey = 'transactions_columns';
+                if (!isset($schemaCache[$schemaKey])) {
+                    $schemaCache[$schemaKey] = [
+                        'net_sales' => $txSchema->hasColumn('transactions', 'net_sales'),
+                        'discount_total' => $txSchema->hasColumn('transactions', 'discount_total'),
+                        'promo_discount' => $txSchema->hasColumn('transactions', 'promo_discount'),
+                        'vat_amount' => $txSchema->hasColumn('transactions', 'vat_amount'),
+                        'tax_amount' => $txSchema->hasColumn('transactions', 'tax_amount'),
+                        'service_charge' => $txSchema->hasColumn('transactions', 'service_charge'),
+                        'voided_at' => $txSchema->hasColumn('transactions', 'voided_at'),
+                        'refund_amount' => $txSchema->hasColumn('transactions', 'refund_amount'),
+                        'refund_status' => $txSchema->hasColumn('transactions', 'refund_status'),
+                        'transaction_timestamp' => $txSchema->hasColumn('transactions', 'transaction_timestamp'),
+                        'completed_at' => $txSchema->hasColumn('transactions', 'completed_at'),
+                    ];
+                }
+
+                $hasNet = $schemaCache[$schemaKey]['net_sales'];
+                $hasDiscount = $schemaCache[$schemaKey]['discount_total'] || $schemaCache[$schemaKey]['promo_discount'];
+                $hasVat = $schemaCache[$schemaKey]['vat_amount'] || $schemaCache[$schemaKey]['tax_amount'];
+                $hasSc = $schemaCache[$schemaKey]['service_charge'];
+                $hasVoided = $schemaCache[$schemaKey]['voided_at'];
+                $hasRefund = $schemaCache[$schemaKey]['refund_amount'] || $schemaCache[$schemaKey]['refund_status'];
 
             // Determine the best timestamp columns to use for grouping/filtering.
             // Use a COALESCE expression so rows with NULL transaction_timestamp
             // still get included using completed_at/created_at as fallback.
-            $tsParts = [];
+                $tsParts = [];
             if ($txSchema->hasColumn('transactions', 'transaction_timestamp')) {
                 $tsParts[] = 'transaction_timestamp';
             }
@@ -56,9 +82,9 @@ class HourlyReportService
             }
             // always include created_at as last-resort
             $tsParts[] = 'created_at';
-            $tsExpr = 'COALESCE(' . implode(', ', $tsParts) . ')';
+                $tsExpr = 'COALESCE(' . implode(', ', $tsParts) . ')';
 
-            $selects = [
+                $selects = [
                 'tenant_id',
                 DB::raw("COALESCE(terminal_id, 0) AS terminal_id"),
                 DB::raw("DATE_FORMAT({$tsExpr}, '%Y-%m-%d %H:00:00') AS hour"),
@@ -125,23 +151,26 @@ class HourlyReportService
 
             // Group & filter using COALESCE-based date checks to match TransactionLog
             // behavior and avoid missing rows when transaction_timestamp is NULL.
-            $query = $primary->table('transactions')->select($selects)
-                ->whereRaw('DATE(' . $tsExpr . ') >= ?', [$dateFrom])
-                ->whereRaw('DATE(' . $tsExpr . ') <= ?', [$dateTo])
-                ->groupBy('tenant_id')->groupBy('terminal_id')->groupBy('hour')
-                ->orderBy('tenant_id')->orderBy('terminal_id')->orderBy('hour')
-                ->limit(1000);
+                $query = $primary->table('transactions')->select($selects)
+                    ->whereRaw('DATE(' . $tsExpr . ') >= ?', [$dateFrom])
+                    ->whereRaw('DATE(' . $tsExpr . ') <= ?', [$dateTo])
+                    ->groupBy('tenant_id')->groupBy('terminal_id')->groupBy('hour');
 
-            if (! empty($tenantId)) {
-                $query->where('tenant_id', $tenantId);
-            }
-            if (! empty($terminalId)) {
-                $query->where('terminal_id', $terminalId);
-            }
+                if (! empty($tenantId)) {
+                    $query->where('tenant_id', $tenantId);
+                }
+                if (! empty($terminalId)) {
+                    $query->where('terminal_id', $terminalId);
+                }
 
-            $rows = $query->get();
+                // Log SQL for debugging / EXPLAIN run by ops
+                try {
+                    Log::info('HourlyReportService SQL', ['sql' => $query->toSql(), 'bindings' => $query->getBindings()]);
+                } catch (\Throwable $__e) {}
 
-            $data = $rows->map(function ($r) {
+                $rows = $query->get();
+
+                $data = $rows->map(function ($r) use ($scaleToMillions) {
                 return [
                     'customer_code' => null,
                     'tenant_name' => null,
@@ -164,10 +193,14 @@ class HourlyReportService
                     'net_sales_percentage_rent' => 0.0,
                     'transaction_count' => (int) ($r->tx_count ?? 0),
                     'guest_count' => 0,
+                    // Add optional scaled fields for dashboards that request server-side millions
+                    'gross_sales_m' => isset($r->total_gross_amount) ? round(((float) $r->total_gross_amount) / 1000000.0, 4) : (isset($r->total_amount) ? round(((float) $r->total_amount) / 1000000.0, 4) : 0.0),
+                    'net_sales_m' => isset($r->total_net_amount) ? round(((float) $r->total_net_amount) / 1000000.0, 4) : 0.0,
                 ];
             })->values()->toArray();
 
-            return $data;
+                return $data;
+            });
         } catch (\Throwable $e) {
             // On failure, log and return empty array to keep API contract non-breaking
             \Illuminate\Support\Facades\Log::warning('HourlyReportService live aggregation failed: ' . $e->getMessage(), ['date_from' => $dateFrom, 'date_to' => $dateTo]);

@@ -57,7 +57,7 @@ class CommercialReportsController extends Controller
         $tenantId = $request->input('tenant_id');
 
         $service = new WeeklyReportService();
-        $result = $service->getWeeklySummary($from, $to, $tenantId);
+        $result = $service->getWeeklySummary($from, $to, $tenantId, false, false, true);
 
         // Log result shape for debugging client 'No data' cases
         try {
@@ -111,7 +111,7 @@ class CommercialReportsController extends Controller
         $tenantId = $request->input('tenant_id');
 
         $service = new WeeklyReportService();
-        $result = $service->getWeeklySummary($from, $to, $tenantId, true);
+        $result = $service->getWeeklySummary($from, $to, $tenantId, true, false, true);
 
         try {
             AuditLog::create([
@@ -151,7 +151,7 @@ class CommercialReportsController extends Controller
         $tenantId = $request->input('tenant_id');
 
         $service = new WeeklyReportService();
-        $result = $service->getWeeklySummary($from, $to, $tenantId, false, true);
+        $result = $service->getWeeklySummary($from, $to, $tenantId, false, true, true);
 
         try {
             AuditLog::create([
@@ -209,7 +209,7 @@ class CommercialReportsController extends Controller
         $tenantId = $request->input('tenant_id');
 
         $service = new WeeklyReportService();
-        $result = $service->getWeeklySummary($from, $to, $tenantId);
+        $result = $service->getWeeklySummary($from, $to, $tenantId, false, false, true);
 
         try {
             Log::info('commercial.monthlyData result', [
@@ -294,7 +294,7 @@ class CommercialReportsController extends Controller
             for ($d = $start; $d->lte($end); $d->addMonth()) {
                 $mFrom = $d->copy()->startOfMonth()->format('Y-m-d');
                 $mTo = $d->copy()->endOfMonth()->format('Y-m-d');
-                $res = $service->getWeeklySummary($mFrom, $mTo, $tenantId);
+                $res = $service->getWeeklySummary($mFrom, $mTo, $tenantId, false, false, true);
                 $s = $res['summary'] ?? ['gross_sales' => 0.0, 'net_sales' => 0.0, 'transaction_count' => 0, 'guest_count' => 0];
 
                 foreach (['vatable_sales','vat_exempt_sales','vat_amount','sc_pwd_discount','regular_discount','cash_payment','card_payment','other_tender'] as $k) {
@@ -390,7 +390,7 @@ class CommercialReportsController extends Controller
 
         // Use HourlyReportService (direct call) to avoid controller-to-controller calls
         $service = new HourlyReportService();
-        $data = $service->getHourlyAggregates($date, $date, $tenantId, null);
+        $data = $service->getHourlyAggregates($date, $date, $tenantId, null, true);
 
         // Record a lightweight audit event so UI "Load Report" actions are visible in audit logs.
         try {
@@ -430,7 +430,7 @@ class CommercialReportsController extends Controller
         $tenantId = $request->input('tenant_id');
 
     $service = new DailyReportService();
-    $result = $service->getDailySummary($date, $tenantId, null);
+        $result = $service->getDailySummary($date, $tenantId, null, true);
     // Only return the aggregated daily summary to the web UI (no hourly breakdown)
     $result = ['summary' => $result['summary'] ?? ['gross_sales' => 0.0, 'net_sales' => 0.0, 'transaction_count' => 0, 'guest_count' => 0]];
 

@@ -24,11 +24,11 @@ class DailyReportService
      * @param string|null $terminalId
      * @return array ['summary' => [...], 'hours' => [...]]
      */
-    public function getDailySummary(string $date, ?string $tenantId = null, ?string $terminalId = null): array
+    public function getDailySummary(string $date, ?string $tenantId = null, ?string $terminalId = null, bool $scaleToMillions = false): array
     {
         try {
             // Reuse hourly aggregates for the single date and perform aggregation.
-            $hours = $this->hourlyService->getHourlyAggregates($date, $date, $tenantId, $terminalId);
+            $hours = $this->hourlyService->getHourlyAggregates($date, $date, $tenantId, $terminalId, $scaleToMillions);
 
             $summary = [
                 'gross_sales' => 0.0,
@@ -49,7 +49,9 @@ class DailyReportService
 
             foreach ($hours as $h) {
                 $summary['gross_sales'] += isset($h['gross_sales']) ? (float) $h['gross_sales'] : 0.0;
+                $summary['gross_sales_m'] = ($summary['gross_sales_m'] ?? 0.0) + (isset($h['gross_sales_m']) ? (float) $h['gross_sales_m'] : ((isset($h['gross_sales']) ? (float) $h['gross_sales'] / 1000000.0 : 0.0)));
                 $summary['net_sales'] += isset($h['net_sales']) ? (float) $h['net_sales'] : 0.0;
+                $summary['net_sales_m'] = ($summary['net_sales_m'] ?? 0.0) + (isset($h['net_sales_m']) ? (float) $h['net_sales_m'] : ((isset($h['net_sales']) ? (float) $h['net_sales'] / 1000000.0 : 0.0)));
                 $summary['transaction_count'] += isset($h['transaction_count']) ? (int) $h['transaction_count'] : 0;
                 $summary['guest_count'] += isset($h['guest_count']) ? (int) $h['guest_count'] : 0;
                 // breakdown accumulators
@@ -69,6 +71,8 @@ class DailyReportService
             foreach (['gross_sales','net_sales','vatable_sales','vat_exempt_sales','vat_amount','sc_pwd_discount','regular_discount','cash_payment','card_payment','other_tender','net_sales_percentage_rent'] as $k) {
                 $summary[$k] = round($summary[$k], 2);
             }
+            if (isset($summary['gross_sales_m'])) $summary['gross_sales_m'] = round($summary['gross_sales_m'], 4);
+            if (isset($summary['net_sales_m'])) $summary['net_sales_m'] = round($summary['net_sales_m'], 4);
 
             return [
                 'summary' => $summary,

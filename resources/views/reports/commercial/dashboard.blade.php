@@ -158,9 +158,12 @@
         }
 
         const axisMax = niceMax(values);
-        // If the data is large, scale down by millions for display
-        const scaleFactor = axisMax && axisMax >= 1000000 ? 1000000 : 1;
-        const scaledValues = scaleFactor === 1 ? values : values.map(v => (Number(v)||0) / scaleFactor);
+  // If the data is large, scale down by millions for display. If server provided
+  // scaled values, the caller will pass opts.serverScaled=true and we will not
+  // re-scale client-side (we still compute tooltips to show full currency).
+  const serverScaled = opts.serverScaled === true;
+  const scaleFactor = serverScaled ? 1 : (axisMax && axisMax >= 1000000 ? 1000000 : 1);
+  const scaledValues = scaleFactor === 1 ? values : values.map(v => (Number(v)||0) / scaleFactor);
         const datasetToUse = Object.assign({}, dataset, { data: scaledValues });
 
         // Chart.js v2.x options (AdminLTE default)
@@ -177,11 +180,11 @@
                     {
                       ticks: {
                         beginAtZero: true,
-                        callback: function(value) { return scaleFactor === 1000000 ? Number(value).toFixed(2) : formatShortNumber(value); }
+                        callback: function(value) { return serverScaled || scaleFactor === 1000000 ? Number(value).toFixed(2) : formatShortNumber(value); }
                       },
                       suggestedMax: axisMax ? (axisMax/scaleFactor) : undefined,
                       stepSize: axisMax ? (axisMax/scaleFactor/5) : undefined,
-                      scaleLabel: { display: scaleFactor===1000000, labelString: 'Millions Php' }
+                      scaleLabel: { display: serverScaled || scaleFactor===1000000, labelString: 'Millions Php' }
                     }
                   ]
               },
@@ -191,9 +194,9 @@
                   label: function(tooltipItem, data) {
                     // tooltip shows the full currency plus scaled (M) when applicable
                     var raw = tooltipItem.yLabel !== undefined ? tooltipItem.yLabel : tooltipItem.value;
-                    var fullVal = scaleFactor === 1000000 ? (Number(raw) * scaleFactor) : Number(raw);
+                    var fullVal = serverScaled ? (Number(raw) * 1000000) : (scaleFactor === 1000000 ? (Number(raw) * scaleFactor) : Number(raw));
                     var label = (dataset.label ? dataset.label + ': ' : '') + formatCurrency(Number(fullVal));
-                    if (scaleFactor === 1000000) label += ' (' + (Number(fullVal)/1000000).toFixed(2) + 'M)';
+                    if (serverScaled || scaleFactor === 1000000) label += ' (' + (Number(fullVal)/1000000).toFixed(2) + 'M)';
                     else label += ' (' + formatShortNumber(Number(fullVal)) + ')';
                     return label;
                   }
@@ -318,22 +321,24 @@
           return niceNorm * mag;
         }
         const axisMax = niceMaxFromArray(allVals);
-        // scale to millions when appropriate
-        const scaleFactor = axisMax && axisMax >= 1000000 ? 1000000 : 1;
+        // scale to millions when appropriate. Honor server-provided scaled values
+        // when opts.serverScaled === true (data already in millions).
+        const serverScaled = opts.serverScaled === true;
+        const scaleFactor = serverScaled ? 1 : (axisMax && axisMax >= 1000000 ? 1000000 : 1);
         const scaledDatasets = Array.isArray(datasets) ? datasets.map(function(d){
           const copy = Object.assign({}, d);
-          if (Array.isArray(copy.data) && scaleFactor === 1000000) copy.data = copy.data.map(v => (Number(v)||0) / scaleFactor);
+          if (Array.isArray(copy.data) && !serverScaled && scaleFactor === 1000000) copy.data = copy.data.map(v => (Number(v)||0) / scaleFactor);
           return copy;
         }) : datasets;
 
         const cfg = {
           type: 'line',
           data: { labels: labels, datasets: scaledDatasets },
-          options: {
+            options: {
             responsive: true,
             maintainAspectRatio: false,
             plugins: { legend: { position: opts.legendPosition || 'top' } },
-            scales: { y: { beginAtZero: true, suggestedMax: axisMax ? (axisMax/scaleFactor) : undefined, ticks: { callback: function(v){ return scaleFactor===1000000 ? Number(v).toFixed(2) : formatShortNumber(v); }, stepSize: axisMax ? (axisMax/scaleFactor/5) : undefined } } }
+            scales: { y: { beginAtZero: true, suggestedMax: axisMax ? (axisMax/scaleFactor) : undefined, ticks: { callback: function(v){ return serverScaled || scaleFactor===1000000 ? Number(v).toFixed(2) : formatShortNumber(v); }, stepSize: axisMax ? (axisMax/scaleFactor/5) : undefined } } }
           }
         };
         // If Chart.js v2 is present, adapt options
@@ -346,10 +351,10 @@
             scales: {
               yAxes: [
                 {
-                  ticks: { beginAtZero: true, callback: function(v){ return scaleFactor===1000000 ? Number(v).toFixed(2) : formatShortNumber(v); } },
+                  ticks: { beginAtZero: true, callback: function(v){ return serverScaled || scaleFactor===1000000 ? Number(v).toFixed(2) : formatShortNumber(v); } },
                   suggestedMax: axisMax ? (axisMax/scaleFactor) : undefined,
                   stepSize: axisMax ? (axisMax/scaleFactor/5) : undefined,
-                  scaleLabel: { display: scaleFactor===1000000, labelString: 'Millions Php' }
+                  scaleLabel: { display: serverScaled || scaleFactor===1000000, labelString: 'Millions Php' }
                 }
               ]
             }
@@ -382,13 +387,14 @@
           .done(function(resp){
             console.debug('daily report response:', resp);
             updateDebug('daily', { ok: true, body: resp });
-            const gross = (resp.summary && resp.summary.gross_sales) ? Number(resp.summary.gross_sales) : 0;
+            const gross = (resp.summary && (typeof resp.summary.gross_sales_m !== 'undefined')) ? Number(resp.summary.gross_sales_m) : ((resp.summary && resp.summary.gross_sales) ? Number(resp.summary.gross_sales) : 0);
             destroyIfExists('chart-daily');
             if (!gross || gross === 0) {
               // show no-data overlay instead of a zero-chart
               showChartNoData('daily');
             } else {
-              charts['chart-daily'] = makeBar(document.getElementById('chart-daily').getContext('2d'), [date], [gross]);
+              const serverScaled = resp.summary && (typeof resp.summary.gross_sales_m !== 'undefined');
+              charts['chart-daily'] = makeBar(document.getElementById('chart-daily').getContext('2d'), [date], [gross], { serverScaled: serverScaled });
               hideChartLoading('daily');
             }
           })
@@ -419,10 +425,12 @@
             if (!Array.isArray(rows)) rows = [];
             const labels = [];
             const values = [];
+            // detect if server returned million-scaled fields
+            const serverScaledRows = Array.isArray(rows) && rows.length && (typeof rows[0].gross_sales_m !== 'undefined');
             rows.forEach(function(r){
               // common keys: date, day, label
               labels.push(r.date || r.day || (r.label || '').toString().slice(0,10));
-              values.push(Number(r.gross_sales || r.gross || r.total_gross || 0));
+              values.push(Number(serverScaledRows ? (r.gross_sales_m || r.gross_m || r.gross || 0) : (r.gross_sales || r.gross || r.total_gross || 0)));
             });
             destroyIfExists('chart-weekly');
             const total = values.reduce(function(a,b){ return a + (isNaN(b) ? 0 : Number(b)); }, 0);
@@ -443,10 +451,10 @@
                   { label: 'Sales', data: values, borderColor: 'rgb(59,130,246)', backgroundColor: 'rgba(59,130,246,0.1)', fill: true },
                   { label: 'Volume', data: vol, borderColor: 'rgb(16,185,129)', backgroundColor: 'rgba(16,185,129,0.1)', fill: true }
                 ];
-                charts['chart-weekly'] = makeLine(document.getElementById('chart-weekly').getContext('2d'), labels, ds);
+                charts['chart-weekly'] = makeLine(document.getElementById('chart-weekly').getContext('2d'), labels, ds, { serverScaled: serverScaledRows });
                 hideChartLoading('weekly');
               } else {
-                charts['chart-weekly'] = makeBar(document.getElementById('chart-weekly').getContext('2d'), labels, values);
+                charts['chart-weekly'] = makeBar(document.getElementById('chart-weekly').getContext('2d'), labels, values, { serverScaled: serverScaledRows });
                 hideChartLoading('weekly');
               }
             }
@@ -478,9 +486,10 @@
             if (!Array.isArray(rows)) rows = [];
             const labels = [];
             const values = [];
+            const serverScaledRowsM = Array.isArray(rows) && rows.length && (typeof rows[0].gross_sales_m !== 'undefined');
             rows.forEach(function(r){
               labels.push(r.date || r.day || r.label || '');
-              values.push(Number(r.gross_sales || r.gross || r.total_gross || 0));
+              values.push(Number(serverScaledRowsM ? (r.gross_sales_m || r.gross || 0) : (r.gross_sales || r.gross || r.total_gross || 0)));
             });
             destroyIfExists('chart-monthly');
             const total = values.reduce(function(a,b){ return a + (isNaN(b) ? 0 : Number(b)); }, 0);
@@ -494,7 +503,7 @@
                 charts['chart-monthly'] = makeLine(document.getElementById('chart-monthly').getContext('2d'), resp.labels, ds);
                 hideChartLoading('monthly');
               } else {
-                charts['chart-monthly'] = makeBar(document.getElementById('chart-monthly').getContext('2d'), labels, values, {backgroundColor: 'rgba(75,192,192,0.6)', borderColor: 'rgba(75,192,192,1)'});
+                charts['chart-monthly'] = makeBar(document.getElementById('chart-monthly').getContext('2d'), labels, values, {backgroundColor: 'rgba(75,192,192,0.6)', borderColor: 'rgba(75,192,192,1)', serverScaled: serverScaledRowsM});
                 hideChartLoading('monthly');
               }
             }
@@ -523,9 +532,10 @@
             const months = resp.months || resp.data || resp.rows || [];
             const labels = [];
             const values = [];
+            const serverScaledMonths = Array.isArray(months) && months.length && (typeof months[0].gross_sales_m !== 'undefined');
             months.forEach(function(m){
               labels.push(m.month || m.label || '');
-              values.push(Number(m.gross_sales || m.gross || 0));
+              values.push(Number(serverScaledMonths ? (m.gross_sales_m || m.gross || 0) : (m.gross_sales || m.gross || 0)));
             });
             destroyIfExists('chart-yearly');
             const total = values.reduce(function(a,b){ return a + (isNaN(b) ? 0 : Number(b)); }, 0);
@@ -539,7 +549,7 @@
                 charts['chart-yearly'] = makeLine(document.getElementById('chart-yearly').getContext('2d'), resp.labels, ds);
                 hideChartLoading('yearly');
               } else {
-                charts['chart-yearly'] = makeBar(document.getElementById('chart-yearly').getContext('2d'), labels, values, {backgroundColor: 'rgba(255,159,64,0.6)', borderColor: 'rgba(255,159,64,1)'});
+                charts['chart-yearly'] = makeBar(document.getElementById('chart-yearly').getContext('2d'), labels, values, {backgroundColor: 'rgba(255,159,64,0.6)', borderColor: 'rgba(255,159,64,1)', serverScaled: serverScaledMonths});
                 hideChartLoading('yearly');
               }
             }
