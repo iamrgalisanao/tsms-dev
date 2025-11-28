@@ -13,6 +13,11 @@
 </style>
 @endpush
 @section('content')
+@php
+  // More robust detection of Laravel pagination
+  use Illuminate\Pagination\LengthAwarePaginator;
+  $serverPaginated = $tenants instanceof LengthAwarePaginator;
+@endphp
 <div class="card">
   <div class="card-header bg-primary">
     <h3 class="card-title text-white">Tenants List</h3>
@@ -26,13 +31,15 @@
         <a href="{{ route('commercial.sales-report.tenants.export') }}" class="btn btn-success btn-sm btn-export" title="Export CSV">
           <i class="fa fa-file-csv"></i> Export
         </a>
-        {{-- Keep a lightweight search for server-paginated view; DataTables will render its own search when enabled --}} 
-        <input id="tenant-search" class="form-control form-control-sm" placeholder="Search..." style="max-width:260px;" />
+        {{-- Keep a lightweight search only when server-paginated (Laravel paginator) --}}
+        @if($serverPaginated)
+          <input id="tenant-search" class="form-control form-control-sm" placeholder="Search..." style="max-width:260px;" />
+        @endif
       </div>
     </div>
 
     <div class="table-responsive">
-      <table class="table table-striped table-hover table-bordered table-sm tenants-table" id="tenants-table" data-server-paginated="{{ method_exists($tenants, 'lastPage') ? 'true' : 'false' }}">
+  <table class="table table-striped table-hover table-bordered table-sm tenants-table" id="tenants-table" data-server-paginated="{{ $serverPaginated ? 'true' : 'false' }}">
         <thead>
           <tr class="table-primary">
             <th>Tenant Code</th>
@@ -62,7 +69,7 @@
         </tbody>
       </table>
     </div>
-    <div class="d-flex align-items-center justify-content-between mt-2">
+      <div class="d-flex align-items-center justify-content-between mt-2">
       <div>
         @if(method_exists($tenants, 'total'))
           <small class="text-muted">Showing {{ $tenants->firstItem() ?? 0 }} to {{ $tenants->lastItem() ?? 0 }} of {{ $tenants->total() }} entries</small>
@@ -122,13 +129,26 @@
 
       // Move DataTables' search input into our header area for consistent layout
       try {
-        const dtSearch = document.querySelector('#tenants-table_filter');
+        const dtSearchWrapper = document.querySelector('#tenants-table_filter');
         const headerControls = document.querySelector('.tenants-controls');
-        if (dtSearch && headerControls) {
-          headerControls.appendChild(dtSearch);
-          // remove the default label wrapper
-          dtSearch.classList.add('ml-2');
+        if (dtSearchWrapper && headerControls) {
+          // Move only the input element and adopt AdminLTE sizing classes
+          const input = dtSearchWrapper.querySelector('input');
+          if (input) {
+            input.classList.add('form-control', 'form-control-sm');
+            input.style.maxWidth = '260px';
+            // append input into our header controls
+            headerControls.appendChild(input);
+            // remove the original wrapper (prevents duplicate elements)
+            dtSearchWrapper.remove();
+          } else {
+            // fallback: move the entire wrapper
+            headerControls.appendChild(dtSearchWrapper);
+          }
         }
+        // When DataTables handles searching, hide the server-side search input if present
+        const localSearch = document.getElementById('tenant-search');
+        if (localSearch) localSearch.style.display = (!serverPaginated ? 'none' : '');
       } catch (err) {
         // ignore DOM move errors
       }
