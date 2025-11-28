@@ -31,6 +31,8 @@
     // loaded in the master layout via plugins/chart.js/Chart.min.js. We avoid
     // importing Chart.js via the Vite bundle so there is a single global Chart.
     (function(){
+      // very-visible load marker to help debug whether inline scripts execute
+      try { console.log('[commercial] dashboard inline script loaded'); } catch(e) {}
       // show initial spinners immediately so users see loading state before XHRs
       try {
         ['daily','weekly','monthly','yearly'].forEach(function(k){
