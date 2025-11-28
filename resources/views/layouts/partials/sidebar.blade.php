@@ -51,7 +51,15 @@
             </a>
         </li>
         @endif
-
+    {{-- Finance users: add a top-level dashboard button for quick access back to finance reports/dashboard --}}
+    @if(auth()->user() && auth()->user()->hasRole('finance'))
+    <li class="nav-item">
+      <a href="{{ route('reports.index') }}" class="nav-link {{ Request::routeIs('reports.*') ? 'active' : '' }}">
+        <i class="nav-icon fas fa-chart-pie text-white"></i>
+        <p class="text-white"> Dashboard</p>
+      </a>
+    </li>
+    @endif
     @if(auth()->user() && auth()->user()->hasAnyRole(['admin', 'manager', 'finance']))
     <li class="nav-item">
       <a href="{{ route('transactions.logs.index') }}"
@@ -62,15 +70,7 @@
     </li>
     @endif
 
-    {{-- Finance users: add a top-level dashboard button for quick access back to finance reports/dashboard --}}
-    @if(auth()->user() && auth()->user()->hasRole('finance'))
-    <li class="nav-item">
-      <a href="{{ route('reports.index') }}" class="nav-link {{ Request::routeIs('reports.*') ? 'active' : '' }}">
-        <i class="nav-icon fas fa-chart-pie text-white"></i>
-        <p class="text-white">Finance Dashboard</p>
-      </a>
-    </li>
-    @endif
+    
 
         {{-- <li class="nav-item">
             <a href="{{ route('transactions.logs.index') }}"
@@ -156,49 +156,49 @@
           <ul class="nav nav-treeview " style="{{ (request()->is('commercial/reports/*') && !request()->is('commercial/reports/tenants*')) ? 'display: block;' : 'display: none;' }}">
             <li class="nav-item">
               <a href="{{ route('commercial.sales-report.hourly') }}"
-              class="nav-link {{ request()->is('commercial/reports/hourly-sales-report*') ? 'active' : '' }}">
+              class="nav-link {{ Request::routeIs('commercial.sales-report.hourly') ? 'active' : '' }}">
               <i class="fas fa-circle nav-icon ml-4 text-white"></i>
               <p class="text-white">Hourly Sales</p>
               </a>
             </li>
             <li class="nav-item">
               <a href="{{ route('commercial.sales-report.daily') }}"
-                class="nav-link {{ request()->is('commercial/reports/daily-sales-report*') ? 'active' : '' }}">
+                class="nav-link {{ Request::routeIs('commercial.sales-report.daily') ? 'active' : '' }}">
                 <i class="fas fa-circle nav-icon ml-4 text-white"></i>
                 <p class="text-white">Daily Sales</p>
               </a>
             </li>
             <li class="nav-item">
               <a href="{{ route('commercial.sales-report.weekly') }}"
-                class="nav-link {{ request()->is('commercial/reports/weekly-sales-report*') ? 'active' : '' }}">
+                class="nav-link {{ Request::routeIs('commercial.sales-report.weekly') ? 'active' : '' }}">
                 <i class="fas fa-circle nav-icon ml-4 text-white"></i>
                 <p class="text-white">Weekly Sales</p>
               </a>
             </li>
             <li class="nav-item">
               <a href="{{ route('commercial.sales-report.weekday') }}"
-                class="nav-link {{ request()->is('commercial/reports/weekday-sales-report*') ? 'active' : '' }}">
+                class="nav-link {{ Request::routeIs('commercial.sales-report.weekday') ? 'active' : '' }}">
                 <i class="fas fa-circle nav-icon ml-4 text-white"></i>
                 <p class="text-white">Weekday Sales</p>
               </a>
             </li>
             <li class="nav-item">
               <a href="{{ route('commercial.sales-report.weekend') }}"
-                class="nav-link {{ request()->is('commercial/reports/weekend-sales-report*') ? 'active' : '' }}">
+                class="nav-link {{ Request::routeIs('commercial.sales-report.weekend') ? 'active' : '' }}">
                 <i class="fas fa-circle nav-icon ml-4 text-white"></i>
                 <p class="text-white">Weekend Sales</p>
               </a>
             </li>
             <li class="nav-item">
               <a href="{{ route('commercial.sales-report.monthly') }}"
-                class="nav-link {{ request()->is('commercial/reports/monthly-sales-report*') ? 'active' : '' }}">
+                class="nav-link {{ Request::routeIs('commercial.sales-report.monthly') ? 'active' : '' }}">
                 <i class="fas fa-circle nav-icon ml-4 text-white"></i>
                 <p class="text-white">Monthly Sales</p>
               </a>
             </li>
             <li class="nav-item">
               <a href="{{ route('commercial.sales-report.yearly') }}"
-                class="nav-link {{ request()->is('commercial/reports/yearly-sales-report*') ? 'active' : '' }}">
+                class="nav-link {{ Request::routeIs('commercial.sales-report.yearly') ? 'active' : '' }}">
                 <i class="fas fa-circle nav-icon ml-4 text-white"></i>
                 <p class="text-white">Yearly Sales</p>
               </a>
