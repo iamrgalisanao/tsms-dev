@@ -25,7 +25,7 @@
 
 @endsection
 
-@section('scripts')
+@push('scripts')
   <script>
     // Ensure this dashboard uses the AdminLTE-bundled Chart.js runtime (v2) that is
     // loaded in the master layout via plugins/chart.js/Chart.min.js. We avoid
@@ -423,4 +423,4 @@
       });
     })();
   </script>
-@endsection
+@endpush
