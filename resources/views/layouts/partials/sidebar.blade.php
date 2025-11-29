@@ -42,6 +42,16 @@
         data-widget="treeview"
         role="menu"
         data-accordion="false">
+        {{-- Commercial Dashboard (top priority for commercial users) --}}
+        @if(auth()->user() && auth()->user()->hasRole('commercial'))
+        <li class="nav-item">
+          <a href="{{ route('commercial.dashboard') }}" class="nav-link {{ Request::routeIs('commercial.dashboard') ? 'active' : '' }}">
+            <i class="nav-icon fas fa-chart-bar text-white"></i>
+            <p class="text-white">Dashboard</p>
+          </a>
+        </li>
+        @endif
+
         {{-- Dashboard --}}
          @if(auth()->user() && auth()->user()->hasAnyRole('admin'))
          <li class="nav-item">
@@ -54,7 +64,7 @@
     {{-- Finance users: add a top-level dashboard button for quick access back to finance reports/dashboard --}}
     @if(auth()->user() && auth()->user()->hasRole('finance'))
     <li class="nav-item">
-      <a href="{{ route('commercial.dashboard') }}" class="nav-link {{ Request::routeIs('commercial.dashboard') ? 'active' : '' }}">
+      <a href="{{ route('finance.dashboard') }}" class="nav-link {{ Request::routeIs('finance.dashboard') ? 'active' : '' }}">
         <i class="nav-icon fas fa-chart-pie text-white"></i>
         <p class="text-white"> Dashboard</p>
       </a>
