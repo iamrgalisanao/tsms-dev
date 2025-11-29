@@ -124,7 +124,9 @@
                     }
                   ]
               },
-              legend: { display: false },
+              // show legend for clarity and position it at the bottom
+              legend: { display: true, position: (opts.legendPosition || 'bottom'), labels: { boxWidth: 12 } },
+              title: { display: !!opts.title, text: opts.title || '' },
               tooltips: {
                 callbacks: {
                   label: function(tooltipItem, data) {
@@ -273,7 +275,7 @@
             options: {
             responsive: true,
             maintainAspectRatio: false,
-            plugins: { legend: { position: opts.legendPosition || 'top' } },
+            plugins: { legend: { display: true, position: opts.legendPosition || 'top' }, title: { display: !!opts.title, text: opts.title || '' } },
             scales: { y: { beginAtZero: true, suggestedMax: axisMax ? (axisMax/scaleFactor) : undefined, ticks: { callback: function(v){ return serverScaled || scaleFactor===1000000 ? Number(v).toFixed(2) : formatShortNumber(v); }, stepSize: axisMax ? (axisMax/scaleFactor/5) : undefined } } }
           }
         };
@@ -283,7 +285,8 @@
           cfg.options = {
             responsive: true,
             maintainAspectRatio: false,
-            legend: { position: opts.legendPosition || 'top' },
+            legend: { display: true, position: opts.legendPosition || 'top' },
+            title: { display: !!opts.title, text: opts.title || '' },
             scales: {
               yAxes: [
                 {
