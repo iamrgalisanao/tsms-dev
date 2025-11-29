@@ -175,11 +175,33 @@
                 <p class="text-white">Weekly Sales</p>
               </a>
             </li>
+             <li class="nav-item">
+              <a href="{{ route('commercial.sales-report.weekday') }}"
+                class="nav-link {{ Request::routeIs('commercial.sales-report.weekday') ? 'active' : '' }}">
+                <i class="fas fa-circle nav-icon ml-4 text-white"></i>
+                <p class="text-white">Weekday Sales</p>
+              </a>
+            </li>
+            <li class="nav-item">
+              <a href="{{ route('commercial.sales-report.weekend') }}"
+                class="nav-link {{ Request::routeIs('commercial.sales-report.weekend') ? 'active' : '' }}">
+                <i class="fas fa-circle nav-icon ml-4 text-white"></i>
+                <p class="text-white">Weekend Sales</p>
+              </a>
+            </li>
             <li class="nav-item">
               <a href="{{ route('commercial.sales-report.monthly') }}"
                 class="nav-link {{ Request::routeIs('commercial.sales-report.monthly') ? 'active' : '' }}">
                 <i class="fas fa-circle nav-icon ml-4 text-white"></i>
                 <p class="text-white">Monthly Sales</p>
+              </a>
+            </li>
+           
+            <li class="nav-item">
+              <a href="{{ route('commercial.sales-report.yearly') }}"
+                class="nav-link {{ Request::routeIs('commercial.sales-report.yearly') ? 'active' : '' }}">
+                <i class="fas fa-circle nav-icon ml-4 text-white"></i>
+                <p class="text-white">Yearly Sales</p>
               </a>
             </li>
           </ul>
