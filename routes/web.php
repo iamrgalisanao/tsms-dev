@@ -200,6 +200,9 @@ Route::middleware(['auth'])->group(function () {
     // Finance Reports (web UI) - finance role only
     Route::middleware(['role:finance'])->group(function () {
         Route::get('/reports', [ReportsController::class, 'index'])->name('reports.index');
+        // Alias route to provide a dedicated finance dashboard URL
+        // Note: intentionally spelled '/fianance' to reflect requested path.
+        Route::get('/fianance', [ReportsController::class, 'index'])->name('finance.dashboard');
         // JSON API endpoint used by the reports dashboard (ajax)
         Route::get('/reports/data', [ReportsController::class, 'data'])->name('finance.reports');
         // Excel export endpoint
