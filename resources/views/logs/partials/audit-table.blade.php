@@ -113,7 +113,7 @@ use App\Helpers\BadgeHelper;
                 <h5 class="modal-title" id="auditContextModalLabel">
                     <i class="fas fa-history me-2"></i>Audit Trail Details
                 </h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                <button type="button" class="btn-close close" data-bs-dismiss="modal" data-dismiss="modal" aria-label="Close">&times;</button>
             </div>
             <div class="modal-body">
                 <!-- Audit Log Basic Info -->
@@ -161,8 +161,8 @@ use App\Helpers\BadgeHelper;
                 </div>
             </div>
             <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
-                    <i class="fas fa-times me-1"></i>Close
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" data-dismiss="modal">
+                    <i class="fas fa-times me-1 mr-2"></i>Close
                 </button>
                 {{-- <button type="button" class="btn btn-primary" onclick="exportAuditDetail()">
                     <i class="fas fa-download me-1"></i>Export Details
