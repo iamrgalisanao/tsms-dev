@@ -344,6 +344,45 @@ function exportAuditDetail() {
     
     toastr.success('Audit details exported successfully');
 }
+
+// Accessibility fixes: avoid aria-hidden on an element that still retains focus.
+// Problem: when the modal is closed Bootstrap may set aria-hidden on the modal
+// while a child element still has focus, which triggers the browser/a11y warning.
+// Solution: capture/restore focus and blur the active element immediately when
+// a modal-close control is activated so the element doesn't remain focused
+// while its ancestor is hidden.
+(function(){
+    var _lastAuditTrigger = null;
+
+    // Remember the last focused trigger inside the audit table (best-effort)
+    $(document).on('focusin', '#auditTable button, #auditTable a', function(){
+        _lastAuditTrigger = this;
+    });
+
+    // When any modal-close control inside the modal is clicked, blur the active element
+    $(document).on('click', '#auditContextModal [data-dismiss="modal"], #auditContextModal [data-bs-dismiss="modal"], #auditContextModal .btn-close', function(){
+        try { if (document.activeElement && document.activeElement.blur) document.activeElement.blur(); } catch(e){}
+    });
+
+    // When modal shown, move focus into the modal for keyboard users
+    $('#auditContextModal').on('shown.bs.modal', function(){
+        try {
+            var mb = $(this).find('.modal-body');
+            if (mb && mb.length) {
+                mb.attr('tabindex', -1).focus();
+            }
+        } catch(e){}
+    });
+
+    // When modal is hidden, attempt to restore focus to the originating trigger
+    $('#auditContextModal').on('hidden.bs.modal', function(){
+        try {
+            if (_lastAuditTrigger && typeof _lastAuditTrigger.focus === 'function') {
+                _lastAuditTrigger.focus();
+            }
+        } catch(e){}
+    });
+})();
 </script>
 @endpush
 
