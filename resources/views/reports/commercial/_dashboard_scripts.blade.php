@@ -328,12 +328,12 @@
             updateDebug('daily', { ok: true, body: resp });
             const gross = (resp.summary && (typeof resp.summary.gross_sales_m !== 'undefined')) ? Number(resp.summary.gross_sales_m) : ((resp.summary && resp.summary.gross_sales) ? Number(resp.summary.gross_sales) : 0);
             destroyIfExists('chart-daily');
-            if (!gross || gross === 0) {
+              if (!gross || gross === 0) {
               // show no-data overlay instead of a zero-chart
               showChartNoData('daily');
             } else {
               const serverScaled = resp.summary && (typeof resp.summary.gross_sales_m !== 'undefined');
-              charts['chart-daily'] = makeBar(document.getElementById('chart-daily').getContext('2d'), [date], [gross], { serverScaled: serverScaled });
+                charts['chart-daily'] = makeBar(document.getElementById('chart-daily').getContext('2d'), [date], [gross], { serverScaled: serverScaled, label: 'Gross Sales', title: 'Daily Gross Sales', legendPosition: 'bottom' });
               hideChartLoading('daily');
             }
           })
@@ -393,7 +393,7 @@
                 charts['chart-weekly'] = makeLine(document.getElementById('chart-weekly').getContext('2d'), labels, ds, { serverScaled: serverScaledRows });
                 hideChartLoading('weekly');
               } else {
-                charts['chart-weekly'] = makeBar(document.getElementById('chart-weekly').getContext('2d'), labels, values, { serverScaled: serverScaledRows });
+                charts['chart-weekly'] = makeBar(document.getElementById('chart-weekly').getContext('2d'), labels, values, { serverScaled: serverScaledRows, label: 'Gross Sales', title: 'Weekly Gross Sales', legendPosition: 'bottom' });
                 hideChartLoading('weekly');
               }
             }
@@ -442,7 +442,7 @@
                 charts['chart-monthly'] = makeLine(document.getElementById('chart-monthly').getContext('2d'), resp.labels, ds);
                 hideChartLoading('monthly');
               } else {
-                charts['chart-monthly'] = makeBar(document.getElementById('chart-monthly').getContext('2d'), labels, values, {backgroundColor: 'rgba(75,192,192,0.6)', borderColor: 'rgba(75,192,192,1)', serverScaled: serverScaledRowsM});
+                charts['chart-monthly'] = makeBar(document.getElementById('chart-monthly').getContext('2d'), labels, values, {backgroundColor: 'rgba(75,192,192,0.6)', borderColor: 'rgba(75,192,192,1)', serverScaled: serverScaledRowsM, label: 'Gross Sales', title: 'Monthly Gross Sales', legendPosition: 'bottom'});
                 hideChartLoading('monthly');
               }
             }
@@ -488,7 +488,7 @@
                 charts['chart-yearly'] = makeLine(document.getElementById('chart-yearly').getContext('2d'), resp.labels, ds);
                 hideChartLoading('yearly');
               } else {
-                charts['chart-yearly'] = makeBar(document.getElementById('chart-yearly').getContext('2d'), labels, values, {backgroundColor: 'rgba(255,159,64,0.6)', borderColor: 'rgba(255,159,64,1)', serverScaled: serverScaledMonths});
+                charts['chart-yearly'] = makeBar(document.getElementById('chart-yearly').getContext('2d'), labels, values, {backgroundColor: 'rgba(255,159,64,0.6)', borderColor: 'rgba(255,159,64,1)', serverScaled: serverScaledMonths, label: 'Gross Sales', title: 'Yearly Gross Sales', legendPosition: 'bottom'});
                 hideChartLoading('yearly');
               }
             }

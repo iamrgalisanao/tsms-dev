@@ -30,7 +30,7 @@ class RoleSeeder extends Seeder
                 'description' => 'Access to finance reports and exports'
             ],
             [
-                'name' => 'tenans',
+                'name' => 'tenants',
                 'guard_name' => 'web',
                 'description' => 'Read-only access to dashboards'
             ]

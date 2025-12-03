@@ -95,4 +95,66 @@ class LogController extends Controller
 
         return view('dashboard.logs', compact('systemLogs', 'auditLogs', 'webhookLogs', 'stats', 'terminals', 'submissionEvents'));
     }
+
+    /**
+     * Show the prune form for administrators.
+     */
+    public function pruneForm(Request $request)
+    {
+        $user = auth()->user();
+        if (!$user || !(method_exists($user, 'hasRole') ? $user->hasRole('admin') : (strtolower($user->role ?? '') === 'admin'))) {
+            abort(403);
+        }
+
+        return view('logs.prune');
+    }
+
+    /**
+     * Execute prune action (dry-run or actual deletion).
+     */
+    public function pruneExecute(Request $request)
+    {
+        $user = auth()->user();
+        if (!$user || !(method_exists($user, 'hasRole') ? $user->hasRole('admin') : (strtolower($user->role ?? '') === 'admin'))) {
+            abort(403);
+        }
+
+        $data = $request->validate([
+            'before' => ['nullable','date'],
+            'days' => ['nullable','integer','min:1'],
+            'type' => ['nullable','string'],
+            'dry_run' => ['nullable','boolean'],
+            'force' => ['nullable','boolean']
+        ]);
+
+        $dry = $request->boolean('dry_run');
+        $force = $request->boolean('force');
+
+        if (empty($data['before']) && empty($data['days'])) {
+            return back()->with('error', 'You must provide either a `before` date or a number of `days` to prune.');
+        }
+
+        $svc = app(\App\Services\SystemLogService::class);
+        $result = $svc->prune([
+            'before' => $data['before'] ?? null,
+            'days' => isset($data['days']) ? (int)$data['days'] : null,
+            'type' => $data['type'] ?? null,
+            'dry_run' => $dry || !$force,
+            'chunk' => 500
+        ]);
+
+        if (!empty($result['error'])) {
+            return back()->with('error', $result['error']);
+        }
+
+        if (!empty($result['dry_run'])) {
+            $msg = 'Dry run: '.$result['count'].' rows would be pruned.';
+            if (!empty($result['sample_ids'])) {
+                $msg .= ' Sample IDs: '.implode(',', $result['sample_ids']);
+            }
+            return back()->with('status', $msg);
+        }
+
+        return back()->with('status', 'Prune complete. Deleted: '.($result['deleted'] ?? 0));
+    }
 }

@@ -234,6 +234,17 @@ Schedule::call(function () {
 })->dailyAt('02:00')->name('webapp-forwarding-cleanup')->onOneServer();
 
 // --------------------------------------------------------------------------
+// SystemLog pruning: scheduled safe prune (uses systemlogs:prune command)
+// Default: keep 90 days of logs; scheduled daily at 02:00. Can be toggled
+// via config key `tsms.logs.enable_prune`.
+// --------------------------------------------------------------------------
+Schedule::command('systemlogs:prune --days=90 --force')
+    ->dailyAt('02:00')
+    ->name('systemlogs-prune-daily')
+    ->onOneServer()
+    ->when(fn () => (bool) (config('tsms.logs.enable_prune') ?? true));
+
+// --------------------------------------------------------------------------
 // Reporting refresh: keep summary tables warm and consistent
 // Runs once daily; can be enabled/disabled via config('tsms.reporting.enabled')
 // Adjust --hours for hourly refresh window as desired.

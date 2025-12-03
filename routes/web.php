@@ -197,6 +197,12 @@ Route::middleware(['auth'])->group(function () {
     // System Logs Route - renamed from logs to system-logs
     Route::get('/system-logs', [LogController::class, 'index'])->name('system-logs.index');
 
+    // System Logs pruning UI (admin only)
+    Route::middleware(['role:admin'])->group(function () {
+        Route::get('/system-logs/prune', [\App\Http\Controllers\LogController::class, 'pruneForm'])->name('system-logs.prune.form');
+        Route::post('/system-logs/prune', [\App\Http\Controllers\LogController::class, 'pruneExecute'])->name('system-logs.prune.exec');
+    });
+
     // Finance Reports (web UI) - finance role only
     Route::middleware(['role:finance'])->group(function () {
         Route::get('/reports', [ReportsController::class, 'index'])->name('reports.index');
