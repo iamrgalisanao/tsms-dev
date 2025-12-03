@@ -114,7 +114,8 @@ class SystemLogService
         $before = $opts['before'] ?? null;
         $days = isset($opts['days']) ? (int) $opts['days'] : null;
         $type = $opts['type'] ?? null;
-        $dry = !empty($opts['dry_run']);
+    $dry = !empty($opts['dry_run']);
+    $hard = !empty($opts['hard']);
         $chunk = isset($opts['chunk']) ? (int) $opts['chunk'] : 500;
 
         $query = SystemLog::query();
@@ -154,7 +155,25 @@ class SystemLogService
         $query->orderBy('id')->chunkById($chunk, function($rows) use (&$deleted) {
             $ids = $rows->pluck('id')->toArray();
             if (!empty($ids)) {
-                $deleted += SystemLog::whereIn('id', $ids)->delete();
+                if ($hard) {
+                    // Permanently delete rows
+                    try {
+                        $affected = SystemLog::whereIn('id', $ids)->forceDelete();
+                        $deleted += is_int($affected) ? $affected : count($ids);
+                    } catch (\Exception $e) {
+                        // Fallback: delete via query builder if forceDelete isn't available
+                        try {
+                            $affected = \DB::table((new SystemLog)->getTable())->whereIn('id', $ids)->delete();
+                            $deleted += is_int($affected) ? $affected : count($ids);
+                        } catch (\Exception $ex) {
+                            // best-effort; skip
+                        }
+                    }
+                } else {
+                    // Perform a soft-delete by setting deleted_at instead of hard-deleting
+                    $affected = SystemLog::whereIn('id', $ids)->update(['deleted_at' => now()]);
+                    $deleted += $affected;
+                }
             }
         });
 
@@ -165,9 +184,10 @@ class SystemLogService
                 'log_type' => 'prune',
                 'message' => 'Pruned system logs via SystemLogService',
                 'context' => [
-                    'deleted' => $deleted,
-                    'criteria' => ['before' => $before, 'days' => $days, 'type' => $type]
-                ],
+                        'deleted' => $deleted,
+                        'hard' => $hard,
+                        'criteria' => ['before' => $before, 'days' => $days, 'type' => $type]
+                    ],
                 'severity' => 'info'
             ]);
         } catch (\Exception $e) {

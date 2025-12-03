@@ -24,7 +24,7 @@ class SystemLogsPruneCommandTest extends TestCase
         $this->artisan('systemlogs:prune --days=90 --force')
             ->assertExitCode(0);
 
-        $count = DB::table('system_logs')->where('log_type', 'old')->count();
-        $this->assertEquals(0, $count, 'Old system logs should be deleted by prune command');
+    $count = DB::table('system_logs')->where('log_type', 'old')->whereNull('deleted_at')->count();
+    $this->assertEquals(0, $count, 'Old system logs should be soft-deleted by prune command');
     }
 }

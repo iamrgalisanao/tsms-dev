@@ -157,4 +157,142 @@ class LogController extends Controller
 
         return back()->with('status', 'Prune complete. Deleted: '.($result['deleted'] ?? 0));
     }
+
+    /**
+     * Permanently remove a single system log (force delete).
+     * Admin-only action.
+     */
+    public function hardDelete(Request $request, $id)
+    {
+        $user = auth()->user();
+        if (!$user || !(method_exists($user, 'hasRole') ? $user->hasRole('admin') : (strtolower($user->role ?? '') === 'admin'))) {
+            abort(403);
+        }
+
+        try {
+            $log = SystemLog::withTrashed()->findOrFail($id);
+            // Only allow hard delete if it's already soft-deleted, or explicitly allow (business rule)
+            if (method_exists($log, 'trashed') && !$log->trashed()) {
+                // For safety, require that log be soft-deleted before permanent removal
+                return back()->with('error', 'Log must be soft-deleted first before permanent removal.');
+            }
+
+            $log->forceDelete();
+            // Audit the admin action
+            try {
+                $svc = app(\App\Services\SystemLogService::class);
+                $svc->logUserAction('logs.hard_delete', 'Admin permanently deleted a system log', ['log_id' => $id, 'user_id' => $user->id]);
+            } catch (\Exception $e) {
+                // best-effort
+            }
+
+            return back()->with('status', 'Log permanently deleted.');
+        } catch (\Exception $e) {
+            return back()->with('error', 'Failed to permanently delete log: '.$e->getMessage());
+        }
+    }
+
+    /**
+     * Show archived (soft-deleted) system logs.
+     */
+    public function archived(Request $request)
+    {
+        $user = auth()->user();
+        if (!$user || !(method_exists($user, 'hasRole') ? $user->hasRole('admin') : (strtolower($user->role ?? '') === 'admin'))) {
+            abort(403);
+        }
+
+        $archivedLogs = SystemLog::onlyTrashed()->with('user')
+            ->when($request->filled('type'), function($q) use ($request) {
+                return $q->where('type', $request->type);
+            })
+            ->latest()
+            ->paginate(15);
+
+        return view('logs.archived', compact('archivedLogs'));
+    }
+
+    /**
+     * Bulk restore soft-deleted logs.
+     */
+    public function bulkRestore(Request $request)
+    {
+        $user = auth()->user();
+        if (!$user || !(method_exists($user, 'hasRole') ? $user->hasRole('admin') : (strtolower($user->role ?? '') === 'admin'))) {
+            abort(403);
+        }
+
+        $data = $request->validate([
+            'ids' => ['required','array'],
+            'ids.*' => ['integer']
+        ]);
+
+        $ids = $data['ids'];
+        try {
+            SystemLog::withTrashed()->whereIn('id', $ids)->restore();
+            // Audit
+            try { app(\App\Services\SystemLogService::class)->logUserAction('logs.bulk_restore', 'Admin restored multiple system logs', ['count' => count($ids), 'ids' => $ids, 'user_id' => $user->id]); } catch (\Exception $e){}
+            return back()->with('status', 'Selected logs restored.');
+        } catch (\Exception $e) {
+            return back()->with('error', 'Failed to restore logs: '.$e->getMessage());
+        }
+    }
+
+    /**
+     * Bulk permanently delete (forceDelete) soft-deleted logs.
+     */
+    public function bulkPurge(Request $request)
+    {
+        $user = auth()->user();
+        if (!$user || !(method_exists($user, 'hasRole') ? $user->hasRole('admin') : (strtolower($user->role ?? '') === 'admin'))) {
+            abort(403);
+        }
+
+        $data = $request->validate([
+            'ids' => ['required','array'],
+            'ids.*' => ['integer']
+        ]);
+
+        $ids = $data['ids'];
+        try {
+            // Only force-delete trashed entries for safety
+            $toPurge = SystemLog::onlyTrashed()->whereIn('id', $ids)->get();
+            $deleted = 0;
+            foreach ($toPurge as $log) {
+                $log->forceDelete();
+                $deleted++;
+            }
+            // Audit
+            try { app(\App\Services\SystemLogService::class)->logUserAction('logs.bulk_purge', 'Admin permanently purged multiple system logs', ['count' => $deleted, 'ids' => array_column($toPurge->toArray(), 'id'), 'user_id' => $user->id]); } catch (\Exception $e){}
+            return back()->with('status', "Permanently deleted {$deleted} logs.");
+        } catch (\Exception $e) {
+            return back()->with('error', 'Failed to purge logs: '.$e->getMessage());
+        }
+    }
+
+    /**
+     * Bulk soft-delete selected logs (mark deleted_at).
+     */
+    public function bulkSoftDelete(Request $request)
+    {
+        $user = auth()->user();
+        if (!$user || !(method_exists($user, 'hasRole') ? $user->hasRole('admin') : (strtolower($user->role ?? '') === 'admin'))) {
+            abort(403);
+        }
+
+        $data = $request->validate([
+            'ids' => ['required','array'],
+            'ids.*' => ['integer']
+        ]);
+
+        $ids = $data['ids'];
+        try {
+            $affected = SystemLog::whereIn('id', $ids)->update(['deleted_at' => now()]);
+            // Audit
+            try { app(\App\Services\SystemLogService::class)->logUserAction('logs.bulk_soft_delete', 'Admin soft-deleted multiple system logs', ['count' => $affected, 'ids' => $ids, 'user_id' => $user->id]); } catch (\Exception $e){}
+            return back()->with('status', "Soft-deleted {$affected} logs.");
+        } catch (\Exception $e) {
+            return back()->with('error', 'Failed to soft-delete logs: '.$e->getMessage());
+        }
+    }
 }

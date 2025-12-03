@@ -13,7 +13,7 @@ class PruneSystemLogs extends Command
      *
      * @var string
      */
-    protected $signature = 'systemlogs:prune {--days= : Delete logs older than N days} {--before= : Delete logs before date (Y-m-d)} {--type= : Optional log type to prune} {--dry-run : Show what would be deleted} {--force : Actually perform deletion}';
+    protected $signature = 'systemlogs:prune {--days= : Delete logs older than N days} {--before= : Delete logs before date (Y-m-d)} {--type= : Optional log type to prune} {--dry-run : Show what would be deleted} {--force : Actually perform deletion (bypass dry-run)} {--hard : Permanently delete rows instead of soft-deleting (danger) }';
 
     /**
      * The console command description.
@@ -35,8 +35,9 @@ class PruneSystemLogs extends Command
         $days = $this->option('days');
         $before = $this->option('before');
         $type = $this->option('type');
-        $dry = $this->option('dry-run');
-        $force = $this->option('force');
+    $dry = $this->option('dry-run');
+    $force = $this->option('force');
+    $hard = $this->option('hard');
 
         if (!$before && !$days) {
             $this->error('Provide either --days or --before to specify prune criteria.');
@@ -51,7 +52,9 @@ class PruneSystemLogs extends Command
             'before' => $before,
             'days' => $days ? (int)$days : null,
             'type' => $type,
+            // dry_run true if explicit dry-run or not forced
             'dry_run' => $dry || !$force,
+            'hard' => $hard ? true : false,
             'chunk' => 500
         ]);
 

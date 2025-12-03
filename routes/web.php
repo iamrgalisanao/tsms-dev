@@ -201,6 +201,18 @@ Route::middleware(['auth'])->group(function () {
     Route::middleware(['role:admin'])->group(function () {
         Route::get('/system-logs/prune', [\App\Http\Controllers\LogController::class, 'pruneForm'])->name('system-logs.prune.form');
         Route::post('/system-logs/prune', [\App\Http\Controllers\LogController::class, 'pruneExecute'])->name('system-logs.prune.exec');
+        // Permanent/hard delete for a single system log (admin-only)
+        Route::post('/system-logs/{id}/hard-delete', [\App\Http\Controllers\LogController::class, 'hardDelete'])
+            ->name('system-logs.hard-delete');
+        // Archived logs view and bulk actions (admin-only)
+        Route::get('/system-logs/archived', [\App\Http\Controllers\LogController::class, 'archived'])
+            ->name('system-logs.archived');
+        Route::post('/system-logs/bulk-restore', [\App\Http\Controllers\LogController::class, 'bulkRestore'])
+            ->name('system-logs.bulk-restore');
+        Route::post('/system-logs/bulk-purge', [\App\Http\Controllers\LogController::class, 'bulkPurge'])
+            ->name('system-logs.bulk-purge');
+        Route::post('/system-logs/bulk-soft-delete', [\App\Http\Controllers\LogController::class, 'bulkSoftDelete'])
+            ->name('system-logs.bulk-soft-delete');
     });
 
     // Finance Reports (web UI) - finance role only

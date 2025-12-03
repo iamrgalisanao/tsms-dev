@@ -5,10 +5,34 @@ use App\Helpers\BadgeHelper;
 
 <!-- PROPER AUDIT TRAIL IMPLEMENTATION -->
 <div class="card">
+    @php
+        $user = auth()->user();
+        $isAdmin = $user && (method_exists($user, 'hasRole') ? $user->hasRole('admin') : (strtolower($user->role ?? '') === 'admin'));
+    @endphp
+    <div class="card-header">
+    <h3 class="card-title"><i class="fas fa-history mr-2"></i>Audit Trail</h3>
+        <div class="card-tools">
+            @if($isAdmin)
+                <div class="d-flex align-items-center">
+                    {{-- If we're on the archived logs route, present restore/purge actions --}}
+                    @if(request()->routeIs('system-logs.archived'))
+                        <a href="{{ route('system-logs.index') }}" class="btn btn-sm btn-outline-secondary mr-2">Back to Logs</a>
+                        <button id="restoreSelected" class="btn btn-sm btn-primary mr-2">Restore Selected</button>
+                        <button id="purgeSelected" class="btn btn-sm btn-danger mr-2">Permanently Purge Selected</button>
+                    @else
+                        <a href="{{ route('system-logs.archived') }}" class="btn btn-sm btn-outline-secondary mr-2">View Archived Logs</a>
+                        <button id="archiveSelected" class="btn btn-sm btn-warning mr-2">Archive Selected</button>
+                    @endif
+                </div>
+            @endif
+        </div>
+    </div>
     <div class="card-body">
+        <div class="table-responsive">
     <table id="auditTable" class="table table-bordered table-striped">
           <thead>
               <tr>
+                                <th style="width: 1%;"><input type="checkbox" id="audit-select-all" aria-label="Select all audit rows"></th>
                 <th>Time</th>
                 <th>User</th>
                 <th>Action</th>
@@ -21,7 +45,12 @@ use App\Helpers\BadgeHelper;
           </thead>
           <tbody>
                         @forelse($auditLogs as $log)
+                            {{-- Skip soft-deleted (trashed) logs so they don't appear in the table --}}
+                            @if(method_exists($log, 'trashed') && $log->trashed())
+                                @continue
+                            @endif
                         <tr>
+                            <td><input type="checkbox" class="audit-row-checkbox" value="{{ $log->id }}" aria-label="Select audit row {{ $log->id }}"></td>
                             <td class="text-nowrap">{{ $log->created_at->format('Y-m-d H:i:s') }}</td>
                             <td>{{ $log->user?->name ?? 'System' }}</td>
                             <td>
@@ -29,13 +58,13 @@ use App\Helpers\BadgeHelper;
                                     @if(str_starts_with($log->action, 'auth.'))
                                     @switch($log->action)
                                     @case('auth.login')
-                                    <i class="fas fa-sign-in-alt me-1"></i>Login
+                                    <i class="fas fa-sign-in-alt mr-1"></i>Login
                                     @break
                                     @case('auth.logout')
-                                    <i class="fas fa-sign-out-alt me-1"></i>Logout
+                                    <i class="fas fa-sign-out-alt mr-1"></i>Logout
                                     @break
                                     @case('auth.failed')
-                                    <i class="fas fa-exclamation-triangle me-1"></i>Failed Login
+                                    <i class="fas fa-exclamation-triangle mr-1"></i>Failed Login
                                     @break
                                     @default
                                     {{ $log->action }}
@@ -43,16 +72,16 @@ use App\Helpers\BadgeHelper;
                                     @elseif(str_starts_with($log->action, 'TRANSACTION'))
                                     @switch($log->action)
                                     @case('TRANSACTION_RECEIVED')
-                                    <i class="fas fa-inbox me-1"></i>Transaction Received
+                                    <i class="fas fa-inbox mr-1"></i>Transaction Received
                                     @break
                                     @case('TRANSACTION_VOID_POS')
-                                    <i class="fas fa-ban me-1"></i>Transaction Voided
+                                    <i class="fas fa-ban mr-1"></i>Transaction Voided
                                     @break
                                     @case('TRANSACTION_PROCESSED')
-                                    <i class="fas fa-check me-1"></i>Transaction Processed
+                                    <i class="fas fa-check mr-1"></i>Transaction Processed
                                     @break
                                     @default
-                                    <i class="fas fa-exchange-alt me-1"></i>{{ $log->action }}
+                                    <i class="fas fa-exchange-alt mr-1"></i>{{ $log->action }}
                                     @endswitch
                                     @else
                                     {{ $log->action }}
@@ -90,11 +119,23 @@ use App\Helpers\BadgeHelper;
                             </td>
                             <td class="text-center">{{ $log->ip_address ?? 'N/A' }}</td>
                             <td class="text-center">
-                                @if($log->action !== 'audit_log.viewed')
-                                <button class="btn btn-sm btn-outline-primary" onclick="showAuditContext('{{ $log->id }}')">
-                                    <i class="fas fa-search me-1"></i>Details
-                                </button>
-                                @endif
+                                <div class="d-flex justify-content-center flex-wrap">
+                                    @if($log->action !== 'audit_log.viewed')
+                                        <button class="btn btn-sm btn-outline-primary mr-1" onclick="showAuditContext('{{ $log->id }}')">
+                                            <i class="fas fa-search mr-1"></i>Details
+                                        </button>
+                                    @endif
+
+                                    {{-- Hard delete action: show only to admins and only for trashed logs --}}
+                                    @if($isAdmin && method_exists($log, 'trashed') && $log->trashed())
+                                        <form method="POST" action="{{ url('/system-logs/'.$log->id.'/hard-delete') }}" onsubmit="return confirm('Permanently delete this log? This action cannot be undone.');" style="display:inline-block; margin:0;">
+                                            @csrf
+                                            <button type="submit" class="btn btn-sm btn-outline-danger mr-1" title="Permanently delete log">
+                                                <i class="fas fa-trash-alt mr-1"></i>Purge
+                                            </button>
+                                        </form>
+                                    @endif
+                                </div>
                             </td>
                         </tr>
                         @empty
@@ -102,6 +143,7 @@ use App\Helpers\BadgeHelper;
                         @endforelse
           </tbody>
       </table>
+        </div>
     </div>
 </div>
 
@@ -202,9 +244,11 @@ $(function () {
     info: true,
     paging: true,
     searching: true,
-    order: [[0, 'desc']],
-            // Let DataTables infer columns from the DOM to avoid mismatches
+    // Sort by Time (second column) by default — first column is selection checkboxes
+    order: [[1, 'desc']],
+            // Explicit column rules: checkbox col (0) should not be orderable; actions col (-1) not orderable
             columnDefs: [
+                { targets: 0, orderable: false, searchable: false, width: '1%' },
                 { targets: -1, orderable: false, searchable: false },
                 { targets: '_all', defaultContent: '' }
             ],
@@ -383,6 +427,40 @@ function exportAuditDetail() {
         } catch(e){}
     });
 })();
+
+// Bulk archive (soft-delete) handling for audit table
+$(function(){
+    $('#audit-select-all').on('change', function(){
+        $('.audit-row-checkbox').prop('checked', $(this).prop('checked'));
+    });
+
+    $('#archiveSelected').on('click', function(){
+        var ids = $('.audit-row-checkbox:checked').map(function(){ return $(this).val(); }).get();
+        if (ids.length === 0) { alert('Select at least one row to archive'); return; }
+        if(!confirm('Archive (soft-delete) selected logs?')) return;
+        var form = $('#bulkSoftForm');
+        // remove previous inputs
+        form.find('input[name="ids[]"]').remove();
+        ids.forEach(function(id){
+            form.append($('<input>').attr({type:'hidden', name:'ids[]', value:id}));
+        });
+        form.submit();
+    });
+});
+
+    // Hidden bulk action forms for archive/restore/purge operations
+    // These forms are populated dynamically by the bulk action handlers above
+    $(function(){
+        if ($('#bulkSoftForm').length === 0) {
+            $('body').append('<form id="bulkSoftForm" method="POST" action="' + '{{ route("system-logs.bulk-soft-delete") }}' + '" style="display:none">@csrf</form>');
+        }
+        if ($('#bulkRestoreForm').length === 0) {
+            $('body').append('<form id="bulkRestoreForm" method="POST" action="' + '{{ route("system-logs.bulk-restore") }}' + '" style="display:none">@csrf</form>');
+        }
+        if ($('#bulkPurgeForm').length === 0) {
+            $('body').append('<form id="bulkPurgeForm" method="POST" action="' + '{{ route("system-logs.bulk-purge") }}' + '" style="display:none">@csrf</form>');
+        }
+    });
 </script>
 @endpush
 
