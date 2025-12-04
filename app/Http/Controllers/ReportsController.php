@@ -84,7 +84,9 @@ class ReportsController extends Controller
             ->map(function($group) {
                 return [
                     'net_sales'     => $group->sum('net_sales'),
-                    'vat_exempt_sales' => $group->sum('vat_exempt_sales'),
+                    // The DB column is `sc_vat_exempt_sales`; expose it to the UI
+                    // as `vat_exempt_sales` to keep front-end keys stable.
+                    'vat_exempt_sales' => $group->sum('sc_vat_exempt_sales'),
                     'promo_with_approval' => $group->sum('promo_with_approval'),
                     'promo_without_approval' => $group->sum('promo_without_approval'),
                     'employee_discount' => $group->sum('employee_discount'),
