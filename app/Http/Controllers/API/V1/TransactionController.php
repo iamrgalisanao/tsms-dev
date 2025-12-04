@@ -949,6 +949,33 @@ class TransactionController extends Controller
             }
 
             if ($transaction->voided_at) {
+                // If already voided, treat identical requests as idempotent successes.
+                // Recompute canonical checksum using stored values and compare with provided checksum.
+                try {
+                    $storedPayload = [];
+                    if ($usedIdentifier === 'transaction_id') {
+                        $storedPayload['transaction_id'] = $transaction->transaction_id;
+                    } else {
+                        $storedPayload['receipt_no'] = isset($transaction->receipt_no) ? trim((string) $transaction->receipt_no) : trim((string) ($request->receipt_no ?? ''));
+                    }
+                    $storedPayload['void_reason'] = $transaction->void_reason ?? '';
+
+                    $storedChecksum = $checksumService->computeChecksum($storedPayload);
+                    if (hash_equals($storedChecksum, $provided)) {
+                        // Idempotent retry: return success with existing void details
+                        DB::rollBack();
+                        return response()->json([
+                            'success' => true,
+                            'message' => 'Transaction already voided (idempotent)',
+                            'transaction_id' => $transaction->transaction_id,
+                            'voided_at' => $transaction->voided_at,
+                            'void_reason' => $transaction->void_reason
+                        ], 200);
+                    }
+                } catch (\Throwable $e) {
+                    // Fall through to conflict response if checksum comparison fails for any reason
+                }
+
                 DB::rollBack();
                 return response()->json([
                     'success' => false,
@@ -1038,6 +1065,45 @@ class TransactionController extends Controller
                     'message' => 'Invalid payload checksum',
                     'errors' => ['payload_checksum' => ['Checksum validation failed']]
                 ], 422);
+            }
+
+            // Business rule: disallow voiding if there are existing refunds for this transaction
+            try {
+                $hasRefunds = \App\Models\Transaction::where('original_transaction_id', $transaction->transaction_id)
+                    ->where('transaction_type', 'REFUND')
+                    ->exists();
+            } catch (\Throwable $e) {
+                // If the query fails for any reason, be conservative and assume no refunds exist
+                $hasRefunds = false;
+            }
+
+            if ($hasRefunds) {
+                DB::rollBack();
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Cannot void a transaction that has refunds',
+                ], 409);
+            }
+
+            // Business rule: only allow voids on the same business day (configurable timezone)
+            try {
+                $tz = config('app.business_timezone', config('app.timezone', 'UTC'));
+                $txTime = Carbon::parse($transaction->transaction_timestamp)->setTimezone($tz);
+                $today = now()->setTimezone($tz);
+                if ($txTime->toDateString() !== $today->toDateString()) {
+                    DB::rollBack();
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Voids are only permitted on the same business day',
+                    ], 409);
+                }
+            } catch (\Throwable $e) {
+                // If timezone parsing fails, be conservative and reject the void
+                DB::rollBack();
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Unable to validate void timing',
+                ], 500);
             }
 
             // Update transaction with void information and timestamp

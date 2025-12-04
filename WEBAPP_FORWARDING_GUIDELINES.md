@@ -1,73 +1,18 @@
-# Complete Payload Forwarding Implementation Guide
+# WebApp Forwarding (DEPRECATED/IGNORED in staging)
 
-## Current Status ✅
+NOTE: Forwarding to the external WebApp is currently deprecated for staging environments managed by the client and is intentionally ignored by default. The codebase retains the WebApp forwarding implementation and related utilities purely for historical reference and for potential future re-enablement by platform owners. The guidance below is kept for completeness but operational teams should assume forwarding is disabled unless explicitly re-enabled and tested.
 
-Your TSMS system already has a **production-ready** webapp forwarding implementation:
+Operational note:
+- Ensure `config('tsms.web_app.enabled')` (or the env var `WEBAPP_FORWARDING_ENABLED`) is set to `false` in staging to prevent any outbound forwarding activity.
+- If re-enabling in a controlled environment, follow the rollout and circuit-breaker guidance in `CHANGELOG-FORWARDING.md` and run the dry-run command first.
 
-### ✅ **Active Components:**
-- **WebAppForwardingService** - Handles batch forwarding with circuit breaker
-- **ForwardTransactionsToWebAppJob** - Async queue processing
-- **ForwardTransactionsToWebApp** - CLI command with multiple modes
-- **WebappTransactionForward** - Database tracking model
-- **Configuration** - Complete settings in `config/tsms.php`
+The forwarding components present in the repository (for reference) include:
+- `WebAppForwardingService` - batch forwarding with circuit breaker
+- `ForwardTransactionsToWebAppJob` - async queue processor
+- `ForwardTransactionsToWebApp` - CLI command with multiple modes
+- `WebappTransactionForward` - DB tracking model
 
-### ✅ **Current Configuration:**
-```php
-'web_app' => [
-    'endpoint' => 'http://tsms-ops.test/api/transactions/bulk',
-    'timeout' => 30,
-    'batch_size' => 50,
-    'auth_token' => 'tsms_7f8a2c1e_2025_ops_XYZ123',
-    'verify_ssl' => false,
-    'enabled' => true,  // ✅ ENABLED
-]
-```
-
-### ✅ **Statistics:**
-- ✅ 1 transaction successfully forwarded
-- ✅ Circuit breaker: CLOSED (healthy)
-- ✅ 0 failed forwards
-- ✅ System operational
-
-## How to Use the Existing Forwarding System
-
-### 1. **Manual Forwarding (CLI)**
-```bash
-# Forward pending transactions
-php artisan tsms:forward-transactions
-
-# Dry run to see what would be forwarded
-php artisan tsms:forward-transactions --dry-run
-
-# Force forwarding (bypass circuit breaker)
-php artisan tsms:forward-transactions --force
-
-# Queue for async processing
-php artisan tsms:forward-transactions --queue
-
-# Show statistics
-php artisan tsms:forward-transactions --stats
-```
-
-### 2. **Automatic Forwarding (Queue Job)**
-```php
-// Dispatch the forwarding job
-ForwardTransactionsToWebAppJob::dispatch();
-```
-
-### 3. **Programmatic Forwarding**
-```php
-use App\Services\WebAppForwardingService;
-
-$forwardingService = app(WebAppForwardingService::class);
-$result = $forwardingService->forwardUnsentTransactions();
-
-if ($result['success']) {
-    echo "Forwarded {$result['forwarded_count']} transactions";
-} else {
-    echo "Failed: {$result['error']}";
-}
-```
+The rest of this document preserves the historic payload schema and CLI usage for teams that may need to re-enable forwarding in a controlled environment.
 
 ## Payload Structure Forwarded to WebApp
 

@@ -2,8 +2,10 @@
 
 Date: 2025-09-15
 
+IMPORTANT: As of this release cycle, forwarding to the external WebApp is ignored by default in the TSMS staging/deployment managed by the client. The system retains the forwarding code and schemas for historical/reference purposes, but operationally the forwarding pathway should be considered disabled unless explicitly re-enabled by the platform owner. See the "Operational note" section below for details.
+
 ## Summary
-Introduces unified bulk forwarding envelope (schema_version 2.0) for both batch and single transaction forwarding, adding explicit tenant_id and terminal_id at the root plus a deterministic batch checksum.
+This document describes the forwarding envelope (schema_version 2.0) historically used for forwarding payloads to an external WebApp. The schema remains available for reference but forwarding is not active by default in staging.
 
 ## Key Features
 - Root fields: tenant_id, terminal_id, transaction_count, batch_checksum

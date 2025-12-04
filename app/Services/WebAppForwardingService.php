@@ -87,6 +87,10 @@ class WebAppForwardingService
      */
     public function forwardVoidedTransaction($transaction)
     {
+        if (! $this->enabled) {
+            $this->log('info', 'WebApp forwarding disabled - skipping forwardVoidedTransaction', [], $transaction);
+            return;
+        }
         $payload = [
             'tsms_id'               => $transaction->id,
             'transaction_id'        => $transaction->transaction_id,
@@ -954,6 +958,10 @@ class WebAppForwardingService
      */
     public function forwardTransactionImmediately(Transaction $transaction): array
     {
+        if (! $this->enabled) {
+            $this->log('warning', 'WebApp forwarding disabled (immediate)');
+            return ['success' => false, 'reason' => 'disabled'];
+        }
         $this->assertEndpoint();
 
         // Load relationships if not already loaded
@@ -1217,6 +1225,35 @@ class WebAppForwardingService
                 'error' => $msg,
                 'batch_id' => $batchId
             ];
+        }
+    }
+
+    /**
+     * Generic fallback forward method for controllers that pass a prepared payload.
+     * Accepts an associative array payload and posts it to the configured endpoint.
+     * Returns an array with success status and optional data.
+     *
+     * @param array $payload
+     * @return array
+     */
+    public function forward(array $payload): array
+    {
+        if (! $this->enabled) {
+            $this->log('info', 'WebApp forwarding disabled - skipping generic forward', [], null, null);
+            return ['success' => false, 'reason' => 'disabled'];
+        }
+
+        try {
+            $client = Http::timeout($this->timeout)->withToken($this->authToken);
+            if (! $this->verifySSL) {
+                $client = $client->withoutVerifying();
+            }
+            $response = $client->post($this->webAppEndpoint, $payload);
+            $this->log('info', 'Generic forward posted', ['status' => $response->status()]);
+            return ['success' => true, 'status' => $response->status(), 'body' => $response->body()];
+        } catch (\Throwable $e) {
+            $this->log('error', 'Generic forward failed', ['error' => $e->getMessage()]);
+            return ['success' => false, 'error' => $e->getMessage()];
         }
     }
 }
