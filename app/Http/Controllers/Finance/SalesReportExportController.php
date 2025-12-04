@@ -72,18 +72,48 @@ class SalesReportExportController extends Controller
             })
             ->toArray();
 
-        // 4) Compute full-month totals
+        // 4) Compute full-month totals (base components)
         $totals = array_reduce($byDate, function($carry, $day) {
             foreach ($day as $k => $v) {
                 $carry[$k] = ($carry[$k] ?? 0) + $v;
             }
             return $carry;
         }, [
+            // base components (from grouped data)
             'net_sales'=>0,'vatable'=>0,'exempt'=>0,'vat'=>0,
             'promo_with'=>0,'promo_without'=>0,
             'emp_disc'=>0,'senior_disc'=>0,'pwd_disc'=>0,'vip_disc'=>0,
             'other_tax'=>0,'sc_dist'=>0,'sc_ret'=>0,'gross'=>0,
         ]);
+
+        // Derived totals following the finance formulas
+        // VAT = Vatable Sales * 12%
+        $totals['vat'] = round(($totals['vatable'] ?? 0) * 0.12, 2);
+        // Promotions = with + without
+        $totals['promotions'] = round(($totals['promo_with'] ?? 0) + ($totals['promo_without'] ?? 0), 2);
+        // Service charge = distributed + retained
+        $totals['service_charge'] = round(($totals['sc_dist'] ?? 0) + ($totals['sc_ret'] ?? 0), 2);
+        // Gross Sales = (Vatable + VAT) + Exempt + Senior + PWD + Promotions + Service Charge + Other Charges
+        $totals['gross'] = round(
+            ($totals['vatable'] ?? 0) + ($totals['vat'] ?? 0)
+            + ($totals['exempt'] ?? 0)
+            + ($totals['senior_disc'] ?? 0)
+            + ($totals['pwd_disc'] ?? 0)
+            + ($totals['promotions'] ?? 0)
+            + ($totals['service_charge'] ?? 0)
+            + ($totals['other_tax'] ?? 0)
+        , 2);
+        // Net Sales = Gross - Senior - PWD - Promotions - Employee - Other Taxes - Service Charge - VAT-Exempt Sales
+        $totals['net_sales'] = round(
+            ($totals['gross'] ?? 0)
+            - ($totals['senior_disc'] ?? 0)
+            - ($totals['pwd_disc'] ?? 0)
+            - ($totals['promotions'] ?? 0)
+            - ($totals['emp_disc'] ?? 0)
+            - ($totals['other_tax'] ?? 0)
+            - ($totals['service_charge'] ?? 0)
+            - ($totals['exempt'] ?? 0)
+        , 2);
 
         // 5) Load template & (optional) embed logo
         $tpl = storage_path('app/templates/monthly_sales_template.xlsx');
@@ -142,35 +172,52 @@ class SalesReportExportController extends Controller
 
             if (isset($byDate[$date])) {
                 $d = $byDate[$date];
-                $totaldiscount = $d['promo_with']
-                             + $d['promo_without']
-                             + $d['emp_disc']
-                             + $d['senior_disc']
-                             + $d['pwd_disc']
-                             + $d['vip_disc']
-                             + $d['sc_dist']
-                             + $d['sc_ret']
-                             + $d['other_tax'];
-                
-                $totalVat = $d['exempt'] + $d['vat'];
-                             
-                             
-                $vatable = $d['gross'] - ($totalVat + $totaldiscount);
-                         
+
+                // Compute per-day values following the finance formulas:
+                // Vatable Sales (VAT-exclusive) => use stored vatable_sales
+                $vatableSales = round($d['vatable'], 2);
+                // VAT = Vatable Sales * 12%
+                $vatAmount = round($vatableSales * 0.12, 2);
+                // Promotions = promo_with + promo_without
+                $promotions = round(($d['promo_with'] + $d['promo_without']), 2);
+                // Service Charge = distributed + retained
+                $serviceCharge = round(($d['sc_dist'] + $d['sc_ret']), 2);
+                // Gross Sales = (Vatable + VAT) + Exempt + Senior + PWD + Promotions + Service Charge + Other Charges
+                $gross = round(
+                    ($vatableSales + $vatAmount)
+                    + ($d['exempt'] ?? 0)
+                    + ($d['senior_disc'] ?? 0)
+                    + ($d['pwd_disc'] ?? 0)
+                    + $promotions
+                    + $serviceCharge
+                    + ($d['other_tax'] ?? 0)
+                , 2);
+                // Net Sales = Gross - Senior - PWD - Promotions - Employee - Other Taxes - Service Charge - VAT-Exempt Sales
+                $netSales = round(
+                    $gross
+                    - ($d['senior_disc'] ?? 0)
+                    - ($d['pwd_disc'] ?? 0)
+                    - $promotions
+                    - ($d['emp_disc'] ?? 0)
+                    - ($d['other_tax'] ?? 0)
+                    - $serviceCharge
+                    - ($d['exempt'] ?? 0)
+                , 2);
+
                 $sheet
-                    ->setCellValueExplicit("B{$r}", $vatable,      DataType::TYPE_NUMERIC)
-                    ->setCellValueExplicit("C{$r}", $d['exempt'],       DataType::TYPE_NUMERIC)
-                    ->setCellValueExplicit("D{$r}", $d['vat'],          DataType::TYPE_NUMERIC)
-                    ->setCellValueExplicit("E{$r}", $d['promo_with'],    DataType::TYPE_NUMERIC)
-                    ->setCellValueExplicit("F{$r}", $d['promo_without'], DataType::TYPE_NUMERIC)
-                    ->setCellValueExplicit("G{$r}", $d['emp_disc'],      DataType::TYPE_NUMERIC)
-                    ->setCellValueExplicit("H{$r}", $d['senior_disc'],   DataType::TYPE_NUMERIC)
-                    ->setCellValueExplicit("I{$r}", $d['pwd_disc'],      DataType::TYPE_NUMERIC)
-                    ->setCellValueExplicit("J{$r}", $d['vip_disc'],      DataType::TYPE_NUMERIC)
-                    ->setCellValueExplicit("K{$r}", $d['other_tax'],     DataType::TYPE_NUMERIC)
-                    ->setCellValueExplicit("L{$r}", $d['sc_dist'],       DataType::TYPE_NUMERIC)
-                    ->setCellValueExplicit("M{$r}", $d['sc_ret'],        DataType::TYPE_NUMERIC)
-                    ->setCellValueExplicit("N{$r}", $d['gross'],         DataType::TYPE_NUMERIC);
+                    ->setCellValueExplicit("B{$r}", $vatableSales,      DataType::TYPE_NUMERIC)
+                    ->setCellValueExplicit("C{$r}", round($d['exempt'], 2),       DataType::TYPE_NUMERIC)
+                    ->setCellValueExplicit("D{$r}", $vatAmount,          DataType::TYPE_NUMERIC)
+                    ->setCellValueExplicit("E{$r}", round($d['promo_with'], 2),    DataType::TYPE_NUMERIC)
+                    ->setCellValueExplicit("F{$r}", round($d['promo_without'], 2), DataType::TYPE_NUMERIC)
+                    ->setCellValueExplicit("G{$r}", round($d['emp_disc'], 2),      DataType::TYPE_NUMERIC)
+                    ->setCellValueExplicit("H{$r}", round($d['senior_disc'], 2),   DataType::TYPE_NUMERIC)
+                    ->setCellValueExplicit("I{$r}", round($d['pwd_disc'], 2),      DataType::TYPE_NUMERIC)
+                    ->setCellValueExplicit("J{$r}", round($d['vip_disc'], 2),      DataType::TYPE_NUMERIC)
+                    ->setCellValueExplicit("K{$r}", round($d['other_tax'], 2),     DataType::TYPE_NUMERIC)
+                    ->setCellValueExplicit("L{$r}", round($d['sc_dist'], 2),       DataType::TYPE_NUMERIC)
+                    ->setCellValueExplicit("M{$r}", round($d['sc_ret'], 2),        DataType::TYPE_NUMERIC)
+                    ->setCellValueExplicit("N{$r}", $gross,         DataType::TYPE_NUMERIC);
             }
         }
 
@@ -198,18 +245,20 @@ class SalesReportExportController extends Controller
         // 7) “Total” row at 49
         $totalRow = 49;
         $sheet->setCellValue("A{$totalRow}", 'Total')
-            ->setCellValueExplicit("B{$totalRow}", ($totals['gross'] - ($totals['exempt'] + $totals['vat'] + $totals['promo_with'] + $totals['promo_without'] + $totals['emp_disc'] + $totals['senior_disc'] + $totals['pwd_disc'] + $totals['vip_disc'] + $totals['sc_dist'] + $totals['sc_ret'] + $totals['other_tax'])), DataType::TYPE_NUMERIC)
-            ->setCellValueExplicit("C{$totalRow}", $totals['exempt'],       DataType::TYPE_NUMERIC)
-            ->setCellValueExplicit("D{$totalRow}", $totals['vat'],          DataType::TYPE_NUMERIC)
-            ->setCellValueExplicit("E{$totalRow}", $totals['promo_with'],    DataType::TYPE_NUMERIC)
-            ->setCellValueExplicit("F{$totalRow}", $totals['promo_without'], DataType::TYPE_NUMERIC)
-            ->setCellValueExplicit("G{$totalRow}", $totals['emp_disc'],      DataType::TYPE_NUMERIC)
-            ->setCellValueExplicit("H{$totalRow}", $totals['senior_disc'],   DataType::TYPE_NUMERIC)
-            ->setCellValueExplicit("I{$totalRow}", $totals['pwd_disc'],      DataType::TYPE_NUMERIC)
-            ->setCellValueExplicit("J{$totalRow}", $totals['vip_disc'],      DataType::TYPE_NUMERIC)
-            ->setCellValueExplicit("K{$totalRow}", $totals['other_tax'],     DataType::TYPE_NUMERIC)
-            ->setCellValueExplicit("L{$totalRow}", $totals['sc_dist'],       DataType::TYPE_NUMERIC)
-            ->setCellValueExplicit("M{$totalRow}", $totals['sc_ret'],         DataType::TYPE_NUMERIC);
+            // B: Vatable Sales (VAT-exclusive)
+            ->setCellValueExplicit("B{$totalRow}", round($totals['vatable'] ?? 0, 2), DataType::TYPE_NUMERIC)
+            ->setCellValueExplicit("C{$totalRow}", round($totals['exempt'] ?? 0, 2),       DataType::TYPE_NUMERIC)
+            // D: VAT computed as Vatable * 12%
+            ->setCellValueExplicit("D{$totalRow}", round($totals['vat'] ?? 0, 2),          DataType::TYPE_NUMERIC)
+            ->setCellValueExplicit("E{$totalRow}", round($totals['promo_with'] ?? 0, 2),    DataType::TYPE_NUMERIC)
+            ->setCellValueExplicit("F{$totalRow}", round($totals['promo_without'] ?? 0, 2), DataType::TYPE_NUMERIC)
+            ->setCellValueExplicit("G{$totalRow}", round($totals['emp_disc'] ?? 0, 2),      DataType::TYPE_NUMERIC)
+            ->setCellValueExplicit("H{$totalRow}", round($totals['senior_disc'] ?? 0, 2),   DataType::TYPE_NUMERIC)
+            ->setCellValueExplicit("I{$totalRow}", round($totals['pwd_disc'] ?? 0, 2),      DataType::TYPE_NUMERIC)
+            ->setCellValueExplicit("J{$totalRow}", round($totals['vip_disc'] ?? 0, 2),      DataType::TYPE_NUMERIC)
+            ->setCellValueExplicit("K{$totalRow}", round($totals['other_tax'] ?? 0, 2),     DataType::TYPE_NUMERIC)
+            ->setCellValueExplicit("L{$totalRow}", round($totals['sc_dist'] ?? 0, 2),       DataType::TYPE_NUMERIC)
+            ->setCellValueExplicit("M{$totalRow}", round($totals['sc_ret'] ?? 0, 2),         DataType::TYPE_NUMERIC);
 
         // 8) "Less:" summary at rows 51–59
         $sheet->setCellValueExplicit("N51", $totals['promo_with'], DataType::TYPE_NUMERIC)
@@ -222,25 +271,18 @@ class SalesReportExportController extends Controller
               ->setCellValueExplicit("N58", $totals['sc_dist'], DataType::TYPE_NUMERIC)
               ->setCellValueExplicit("N59", $totals['sc_ret'], DataType::TYPE_NUMERIC);
 
-        // 9) Net Sales, VAT, Net ex-VAT (61, 62, 64)
-        $netSales   = $totals['gross'] - ($totals['exempt'] 
-                                        + $totals['vat'] + $totals['promo_with'] 
-                                        + $totals['promo_without'] + $totals['emp_disc'] 
-                                        + $totals['senior_disc'] 
-                                        + $totals['pwd_disc'] 
-                                        + $totals['vip_disc'] 
-                                        + $totals['sc_dist'] 
-                                        + $totals['sc_ret'] 
-                                        + $totals['other_tax']) + $totals['vat'];
-        $vatAmount  = ($netSales / 1.12)*0.12;
-        $netExclVAT = $netSales / 1.12;
+      // 9) Net Sales, VAT, Net ex-VAT (61, 62, 64) — use derived totals per finance formulas
+      $netSales   = round($totals['net_sales'] ?? 0, 2);
+      $vatAmount  = round($totals['vat'] ?? 0, 2); // VAT = Vatable * 12%
+      // Net excluding VAT = Net Sales - VAT
+      $netExclVAT = round($netSales - $vatAmount, 2);
 
-        $sheet->setCellValue("A61", 'Net Sales')
-              ->setCellValueExplicit("N61", $netSales,   DataType::TYPE_NUMERIC);
-        $sheet->setCellValue("A62", 'Less 12% VAT')
-              ->setCellValueExplicit("N62", $vatAmount,  DataType::TYPE_NUMERIC);
-        $sheet->setCellValue("A64", '')
-              ->setCellValueExplicit("N64", $netExclVAT,DataType::TYPE_NUMERIC);
+      $sheet->setCellValue("A61", 'Net Sales')
+          ->setCellValueExplicit("N61", $netSales,   DataType::TYPE_NUMERIC);
+      $sheet->setCellValue("A62", 'Less 12% VAT')
+          ->setCellValueExplicit("N62", $vatAmount,  DataType::TYPE_NUMERIC);
+      $sheet->setCellValue("A64", '')
+          ->setCellValueExplicit("N64", $netExclVAT,DataType::TYPE_NUMERIC);
 
         // 10) "Add:" block at rows 66–69
         $adds = [
