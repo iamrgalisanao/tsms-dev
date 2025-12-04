@@ -7,6 +7,7 @@ use App\Models\Tenant;
 use App\Models\Transaction;
 use Carbon\Carbon;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\Schema;
 
 class ReportsController extends Controller
 {
@@ -52,15 +53,34 @@ class ReportsController extends Controller
         if ($tenant && $tenant !== 'all') {
             $query->where('tenant_id', $tenant);
         }
-
-        $query->whereYear('created_at', $year)
-              ->whereMonth('created_at', $month)
-              ->orderBy('created_at');
+        // Prefer filtering by canonical transaction_timestamp when the column exists
+        // to align the finance reports with admin transaction logs and reporting
+        // services. Fall back to created_at when transaction_timestamp is missing.
+        if (Schema::hasColumn('transactions', 'transaction_timestamp')) {
+            $query->whereYear('transaction_timestamp', $year)
+                  ->whereMonth('transaction_timestamp', $month)
+                  ->orderBy('transaction_timestamp');
+        } else {
+            $query->whereYear('created_at', $year)
+                  ->whereMonth('created_at', $month)
+                  ->orderBy('created_at');
+        }
 
         $transactions = $query->get();
 
+        // Group transactions by the canonical date (transaction_timestamp if present,
+        // otherwise completed_at/created_at) to ensure daily buckets align with
+        // the reporting services (which use COALESCE(transaction_timestamp, completed_at, created_at)).
         $byDate = $transactions
-            ->groupBy(fn($tx) => $tx->created_at->format('Y-m-d'))
+            ->groupBy(function($tx) {
+                $ts = $tx->transaction_timestamp ?? $tx->completed_at ?? $tx->created_at;
+                try {
+                    return Carbon::parse($ts)->format('Y-m-d');
+                } catch (\Throwable $_) {
+                    // if parsing fails, fall back to created_at string format
+                    return optional($tx->created_at)->format('Y-m-d') ?? date('Y-m-d');
+                }
+            })
             ->map(function($group) {
                 return [
                     'net_sales'     => $group->sum('net_sales'),
