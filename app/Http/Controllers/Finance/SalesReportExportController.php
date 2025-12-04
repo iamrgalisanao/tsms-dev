@@ -23,8 +23,9 @@ class SalesReportExportController extends Controller
         $month = str_pad($request->query('month', now()->format('m')), 2, '0', STR_PAD_LEFT);
         $tenant = $request->query('tenant', null);
 
-        // 2) Build query on created_at (to match PDF logic), optional store filter
-        $query = Transaction::query();
+    // 2) Build query using canonical transaction timestamp when present
+    //    Fallback to created_at/completed_at so export matches dashboard/reporting logic
+    $query = Transaction::query();
         $tenantName = 'All Tenants';
         
         if ($tenant && $tenant !== 'all') {
@@ -34,19 +35,28 @@ class SalesReportExportController extends Controller
             $tenantName = $tenantRecord ? $tenantRecord->trade_name : 'Unknown Tenant';
         }
         
-        $query->whereYear('created_at', $year)
-              ->whereMonth('created_at', $month)
-              ->orderBy('created_at');
+      // Use COALESCE(transaction_timestamp, completed_at, created_at) as the canonical
+      // transaction time for reporting consistency with dashboard.
+      $query->whereRaw("YEAR(COALESCE(transaction_timestamp, completed_at, created_at)) = ?", [$year])
+          ->whereRaw("MONTH(COALESCE(transaction_timestamp, completed_at, created_at)) = ?", [$month])
+          ->orderByRaw("COALESCE(transaction_timestamp, completed_at, created_at)");
         $transactions = $query->get();
 
         // 3) Group by date and compute daily aggregates
         $byDate = $transactions
-            ->groupBy(fn($tx) => $tx->created_at->format('Y-m-d'))
+            ->groupBy(function($tx) {
+                $ts = $tx->transaction_timestamp ?? $tx->completed_at ?? $tx->created_at;
+                return 
+                    $ts instanceof \Carbon\Carbon
+                        ? $ts->format('Y-m-d')
+                        : \Carbon\Carbon::parse($ts)->format('Y-m-d');
+            })
             ->map(function($group) {
                 return [
                     'net_sales'     => $group->sum('net_sales'),
                     'vatable'       => $group->sum('vatable_sales'),
-                    'exempt'        => $group->sum('vat_exempt_sales'),
+                    // DB column is `sc_vat_exempt_sales`; keep export aligned with reporting
+                    'exempt'        => $group->sum('sc_vat_exempt_sales'),
                     'vat'           => $group->sum('vat_amount'),
                     'promo_with'    => $group->sum('promo_with_approval'),
                     'promo_without' => $group->sum('promo_without_approval'),
