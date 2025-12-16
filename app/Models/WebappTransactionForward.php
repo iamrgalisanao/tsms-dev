@@ -53,6 +53,7 @@ class WebappTransactionForward extends Model
     const STATUS_IN_PROGRESS = 'in_progress';
     const STATUS_COMPLETED = 'completed';
     const STATUS_FAILED = 'failed';
+    const STATUS_SKIPPED = 'skipped';
 
     /**
      * Get the transaction that this forward belongs to

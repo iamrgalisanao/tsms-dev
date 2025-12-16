@@ -88,7 +88,48 @@ class WebAppForwardingService
     public function forwardVoidedTransaction($transaction)
     {
         if (! $this->enabled) {
-            $this->log('info', 'WebApp forwarding disabled - skipping forwardVoidedTransaction', [], $transaction);
+            // Record a skipped forward for auditability and reprocessing later
+            $skipPayload = [
+                'tsms_id' => $transaction->id,
+                'transaction_id' => $transaction->transaction_id,
+                'terminal_serial' => $transaction->terminal?->serial_number,
+                'tenant_id' => $transaction->tenant_id,
+                'transaction_timestamp' => $this->isoTimestamp($transaction->transaction_timestamp),
+                'voided_at' => $this->isoTimestamp($transaction->voided_at),
+                'void_reason' => $transaction->void_reason,
+                'amount' => (float) $transaction->gross_sales,
+            ];
+
+            try {
+                WebappTransactionForward::create([
+                    'transaction_id' => $transaction->id,
+                    'batch_id' => 'SKIP_' . now()->format('YmdHis') . '_' . uniqid(),
+                    'status' => WebappTransactionForward::STATUS_SKIPPED,
+                    'attempts' => 0,
+                    'max_attempts' => 0,
+                    'first_attempted_at' => now(),
+                    'last_attempted_at' => now(),
+                    'completed_at' => now(),
+                    'request_payload' => $skipPayload,
+                    'response_data' => ['reason' => 'webapp_forwarding_disabled'],
+                    'response_status_code' => null,
+                    'error_message' => 'skipped: webapp_forwarding_disabled',
+                    'metadata' => [
+                        'reason' => 'webapp_forwarding_disabled',
+                        'config_snapshot' => [
+                            'endpoint' => $this->webAppEndpoint,
+                            'enabled' => $this->enabled,
+                        ]
+                    ],
+                ]);
+            } catch (\Throwable $e) {
+                \Log::warning('Failed to record skipped webapp forward', [
+                    'transaction_id' => $transaction->transaction_id,
+                    'error' => $e->getMessage(),
+                ]);
+            }
+
+            $this->log('info', 'WebApp forwarding disabled - recorded skipped forward', [], $transaction);
             return;
         }
         $payload = [
