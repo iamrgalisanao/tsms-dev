@@ -1,0 +1,41 @@
+{
+  "submission_uuid": "925a07fa-37c4-48fa-98c6-4ab059d8e0f1",
+  "tenant_id": 11,
+  "terminal_id": 1,
+  "submission_timestamp": "2026-04-12T02:30:00Z",
+  "transaction_count": 1,
+  "payload_checksum": "c58b990fc5befd9e615551f77e108c8b454ecdb0e7e11dfcaecf56c097cd374e",
+  "transaction": {
+    "transaction_id": "00000000-0000-0000-0000-000000000003",
+    "transaction_timestamp": "2025-12-11T10:59:50Z",
+    "receipt_no": "00000003",
+    "gross_sales": 190.00,
+    "net_sales": 173.76,
+    "promo_status": "",
+    "customer_code": "",
+    "payload_checksum": "a1061cd4d0b38c6455af4933b4352317a393692b1e6f8e6a04dc59d6a1cc6437",
+    "adjustments": [
+      { "adjustment_type": "senior_citizen_discount", "amount": 0 },
+      { "adjustment_type": "person_with_disability", "amount": 0 },
+      { "adjustment_type": "15_percent", "amount": 28.5 },
+      { "adjustment_type": "10_percent", "amount": 0 },
+      { "adjustment_type": "employee_discount", "amount": 0 },
+      { "adjustment_type": "zero_revenue", "amount": 0 },
+      { "adjustment_type": "100%", "amount": 0 },
+      { "adjustment_type": "birthday_discount", "amount": 0 },
+      { "adjustment_type": "diplomat", "amount": 0 },
+      { "adjustment_type": "scdisc5", "amount": 0 },
+      { "adjustment_type": "pwdisc5", "amount": 0 },
+      { "adjustment_type": "SCHG", "amount": 12.256696428571 },
+      { "adjustment_type": "DCHG", "amount": 0 },
+      { "adjustment_type": "PCHG", "amount": 0 },
+      { "adjustment_type": "del150", "amount": 0 }
+    ],
+    "taxes": [
+      { "tax_type": "VAT", "amount": 17.3 },
+      { "tax_type": "VATABLE_SALES", "amount": 144.2 },
+      { "tax_type": "SC_VAT_EXEMPT_SALES", "amount": 0 },
+      { "tax_type": "OTHER_TAX", "amount": 0 }
+    ]
+  }
+}

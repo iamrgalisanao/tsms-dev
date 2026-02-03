@@ -1,12 +1,14 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import api from '../Services/api';
-import MetricCard from '../Components/Dashboard/MetricCard';
-import TransactionChart from '../Components/Dashboard/TransactionChart';
-import RecentTransactionsTable from '../Components/Dashboard/RecentTransactionsTable';
-import AuditLogsTable from '../Components/Dashboard/AuditLogsTable';
-import AlertsPanel from '../Components/Dashboard/AlertsPanel';
-import SystemHealthMonitor from '../Components/Dashboard/SystemHealthMonitor';
-import RevenueByTerminalChart from '../Components/Dashboard/RevenueByTerminalChart';
+import MetricCard from '../Components/dashboard/MetricCard';
+import TransactionChart from '../Components/dashboard/TransactionChart';
+import RecentTransactionsTable from '../Components/dashboard/RecentTransactionsTable';
+import AuditLogsTable from '../Components/dashboard/AuditLogsTable';
+import AlertsPanel from '../Components/dashboard/AlertsPanel';
+import SystemHealthMonitor from '../Components/dashboard/SystemHealthMonitor';
+import RevenueByTerminalChart from '../Components/dashboard/RevenueByTerminalChart';
+import FilterBar from '../Components/dashboard/FilterBar';
+import NotificationToast from '../Components/dashboard/NotificationToast';
 
 const DashboardPage = () => {
     const [metrics, setMetrics] = useState(null);
@@ -18,6 +20,13 @@ const DashboardPage = () => {
     const [loading, setLoading] = useState(true);
     const [refreshInterval, setRefreshInterval] = useState(30000); // 30 seconds
     const [isRefreshing, setIsRefreshing] = useState(false);
+    const [notification, setNotification] = useState(null);
+    const [filters, setFilters] = useState({
+        start_date: '',
+        end_date: '',
+        terminal_id: '',
+        search: ''
+    });
 
     const fetchDashboardData = useCallback(async (isInitial = false) => {
         try {
@@ -29,8 +38,8 @@ const DashboardPage = () => {
                 api.getCharts(),
                 api.getSystemHealth(),
                 api.getTerminalPerformance(),
-                api.getTransactions(1),
-                api.getAuditLogs(1)
+                api.getTransactions(1, filters),
+                api.getAuditLogs(1, filters)
             ]);
 
             setMetrics(metricsRes);
@@ -39,13 +48,23 @@ const DashboardPage = () => {
             setTerminalPerformance(tpRes || []);
             setRecentTransactions(transactionsRes.data || []);
             setAuditLogs(auditRes.data || []);
+
+            // Notification Detection Logic for Phase 5
+            if (healthRes && healthRes.cpu > 85) {
+                setNotification({ message: 'Critical high CPU usage detected! System performance may be affected.', type: 'error' });
+            } else if (healthRes && healthRes.forwarding.status === 'Offline') {
+                setNotification({ message: 'Transaction forwarding is currently OFFLINE.', type: 'warning' });
+            } else if (isInitial) {
+                // Welcome/Status notification on startup
+                setNotification({ message: 'Dashboard Command Center is active and monitoring live terminals.', type: 'success' });
+            }
         } catch (error) {
             console.error('Error fetching dashboard data:', error);
         } finally {
             setLoading(false);
             setIsRefreshing(false);
         }
-    }, []);
+    }, [filters]);
 
     useEffect(() => {
         fetchDashboardData(true);
@@ -56,6 +75,15 @@ const DashboardPage = () => {
         const timer = setInterval(() => fetchDashboardData(), refreshInterval);
         return () => clearInterval(timer);
     }, [fetchDashboardData, refreshInterval]);
+
+    const handleFilterChange = (newFilters) => {
+        setFilters(newFilters);
+    };
+
+    const handleExport = () => {
+        const queryParams = new URLSearchParams(filters).toString();
+        window.open(`/api/dashboard/export-transactions?${queryParams}`, '_blank');
+    };
 
     const handleForward = async (id) => {
         try {
@@ -106,6 +134,13 @@ const DashboardPage = () => {
 
             {/* Top Critical Section */}
             <AlertsPanel loading={loading} alerts={[]} />
+
+            {/* Phase 5: Filter Bar */}
+            <FilterBar
+                onFilterChange={handleFilterChange}
+                onExport={handleExport}
+                loading={loading}
+            />
 
             {/* Real-time Metrics Grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
@@ -204,6 +239,13 @@ const DashboardPage = () => {
                     </div>
                 </div>
             </div>
+            {notification && (
+                <NotificationToast
+                    message={notification.message}
+                    type={notification.type}
+                    onClose={() => setNotification(null)}
+                />
+            )}
         </div>
     );
 };

@@ -9,9 +9,8 @@ const api = {
         const response = await axios.get('/api/dashboard/charts');
         return response.data;
     },
-    getTransactions: async (page = 1, date = null) => {
-        const params = { page };
-        if (date) params.date = date;
+    getTransactions: async (page = 1, filters = {}) => {
+        const params = { page, ...filters };
         const response = await axios.get('/api/dashboard/transactions', { params });
         return response.data;
     },

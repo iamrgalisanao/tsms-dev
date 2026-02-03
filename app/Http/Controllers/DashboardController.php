@@ -185,14 +185,71 @@ class DashboardController extends Controller
     // API: GET /api/dashboard/transactions
     public function apiTransactions(Request $request)
     {
-        // include tenant/terminal relations and precompute adjustments sum for efficient rendering
         $query = Transaction::with(['terminal', 'tenant', 'adjustments', 'taxes'])
             ->withSum('adjustments as adjustments_sum', 'amount');
-        if ($request->has('date')) {
-            $query->whereDate('transaction_timestamp', $request->input('date'));
+
+        // Apply filters
+        if ($request->filled('start_date')) {
+            $query->whereDate('transaction_timestamp', '>=', $request->input('start_date'));
         }
+        if ($request->filled('end_date')) {
+            $query->whereDate('transaction_timestamp', '<=', $request->input('end_date'));
+        }
+        if ($request->filled('terminal_id')) {
+            $query->where('terminal_id', $request->input('terminal_id'));
+        }
+        if ($request->filled('search')) {
+            $search = $request->input('search');
+            $query->where(function ($q) use ($search) {
+                $q->where('transaction_id', 'like', "%{$search}%")
+                    ->orWhereHas('tenant', function ($t) use ($search) {
+                        $t->where('trade_name', 'like', "%{$search}%");
+                    });
+            });
+        }
+
         $transactions = $query->orderByDesc('transaction_timestamp')->paginate(50);
         return new \App\Http\Resources\TransactionCollection($transactions);
+    }
+
+    // API: GET /api/dashboard/export-transactions
+    public function exportTransactions(Request $request)
+    {
+        $query = Transaction::with(['terminal', 'tenant']);
+
+        if ($request->filled('start_date')) {
+            $query->whereDate('transaction_timestamp', '>=', $request->input('start_date'));
+        }
+        if ($request->filled('end_date')) {
+            $query->whereDate('transaction_timestamp', '<=', $request->input('end_date'));
+        }
+
+        $transactions = $query->orderByDesc('transaction_timestamp')->limit(1000)->get();
+
+        $filename = 'transactions_export_' . now()->format('Y-m-d') . '.csv';
+        $headers = [
+            'Content-Type' => 'text/csv',
+            'Content-Disposition' => "attachment; filename=\"$filename\"",
+        ];
+
+        $callback = function () use ($transactions) {
+            $file = fopen('php://output', 'w');
+            fputcsv($file, ['ID', 'Transaction ID', 'Tenant', 'Terminal', 'Net Sales', 'Timestamp']);
+
+            foreach ($transactions as $tx) {
+                fputcsv($file, [
+                    $tx->id,
+                    $tx->transaction_id,
+                    $tx->tenant->trade_name ?? 'N/A',
+                    $tx->terminal->terminal_uid ?? 'N/A',
+                    $tx->net_sales,
+                    $tx->transaction_timestamp
+                ]);
+            }
+            fclose($file);
+        };
+
+        return response()->stream($callback, 200, $headers);
     }
 
     // API: POST /api/dashboard/forward-transaction/{id}
@@ -339,15 +396,16 @@ class DashboardController extends Controller
     {
         $query = \App\Models\AuditLog::with('user');
 
-        if ($request->has('date')) {
-            $query->whereDate('created_at', $request->input('date'));
+        if ($request->filled('start_date')) {
+            $query->whereDate('created_at', '>=', $request->input('start_date'));
         }
-
-        if ($request->has('user_id')) {
+        if ($request->filled('end_date')) {
+            $query->whereDate('created_at', '<=', $request->input('end_date'));
+        }
+        if ($request->filled('user_id')) {
             $query->where('user_id', $request->input('user_id'));
         }
-
-        if ($request->has('action')) {
+        if ($request->filled('action')) {
             $query->where('action', 'like', '%' . $request->input('action') . '%');
         }
 
@@ -360,5 +418,44 @@ class DashboardController extends Controller
             'per_page' => $auditLogs->perPage(),
             'total' => $auditLogs->total(),
         ]);
+    }
+
+    // API: GET /api/dashboard/export-audit-logs
+    public function exportAuditLogs(Request $request)
+    {
+        $query = \App\Models\AuditLog::with('user');
+
+        if ($request->filled('start_date')) {
+            $query->whereDate('created_at', '>=', $request->input('start_date'));
+        }
+        if ($request->filled('end_date')) {
+            $query->whereDate('created_at', '<=', $request->input('end_date'));
+        }
+
+        $logs = $query->orderByDesc('created_at')->limit(1000)->get();
+
+        $filename = 'audit_logs_export_' . now()->format('Y-m-d') . '.csv';
+        $headers = [
+            'Content-Type' => 'text/csv',
+            'Content-Disposition' => "attachment; filename=\"$filename\"",
+        ];
+
+        $callback = function () use ($logs) {
+            $file = fopen('php://output', 'w');
+            fputcsv($file, ['ID', 'User', 'Action', 'Details', 'Timestamp']);
+
+            foreach ($logs as $log) {
+                fputcsv($file, [
+                    $log->id,
+                    $log->user->name ?? 'System',
+                    $log->action,
+                    json_encode($log->details),
+                    $log->created_at
+                ]);
+            }
+            fclose($file);
+        };
+
+        return response()->stream($callback, 200, $headers);
     }
 }
