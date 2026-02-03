@@ -45,9 +45,6 @@ Route::get('/', function () {
             return redirect('/commercial');
         }
 
-        // Finance users should land on the Transaction Logs page (admin logs view)
-        // rather than the admin /dashboard. Transaction logs are accessible to
-        // finance via the 'transactions/logs' routes (middleware: role:admin|manager|finance).
         if ($isFinance) {
             return redirect('/transactions/logs');
         }
@@ -67,8 +64,10 @@ Route::middleware('guest')->group(function () {
 });
 
 Route::middleware(['auth'])->group(function () {
-    // Main Dashboard Route (admin-only)
-    Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard')->middleware('role:admin');
+    // Main Dashboard Route (React SPA)
+    Route::get('/dashboard/{any?}', function () {
+        return view('app');
+    })->where('any', '.*')->name('dashboard')->middleware('role:admin');
 
     // Dashboard Group Routes
     Route::prefix('dashboard')->name('dashboard.')->group(function () {
@@ -81,10 +80,12 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/performance/export', [DashboardController::class, 'exportPerformance'])->name('performance.export');
     });
     Route::post('/logout', [LoginController::class, 'logout'])->name('logout');
-    
-    // Main Dashboard Route (admin-only) - duplicate entry made explicit with admin middleware
-    Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard')->middleware('role:admin');
-    
+
+    // Main Dashboard Route (React SPA) - duplicate entry made explicit with admin middleware
+    Route::get('/dashboard/{any?}', function () {
+        return view('app');
+    })->where('any', '.*')->name('dashboard')->middleware('role:admin');
+
     // Dashboard Group Routes
     Route::prefix('dashboard')->name('dashboard.')->group(function () {
         Route::get('/providers', [ProvidersController::class, 'index'])->name('providers.index');
@@ -100,7 +101,7 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/export/{format?}', [LogViewerController::class, 'export'])->name('export');
         Route::get('/context/{id}', [LogViewerController::class, 'getContext'])->name('context');
         Route::get('/audit-context/{id}', [LogViewerController::class, 'getAuditContext'])->name('audit-context');
-    Route::get('/system-context/{id}', [LogViewerController::class, 'systemContext'])->name('system-context');
+        Route::get('/system-context/{id}', [LogViewerController::class, 'systemContext'])->name('system-context');
         Route::get('/filtered', [LogViewerController::class, 'getFilteredLogs'])->name('filtered');
         Route::get('/submission-events', [LogViewerController::class, 'submissionEventsData'])->name('submission.events');
         Route::get('/audit', [LogViewerController::class, 'auditTrail'])->name('audit');
@@ -119,11 +120,11 @@ Route::middleware(['auth'])->group(function () {
         // Place specific routes first
         Route::get('/test', [TestTransactionController::class, 'index'])->name('test');
         Route::post('/test/process', [TestTransactionController::class, 'process'])->name('test.process');
-        
+
         Route::get('/', [TransactionController::class, 'index'])->name('index');
-        
-    // Transaction logs routes (admin/manager/finance)
-    Route::middleware(['role:admin|manager|finance'])->prefix('logs')->name('logs.')->group(function () {
+
+        // Transaction logs routes (admin/manager/finance)
+        Route::middleware(['role:admin|manager|finance'])->prefix('logs')->name('logs.')->group(function () {
             Route::get('/', [TransactionLogController::class, 'index'])->name('index');
             Route::get('/summary', [TransactionLogController::class, 'summary'])->name('summary');
             Route::get('/issues-count', [TransactionLogController::class, 'issuesCount'])->name('issues.count');
@@ -165,12 +166,12 @@ Route::middleware(['auth'])->group(function () {
     });
 
     // Direct database endpoint to diagnose retry history issues
-    Route::get('/retry-check', function() {
+    Route::get('/retry-check', function () {
         try {
             // Simple DB query with minimal dependencies
             $result = DB::select('SELECT COUNT(*) AS count FROM transactions WHERE job_attempts > 0');
             $count = $result[0]->count;
-            
+
             return response()->json([
                 'status' => 'success',
                 'retry_count' => $count,
@@ -185,7 +186,7 @@ Route::middleware(['auth'])->group(function () {
     });
 
     // Very simple status endpoint with minimal code
-    Route::get('/system-status', function() {
+    Route::get('/system-status', function () {
         return response()->json(['status' => 'online']);
     });
 

@@ -1,81 +1,37 @@
-/**
- * Core API service for handling all HTTP requests
- */
-const BASE_URL = "/api/dashboard";
+import axios from 'axios';
 
-class ApiError extends Error {
-    constructor(message, status, data) {
-        super(message);
-        this.status = status;
-        this.data = data;
-        this.name = "ApiError";
+const api = {
+    getMetrics: async () => {
+        const response = await axios.get('/api/dashboard/metrics');
+        return response.data;
+    },
+    getCharts: async () => {
+        const response = await axios.get('/api/dashboard/charts');
+        return response.data;
+    },
+    getTransactions: async (page = 1, date = null) => {
+        const params = { page };
+        if (date) params.date = date;
+        const response = await axios.get('/api/dashboard/transactions', { params });
+        return response.data;
+    },
+    getAuditLogs: async (page = 1, filters = {}) => {
+        const params = { page, ...filters };
+        const response = await axios.get('/api/dashboard/audit-logs', { params });
+        return response.data;
+    },
+    getSystemHealth: async () => {
+        const response = await axios.get('/api/dashboard/system-health');
+        return response.data;
+    },
+    getTerminalPerformance: async () => {
+        const response = await axios.get('/api/dashboard/terminal-performance');
+        return response.data;
+    },
+    forwardTransaction: async (id) => {
+        const response = await axios.post(`/api/dashboard/forward-transaction/${id}`);
+        return response.data;
     }
-}
-
-async function handleResponse(response) {
-    const data = await response.json();
-
-    if (!response.ok) {
-        throw new ApiError(
-            data.message || "An error occurred",
-            response.status,
-            data
-        );
-    }
-
-    return data;
-}
-
-const defaultHeaders = {
-    "Content-Type": "application/json",
-    Accept: "application/json",
-    "X-Requested-With": "XMLHttpRequest",
 };
 
-export const api = {
-    transactions: {
-        list: async (params = {}) => {
-            const queryString = new URLSearchParams(params).toString();
-            const response = await fetch(
-                `${BASE_URL}/transactions?${queryString}`,
-                {
-                    headers: defaultHeaders,
-                }
-            );
-            return handleResponse(response);
-        },
-        getById: async (id) => {
-            const response = await fetch(`${BASE_URL}/transactions/${id}`, {
-                headers: defaultHeaders,
-            });
-            return handleResponse(response);
-        },
-    },
-    retries: {
-        list: async (params = {}) => {
-            const queryString = new URLSearchParams(params).toString();
-            const response = await fetch(`${BASE_URL}/retries?${queryString}`, {
-                headers: defaultHeaders,
-            });
-            return handleResponse(response);
-        },
-        retry: async (id) => {
-            const response = await fetch(
-                `${BASE_URL}/transactions/${id}/retry`,
-                {
-                    method: "POST",
-                    headers: defaultHeaders,
-                }
-            );
-            return handleResponse(response);
-        },
-    },
-    circuitBreakers: {
-        status: async () => {
-            const response = await fetch(`${BASE_URL}/circuit-breakers`, {
-                headers: defaultHeaders,
-            });
-            return handleResponse(response);
-        },
-    },
-};
+export default api;

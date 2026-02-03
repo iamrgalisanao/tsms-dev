@@ -75,7 +75,7 @@ class DashboardController extends Controller
         try {
             $metrics = $this->dashboardService->getPerformanceMetrics();
             $chartData = $this->dashboardService->getPerformanceChartData();
-            
+
             return view('dashboard.metrics.provider-performance', compact('metrics', 'chartData'));
         } catch (\Exception $e) {
             \Log::error('Performance dashboard error', ['error' => $e->getMessage()]);
@@ -129,39 +129,57 @@ class DashboardController extends Controller
     // API: GET /api/dashboard/metrics
     public function apiMetrics(Request $request)
     {
-        $today = Carbon::today();
-    $totalSales = Transaction::whereDate('transaction_timestamp', $today)->sum('gross_sales');
-        $totalTransactions = Transaction::whereDate('transaction_timestamp', $today)->count();
-        // Count transactions voided today using 'voided_at' timestamp
-        $voidedTransactions = Transaction::whereDate('voided_at', $today)->count();
-        $activeTerminals = PosTerminal::where('is_active', true)->count();
+        $metrics = $this->dashboardService->getAdvancedMetrics($request->all());
 
-        return response()->json([
-            'total_sales' => $totalSales,
-            'total_transactions' => $totalTransactions,
-            'voided_transactions' => $voidedTransactions,
-            'active_terminals' => $activeTerminals,
-        ]);
+        return response()->json($metrics);
     }
 
     // API: GET /api/dashboard/charts
     public function apiCharts(Request $request)
     {
-        $days = 7;
+        $days = $request->input('days', 7);
         $labels = [];
         $salesData = [];
         $volumeData = [];
+        $prevSalesData = [];
+
         for ($i = $days - 1; $i >= 0; $i--) {
             $date = Carbon::today()->subDays($i);
-            $labels[] = $date->format('Y-m-d');
-            $salesData[] = Transaction::whereDate('transaction_timestamp', $date)->sum('gross_sales');
-            $volumeData[] = Transaction::whereDate('transaction_timestamp', $date)->count();
+            $labels[] = $date->format('M d');
+
+            $stats = Transaction::whereDate('transaction_timestamp', $date)
+                ->selectRaw('SUM(gross_sales) as sales, COUNT(*) as count')
+                ->first();
+
+            $salesData[] = (float) ($stats->sales ?? 0);
+            $volumeData[] = (int) ($stats->count ?? 0);
+
+            // Previous period comparison (e.g., last week)
+            $prevDate = $date->copy()->subDays($days);
+            $prevStats = Transaction::whereDate('transaction_timestamp', $prevDate)
+                ->selectRaw('SUM(gross_sales) as sales')
+                ->first();
+            $prevSalesData[] = (float) ($prevStats->sales ?? 0);
         }
+
         return response()->json([
             'labels' => $labels,
             'sales' => $salesData,
             'volume' => $volumeData,
+            'previous_sales' => $prevSalesData,
         ]);
+    }
+
+    // API: GET /api/dashboard/system-health
+    public function apiSystemHealth()
+    {
+        return response()->json($this->dashboardService->getSystemHealth());
+    }
+
+    // API: GET /api/dashboard/terminal-performance
+    public function apiTerminalPerformance()
+    {
+        return response()->json($this->dashboardService->getTerminalPerformance());
     }
 
     // API: GET /api/dashboard/transactions
@@ -278,7 +296,7 @@ class DashboardController extends Controller
             ->take(10)
             ->get();
 
-    return $transactions;
+        return $transactions;
     }
 
     protected function getTransactionMetrics($dateBasis = 'created')
@@ -290,7 +308,8 @@ class DashboardController extends Controller
     protected function getSuccessRate()
     {
         $total = Transaction::count();
-        if ($total === 0) return 0;
+        if ($total === 0)
+            return 0;
         // Use TransactionJob for success count in normalized schema
         $success = \App\Models\TransactionJob::where('job_status', 'COMPLETED')->count();
         return round(($success / $total) * 100, 2);
@@ -308,7 +327,8 @@ class DashboardController extends Controller
     protected function getErrorRate()
     {
         $total = Transaction::count();
-        if ($total === 0) return 0;
+        if ($total === 0)
+            return 0;
         // Use TransactionJob for error count in normalized schema
         $errors = \App\Models\TransactionJob::where('job_status', 'FAILED')->count();
         return round(($errors / $total) * 100, 2);
