@@ -1,4 +1,10 @@
 import React, { useEffect, useState } from 'react';
+import { Box, Typography, IconButton, Paper, Stack } from '@mui/material';
+import ErrorIcon from '@mui/icons-material/Error';
+import WarningIcon from '@mui/icons-material/Warning';
+import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import InfoIcon from '@mui/icons-material/Info';
+import CloseIcon from '@mui/icons-material/Close';
 
 const NotificationToast = ({ message, type = 'info', onClose }) => {
     const [visible, setVisible] = useState(true);
@@ -11,31 +17,56 @@ const NotificationToast = ({ message, type = 'info', onClose }) => {
         return () => clearTimeout(timer);
     }, [onClose]);
 
-    const bgColors = {
-        error: 'bg-red-600',
-        warning: 'bg-orange-500',
-        success: 'bg-green-600',
-        info: 'bg-blue-600'
+    const iconMap = {
+        error: <ErrorIcon />,
+        warning: <WarningIcon />,
+        success: <CheckCircleIcon />,
+        info: <InfoIcon />
+    };
+
+    const colors = {
+        error: 'error.main',
+        warning: 'warning.main',
+        success: 'success.main',
+        info: 'info.main'
     };
 
     if (!visible) return null;
 
     return (
-        <div className={`fixed top-6 right-6 z-[100] ${bgColors[type]} text-white px-6 py-4 rounded-xl shadow-2xl flex items-center space-x-4 animate-in slide-in-from-right fade-in duration-300`}>
-            <div className="text-2xl">
-                {type === 'error' && '🚨'}
-                {type === 'warning' && '⚠️'}
-                {type === 'success' && '✅'}
-                {type === 'info' && '📢'}
-            </div>
-            <div>
-                <p className="font-bold text-sm leading-tight">{message}</p>
-                <p className="text-[10px] opacity-75 font-bold uppercase tracking-widest mt-1">System Notification</p>
-            </div>
-            <button onClick={() => setVisible(false)} className="hover:opacity-100 opacity-50 transition-opacity">
-                ✕
-            </button>
-        </div>
+        <Paper
+            elevation={12}
+            sx={{
+                position: 'fixed',
+                top: 24,
+                right: 24,
+                zIndex: 2000,
+                bgcolor: 'background.paper',
+                borderLeft: '6px solid',
+                borderColor: colors[type],
+                p: 2,
+                minWidth: 320,
+                borderRadius: '16px',
+                animation: 'slideInRight 0.3s ease-out'
+            }}
+        >
+            <Stack direction="row" spacing={2} alignItems="center">
+                <Box sx={{ color: colors[type], display: 'flex' }}>
+                    {iconMap[type]}
+                </Box>
+                <Box sx={{ flex: 1 }}>
+                    <Typography variant="subtitle2" sx={{ fontWeight: 900, color: 'text.primary' }}>
+                        {message}
+                    </Typography>
+                    <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em' }}>
+                        System Notification
+                    </Typography>
+                </Box>
+                <IconButton size="small" onClick={() => setVisible(false)} sx={{ color: 'grey.400' }}>
+                    <CloseIcon fontSize="small" />
+                </IconButton>
+            </Stack>
+        </Paper>
     );
 };
 

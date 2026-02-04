@@ -5,15 +5,16 @@ import {
     Tooltip,
     Legend
 } from 'chart.js';
+import { Card, CardContent, Typography, Box, CircularProgress } from '@mui/material';
 import { Doughnut } from 'react-chartjs-2';
 
 ChartJS.register(ArcElement, Tooltip, Legend);
 
 const RevenueByTerminalChart = ({ data, loading }) => {
     if (loading) return (
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex items-center justify-center h-64">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-        </div>
+        <Card sx={{ height: '100%', borderRadius: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 250 }}>
+            <CircularProgress size={32} color="primary" />
+        </Card>
     );
 
     const chartData = {
@@ -65,12 +66,27 @@ const RevenueByTerminalChart = ({ data, loading }) => {
     };
 
     return (
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex flex-col h-full">
-            <h3 className="text-sm font-bold text-gray-900 mb-6 uppercase tracking-widest">Revenue by Terminal</h3>
-            <div className="flex-1 relative min-h-[250px]">
-                <Doughnut data={chartData} options={options} />
-            </div>
-        </div>
+        <Card sx={{ height: '100%', borderRadius: '32px', p: 2 }}>
+            <CardContent sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+                <Typography
+                    variant="caption"
+                    sx={{
+                        fontSize: '12px',
+                        fontWeight: 900,
+                        color: 'grey.500',
+                        textTransform: 'uppercase',
+                        letterSpacing: '0.15em',
+                        mb: 4,
+                        display: 'block'
+                    }}
+                >
+                    Revenue by Terminal
+                </Typography>
+                <Box sx={{ flex: 1, minHeight: 250, position: 'relative' }}>
+                    <Doughnut data={chartData} options={options} />
+                </Box>
+            </CardContent>
+        </Card>
     );
 };
 

@@ -15,14 +15,16 @@ class LogAuthenticationEvent
         $auditData = [
             'action_type' => 'AUTH',
             'ip_address' => request()->ip(),
-            'user_agent' => request()->userAgent(),
+            'metadata' => [
+                'user_agent' => request()->userAgent(),
+            ]
         ];
 
         $systemData = [
-            'type' => 'security',  // Use 'security' instead of 'AUTH'
+            'type' => 'security',
             'log_type' => 'info',
             'severity' => 'low',
-            'terminal_uid' => '00000000-0000-0000-0000-000000000000', // Default UUID for non-terminal auth
+            'terminal_uid' => '00000000-0000-0000-0000-000000000000',
             'context' => [
                 'auth_type' => 'web',
                 'ip_address' => request()->ip(),
@@ -35,31 +37,31 @@ class LogAuthenticationEvent
             $auditData['user_id'] = $event->user->id;
             $auditData['action'] = 'auth.login';
             $auditData['message'] = 'User logged in successfully';
-            
+
             $systemData['user_id'] = $event->user->id;
             $systemData['message'] = "User {$event->user->name} ({$event->user->email}) logged in successfully";
             $systemData['context']['user_id'] = $event->user->id;
             $systemData['context']['user_email'] = $event->user->email;
             $systemData['context']['auth_event'] = 'login';
-            
+
         } elseif ($event instanceof Logout) {
             $auditData['user_id'] = $event->user->id;
             $auditData['action'] = 'auth.logout';
             $auditData['message'] = 'User logged out';
-            
+
             $systemData['user_id'] = $event->user->id;
             $systemData['message'] = "User {$event->user->name} ({$event->user->email}) logged out";
             $systemData['context']['user_id'] = $event->user->id;
             $systemData['context']['user_email'] = $event->user->email;
             $systemData['context']['auth_event'] = 'logout';
-            
+
         } elseif ($event instanceof Failed) {
             $auditData['action'] = 'auth.failed';
             $auditData['message'] = 'Failed login attempt';
             $auditData['metadata'] = [
                 'email' => $event->credentials['email'] ?? 'unknown'
             ];
-            
+
             $systemData['log_type'] = 'warning';
             $systemData['severity'] = 'medium';
             $systemData['message'] = "Failed login attempt for email: " . ($event->credentials['email'] ?? 'unknown');

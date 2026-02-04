@@ -50,9 +50,9 @@ class TransactionLogController extends Controller
             $filters['transaction_id'] = trim($request->transaction_id);
         }
 
-    // Allow 'transaction' as a date basis which uses the canonical transaction_timestamp
-    $basis = in_array($request->input('date_basis'), ['created','completed','transaction']) ? $request->input('date_basis') : 'completed';
-    $dateColumn = $basis === 'completed' ? 'completed_at' : ($basis === 'transaction' ? 'transaction_timestamp' : 'created_at');
+        // Allow 'transaction' as a date basis which uses the canonical transaction_timestamp
+        $basis = in_array($request->input('date_basis'), ['created', 'completed', 'transaction']) ? $request->input('date_basis') : 'completed';
+        $dateColumn = $basis === 'completed' ? 'completed_at' : ($basis === 'transaction' ? 'transaction_timestamp' : 'created_at');
 
         // Build select list conditionally so we don't attempt to select columns
         // that may not exist on older database schemas.
@@ -62,13 +62,15 @@ class TransactionLogController extends Controller
             'terminal_id',
             // canonical stored amounts used across the app/summary
             'gross_sales as amount',
-            'vat_amount as vat',
             'net_sales',
+            'vat_amount as vat',
             'refund_amount as refund',
             'vatable_sales',
             'sc_vat_exempt_sales',
             'validation_status',
+            'job_attempts',
             'transaction_timestamp',
+            'original_payload',
             'created_at',
             'completed_at'
         ];
@@ -88,7 +90,7 @@ class TransactionLogController extends Controller
         if (Schema::hasColumn('transactions', 'pwd_discount')) {
             $select[] = 'pwd_discount';
         }
-        
+
         // Add available service charge fields
         if (Schema::hasColumn('transactions', 'service_charge')) {
             $select[] = 'service_charge';
@@ -96,7 +98,7 @@ class TransactionLogController extends Controller
         if (Schema::hasColumn('transactions', 'management_service_charge')) {
             $select[] = 'management_service_charge';
         }
-        
+
         // Add available tax fields
         if (Schema::hasColumn('transactions', 'tax_exempt')) {
             $select[] = 'tax_exempt';
@@ -111,11 +113,11 @@ class TransactionLogController extends Controller
                 'adjustments:transaction_pk,adjustment_type,amount'
             ])
             ->when(isset($filters['transaction_id']), function ($query) use ($filters) {
-            $search = str_replace('TX-', '', $filters['transaction_id']);
-            return $query->where('transaction_id', 'like', "%{$search}%");
+                $search = str_replace('TX-', '', $filters['transaction_id']);
+                return $query->where('transaction_id', 'like', "%{$search}%");
             })
             ->when(isset($filters['status']), function ($query) use ($filters) {
-            return $query->where('validation_status', $filters['status']);
+                return $query->where('validation_status', $filters['status']);
             })
             // Default behavior: when the schema supports receipt_no and no
             // explicit status filter is provided, exclude non-VALID rows
@@ -136,11 +138,11 @@ class TransactionLogController extends Controller
                         $q->where(function ($subQ) use ($filters) {
                             // Primary: transaction_timestamp is not null and within range
                             $subQ->whereNotNull('transaction_timestamp')
-                                 ->where('transaction_timestamp', '>=', $filters['date_from'] . ' 00:00:00');
+                                ->where('transaction_timestamp', '>=', $filters['date_from'] . ' 00:00:00');
                         })->orWhere(function ($subQ) use ($filters) {
                             // Fallback: transaction_timestamp is null, use created_at
                             $subQ->whereNull('transaction_timestamp')
-                                 ->where('created_at', '>=', $filters['date_from'] . ' 00:00:00');
+                                ->where('created_at', '>=', $filters['date_from'] . ' 00:00:00');
                         });
                     });
                 } else {
@@ -153,11 +155,11 @@ class TransactionLogController extends Controller
                         $q->where(function ($subQ) use ($filters) {
                             // Primary: transaction_timestamp is not null and within range
                             $subQ->whereNotNull('transaction_timestamp')
-                                 ->where('transaction_timestamp', '<=', $filters['date_to'] . ' 23:59:59');
+                                ->where('transaction_timestamp', '<=', $filters['date_to'] . ' 23:59:59');
                         })->orWhere(function ($subQ) use ($filters) {
                             // Fallback: transaction_timestamp is null, use created_at
                             $subQ->whereNull('transaction_timestamp')
-                                 ->where('created_at', '<=', $filters['date_to'] . ' 23:59:59');
+                                ->where('created_at', '<=', $filters['date_to'] . ' 23:59:59');
                         });
                     });
                 } else {
@@ -165,16 +167,16 @@ class TransactionLogController extends Controller
                 }
             })
             ->when(isset($filters['tenant_id']), function ($query) use ($filters) {
-            return $query->where('tenant_id', $filters['tenant_id']);
+                return $query->where('tenant_id', $filters['tenant_id']);
             })
             ->when(isset($filters['terminal_id']), function ($query) use ($filters) {
-            return $query->where('terminal_id', $filters['terminal_id']);
+                return $query->where('terminal_id', $filters['terminal_id']);
             })
             ->when(isset($filters['amount_min']), function ($query) use ($filters) {
-            return $query->where('gross_sales', '>=', $filters['amount_min']);
+                return $query->where('gross_sales', '>=', $filters['amount_min']);
             })
             ->when(isset($filters['amount_max']), function ($query) use ($filters) {
-            return $query->where('gross_sales', '<=', $filters['amount_max']);
+                return $query->where('gross_sales', '<=', $filters['amount_max']);
             })
             ->orderBy($dateColumn, 'desc')
             ->paginate($perPage)
@@ -186,38 +188,81 @@ class TransactionLogController extends Controller
 
         // $providers = PosProvider::all();
         $terminals = PosTerminal::with('tenant:id,trade_name')
-            ->get(['id','serial_number','tenant_id','machine_number']);
+            ->get(['id', 'serial_number', 'tenant_id', 'machine_number']);
 
-        $tenants = Tenant::orderBy('trade_name')->get(['id','trade_name']);
+        $tenants = Tenant::orderBy('trade_name')->get(['id', 'trade_name']);
 
-    $activeTab = 'detailed';
-    $summary = null; // populated by summary() route
+        $activeTab = 'detailed';
+        $summary = null; // populated by summary() route
 
-    // return view('transactions.logs.index', compact('logs', 'providers', 'terminals', 'filters'));
-         return view('transactions.logs.index', compact('logs', 'terminals', 'tenants', 'filters', 'activeTab', 'summary'));
+        // return view('transactions.logs.index', compact('logs', 'providers', 'terminals', 'filters'));
+        return view('transactions.logs.index', compact('logs', 'terminals', 'tenants', 'filters', 'activeTab', 'summary'));
     }
 
-    public function show($id)
+    public function show(Request $request, $id)
     {
         try {
             $transaction = Transaction::with([
-                'terminal',
+                'terminal.tenant',
+                'terminal.provider',
                 'tenant',
                 'adjustments',
-                'taxes'
+                'taxes',
+                'jobs',
+                'validations',
+                'submission'
             ])->findOrFail($id);
-            if (!$transaction) {
-                return redirect()
-                    ->route('transactions.logs.index')
-                    ->with('error', 'Transaction not found');
+
+            if ($request->wantsJson()) {
+                return response()->json([
+                    'id' => $transaction->id,
+                    'transaction_id' => $transaction->transaction_id,
+                    'receipt_no' => $transaction->receipt_no ?? 'N/A',
+                    'amount' => (float) $transaction->gross_sales,
+                    'net_sales' => (float) $transaction->net_sales,
+                    'validation_status' => $transaction->validation_status,
+                    'job_attempts' => (int) $transaction->job_attempts,
+                    'created_at' => $transaction->created_at,
+                    'completed_at' => $transaction->completed_at,
+                    'terminal' => [
+                        'serial_number' => $transaction->terminal->serial_number ?? 'N/A',
+                        'machine_number' => $transaction->terminal->machine_number ?? null,
+                        'tenant' => [
+                            'trade_name' => $transaction->terminal->tenant->trade_name ?? 'N/A'
+                        ],
+                        'provider' => [
+                            'name' => $transaction->terminal->provider->name ?? 'N/A'
+                        ]
+                    ],
+                    'payload' => $transaction->original_payload ? json_decode($transaction->original_payload) : null,
+                    'retry_history' => $transaction->jobs->map(function ($job) {
+                        return [
+                            'attempt' => $job->attempts ?? 1,
+                            'status' => $job->job_status,
+                            'attempted_at' => $job->created_at,
+                            'error' => $job->last_error
+                        ];
+                    }),
+                    'submission_events' => $transaction->validations->map(function ($v) {
+                        return [
+                            'submission_uuid' => $v->id, // or actual UUID if available
+                            'status' => $v->status_code ?? 'VALIDATED',
+                            'created_at' => $v->validated_at ?? $v->created_at
+                        ];
+                    }),
+                    'horizon_job_tags' => ['transaction:' . $transaction->transaction_id, 'terminal:' . ($transaction->terminal->serial_number ?? 'unknown')]
+                ]);
             }
-            
+
             return view('transactions.logs.show', [
                 'transaction' => $transaction,
                 'metrics' => $this->detailService->getDetailedMetrics($transaction),
                 'timeline' => $this->detailService->getProcessingTimeline($transaction)
             ]);
         } catch (\Exception $e) {
+            if ($request->wantsJson()) {
+                return response()->json(['error' => $e->getMessage()], 404);
+            }
             return redirect()
                 ->route('transactions.logs.index')
                 ->with('error', 'Error loading transaction: ' . $e->getMessage());
@@ -227,7 +272,7 @@ class TransactionLogController extends Controller
     public function export(Request $request)
     {
         Gate::authorize('export-transaction-logs');
-        
+
         $filename = 'transaction-logs-' . now()->format('Y-m-d') . '.xlsx';
         return Excel::download(new TransactionLogsExport($request->all()), $filename);
     }
@@ -236,11 +281,11 @@ class TransactionLogController extends Controller
     {
         $lastId = $request->input('last_id');
         $updates = $this->logService->getUpdatesAfter($lastId);
-        
+
         if ($request->wantsJson()) {
             return response()->json($updates);
         }
-        
+
         return view('transactions.logs.partials.rows', compact('updates'));
     }
 
@@ -262,7 +307,7 @@ class TransactionLogController extends Controller
         ]);
 
         // Allow 'transaction' as a date basis which uses the canonical transaction_timestamp
-        $basis = in_array($request->input('date_basis'), ['created','completed','transaction']) ? $request->input('date_basis') : 'completed';
+        $basis = in_array($request->input('date_basis'), ['created', 'completed', 'transaction']) ? $request->input('date_basis') : 'completed';
         $dateColumn = $basis === 'completed' ? 'completed_at' : ($basis === 'transaction' ? 'transaction_timestamp' : 'created_at');
 
         $query = Transaction::query();
@@ -284,10 +329,10 @@ class TransactionLogController extends Controller
                 $query->where(function ($q) use ($filters) {
                     $q->where(function ($subQ) use ($filters) {
                         $subQ->whereNotNull('transaction_timestamp')
-                             ->where('transaction_timestamp', '>=', $filters['date_from'] . ' 00:00:00');
+                            ->where('transaction_timestamp', '>=', $filters['date_from'] . ' 00:00:00');
                     })->orWhere(function ($subQ) use ($filters) {
                         $subQ->whereNull('transaction_timestamp')
-                             ->where('created_at', '>=', $filters['date_from'] . ' 00:00:00');
+                            ->where('created_at', '>=', $filters['date_from'] . ' 00:00:00');
                     });
                 });
             } else {
@@ -300,10 +345,10 @@ class TransactionLogController extends Controller
                 $query->where(function ($q) use ($filters) {
                     $q->where(function ($subQ) use ($filters) {
                         $subQ->whereNotNull('transaction_timestamp')
-                             ->where('transaction_timestamp', '<=', $filters['date_to'] . ' 23:59:59');
+                            ->where('transaction_timestamp', '<=', $filters['date_to'] . ' 23:59:59');
                     })->orWhere(function ($subQ) use ($filters) {
                         $subQ->whereNull('transaction_timestamp')
-                             ->where('created_at', '<=', $filters['date_to'] . ' 23:59:59');
+                            ->where('created_at', '<=', $filters['date_to'] . ' 23:59:59');
                     });
                 });
             } else {
@@ -350,7 +395,7 @@ class TransactionLogController extends Controller
         // Allow 'transaction' as a date basis for summaries as well. When selected,
         // group by the canonical transaction timestamp but fall back to created_at
         // for rows that don't have transaction_timestamp set.
-        $basis = in_array($request->input('date_basis'), ['created','completed','transaction']) ? $request->input('date_basis') : 'completed';
+        $basis = in_array($request->input('date_basis'), ['created', 'completed', 'transaction']) ? $request->input('date_basis') : 'completed';
         if ($basis === 'completed') {
             $dateColumn = 't.completed_at';
             $dateExpr = 't.completed_at';
@@ -385,11 +430,11 @@ class TransactionLogController extends Controller
                         $q->where(function ($subQ) use ($filters) {
                             // Primary: transaction_timestamp is not null and within range
                             $subQ->whereNotNull('t.transaction_timestamp')
-                                 ->where('t.transaction_timestamp', '>=', $filters['date_from'] . ' 00:00:00');
+                                ->where('t.transaction_timestamp', '>=', $filters['date_from'] . ' 00:00:00');
                         })->orWhere(function ($subQ) use ($filters) {
                             // Fallback: transaction_timestamp is null, use created_at
                             $subQ->whereNull('t.transaction_timestamp')
-                                 ->where('t.created_at', '>=', $filters['date_from'] . ' 00:00:00');
+                                ->where('t.created_at', '>=', $filters['date_from'] . ' 00:00:00');
                         });
                     });
                 } else {
@@ -402,11 +447,11 @@ class TransactionLogController extends Controller
                         $q->where(function ($subQ) use ($filters) {
                             // Primary: transaction_timestamp is not null and within range
                             $subQ->whereNotNull('t.transaction_timestamp')
-                                 ->where('t.transaction_timestamp', '<=', $filters['date_to'] . ' 23:59:59');
+                                ->where('t.transaction_timestamp', '<=', $filters['date_to'] . ' 23:59:59');
                         })->orWhere(function ($subQ) use ($filters) {
                             // Fallback: transaction_timestamp is null, use created_at
                             $subQ->whereNull('t.transaction_timestamp')
-                                 ->where('t.created_at', '<=', $filters['date_to'] . ' 23:59:59');
+                                ->where('t.created_at', '<=', $filters['date_to'] . ' 23:59:59');
                         });
                     });
                 } else {
@@ -468,28 +513,28 @@ class TransactionLogController extends Controller
             ->groupBy('date', 't.tenant_id', 't.terminal_id', 'trade_name', 'term.serial_number', 'term.machine_number')
             ->orderBy('date', 'desc');
 
-    // When the schema supports receipt_no, default summary roll-ups to VALID
-    // transactions so aggregates align with POS-style unique receipt counts.
-    if (Schema::hasColumn('transactions', 'receipt_no') && !isset($filters['status'])) {
-        // Exclude only DUPLICATE sentinel rows by default for summaries as well.
-        $query->where('t.validation_status', '!=', 'DUPLICATE');
-    }
+        // When the schema supports receipt_no, default summary roll-ups to VALID
+        // transactions so aggregates align with POS-style unique receipt counts.
+        if (Schema::hasColumn('transactions', 'receipt_no') && !isset($filters['status'])) {
+            // Exclude only DUPLICATE sentinel rows by default for summaries as well.
+            $query->where('t.validation_status', '!=', 'DUPLICATE');
+        }
 
-    $summary = $query->paginate($perPage)->appends($request->all());
+        $summary = $query->paginate($perPage)->appends($request->all());
 
         // Fetch one representative transaction per summary row to display full payload details
         $sampleIds = collect($summary->items())->pluck('sample_tx_id')->filter()->unique()->values()->all();
         $sampleTransactions = [];
         if (!empty($sampleIds)) {
-            $sampleTransactions = Transaction::with(['adjustments','taxes','terminal','tenant'])
+            $sampleTransactions = Transaction::with(['adjustments', 'taxes', 'terminal', 'tenant'])
                 ->whereIn('id', $sampleIds)
                 ->get()
                 ->keyBy('id');
         }
 
         $terminals = PosTerminal::with('tenant:id,trade_name')
-            ->get(['id','serial_number','tenant_id','machine_number']);
-        $tenants = Tenant::orderBy('trade_name')->get(['id','trade_name']);
+            ->get(['id', 'serial_number', 'tenant_id', 'machine_number']);
+        $tenants = Tenant::orderBy('trade_name')->get(['id', 'trade_name']);
 
         $activeTab = 'summary';
         $logs = collect(); // not needed on summary route
@@ -498,6 +543,6 @@ class TransactionLogController extends Controller
             return response()->json($summary);
         }
 
-    return view('transactions.logs.index', compact('logs', 'terminals', 'tenants', 'filters', 'activeTab', 'summary', 'sampleTransactions'));
+        return view('transactions.logs.index', compact('logs', 'terminals', 'tenants', 'filters', 'activeTab', 'summary', 'sampleTransactions'));
     }
 }

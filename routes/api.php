@@ -10,6 +10,7 @@ use App\Http\Controllers\API\V1\RetryHistoryController;
 use App\Http\Controllers\API\V1\TestParserController;
 use App\Http\Controllers\API\V1\TerminalAuthController;
 use App\Http\Controllers\TerminalTokenController;
+use App\Http\Controllers\UserController;
 use App\Services\TransactionValidationService;
 use App\Http\Controllers\API\V1\TransactionController as ApiTransactionController;
 use App\Http\Controllers\API\V1\SubmissionEventController;
@@ -39,7 +40,43 @@ Route::middleware(['api'])->group(function () {
     Route::get('dashboard/charts', [DashboardController::class, 'apiCharts']);
     Route::get('dashboard/transactions', [DashboardController::class, 'apiTransactions']);
     Route::get('dashboard/audit-logs', [DashboardController::class, 'apiAuditLogs']);
+    Route::get('dashboard/system-health', [DashboardController::class, 'apiSystemHealth']);
+    Route::get('dashboard/terminal-performance', [DashboardController::class, 'apiTerminalPerformance']);
     Route::post('dashboard/forward-transaction/{id}', [DashboardController::class, 'forwardTransaction']);
+
+    // Transaction Logs API endpoints
+    Route::prefix('transactions/logs')->group(function () {
+        Route::get('/', [\App\Http\Controllers\TransactionLogController::class, 'index']);
+        Route::get('/summary', [\App\Http\Controllers\TransactionLogController::class, 'summary']);
+        Route::get('/issues-count', [\App\Http\Controllers\TransactionLogController::class, 'issuesCount']);
+        Route::get('/export', [\App\Http\Controllers\TransactionLogController::class, 'export']);
+        Route::get('/{id}', [\App\Http\Controllers\TransactionLogController::class, 'show']);
+    });
+
+    // Terminals and Tenants for filters
+    Route::get('terminals', function () {
+        return \App\Models\PosTerminal::with('tenant:id,trade_name')
+            ->get(['id', 'serial_number', 'tenant_id', 'machine_number']);
+    });
+    Route::get('tenants', function () {
+        return \App\Models\Tenant::orderBy('trade_name')->get(['id', 'trade_name']);
+    });
+
+    // Terminal Token Management
+    Route::prefix('terminals/tokens')->group(function () {
+        Route::get('/', [TerminalTokenController::class, 'apiIndex']);
+        Route::post('/{terminalId}/regenerate', [TerminalTokenController::class, 'apiRegenerate']);
+        Route::post('/{terminalId}/revoke', [TerminalTokenController::class, 'apiRevoke']);
+    });
+
+    // User Management API Routes
+    Route::prefix('users')->group(function () {
+        Route::get('/', [UserController::class, 'apiIndex']);
+        Route::get('/roles', [UserController::class, 'apiRoles']);
+        Route::post('/', [UserController::class, 'apiStore']);
+        Route::put('/{user}', [UserController::class, 'apiUpdate']);
+        Route::delete('/{user}', [UserController::class, 'apiDestroy']);
+    });
 });
 
 // Health check endpoint (public)
@@ -63,7 +100,7 @@ Route::prefix('v1')->middleware(['auth:sanctum', 'capture.terminal.ip', AttachCo
     Route::get('/auth/me', [TerminalAuthController::class, 'me']);
     Route::post('/heartbeat', [TerminalAuthController::class, 'heartbeat'])
         ->middleware(['abilities:heartbeat:send', 'throttle:60,1']);
-    
+
     // Transaction endpoints with token abilities
     // Apply custom API rate limiter (uses config/rate-limiting.php default_limits.api)
     Route::middleware(['abilities:transaction:create', 'api.limit:api'])->group(function () {
@@ -74,13 +111,13 @@ Route::prefix('v1')->middleware(['auth:sanctum', 'capture.terminal.ip', AttachCo
         Route::post('/transactions/{id}/refund', [TransactionController::class, 'refund']);
         Route::post('/transactions/{transaction_id}/void', [TransactionController::class, 'voidFromPOS']);
     });
-    
+
     Route::middleware(['abilities:transaction:read', 'api.limit:api'])->group(function () {
         Route::get('/transactions/{id}/status', [TransactionController::class, 'status']);
         Route::get('/submission-events', [SubmissionEventController::class, 'index']);
         Route::get('/submission-events/{submission_uuid}/items', [SubmissionEventItemsController::class, 'index']);
     });
-    
+
     // Terminal Token Management API (requires admin authentication)
     Route::middleware('abilities:admin:manage')->group(function () {
         Route::post('/terminals/{terminalId}/generate-token', [TerminalTokenController::class, 'generateToken']);
@@ -154,10 +191,10 @@ Route::middleware('api')->group(function () {
 Route::post('/v1/test-parser', function (Request $request) {
     $service = app(TransactionValidationService::class);
     $rawContent = $request->getContent();
-    
+
     // Parse the raw content
     $result = $service->parseTextFormat($rawContent);
-    
+
     return response()->json($result, 200, [], JSON_UNESCAPED_SLASHES);
 })->middleware('api');
 
@@ -172,7 +209,7 @@ Route::prefix('web')->group(function () {
 // V1 Retry History API Routes
 Route::middleware(['api'])->prefix('v1')->group(function () {
     // Special routes with fixed paths first (before any route with parameters)
-    Route::get('/retry-history/debug', function() {
+    Route::get('/retry-history/debug', function () {
         return response()->json([
             'transaction_count' => DB::table('transactions')->count(),
             'retry_count' => DB::table('transactions')->where('job_attempts', '>', 0)->count(),
@@ -184,12 +221,12 @@ Route::middleware(['api'])->prefix('v1')->group(function () {
     });
     Route::get('/retry-history/emergency-data', [RetryHistoryController::class, 'createEmergencyData']);
     Route::post('/retry-history/seed', [RetryHistoryController::class, 'seedData']);
-    Route::post('/retry-history/force-seed', function() {
+    Route::post('/retry-history/force-seed', function () {
         try {
             // Find or create tenant
             $tenant = DB::table('tenants')->first();
             $tenantId = $tenant ? $tenant->id : 'default-tenant';
-            
+
             if (!$tenant) {
                 // Create a tenant if none exists
                 $tenantId = 'tenant-' . uniqid();
@@ -201,11 +238,11 @@ Route::middleware(['api'])->prefix('v1')->group(function () {
                     'updated_at' => now()
                 ]);
             }
-            
+
             // Find or create terminal
             $terminal = DB::table('pos_terminals')->first();
             $terminalId = $terminal ? $terminal->id : 'default-terminal';
-            
+
             if (!$terminal) {
                 // Create a terminal if none exists
                 $terminalId = 'term-' . uniqid();
@@ -219,16 +256,16 @@ Route::middleware(['api'])->prefix('v1')->group(function () {
                     'updated_at' => now()
                 ]);
             }
-            
+
             $count = 0;
-            
+
             // Insert 5 sample retry transactions directly using DB facade to avoid validation service issues
             $statuses = ['FAILED', 'COMPLETED', 'PROCESSING'];
-            
+
             for ($i = 1; $i <= 5; $i++) {
                 $txId = 'DEMO-' . uniqid();
                 $status = $statuses[array_rand($statuses)];
-                
+
                 try {
                     DB::table('transactions')->insert([
                         'tenant_id' => $tenantId,
@@ -246,7 +283,7 @@ Route::middleware(['api'])->prefix('v1')->group(function () {
                         'created_at' => now(),
                         'updated_at' => now()
                     ]);
-                    
+
                     $count++;
                 } catch (\Exception $innerEx) {
                     Log::error('Failed to insert demo transaction', [
@@ -256,7 +293,7 @@ Route::middleware(['api'])->prefix('v1')->group(function () {
                     // Continue to next record on error
                 }
             }
-            
+
             return response()->json([
                 'status' => 'success',
                 'message' => "Created $count transactions successfully",
@@ -266,9 +303,9 @@ Route::middleware(['api'])->prefix('v1')->group(function () {
             ]);
         } catch (\Throwable $e) {
             Log::error('Force seed failed', ['error' => $e->getMessage()]);
-            
+
             return response()->json([
-                'status' => 'error', 
+                'status' => 'error',
                 'message' => 'Error: ' . $e->getMessage(),
                 'file' => $e->getFile(),
                 'line' => $e->getLine(),
@@ -276,7 +313,7 @@ Route::middleware(['api'])->prefix('v1')->group(function () {
             ], 200); // Return 200 so we can see the actual error
         }
     });
-    
+
     // Now regular routes with parameters
     Route::get('/retry-history', [RetryHistoryController::class, 'index']);
     Route::post('/retry-history/{id}/retry', [RetryHistoryController::class, 'retry'])
@@ -286,7 +323,7 @@ Route::middleware(['api'])->prefix('v1')->group(function () {
 });
 
 // API endpoint for recent test transactions
-Route::get('/v1/recent-test-transactions', function() {
+Route::get('/v1/recent-test-transactions', function () {
     try {
         $transactions = DB::table('transactions')
             ->join('pos_terminals', 'transactions.terminal_id', '=', 'pos_terminals.id')
@@ -298,14 +335,14 @@ Route::get('/v1/recent-test-transactions', function() {
                 'transactions.validation_status',
                 'transactions.created_at'
             )
-            ->where(function($query) {
+            ->where(function ($query) {
                 $query->where('transactions.transaction_id', 'like', 'TEST-%')
-                      ->orWhere('transactions.transaction_id', 'like', 'DEMO-%');
+                    ->orWhere('transactions.transaction_id', 'like', 'DEMO-%');
             })
             ->orderBy('transactions.created_at', 'desc')
             ->limit(10)
             ->get();
-        
+
         return response()->json([
             'status' => 'success',
             'data' => $transactions
@@ -315,7 +352,7 @@ Route::get('/v1/recent-test-transactions', function() {
             'error' => $e->getMessage(),
             'trace' => $e->getTraceAsString()
         ]);
-        
+
         return response()->json([
             'status' => 'error',
             'message' => 'Failed to load recent transactions: ' . $e->getMessage()
@@ -324,7 +361,7 @@ Route::get('/v1/recent-test-transactions', function() {
 });
 
 // Add a simplified diagnostics endpoint that won't fail
-Route::get('/v1/retry-history/simple-status', function() {
+Route::get('/v1/retry-history/simple-status', function () {
     return response()->json([
         'status' => 'success',
         'message' => 'API is responding',
@@ -333,7 +370,7 @@ Route::get('/v1/retry-history/simple-status', function() {
 });
 
 // Move the diagnostics endpoint outside of any middleware to simplify it
-Route::get('/v1/retry-history/diagnostics', function() {
+Route::get('/v1/retry-history/diagnostics', function () {
     return response()->json([
         'status' => 'success',
         'data' => [
@@ -346,7 +383,7 @@ Route::get('/v1/retry-history/diagnostics', function() {
 });
 
 // Add a direct test endpoint at the top level (outside any middleware)
-Route::get('/api-test', function() {
+Route::get('/api-test', function () {
     return response()->json([
         'status' => 'success',
         'message' => 'API is responding correctly',
@@ -355,12 +392,12 @@ Route::get('/api-test', function() {
 });
 
 // Direct database endpoint bypassing controller entirely
-Route::get('/retry-check', function() {
+Route::get('/retry-check', function () {
     try {
         // Simple DB query with minimal dependencies
         $result = DB::select('SELECT COUNT(*) AS count FROM transactions WHERE job_attempts > 0');
         $count = $result[0]->count;
-        
+
         return response()->json([
             'status' => 'success',
             'retry_count' => $count,
@@ -375,22 +412,22 @@ Route::get('/retry-check', function() {
 });
 
 // Very simple status endpoint with minimal code
-Route::get('/system-status', function() {
+Route::get('/system-status', function () {
     return response()->json(['status' => 'online']);
 });
 
 // API endpoint for transaction details (for cloning)
-Route::get('/v1/transactions/{id}/details', function($id) {
+Route::get('/v1/transactions/{id}/details', function ($id) {
     try {
         $transaction = DB::table('transactions')->where('id', $id)->first();
-        
+
         if (!$transaction) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Transaction not found'
             ], 404);
         }
-        
+
         return response()->json([
             'status' => 'success',
             'data' => $transaction
@@ -414,7 +451,7 @@ Route::get('v1/transaction-id-exists', function (Illuminate\Http\Request $reques
 });
 
 Route::post('/transactions/bulk', [ApiTransactionController::class, 'bulk'])
-     ->name('api.transactions.bulk');
+    ->name('api.transactions.bulk');
 
 // Void transaction endpoint (API v1) - DEPRECATED: Use v1 route above instead
 // Route::post('api/v1/transactions/{transaction_id}/void', [\App\Http\Controllers\API\V1\TransactionController::class, 'void']);

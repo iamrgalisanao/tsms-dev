@@ -1,4 +1,20 @@
 import React from 'react';
+import {
+    Box,
+    Stack,
+    TextField,
+    MenuItem,
+    Select,
+    FormControl,
+    InputLabel,
+    Button,
+    Typography,
+    Paper,
+    Divider
+} from '@mui/material';
+import FilterListIcon from '@mui/icons-material/FilterList';
+import DownloadIcon from '@mui/icons-material/Download';
+import ClearAllIcon from '@mui/icons-material/ClearAll';
 
 const FilterBar = ({ onFilterChange, onExport, loading }) => {
     const [filters, setFilters] = React.useState({
@@ -15,6 +31,28 @@ const FilterBar = ({ onFilterChange, onExport, loading }) => {
         onFilterChange(newFilters);
     };
 
+    const handleDatePreset = (preset) => {
+        const now = new Date();
+        let start = '';
+        const end = now.toISOString().split('T')[0];
+
+        if (preset === 'today') {
+            start = end;
+        } else if (preset === 'yesterday') {
+            const date = new Date();
+            date.setDate(date.getDate() - 1);
+            start = date.toISOString().split('T')[0];
+        } else if (preset === '7days') {
+            const date = new Date();
+            date.setDate(date.getDate() - 7);
+            start = date.toISOString().split('T')[0];
+        }
+
+        const newFilters = { ...filters, start_date: start, end_date: end };
+        setFilters(newFilters);
+        onFilterChange(newFilters);
+    };
+
     const handleClear = () => {
         const cleared = { start_date: '', end_date: '', terminal_id: '', search: '' };
         setFilters(cleared);
@@ -22,58 +60,97 @@ const FilterBar = ({ onFilterChange, onExport, loading }) => {
     };
 
     return (
-        <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex flex-wrap items-center gap-4 mb-8">
-            <div className="flex-1 min-w-[200px]">
-                <input
-                    type="text"
-                    name="search"
-                    placeholder="Search Transaction ID or Tenant..."
-                    value={filters.search}
-                    onChange={handleChange}
-                    className="w-full px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-all"
-                />
-            </div>
+        <Paper
+            elevation={0}
+            sx={{
+                p: 3,
+                borderRadius: '24px',
+                bgcolor: 'white',
+                border: '1px solid',
+                borderColor: 'grey.100',
+                mb: 6
+            }}
+        >
+            <Stack direction={{ xs: 'column', md: 'row' }} spacing={3} alignItems="center">
+                <Box sx={{ flex: 1, minWidth: { md: 300 } }}>
+                    <TextField
+                        fullWidth
+                        name="search"
+                        placeholder="Search Transactions or Tenants..."
+                        value={filters.search}
+                        onChange={handleChange}
+                        variant="outlined"
+                        InputProps={{
+                            startAdornment: <FilterListIcon sx={{ color: 'grey.400', mr: 1 }} />,
+                            sx: { borderRadius: '12px', bgcolor: 'grey.50', '& fieldset': { border: 'none' }, '&:hover fieldset': { border: 'none' } }
+                        }}
+                    />
+                </Box>
 
-            <div className="flex items-center gap-2">
-                <span className="text-xs font-bold text-gray-400 uppercase">From</span>
-                <input
-                    type="date"
-                    name="start_date"
-                    value={filters.start_date}
-                    onChange={handleChange}
-                    className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500"
-                />
-            </div>
+                <Stack direction="row" spacing={2} alignItems="center">
+                    <TextField
+                        type="date"
+                        label="From"
+                        name="start_date"
+                        InputLabelProps={{ shrink: true }}
+                        value={filters.start_date}
+                        onChange={handleChange}
+                        sx={{ '& .MuiOutlinedInput-root': { borderRadius: '12px' } }}
+                    />
+                    <TextField
+                        type="date"
+                        label="To"
+                        name="end_date"
+                        InputLabelProps={{ shrink: true }}
+                        value={filters.end_date}
+                        onChange={handleChange}
+                        sx={{ '& .MuiOutlinedInput-root': { borderRadius: '12px' } }}
+                    />
+                </Stack>
 
-            <div className="flex items-center gap-2">
-                <span className="text-xs font-bold text-gray-400 uppercase">To</span>
-                <input
-                    type="date"
-                    name="end_date"
-                    value={filters.end_date}
-                    onChange={handleChange}
-                    className="px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm outline-none focus:ring-2 focus:ring-blue-500"
-                />
-            </div>
+                <FormControl variant="outlined" sx={{ minWidth: 150 }}>
+                    <InputLabel id="terminal-select-label">Terminal</InputLabel>
+                    <Select
+                        labelId="terminal-select-label"
+                        name="terminal_id"
+                        value={filters.terminal_id}
+                        label="Terminal"
+                        onChange={handleChange}
+                        sx={{ borderRadius: '12px' }}
+                    >
+                        <MenuItem value="">All Terminals</MenuItem>
+                        <MenuItem value="T-001">Terminal 001</MenuItem>
+                        <MenuItem value="T-002">Terminal 002</MenuItem>
+                    </Select>
+                </FormControl>
 
-            <button
-                onClick={handleClear}
-                className="px-4 py-2 text-gray-400 hover:text-gray-600 text-sm font-bold transition-colors"
-            >
-                Clear
-            </button>
+                <Button
+                    startIcon={<ClearAllIcon />}
+                    onClick={handleClear}
+                    sx={{ color: 'grey.500', fontWeight: 'bold' }}
+                >
+                    Clear
+                </Button>
 
-            <div className="flex-grow"></div>
+                <Divider orientation="vertical" flexItem />
 
-            <button
-                onClick={onExport}
-                disabled={loading}
-                className="flex items-center space-x-2 px-4 py-2 bg-green-600 hover:bg-green-700 text-white rounded-lg text-sm font-bold transition-all shadow-sm active:scale-95 disabled:opacity-50"
-            >
-                <span>📥</span>
-                <span>Export CSV</span>
-            </button>
-        </div>
+                <Button
+                    variant="contained"
+                    color="secondary"
+                    startIcon={<DownloadIcon />}
+                    onClick={onExport}
+                    disabled={loading}
+                    sx={{
+                        borderRadius: '12px',
+                        px: 4,
+                        py: 1.5,
+                        boxShadow: '0 8px 16px rgba(235, 52, 46, 0.2)'
+                    }}
+                >
+                    Export CSV
+                </Button>
+            </Stack>
+        </Paper>
     );
 };
 

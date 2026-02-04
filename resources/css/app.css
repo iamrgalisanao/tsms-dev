@@ -3,6 +3,20 @@
 @tailwind components;
 @tailwind utilities;
 
+@layer base {
+    body {
+        @apply text-[18px] font-sans;
+    }
+
+    h1 {
+        @apply text-[72px] font-bold;
+    }
+
+    h2 {
+        @apply text-[18px] font-bold;
+    }
+}
+
 /* Dashboard Custom Styling */
 .dashboard {
     @apply container mx-auto p-4;
@@ -21,7 +35,7 @@
 }
 
 .dashboard-nav li.active button {
-    @apply bg-blue-500 text-white;
+    @apply bg-brand-primary text-white;
 }
 
 .dashboard-content {
@@ -61,6 +75,7 @@
 .transactions-table td {
     @apply align-top;
 }
+
 .transactions-table td code {
     white-space: break-spaces !important;
     word-break: break-all !important;
@@ -164,7 +179,7 @@
 }
 
 .btn-primary {
-    @apply bg-blue-500 text-white hover:bg-blue-600;
+    @apply bg-brand-primary text-white hover:bg-brand-accent;
 }
 
 .btn-danger {
@@ -217,7 +232,7 @@
     .dashboard-nav ul {
         @apply flex-wrap;
     }
-    
+
     .filters {
         @apply flex-col;
     }

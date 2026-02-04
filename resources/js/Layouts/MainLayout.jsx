@@ -1,88 +1,131 @@
 import React, { useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
+import { ThemeProvider } from '@mui/material/styles';
+import CssBaseline from '@mui/material/CssBaseline';
+import theme from '../Themes/MuiTheme';
+import DashboardIcon from '@mui/icons-material/Dashboard';
+import ReceiptIcon from '@mui/icons-material/Receipt';
+import DescriptionIcon from '@mui/icons-material/Description';
+import SettingsIcon from '@mui/icons-material/Settings';
+import LogoutIcon from '@mui/icons-material/Logout';
+import MenuIcon from '@mui/icons-material/Menu';
+import KeyIcon from '@mui/icons-material/Key';
+import PeopleIcon from '@mui/icons-material/People';
 
 const MainLayout = ({ children }) => {
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
     const location = useLocation();
 
     const menuItems = [
-        { name: 'Dashboard', path: '/', icon: '📊' },
-        { name: 'Transactions', path: '/transactions', icon: '💸' },
-        { name: 'Logs', path: '/logs', icon: '📝' },
-        { name: 'Settings', path: '/settings', icon: '⚙️' },
+        { name: 'Dashboard', path: '/', icon: DashboardIcon },
+        { name: 'Transactions', path: '/transactions', icon: ReceiptIcon },
+        { name: 'Terminal Tokens', path: '/terminal-tokens', icon: KeyIcon },
+        { name: 'User Management', path: '/users', icon: PeopleIcon },
+        { name: 'System Logs', path: '/system-logs', icon: DescriptionIcon },
+        { name: 'Settings', path: '/settings', icon: SettingsIcon },
     ];
 
     const user = window.authUser || { name: 'Guest' };
 
     return (
-        <div className="min-h-screen bg-gray-50 flex">
-            {/* Sidebar */}
-            <aside className={`bg-white border-r border-gray-200 transition-all duration-300 flex-shrink-0 ${isSidebarOpen ? 'w-64' : 'w-20'}`}>
-                <div className="h-20 flex items-center justify-center px-6 border-b border-gray-100">
-                    <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center text-white font-bold text-xl">
-                        T
+        <ThemeProvider theme={theme}>
+            <CssBaseline />
+            <div className="h-screen bg-gray-50 flex overflow-hidden">
+                {/* Sidebar */}
+                <aside className={`bg-brand-primary border-r border-brand-primary/10 flex-shrink-0 flex flex-col h-full relative z-20 ${isSidebarOpen ? 'w-64' : 'w-20'} transition-all duration-300 font-sans`}>
+                    <div className="h-24 flex items-center justify-center p-1 bg-white flex-shrink-0">
+                        {isSidebarOpen ? (
+                            <img
+                                src="/images/pitx-logo.png"
+                                alt="PITX Logo"
+                                className="w-full h-full object-contain"
+                            />
+                        ) : (
+                            <img
+                                src="/images/pitx-icon.png"
+                                alt="PITX"
+                                className="w-full h-full object-contain"
+                            />
+                        )}
                     </div>
-                    {isSidebarOpen && <span className="ml-3 text-xl font-bold text-gray-900 tracking-tight">TSMS</span>}
-                </div>
 
-                <nav className="mt-6 px-4 space-y-2">
-                    {menuItems.map((item) => {
-                        const isActive = location.pathname === item.path;
-                        return (
-                            <Link
-                                key={item.name}
-                                to={item.path}
-                                className={`flex items-center p-3 rounded-xl transition-all duration-200 ${isActive
-                                        ? 'bg-blue-50 text-blue-600 shadow-sm'
-                                        : 'text-gray-500 hover:bg-gray-50 hover:text-gray-900'
-                                    }`}
-                            >
-                                <span className="text-xl">{item.icon}</span>
-                                {isSidebarOpen && <span className="ml-3 font-medium">{item.name}</span>}
-                                {isActive && isSidebarOpen && <div className="ml-auto w-1.5 h-1.5 rounded-full bg-blue-600"></div>}
-                            </Link>
-                        );
-                    })}
-                </nav>
+                    <nav className="flex-1 mt-6 px-4 space-y-1 overflow-y-auto no-scrollbar">
+                        {menuItems.map((item) => {
+                            const isActive = location.pathname === item.path;
+                            const IconComponent = item.icon;
+                            return (
+                                <Link
+                                    key={item.name}
+                                    to={item.path}
+                                    className={`flex items-center p-3 rounded-lg transition-all duration-200 group ${isActive
+                                        ? 'bg-white/10 text-white shadow-sm'
+                                        : 'text-white/60 hover:bg-white/5 hover:text-white'
+                                        }`}
+                                >
+                                    <IconComponent
+                                        sx={{
+                                            fontSize: 24,
+                                            transition: 'transform 0.2s',
+                                            transform: isActive ? 'scale(1.1)' : 'scale(1)',
+                                            '.group:hover &': { transform: 'scale(1.1)' }
+                                        }}
+                                    />
+                                    {isSidebarOpen && <span className={`ml-3 text-[18px] ${isActive ? 'font-bold' : 'font-medium'}`}>{item.name}</span>}
+                                    {isActive && isSidebarOpen && <div className="ml-auto w-1.5 h-1.5 rounded-full bg-brand-accent animate-pulse"></div>}
+                                </Link>
+                            );
+                        })}
+                    </nav>
 
-                <div className="absolute bottom-8 left-0 right-0 px-4">
-                    <button className="flex items-center w-full p-3 rounded-xl text-gray-500 hover:bg-red-50 hover:text-red-600 transition-colors duration-200">
-                        <span className="text-xl">🚪</span>
-                        {isSidebarOpen && <span className="ml-3 font-medium">Logout</span>}
-                    </button>
-                </div>
-            </aside>
+                    <div className="p-4 border-t border-white/10 mt-auto">
+                        <button
+                            onClick={async () => {
+                                try {
+                                    await window.axios.post('/logout');
+                                    window.location.href = '/login';
+                                } catch (error) {
+                                    window.location.href = '/login';
+                                }
+                            }}
+                            className="flex items-center w-full p-3 rounded-lg text-white/50 hover:bg-brand-accent/10 hover:text-brand-accent transition-all duration-200"
+                        >
+                            <LogoutIcon sx={{ fontSize: 24 }} />
+                            {isSidebarOpen && <span className="ml-3 text-[18px] font-bold">Logout</span>}
+                        </button>
+                    </div>
+                </aside>
 
-            {/* Main Content */}
-            <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-                {/* Navbar */}
-                <header className="h-20 bg-white border-b border-gray-200 flex items-center justify-between px-8 z-10">
-                    <button
-                        onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-                        className="p-2 rounded-lg hover:bg-gray-100 text-gray-400 transition-colors"
-                    >
-                        ☰
-                    </button>
+                {/* Main Content Area */}
+                <div className="flex-1 flex flex-col min-w-0 h-full relative">
+                    {/* Navbar */}
+                    <header className="h-20 bg-white border-b border-gray-200 flex items-center justify-between px-8 z-10 sticky top-0">
+                        <button
+                            onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+                            className="p-2 rounded-lg hover:bg-gray-100 text-gray-400 transition-colors"
+                        >
+                            <MenuIcon sx={{ fontSize: 28 }} />
+                        </button>
 
-                    <div className="flex items-center space-y-0 space-x-4">
-                        <div className="text-right hidden sm:block">
-                            <p className="text-sm font-semibold text-gray-900">{user.name}</p>
-                            <p className="text-xs text-gray-400">{user.email || 'Admin'}</p>
+                        <div className="flex items-center space-x-4">
+                            <div className="text-right hidden sm:block">
+                                <p className="text-sm font-semibold text-gray-900">{user.name}</p>
+                                <p className="text-xs text-gray-400">{user.email || 'Admin'}</p>
+                            </div>
+                            <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white font-bold border-2 border-white shadow-sm">
+                                {user.name.charAt(0)}
+                            </div>
                         </div>
-                        <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-blue-600 to-indigo-600 flex items-center justify-center text-white font-bold">
-                            {user.name.charAt(0)}
-                        </div>
-                    </div>
-                </header>
+                    </header>
 
-                {/* Page Content */}
-                <main className="flex-1 overflow-y-auto p-8">
-                    <div className="max-w-7xl mx-auto animate-in fade-in slide-in-from-bottom-4 duration-500">
-                        {children}
-                    </div>
-                </main>
+                    {/* Scrollable Page Content */}
+                    <main className="flex-1 overflow-y-auto p-8 relative bg-gray-50/50">
+                        <div className="max-w-7xl mx-auto">
+                            {children}
+                        </div>
+                    </main>
+                </div>
             </div>
-        </div>
+        </ThemeProvider>
     );
 };
 

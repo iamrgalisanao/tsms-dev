@@ -14,18 +14,18 @@ class SystemLogService
         $lastHour = now()->subHour();
 
         return [
-            'system' => SystemLog::where('type', 'system')
+            'system' => SystemLog::where('type', 'integration')
                 ->where('created_at', '>=', $lastDay)
                 ->count(),
-                
+
             'errors' => SystemLog::where('severity', 'error')
                 ->where('created_at', '>=', $lastDay)
                 ->count(),
-                
+
             'retries' => SystemLog::where('type', 'retry')
                 ->where('created_at', '>=', $lastDay)
                 ->count(),
-                
+
             'completed' => SystemLog::where('type', 'transaction')
                 ->where('created_at', '>=', $lastHour)
                 ->count()
@@ -74,7 +74,7 @@ class SystemLogService
     public function getEnhancedStats()
     {
         $lastDay = now()->subDay();
-        
+
         return array_merge($this->getStats(), [
             'webhook_errors' => SystemLog::where('type', 'webhook')
                 ->where('severity', 'error')
@@ -114,8 +114,8 @@ class SystemLogService
         $before = $opts['before'] ?? null;
         $days = isset($opts['days']) ? (int) $opts['days'] : null;
         $type = $opts['type'] ?? null;
-    $dry = !empty($opts['dry_run']);
-    $hard = !empty($opts['hard']);
+        $dry = !empty($opts['dry_run']);
+        $hard = !empty($opts['hard']);
         $chunk = isset($opts['chunk']) ? (int) $opts['chunk'] : 500;
 
         $query = SystemLog::query();
@@ -152,7 +152,7 @@ class SystemLogService
 
         $deleted = 0;
         // Use chunking to avoid locking huge sets in one query
-        $query->orderBy('id')->chunkById($chunk, function($rows) use (&$deleted) {
+        $query->orderBy('id')->chunkById($chunk, function ($rows) use (&$deleted, $hard) {
             $ids = $rows->pluck('id')->toArray();
             if (!empty($ids)) {
                 if ($hard) {
@@ -184,10 +184,10 @@ class SystemLogService
                 'log_type' => 'prune',
                 'message' => 'Pruned system logs via SystemLogService',
                 'context' => [
-                        'deleted' => $deleted,
-                        'hard' => $hard,
-                        'criteria' => ['before' => $before, 'days' => $days, 'type' => $type]
-                    ],
+                    'deleted' => $deleted,
+                    'hard' => $hard,
+                    'criteria' => ['before' => $before, 'days' => $days, 'type' => $type]
+                ],
                 'severity' => 'info'
             ]);
         } catch (\Exception $e) {
@@ -212,7 +212,7 @@ class SystemLogService
     public function getWebhookStats(): array
     {
         $last24h = now()->subDay();
-        
+
         return [
             'total_sent' => SystemLog::where('type', 'webhook')->count(),
             'failed' => SystemLog::where('type', 'webhook')
@@ -226,12 +226,13 @@ class SystemLogService
     private function calculateWebhookSuccessRate(): float
     {
         $total = SystemLog::where('type', 'webhook')->count();
-        if ($total === 0) return 0;
-        
+        if ($total === 0)
+            return 0;
+
         $successful = SystemLog::where('type', 'webhook')
             ->where('severity', '!=', 'error')
             ->count();
-            
+
         return round(($successful / $total) * 100, 2);
     }
 }

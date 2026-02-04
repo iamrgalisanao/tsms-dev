@@ -1,6 +1,6 @@
 import React from 'react';
 
-const AuditLogsTable = ({ logs, loading }) => {
+const AuditLogsTable = React.memo(({ logs, loading }) => {
     if (loading) {
         return (
             <div className="bg-white rounded-xl shadow-sm p-8 flex justify-center border border-gray-100 h-64 items-center">
@@ -32,7 +32,7 @@ const AuditLogsTable = ({ logs, loading }) => {
                             </tr>
                         ) : (
                             logs.map((log) => (
-                                <tr key={log.id} className="hover:bg-blue-50/30 transition-colors duration-150 group">
+                                <tr key={log.id} className="hover:bg-blue-50/30 group">
                                     <td className="px-6 py-4 font-bold text-gray-400 text-xs">{log.id}</td>
                                     <td className="px-6 py-4">
                                         <div className="flex items-center space-x-2">
@@ -60,6 +60,6 @@ const AuditLogsTable = ({ logs, loading }) => {
             </div>
         </div>
     );
-};
+});
 
 export default AuditLogsTable;

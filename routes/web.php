@@ -121,11 +121,15 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/test', [TestTransactionController::class, 'index'])->name('test');
         Route::post('/test/process', [TestTransactionController::class, 'process'])->name('test.process');
 
-        Route::get('/', [TransactionController::class, 'index'])->name('index');
+        Route::get('/', function () {
+            return view('app');
+        })->name('index');
 
         // Transaction logs routes (admin/manager/finance)
         Route::middleware(['role:admin|manager|finance'])->prefix('logs')->name('logs.')->group(function () {
-            Route::get('/', [TransactionLogController::class, 'index'])->name('index');
+            Route::get('/', function () {
+                return view('app');
+            })->name('index');
             Route::get('/summary', [TransactionLogController::class, 'summary'])->name('summary');
             Route::get('/issues-count', [TransactionLogController::class, 'issuesCount'])->name('issues.count');
             Route::get('/{id}', [TransactionLogController::class, 'show'])->name('show');
@@ -150,7 +154,9 @@ Route::middleware(['auth'])->group(function () {
 
     // Terminal Token Routes
     Route::prefix('terminal-tokens')->group(function () {
-        Route::get('/', [TerminalTokenController::class, 'index'])->name('terminal-tokens');
+        Route::get('/', function () {
+            return view('app');
+        })->name('terminal-tokens');
         Route::post('/{terminalId}/regenerate', [TerminalTokenController::class, 'regenerate'])->name('terminal-tokens.regenerate');
         Route::post('/{terminalId}/revoke', [TerminalTokenController::class, 'revoke'])->name('terminal-tokens.revoke');
         Route::get('/{terminalId}/tokens', [TerminalTokenController::class, 'listTokens'])->name('terminal-tokens.list');
@@ -195,8 +201,8 @@ Route::middleware(['auth'])->group(function () {
         return view('app');
     })->middleware(['auth'])->name('terminal.test');
 
-    // System Logs Route - renamed from logs to system-logs
-    Route::get('/system-logs', [LogController::class, 'index'])->name('system-logs.index');
+    // System Logs Route - serves React SPA or returns JSON for AJAX
+    Route::get('/system-logs', [App\Http\Controllers\LogController::class, 'index'])->name('system-logs.index');
 
     // System Logs pruning UI (admin only)
     Route::middleware(['role:admin'])->group(function () {
@@ -279,7 +285,10 @@ Route::middleware(['auth'])->group(function () {
 
     // User Management Routes - RBAC protected
     Route::middleware(['role:admin|manager'])->group(function () {
-        Route::resource('users', UserController::class);
+        Route::get('/users', function () {
+            return view('app');
+        })->name('users.index');
+        Route::resource('users', UserController::class)->except(['index']);
     });
 
     // Admin System Settings

@@ -1,71 +1,77 @@
 import React from 'react';
+import { Card, CardContent, Typography, Box, Stack, LinearProgress } from '@mui/material';
+import MemoryIcon from '@mui/icons-material/Memory';
+import StorageIcon from '@mui/icons-material/Storage';
+import LanguageIcon from '@mui/icons-material/Language';
 
 const SystemHealthMonitor = ({ health, loading }) => {
     if (loading) return (
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex items-center justify-center h-40">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-        </div>
+        <Card sx={{ height: 320, borderRadius: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <LinearProgress sx={{ width: '80%' }} />
+        </Card>
     );
 
-    const stats = health || { cpu: 0, memory: 0, network: 'Unknown', queues: { backlog: 0 }, forwarding: { status: 'Offline', latency: '0ms' } };
+    const stats = health || { cpu: 0, memory: 0, network: 'Unknown', queues: { backlog: 0 } };
 
     const getStatusColor = (value) => {
-        if (value > 80) return 'bg-red-500';
-        if (value > 50) return 'bg-yellow-500';
-        return 'bg-green-500';
+        if (value > 80) return 'error';
+        if (value > 50) return 'warning';
+        return 'success';
     };
 
     return (
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-            <h3 className="text-sm font-bold text-gray-900 mb-6 uppercase tracking-widest">System Health</h3>
+        <Card sx={{ borderRadius: '32px', p: 2 }}>
+            <CardContent>
+                <Typography variant="caption" sx={{ fontSize: '12px', fontWeight: 900, color: 'grey.500', textTransform: 'uppercase', letterSpacing: '0.15em', mb: 4, display: 'block' }}>
+                    System Health
+                </Typography>
 
-            <div className="space-y-6">
-                {/* CPU Utilization */}
-                <div>
-                    <div className="flex justify-between text-xs font-bold mb-2">
-                        <span className="text-gray-500">CPU UTILIZATION</span>
-                        <span className={stats.cpu > 80 ? 'text-red-600' : 'text-gray-900'}>{stats.cpu}%</span>
-                    </div>
-                    <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
-                        <div
-                            className={`h-full transition-all duration-1000 ${getStatusColor(stats.cpu)}`}
-                            style={{ width: `${stats.cpu}%` }}
-                        ></div>
-                    </div>
-                </div>
+                <Stack spacing={4}>
+                    {/* CPU Utilization */}
+                    <Box>
+                        <Stack direction="row" justifyContent="space-between" sx={{ mb: 1 }}>
+                            <Stack direction="row" alignItems="center" spacing={1}>
+                                <MemoryIcon sx={{ fontSize: 16, color: 'grey.400' }} />
+                                <Typography variant="caption" sx={{ fontWeight: 'bold', color: 'grey.600' }}>CPU UTILIZATION</Typography>
+                            </Stack>
+                            <Typography variant="caption" sx={{ fontWeight: 900, color: stats.cpu > 80 ? 'error.main' : 'text.primary' }}>{stats.cpu}%</Typography>
+                        </Stack>
+                        <LinearProgress
+                            variant="determinate"
+                            value={stats.cpu}
+                            color={getStatusColor(stats.cpu)}
+                            sx={{ height: 8, borderRadius: 4, bgcolor: 'grey.100' }}
+                        />
+                    </Box>
 
-                {/* Memory Usage */}
-                <div>
-                    <div className="flex justify-between text-xs font-bold mb-2">
-                        <span className="text-gray-500">MEMORY USAGE</span>
-                        <span className={stats.memory > 80 ? 'text-red-600' : 'text-gray-900'}>{stats.memory}%</span>
-                    </div>
-                    <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
-                        <div
-                            className={`h-full transition-all duration-1000 ${getStatusColor(stats.memory)}`}
-                            style={{ width: `${stats.memory}%` }}
-                        ></div>
-                    </div>
-                </div>
+                    {/* Memory Usage */}
+                    <Box>
+                        <Stack direction="row" justifyContent="space-between" sx={{ mb: 1 }}>
+                            <Stack direction="row" alignItems="center" spacing={1}>
+                                <StorageIcon sx={{ fontSize: 16, color: 'grey.400' }} />
+                                <Typography variant="caption" sx={{ fontWeight: 'bold', color: 'grey.600' }}>MEMORY USAGE</Typography>
+                            </Stack>
+                            <Typography variant="caption" sx={{ fontWeight: 900, color: stats.memory > 80 ? 'error.main' : 'text.primary' }}>{stats.memory}%</Typography>
+                        </Stack>
+                        <LinearProgress
+                            variant="determinate"
+                            value={stats.memory}
+                            color={getStatusColor(stats.memory)}
+                            sx={{ height: 8, borderRadius: 4, bgcolor: 'grey.100' }}
+                        />
+                    </Box>
 
-                {/* Network & Queues */}
-                <div className="pt-4 border-t border-gray-50 grid grid-cols-2 gap-4">
-                    <div className="space-y-1">
-                        <p className="text-[10px] font-bold text-gray-400 uppercase">Network</p>
-                        <p className="text-sm font-bold text-green-600 flex items-center">
-                            <span className="w-2 h-2 bg-green-500 rounded-full mr-1.5 animate-pulse"></span>
-                            {stats.network}
-                        </p>
-                    </div>
-                    <div className="space-y-1">
-                        <p className="text-[10px] font-bold text-gray-400 uppercase">Forwarding</p>
-                        <p className={`text-sm font-bold ${stats.forwarding.status === 'Active' ? 'text-blue-600' : 'text-gray-400'}`}>
-                            {stats.forwarding.status} ({stats.forwarding.latency})
-                        </p>
-                    </div>
-                </div>
-            </div>
-        </div>
+                    {/* Network Status */}
+                    <Box sx={{ pt: 2, borderTop: '1px solid', borderColor: 'grey.100' }}>
+                        <Typography variant="caption" sx={{ fontSize: '10px', fontWeight: 900, color: 'grey.400', display: 'block', mb: 0.5 }}>NETWORK</Typography>
+                        <Stack direction="row" alignItems="center" spacing={1}>
+                            <LanguageIcon sx={{ fontSize: 14, color: 'success.main' }} />
+                            <Typography variant="body2" sx={{ fontWeight: 'bold', color: 'success.main' }}>{stats.network}</Typography>
+                        </Stack>
+                    </Box>
+                </Stack>
+            </CardContent>
+        </Card>
     );
 };
 

@@ -197,13 +197,13 @@ class DashboardService
             ->join('tenants', 'pos_terminals.tenant_id', '=', 'tenants.id')
             ->leftJoin('transactions', 'pos_terminals.id', '=', 'transactions.terminal_id')
             ->select(
-                'pos_terminals.terminal_uid',
+                'pos_terminals.serial_number as terminal_uid',
                 'tenants.trade_name',
                 DB::raw('COUNT(transactions.id) as transaction_count'),
                 DB::raw('SUM(transactions.gross_sales) as total_sales')
             )
             ->where('transactions.created_at', '>=', now()->subDay())
-            ->groupBy('pos_terminals.id', 'tenants.trade_name', 'pos_terminals.terminal_uid')
+            ->groupBy('pos_terminals.id', 'tenants.trade_name', 'pos_terminals.serial_number')
             ->orderByDesc('total_sales')
             ->limit(5)
             ->get();

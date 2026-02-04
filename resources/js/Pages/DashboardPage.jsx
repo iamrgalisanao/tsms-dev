@@ -3,12 +3,36 @@ import api from '../Services/api';
 import MetricCard from '../Components/dashboard/MetricCard';
 import TransactionChart from '../Components/dashboard/TransactionChart';
 import RecentTransactionsTable from '../Components/dashboard/RecentTransactionsTable';
-import AuditLogsTable from '../Components/dashboard/AuditLogsTable';
-import AlertsPanel from '../Components/dashboard/AlertsPanel';
 import SystemHealthMonitor from '../Components/dashboard/SystemHealthMonitor';
 import RevenueByTerminalChart from '../Components/dashboard/RevenueByTerminalChart';
-import FilterBar from '../Components/dashboard/FilterBar';
 import NotificationToast from '../Components/dashboard/NotificationToast';
+import TransactionDetailPanel from '../Components/transactions/TransactionDetailPanel';
+import {
+    Box,
+    Typography,
+    Button,
+    FormControl,
+    Select,
+    MenuItem,
+    Stack,
+    CircularProgress,
+    Divider
+} from '@mui/material';
+import RefreshIcon from '@mui/icons-material/Refresh';
+import BarChartIcon from '@mui/icons-material/BarChart';
+import SensorsIcon from '@mui/icons-material/Sensors';
+import TrendingUpIcon from '@mui/icons-material/TrendingUp';
+import ListAltIcon from '@mui/icons-material/ListAlt';
+import AccountBalanceWalletIcon from '@mui/icons-material/AccountBalanceWallet';
+import ReceiptLongIcon from '@mui/icons-material/ReceiptLong';
+import CancelIcon from '@mui/icons-material/Cancel';
+import DesktopWindowsIcon from '@mui/icons-material/DesktopWindows';
+import { Breadcrumbs, Link as MuiLink } from '@mui/material';
+import NavigateNextIcon from '@mui/icons-material/NavigateNext';
+import HomeIcon from '@mui/icons-material/Home';
+import DashboardIcon from '@mui/icons-material/Dashboard';
+
+const currencyFormat = (val) => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(val);
 
 const DashboardPage = () => {
     const [metrics, setMetrics] = useState(null);
@@ -18,6 +42,8 @@ const DashboardPage = () => {
     const [recentTransactions, setRecentTransactions] = useState([]);
     const [auditLogs, setAuditLogs] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [selectedTransactionId, setSelectedTransactionId] = useState(null);
+    const [detailPanelOpen, setDetailPanelOpen] = useState(false);
     const [refreshInterval, setRefreshInterval] = useState(30000); // 30 seconds
     const [isRefreshing, setIsRefreshing] = useState(false);
     const [notification, setNotification] = useState(null);
@@ -76,169 +102,196 @@ const DashboardPage = () => {
         return () => clearInterval(timer);
     }, [fetchDashboardData, refreshInterval]);
 
-    const handleFilterChange = (newFilters) => {
+    const handleFilterChange = useCallback((newFilters) => {
         setFilters(newFilters);
-    };
+    }, []);
 
-    const handleExport = () => {
+    const handleExport = useCallback(() => {
         const queryParams = new URLSearchParams(filters).toString();
         window.open(`/api/dashboard/export-transactions?${queryParams}`, '_blank');
-    };
+    }, [filters]);
 
-    const handleForward = async (id) => {
-        try {
-            const result = await api.forwardTransaction(id);
-            if (result.status === 'success') {
-                alert('Transaction forwarded successfully!');
-            } else {
-                alert('Forwarding failed: ' + result.message);
-            }
-        } catch (error) {
-            alert('Error forwarding transaction.');
-        }
-    };
+    const handleViewDetails = useCallback((transaction) => {
+        setSelectedTransactionId(transaction.id || transaction.transaction_id);
+        setDetailPanelOpen(true);
+    }, []);
 
-    const currencyFormat = (val) => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(val);
+    const handleRefresh = useCallback(() => {
+        fetchDashboardData();
+    }, [fetchDashboardData]);
 
     return (
-        <div className="space-y-8 pb-12">
-            {/* Header section with top-priority alerts */}
-            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-                <div>
-                    <h1 className="text-3xl font-black text-gray-900 tracking-tight flex items-center">
-                        Dashboard Command Center
-                        {isRefreshing && <span className="ml-3 w-2 h-2 bg-blue-500 rounded-full animate-ping"></span>}
-                    </h1>
-                    <p className="text-gray-500 font-medium">Real-time terminal sales and system health monitoring.</p>
+        <Box sx={{ pb: 10 }}>
+            {/* Unified Breadcrumbs */}
+            <Box sx={{ py: 3 }}>
+                <Breadcrumbs
+                    separator={<NavigateNextIcon fontSize="small" />}
+                    sx={{ mb: 4, '& .MuiTypography-root': { fontWeight: 700, fontSize: '0.75rem', letterSpacing: '0.05em' } }}
+                >
+                    <MuiLink underline="hover" color="inherit" href="/dashboard" sx={{ display: 'flex', alignItems: 'center', opacity: 0.6 }}>
+                        <HomeIcon sx={{ mr: 0.5, fontSize: 16 }} />
+                        SYSTEM
+                    </MuiLink>
+                    <Typography color="primary.main" sx={{ fontWeight: 800 }}>DASHBOARD COMMAND</Typography>
+                </Breadcrumbs>
+
+                <Stack direction={{ xs: 'column', lg: 'row' }} justifyContent="space-between" alignItems={{ xs: 'flex-start', lg: 'center' }} sx={{ mb: 6 }} spacing={4}>
+                    <Box>
+                        <Stack direction="row" spacing={2.5} alignItems="center" sx={{ mb: 1.5 }}>
+                            <Box sx={{ p: 1.5, bgcolor: 'primary.main', color: 'white', borderRadius: 3, display: 'flex', boxShadow: '0 8px 25px rgba(25, 118, 210, 0.25)' }}>
+                                <DashboardIcon sx={{ fontSize: 32 }} />
+                            </Box>
+                            <div>
+                                <Typography variant="h2" sx={{ fontWeight: 950, color: 'text.primary', letterSpacing: '-0.03em', mb: 0.5 }}>
+                                    System Dashboard
+                                </Typography>
+                                <Typography variant="body1" sx={{ color: 'text.secondary', fontWeight: 500, opacity: 0.8 }}>
+                                    Live telemetry and financial orchestration center.
+                                </Typography>
+                            </div>
+                        </Stack>
+                    </Box>
+
+                    <Stack direction="row" alignItems="center" spacing={2}>
+                        <Button
+                            variant="outlined"
+                            color="inherit"
+                            onClick={handleRefresh}
+                            disabled={isRefreshing}
+                            startIcon={isRefreshing ? <CircularProgress size={20} color="inherit" /> : <RefreshIcon />}
+                            sx={{
+                                borderRadius: 3,
+                                px: 2.5,
+                                py: 1.2,
+                                fontWeight: 700,
+                                borderColor: 'divider',
+                                textTransform: 'none',
+                                bgcolor: 'white',
+                                boxShadow: '0 4px 12px rgba(0,0,0,0.03)',
+                                '&:hover': { bgcolor: 'grey.50', borderColor: 'grey.300' }
+                            }}
+                        >
+                            {isRefreshing ? 'Refreshing...' : 'Sync Data'}
+                        </Button>
+                        <Divider orientation="vertical" flexItem sx={{ mx: 1, height: 40 }} />
+                        <FormControl variant="outlined" size="small">
+                            <Select
+                                id="time-range-select"
+                                defaultValue="today"
+                                sx={{
+                                    bgcolor: 'white',
+                                    minWidth: 180,
+                                    borderRadius: 3,
+                                    fontWeight: 'bold',
+                                    color: 'primary.main',
+                                    boxShadow: '0 4px 12px rgba(0,0,0,0.03)',
+                                    '& .MuiOutlinedInput-notchedOutline': { borderColor: 'divider' },
+                                    '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: 'primary.main' }
+                                }}
+                            >
+                                <MenuItem value="today">Today (Real-time)</MenuItem>
+                                <MenuItem value="yesterday">Yesterday</MenuItem>
+                                <MenuItem value="7days">Last 7 Days</MenuItem>
+                                <MenuItem value="30days">Last 30 Days</MenuItem>
+                                <MenuItem value="custom">Custom Range...</MenuItem>
+                            </Select>
+                        </FormControl>
+                    </Stack>
+                </Stack>
+            </Box>
+
+            {/* Section 1: System Status */}
+            <Box sx={{ mb: 10 }}>
+                <Typography variant="h2" color="primary" sx={{ display: 'flex', alignItems: 'center', mb: 4, textTransform: 'uppercase' }}>
+                    <SensorsIcon sx={{ mr: 2, bgcolor: 'primary.main', color: 'white', p: 1, borderRadius: 2, fontSize: 40 }} />
+                    System Status & Health
+                </Typography>
+                <SystemHealthMonitor health={health} loading={loading} />
+            </Box>
+
+            {/* Section 2: Key Performance Indicators */}
+            <Box sx={{ mb: 10 }}>
+                <Typography variant="h2" color="primary" sx={{ display: 'flex', alignItems: 'center', mb: 4, textTransform: 'uppercase' }}>
+                    <BarChartIcon sx={{ mr: 2, bgcolor: 'primary.main', color: 'white', p: 1, borderRadius: 2, fontSize: 40 }} />
+                    Key Performance Indicators
+                </Typography>
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
+                    <MetricCard
+                        title="Total Revenue"
+                        value={metrics?.total_revenue ? currencyFormat(metrics.total_revenue.current) : '₱0.00'}
+                        trend={metrics?.total_revenue?.trend}
+                        sparkline={metrics?.total_revenue?.sparkline}
+                        icon={<AccountBalanceWalletIcon />}
+                        color="primary"
+                    />
+                    <MetricCard
+                        title="Total Transactions"
+                        value={metrics?.total_transactions?.current ?? 0}
+                        trend={metrics?.total_transactions?.trend}
+                        sparkline={metrics?.total_transactions?.sparkline}
+                        icon={<ReceiptLongIcon />}
+                        color="accent"
+                    />
+                    <MetricCard
+                        title="Voided Transactions"
+                        value={metrics?.voided_transactions?.current ?? 0}
+                        trend={metrics?.voided_transactions?.trend}
+                        icon={<CancelIcon />}
+                        color="accent"
+                    />
+                    <MetricCard
+                        title="Active Terminals"
+                        value={`${metrics?.active_terminals?.current ?? 0} / ${metrics?.active_terminals?.total ?? 0}`}
+                        icon={<DesktopWindowsIcon />}
+                        color="primary"
+                    />
                 </div>
-                <div className="flex items-center space-x-3">
-                    <select
-                        value={refreshInterval}
-                        onChange={(e) => setRefreshInterval(Number(e.target.value))}
-                        className="bg-white border border-gray-200 rounded-xl px-4 py-2 text-sm font-bold text-gray-700 shadow-sm focus:ring-2 focus:ring-blue-500 outline-none"
-                    >
-                        <option value={0}>Manual Refresh</option>
-                        <option value={10000}>Refresh every 10s</option>
-                        <option value={30000}>Refresh every 30s</option>
-                        <option value={60000}>Refresh every 1m</option>
-                    </select>
-                    <button
-                        onClick={() => fetchDashboardData()}
-                        className="p-2 bg-white border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors shadow-sm"
-                        title="Refresh Now"
-                    >
-                        🔄
-                    </button>
+            </Box>
+
+            {/* Section 3: Analytics Visualization */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
+                <div className="lg:col-span-2 space-y-10">
+                    <div>
+                        <Typography variant="h2" color="primary" sx={{ display: 'flex', alignItems: 'center', mb: 4, textTransform: 'uppercase' }}>
+                            <TrendingUpIcon sx={{ mr: 2, bgcolor: 'primary.main', color: 'white', p: 1, borderRadius: 2, fontSize: 40 }} />
+                            Sales Performance Analysis
+                        </Typography>
+                        <TransactionChart data={chartData} loading={loading} />
+                    </div>
+                </div>
+
+                <div className="space-y-10">
+                    <div>
+                        <Typography variant="h2" color="primary" sx={{ display: 'flex', alignItems: 'center', mb: 4, textTransform: 'uppercase' }}>
+                            <SensorsIcon sx={{ mr: 2, bgcolor: 'primary.main', color: 'white', p: 1, borderRadius: 2, fontSize: 40 }} />
+                            Terminal Performance
+                        </Typography>
+                        <RevenueByTerminalChart data={terminalPerformance} loading={loading} />
+                    </div>
                 </div>
             </div>
 
-            {/* Top Critical Section */}
-            <AlertsPanel loading={loading} alerts={[]} />
+            {/* Section 4: Detailed Activity */}
+            <Box sx={{ mt: 10 }}>
+                <Typography variant="h2" color="primary" sx={{ display: 'flex', alignItems: 'center', mb: 4, textTransform: 'uppercase' }}>
+                    <ListAltIcon sx={{ mr: 2, bgcolor: 'primary.main', color: 'white', p: 1, borderRadius: 2, fontSize: 40 }} />
+                    Recent Activity Logs
+                </Typography>
+                <Box sx={{ bgcolor: 'white', borderRadius: '2rem', shadow: '0 20px 40px rgba(0,0,0,0.05)', border: '1px solid', borderColor: 'grey.100', overflow: 'hidden' }}>
+                    <RecentTransactionsTable
+                        transactions={recentTransactions}
+                        loading={loading}
+                        onForward={handleViewDetails}
+                    />
+                </Box>
+            </Box>
 
-            {/* Phase 5: Filter Bar */}
-            <FilterBar
-                onFilterChange={handleFilterChange}
-                onExport={handleExport}
-                loading={loading}
+            <TransactionDetailPanel
+                transactionId={selectedTransactionId}
+                open={detailPanelOpen}
+                onClose={() => setDetailPanelOpen(false)}
             />
 
-            {/* Real-time Metrics Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
-                <MetricCard
-                    title="Total Sales Today"
-                    value={metrics ? currencyFormat(metrics.total_sales.current) : '₱0'}
-                    trend={metrics?.total_sales.trend}
-                    sparkline={metrics?.total_sales.sparkline}
-                    icon="💰"
-                    color="blue"
-                />
-                <MetricCard
-                    title="Total Transactions"
-                    value={metrics?.total_transactions.current || 0}
-                    trend={metrics?.total_transactions.trend}
-                    sparkline={metrics?.total_transactions.sparkline}
-                    icon="📦"
-                    color="indigo"
-                />
-                <MetricCard
-                    title="Voided Transactions"
-                    value={metrics?.voided_transactions.current || 0}
-                    trend={metrics?.voided_transactions.trend}
-                    icon="🚫"
-                    color="red"
-                />
-                <MetricCard
-                    title="Active Terminals"
-                    value={`${metrics?.active_terminals.current || 0} / ${metrics?.active_terminals.total || 0}`}
-                    icon="🖥️"
-                    color="green"
-                />
-            </div>
-
-            {/* Analytics & System Health Section */}
-            <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
-                <div className="lg:col-span-3">
-                    <TransactionChart data={chartData} loading={loading} />
-                </div>
-                <div className="flex flex-col space-y-8">
-                    <SystemHealthMonitor health={health} loading={loading} />
-                    <RevenueByTerminalChart data={terminalPerformance} loading={loading} />
-
-                    <div className="bg-gradient-to-br from-indigo-600 via-blue-700 to-blue-800 p-8 rounded-2xl shadow-xl text-white relative overflow-hidden group">
-                        <div className="absolute top-0 right-0 p-4 opacity-10 transform group-hover:scale-125 transition-transform duration-700">
-                            <span className="text-8xl">🚀</span>
-                        </div>
-                        <h4 className="font-black text-xl mb-3 relative z-10">Pro Insights</h4>
-                        <p className="text-blue-100 opacity-90 leading-relaxed mb-6 relative z-10">
-                            The forwarding engine is currently processing at a lower latency than average. This is an ideal time for scheduled maintenance.
-                        </p>
-                        <button className="bg-white/20 hover:bg-white/30 text-white px-5 py-2.5 rounded-xl font-bold transition-all backdrop-blur-sm relative z-10">
-                            Learn More
-                        </button>
-                    </div>
-                </div>
-            </div>
-
-            {/* Large Tables Section */}
-            <div className="space-y-8">
-                <RecentTransactionsTable
-                    transactions={recentTransactions}
-                    loading={loading}
-                    onForward={handleForward}
-                />
-                <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
-                    <div className="xl:col-span-2">
-                        <AuditLogsTable
-                            logs={auditLogs}
-                            loading={loading}
-                        />
-                    </div>
-                    <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-                        <h4 className="font-bold text-gray-900 mb-6 uppercase tracking-widest text-sm">Top Performing Terminals</h4>
-                        <div className="space-y-4">
-                            {terminalPerformance.length === 0 ? (
-                                <p className="text-gray-400 text-sm italic py-4">No terminal activity recorded today.</p>
-                            ) : (
-                                terminalPerformance.map((tp, i) => (
-                                    <div key={i} className="flex items-center justify-between p-3 hover:bg-gray-50 rounded-xl transition-colors group">
-                                        <div className="flex items-center space-x-3">
-                                            <div className="w-8 h-8 bg-blue-50 text-blue-600 rounded-lg flex items-center justify-center font-bold text-xs">{i + 1}</div>
-                                            <div>
-                                                <p className="text-sm font-bold text-gray-900 group-hover:text-blue-700 transition-colors">{tp.trade_name}</p>
-                                                <p className="text-[10px] text-gray-400 font-bold uppercase tracking-tighter">{tp.terminal_uid}</p>
-                                            </div>
-                                        </div>
-                                        <div className="text-right">
-                                            <p className="text-sm font-black text-gray-900">₱{new Intl.NumberFormat().format(tp.total_sales)}</p>
-                                            <p className="text-[10px] text-gray-400 font-bold">{tp.transaction_count} tx</p>
-                                        </div>
-                                    </div>
-                                ))
-                            )}
-                        </div>
-                    </div>
-                </div>
-            </div>
             {notification && (
                 <NotificationToast
                     message={notification.message}
@@ -246,7 +299,7 @@ const DashboardPage = () => {
                     onClose={() => setNotification(null)}
                 />
             )}
-        </div>
+        </Box>
     );
 };
 
