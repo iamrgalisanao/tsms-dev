@@ -58,7 +58,7 @@ Route::get('/', function () {
 // Authentication Routes
 Route::middleware('guest')->group(function () {
     Route::get('/login', function () {
-        return view('auth.login');
+        return view('app');
     })->name('login');
     Route::post('/login', [LoginController::class, 'login']);
 });

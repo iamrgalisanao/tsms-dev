@@ -1,7 +1,9 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { AuthProvider } from './Contexts/AuthContext.jsx';
 import MainLayout from './Layouts/MainLayout';
+import Login from './Pages/Auth/Login.jsx';
 import DashboardPage from './Pages/DashboardPage';
 import TransactionLogsPage from './Pages/TransactionLogsPage';
 import TerminalTokenPage from './Pages/TerminalTokenPage';
@@ -12,20 +14,33 @@ import '../css/app.css';
 
 const App = () => {
   return (
-    <Router>
-      <MainLayout>
+    <AuthProvider>
+      <Router>
         <Routes>
-          <Route path="/" element={<DashboardPage />} />
-          <Route path="/dashboard" element={<DashboardPage />} />
-          <Route path="/transactions" element={<TransactionLogsPage />} />
-          <Route path="/terminal-tokens" element={<TerminalTokenPage />} />
-          <Route path="/users" element={<UserManagementPage />} />
-          <Route path="/system-logs" element={<SystemLogsPage />} />
-          {/* Add other routes as they are migrated */}
-          <Route path="*" element={<div className="p-8 text-center text-gray-500">Feature coming soon...</div>} />
+          {/* Public — no layout wrapper */}
+          <Route path="/login" element={<Login />} />
+
+          {/* Authenticated — wrapped in MainLayout */}
+          <Route
+            path="/*"
+            element={
+              <MainLayout>
+                <Routes>
+                  <Route path="/" element={<Navigate to="/dashboard" replace />} />
+                  <Route path="/dashboard" element={<DashboardPage />} />
+                  <Route path="/transactions" element={<TransactionLogsPage />} />
+                  <Route path="/terminal-tokens" element={<TerminalTokenPage />} />
+                  <Route path="/users" element={<UserManagementPage />} />
+                  <Route path="/system-logs" element={<SystemLogsPage />} />
+                  {/* Add other routes as they are migrated */}
+                  <Route path="*" element={<div className="p-8 text-center text-gray-500">Feature coming soon...</div>} />
+                </Routes>
+              </MainLayout>
+            }
+          />
         </Routes>
-      </MainLayout>
-    </Router>
+      </Router>
+    </AuthProvider>
   );
 };
 
