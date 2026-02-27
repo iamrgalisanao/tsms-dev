@@ -16,16 +16,23 @@ const MainLayout = ({ children }) => {
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
     const location = useLocation();
 
+    const user = window.authUser || { name: 'Guest', roles: [] };
+
     const menuItems = [
-        { name: 'Dashboard', path: '/', icon: DashboardIcon },
-        { name: 'Transactions', path: '/transactions', icon: ReceiptIcon },
-        { name: 'Terminal Tokens', path: '/terminal-tokens', icon: KeyIcon },
-        { name: 'User Management', path: '/users', icon: PeopleIcon },
-        { name: 'System Logs', path: '/system-logs', icon: DescriptionIcon },
-        { name: 'Settings', path: '/settings', icon: SettingsIcon },
+        { name: 'Dashboard', path: '/', icon: DashboardIcon, roles: ['admin', 'manager'] },
+        { name: 'Finance Dashboard', path: '/finance', icon: DashboardIcon, roles: ['finance', 'admin'] },
+        { name: 'Finance Reports', path: '/reports', icon: DescriptionIcon, roles: ['finance', 'admin'] },
+        { name: 'Transactions', path: '/transactions', icon: ReceiptIcon, roles: ['admin', 'manager', 'finance'] },
+        { name: 'Terminal Tokens', path: '/terminal-tokens', icon: KeyIcon, roles: ['admin'] },
+        { name: 'User Management', path: '/users', icon: PeopleIcon, roles: ['admin'] },
+        { name: 'System Logs', path: '/system-logs', icon: DescriptionIcon, roles: ['admin'] },
+        { name: 'Settings', path: '/settings', icon: SettingsIcon, roles: ['admin'] },
     ];
 
-    const user = window.authUser || { name: 'Guest' };
+    const filteredItems = menuItems.filter(item => {
+        if (!item.roles) return true;
+        return item.roles.some(role => user.roles?.includes(role));
+    });
 
     return (
         <ThemeProvider theme={theme}>
@@ -50,7 +57,7 @@ const MainLayout = ({ children }) => {
                     </div>
 
                     <nav className="flex-1 mt-6 px-4 space-y-1 overflow-y-auto no-scrollbar">
-                        {menuItems.map((item) => {
+                        {filteredItems.map((item) => {
                             const isActive = location.pathname === item.path;
                             const IconComponent = item.icon;
                             return (

@@ -26,7 +26,14 @@
     </style>
 
     <script>
-        window.authUser = @json(auth()->user());
+        @auth
+            window.authUser = @json(array_merge(
+                auth()->user()->toArray(),
+                ['roles' => auth()->user()->getRoleNames()->values()->toArray()]
+            ));
+        @else
+            window.authUser = null;
+        @endauth
         window.config = @json([
             'api_base' => url('/api'),
             'app_name' => config('app.name'),

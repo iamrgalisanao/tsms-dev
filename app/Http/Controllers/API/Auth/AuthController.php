@@ -21,7 +21,7 @@ class AuthController extends Controller
 
         // Find the user
         $user = User::where('email', $request->email)->first();
-        
+
         if (!$user || !Hash::check($request->password, $user->password)) {
             Log::error('Login failed: Invalid credentials', ['email' => $request->email]);
             return response()->json([
@@ -42,7 +42,7 @@ class AuthController extends Controller
         try {
             // Create API token for SPA
             $token = $user->createToken('auth-token')->plainTextToken;
-            
+
             // Also create a web session for the user if we're using a session
             if ($request->wantsJson()) {
                 // API request - just return token
@@ -51,26 +51,36 @@ class AuthController extends Controller
                 Auth::login($user);
                 $request->session()->regenerate();
             }
-            
+
             // Update last login time
             $user->last_login_at = now();
             $user->save();
-            
+
             Log::info('Login successful', ['email' => $request->email, 'user_id' => $user->id]);
-            
+
+            // Role-aware redirect
+            $redirectUrl = '/dashboard';
+            if ($user->hasRole('finance')) {
+                $redirectUrl = '/finance';
+            } elseif ($user->hasRole('commercial')) {
+                $redirectUrl = '/commercial';
+            }
+
             // Return both the token and intended redirect URL
             return response()->json([
                 'success' => true,
                 'token' => $token,
-                'user' => $user->toArray(),
-                'redirect_url' => '/dashboard'
+                'user' => array_merge($user->toArray(), [
+                    'roles' => $user->getRoleNames()->values()->toArray(),
+                ]),
+                'redirect_url' => $redirectUrl
             ]);
         } catch (\Exception $e) {
             Log::error('Authentication error', [
                 'email' => $request->email,
                 'error' => $e->getMessage()
             ]);
-            
+
             return response()->json([
                 'success' => false,
                 'message' => 'Authentication error: ' . $e->getMessage()
@@ -86,6 +96,9 @@ class AuthController extends Controller
 
     public function user(Request $request)
     {
-        return response()->json($request->user());
+        $user = $request->user();
+        return response()->json(array_merge($user->toArray(), [
+            'roles' => $user->getRoleNames()->values()->toArray(),
+        ]));
     }
 }

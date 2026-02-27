@@ -9,6 +9,8 @@ import TransactionLogsPage from './Pages/TransactionLogsPage';
 import TerminalTokenPage from './Pages/TerminalTokenPage';
 import UserManagementPage from './Pages/UserManagementPage';
 import SystemLogsPage from './Pages/SystemLogsPage';
+import FinanceDashboardPage from './Pages/Finance/FinanceDashboardPage.jsx';
+import FinanceReportsPage from './Pages/Finance/FinanceReportsPage.jsx';
 import './bootstrap';
 import '../css/app.css';
 
@@ -32,6 +34,8 @@ const App = () => {
                   <Route path="/terminal-tokens" element={<TerminalTokenPage />} />
                   <Route path="/users" element={<UserManagementPage />} />
                   <Route path="/system-logs" element={<SystemLogsPage />} />
+                  <Route path="/finance" element={<FinanceDashboardPage />} />
+                  <Route path="/reports" element={<FinanceReportsPage />} />
                   {/* Add other routes as they are migrated */}
                   <Route path="*" element={<div className="p-8 text-center text-gray-500">Feature coming soon...</div>} />
                 </Routes>

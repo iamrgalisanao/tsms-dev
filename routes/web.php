@@ -222,13 +222,16 @@ Route::middleware(['auth'])->group(function () {
             ->name('system-logs.bulk-soft-delete');
     });
 
-    // Finance Reports (web UI) - finance role only
+    // Finance Reports (web UI) - finance role only (Serving React SPA)
     Route::middleware(['role:finance'])->group(function () {
-        Route::get('/reports', [ReportsController::class, 'index'])->name('reports.index');
-        // Finance dashboard URL: serve the finance dashboard blade (aggregated commercial charts)
+        Route::get('/reports', function () {
+            return view('app');
+        })->name('reports.index');
+
         Route::get('/finance', function () {
-            return view('reports.finance.dashboard');
+            return view('app');
         })->name('finance.dashboard');
+
         // JSON API endpoint used by the reports dashboard (ajax)
         Route::get('/reports/data', [ReportsController::class, 'data'])->name('finance.reports');
         // Excel export endpoint

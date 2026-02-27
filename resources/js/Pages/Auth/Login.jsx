@@ -557,210 +557,211 @@ const CSS = `
 
 /* ── SVG Icons ── */
 const ShieldIcon = ({ size = 60, className = '' }) => (
-    <svg viewBox="0 0 24 24" width={size} height={size} className={className} xmlns="http://www.w3.org/2000/svg" fill="currentColor">
-        <path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z" />
-        <path d="M10 17l-3-3 1.41-1.41L10 14.17l5.59-5.58L17 10l-7 7z" fill="#0B192E" />
-    </svg>
+  <svg viewBox="0 0 24 24" width={size} height={size} className={className} xmlns="http://www.w3.org/2000/svg" fill="currentColor">
+    <path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z" />
+    <path d="M10 17l-3-3 1.41-1.41L10 14.17l5.59-5.58L17 10l-7 7z" fill="#0B192E" />
+  </svg>
 );
 
 const AtIcon = () => (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <circle cx="12" cy="12" r="4" /><path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-3.92 7.94" />
-    </svg>
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="12" cy="12" r="4" /><path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-3.92 7.94" />
+  </svg>
 );
 
 const LockIcon = () => (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-        <path d="M7 11V7a5 5 0 0 1 10 0v4" />
-    </svg>
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+    <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+  </svg>
 );
 
 const EyeIcon = () => (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
-        <circle cx="12" cy="12" r="3" />
-    </svg>
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+    <circle cx="12" cy="12" r="3" />
+  </svg>
 );
 
 const EyeOffIcon = () => (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
-        <line x1="1" y1="1" x2="23" y2="23" />
-    </svg>
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
+    <line x1="1" y1="1" x2="23" y2="23" />
+  </svg>
 );
 
 const LoginArrowIcon = () => (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" />
-        <polyline points="10 17 15 12 10 7" />
-        <line x1="15" y1="12" x2="3" y2="12" />
-    </svg>
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4" />
+    <polyline points="10 17 15 12 10 7" />
+    <line x1="15" y1="12" x2="3" y2="12" />
+  </svg>
 );
 
 const ShieldCheckIcon = () => (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-        <polyline points="9 12 11 14 15 10" />
-    </svg>
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+    <polyline points="9 12 11 14 15 10" />
+  </svg>
 );
 
 const ShieldWarningIcon = () => (
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
-        <line x1="12" y1="8" x2="12" y2="12" />
-        <line x1="12" y1="16" x2="12.01" y2="16" />
-    </svg>
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+    <line x1="12" y1="8" x2="12" y2="12" />
+    <line x1="12" y1="16" x2="12.01" y2="16" />
+  </svg>
 );
 
 /* ── Main Component ── */
 export default function Login() {
-    const { login } = useAuth();
-    const navigate = useNavigate();
-    const location = useLocation();
+  const { login } = useAuth();
+  const navigate = useNavigate();
+  const location = useLocation();
 
-    const [email, setEmail] = useState('');
-    const [password, setPassword] = useState('');
-    const [rememberMe, setRememberMe] = useState(false);
-    const [showPassword, setShowPassword] = useState(false);
-    const [loading, setLoading] = useState(false);
-    const [error, setError] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [rememberMe, setRememberMe] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
 
-    const from = location.state?.from?.pathname || '/dashboard';
+  const from = location.state?.from?.pathname || '/dashboard';
 
-    const handleSubmit = async (e) => {
-        e.preventDefault();
-        if (!email || !password) {
-            setError('Please enter your email address and password.');
-            return;
-        }
-        setError('');
-        setLoading(true);
-        try {
-            await login(email, password);
-            navigate(from, { replace: true });
-        } catch (err) {
-            setError(
-                err?.response?.data?.message ||
-                err?.message ||
-                'Authentication failed. Please check your credentials.'
-            );
-        } finally {
-            setLoading(false);
-        }
-    };
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!email || !password) {
+      setError('Please enter your email address and password.');
+      return;
+    }
+    setError('');
+    setLoading(true);
+    try {
+      const redirectUrl = await login(email, password);
+      // Use server-provided role-aware redirect; fall back to the intended location
+      navigate(redirectUrl || from, { replace: true });
+    } catch (err) {
+      setError(
+        err?.response?.data?.message ||
+        err?.message ||
+        'Authentication failed. Please check your credentials.'
+      );
+    } finally {
+      setLoading(false);
+    }
+  };
 
-    return (
-        <>
-            <style>{CSS}</style>
+  return (
+    <>
+      <style>{CSS}</style>
 
-            <div className="tsms-login-root">
+      <div className="tsms-login-root">
 
-                {/* ══ LEFT PANEL (desktop only) ══ */}
-                <section className="tsms-left">
-                    <div className="tsms-brand">
-                        {/* Shield icon */}
-                        <div className="tsms-shield-box">
-                            <ShieldIcon size={60} className="tsms-shield-svg" />
-                        </div>
+        {/* ══ LEFT PANEL (desktop only) ══ */}
+        <section className="tsms-left">
+          <div className="tsms-brand">
+            {/* Shield icon */}
+            <div className="tsms-shield-box">
+              <ShieldIcon size={60} className="tsms-shield-svg" />
+            </div>
 
-                        {/* Wordmark */}
-                        <div className="tsms-wordmark">TSMS</div>
-                        <div className="tsms-red-bar" />
+            {/* Wordmark */}
+            <div className="tsms-wordmark">TSMS</div>
+            <div className="tsms-red-bar" />
 
-                        {/* System title */}
-                        <p className="tsms-system-title">Transaction Sales Management System</p>
-                        <div className="tsms-system-sub">
-                            <span className="line" />
-                            <span>Administration Portal</span>
-                            <span className="line" />
-                        </div>
-                    </div>
+            {/* System title */}
+            <p className="tsms-system-title">Transaction Sales Management System</p>
+            <div className="tsms-system-sub">
+              <span className="line" />
+              <span>Administration Portal</span>
+              <span className="line" />
+            </div>
+          </div>
 
-                    {/* NODE status */}
-                    <div className="tsms-node">
-                        <div className="tsms-node-dot" />
-                        <span className="tsms-node-text">Node: MNL-CENTRAL-01 // Secure</span>
-                    </div>
-                </section>
+          {/* NODE status */}
+          <div className="tsms-node">
+            <div className="tsms-node-dot" />
+            <span className="tsms-node-text">Node: MNL-CENTRAL-01 // Secure</span>
+          </div>
+        </section>
 
-                {/* ══ RIGHT PANEL (form) ══ */}
-                <main className="tsms-right">
-                    <div className="tsms-form-inner">
+        {/* ══ RIGHT PANEL (form) ══ */}
+        <main className="tsms-right">
+          <div className="tsms-form-inner">
 
-                        {/* Mobile-only compact logo */}
-                        <div className="tsms-mobile-logo">
-                            <div className="tsms-mobile-logo-box">
-                                <ShieldIcon size={22} className="tsms-mobile-logo-svg" />
-                            </div>
-                            <span className="tsms-mobile-logo-text">TSMS</span>
-                        </div>
+            {/* Mobile-only compact logo */}
+            <div className="tsms-mobile-logo">
+              <div className="tsms-mobile-logo-box">
+                <ShieldIcon size={22} className="tsms-mobile-logo-svg" />
+              </div>
+              <span className="tsms-mobile-logo-text">TSMS</span>
+            </div>
 
-                        {/* Heading */}
-                        <header className="tsms-form-header">
-                            <h1 className="tsms-form-heading">System Access Command</h1>
-                            <p className="tsms-form-sub">Enter your administrative credentials to continue.</p>
-                        </header>
+            {/* Heading */}
+            <header className="tsms-form-header">
+              <h1 className="tsms-form-heading">System Access Command</h1>
+              <p className="tsms-form-sub">Enter your administrative credentials to continue.</p>
+            </header>
 
-                        {/* Error */}
-                        {error && (
-                            <div className="tsms-error">
-                                <span>⚠</span>
-                                <span>{error}</span>
-                            </div>
-                        )}
+            {/* Error */}
+            {error && (
+              <div className="tsms-error">
+                <span>⚠</span>
+                <span>{error}</span>
+              </div>
+            )}
 
-                        <form onSubmit={handleSubmit} autoComplete="off">
-                            {/* Email */}
-                            <div className="tsms-field">
-                                <label className="tsms-field-label" htmlFor="email">Email Address</label>
-                                <div className="tsms-input-wrap">
-                                    <span className="tsms-input-icon"><AtIcon /></span>
-                                    <input
-                                        id="email"
-                                        type="email"
-                                        className="tsms-input"
-                                        value={email}
-                                        onChange={(e) => setEmail(e.target.value)}
-                                        placeholder="name@pitx.com.ph"
-                                        disabled={loading}
-                                        autoComplete="username"
-                                        required
-                                    />
-                                </div>
-                            </div>
+            <form onSubmit={handleSubmit} autoComplete="off">
+              {/* Email */}
+              <div className="tsms-field">
+                <label className="tsms-field-label" htmlFor="email">Email Address</label>
+                <div className="tsms-input-wrap">
+                  <span className="tsms-input-icon"><AtIcon /></span>
+                  <input
+                    id="email"
+                    type="email"
+                    className="tsms-input"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="name@pitx.com.ph"
+                    disabled={loading}
+                    autoComplete="username"
+                    required
+                  />
+                </div>
+              </div>
 
-                            {/* Password */}
-                            <div className="tsms-field">
-                                <label className="tsms-field-label" htmlFor="password">Security Password</label>
-                                <div className="tsms-input-wrap">
-                                    <span className="tsms-input-icon"><LockIcon /></span>
-                                    <input
-                                        id="password"
-                                        type={showPassword ? 'text' : 'password'}
-                                        className="tsms-input tsms-input-pr"
-                                        value={password}
-                                        onChange={(e) => setPassword(e.target.value)}
-                                        placeholder="••••••••••••"
-                                        disabled={loading}
-                                        autoComplete="current-password"
-                                        required
-                                    />
-                                    <button
-                                        type="button"
-                                        className="tsms-eye-btn"
-                                        onClick={() => setShowPassword((v) => !v)}
-                                        tabIndex={-1}
-                                        aria-label={showPassword ? 'Hide password' : 'Show password'}
-                                    >
-                                        {showPassword ? <EyeOffIcon /> : <EyeIcon />}
-                                    </button>
-                                </div>
-                            </div>
+              {/* Password */}
+              <div className="tsms-field">
+                <label className="tsms-field-label" htmlFor="password">Security Password</label>
+                <div className="tsms-input-wrap">
+                  <span className="tsms-input-icon"><LockIcon /></span>
+                  <input
+                    id="password"
+                    type={showPassword ? 'text' : 'password'}
+                    className="tsms-input tsms-input-pr"
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="••••••••••••"
+                    disabled={loading}
+                    autoComplete="current-password"
+                    required
+                  />
+                  <button
+                    type="button"
+                    className="tsms-eye-btn"
+                    onClick={() => setShowPassword((v) => !v)}
+                    tabIndex={-1}
+                    aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  >
+                    {showPassword ? <EyeOffIcon /> : <EyeIcon />}
+                  </button>
+                </div>
+              </div>
 
 
-                            {/* Remember + Recovery — commented out, implement when requested */}
-                            {/* <div className="tsms-remember-row">
+              {/* Remember + Recovery — commented out, implement when requested */}
+              {/* <div className="tsms-remember-row">
                                 <label className="tsms-remember-label">
                                     <input
                                         type="checkbox"
@@ -782,62 +783,62 @@ export default function Login() {
 
 
 
-                            {/* Submit */}
-                            <button
-                                type="submit"
-                                className="tsms-submit"
-                                disabled={loading}
-                            >
-                                {loading ? (
-                                    <>
-                                        <span className="tsms-spinner" />
-                                        Authenticating...
-                                    </>
-                                ) : (
-                                    <>
-                                        <span>Authenticate &amp; Access</span>
-                                        <LoginArrowIcon />
-                                    </>
-                                )}
-                            </button>
-                        </form>
+              {/* Submit */}
+              <button
+                type="submit"
+                className="tsms-submit"
+                disabled={loading}
+              >
+                {loading ? (
+                  <>
+                    <span className="tsms-spinner" />
+                    Authenticating...
+                  </>
+                ) : (
+                  <>
+                    <span>Authenticate &amp; Access</span>
+                    <LoginArrowIcon />
+                  </>
+                )}
+              </button>
+            </form>
 
-                        {/* Footer */}
-                        <footer className="tsms-footer">
-                            <div className="tsms-footer-secured">
-                                <span className="tsms-footer-line" />
-                                <span className="tsms-footer-secured-text">Secured by PITX </span>
-                                <span className="tsms-footer-line" />
-                            </div>
-                            <div className="tsms-badge-row">
-                                <div className="tsms-badge">
-                                    <span className="tsms-badge-icon"><ShieldCheckIcon /></span>
-                                    <div>
-                                        <span className="tsms-badge-label">SSL Secure</span>
-                                        <span className="tsms-badge-sub">Verified Certificate</span>
-                                    </div>
-                                </div>
-                                <div className="tsms-badge-divider" />
-                                <div className="tsms-badge">
-                                    <span className="tsms-badge-icon"><ShieldWarningIcon /></span>
-                                    <div>
-                                        <span className="tsms-badge-label">256-Bit AES</span>
-                                        <span className="tsms-badge-sub">Military Grade</span>
-                                    </div>
-                                </div>
-                            </div>
-                        </footer>
-                    </div>
+            {/* Footer */}
+            <footer className="tsms-footer">
+              <div className="tsms-footer-secured">
+                <span className="tsms-footer-line" />
+                <span className="tsms-footer-secured-text">Secured by PITX </span>
+                <span className="tsms-footer-line" />
+              </div>
+              <div className="tsms-badge-row">
+                <div className="tsms-badge">
+                  <span className="tsms-badge-icon"><ShieldCheckIcon /></span>
+                  <div>
+                    <span className="tsms-badge-label">SSL Secure</span>
+                    <span className="tsms-badge-sub">Verified Certificate</span>
+                  </div>
+                </div>
+                <div className="tsms-badge-divider" />
+                <div className="tsms-badge">
+                  <span className="tsms-badge-icon"><ShieldWarningIcon /></span>
+                  <div>
+                    <span className="tsms-badge-label">256-Bit AES</span>
+                    <span className="tsms-badge-sub">Military Grade</span>
+                  </div>
+                </div>
+              </div>
+            </footer>
+          </div>
 
-                    {/* Version tag (desktop only via CSS) */}
-                    <div className="tsms-version">
-                        <span>v2.0.1-PRO</span>
-                        <div className="tsms-version-dot" />
-                        <span>© 2024 PITX</span>
-                    </div>
-                </main>
+          {/* Version tag (desktop only via CSS) */}
+          <div className="tsms-version">
+            <span>v2.0.1-PRO</span>
+            <div className="tsms-version-dot" />
+            <span>© 2024 PITX</span>
+          </div>
+        </main>
 
-            </div>
-        </>
-    );
+      </div>
+    </>
+  );
 }
