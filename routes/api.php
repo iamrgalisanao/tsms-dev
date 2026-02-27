@@ -23,8 +23,18 @@ use App\Http\Controllers\DashboardController;
 // MCP endpoint for kirschbaum-development/laravel-loop (public, no auth, CSRF-free)
 Route::post('/mcp', [McpController::class, 'handle']);
 
+// Authentication API Routes
+Route::prefix('auth')->group(function () {
+    Route::post('/login', [\App\Http\Controllers\API\Auth\AuthController::class, 'login']);
+    Route::middleware('auth:sanctum')->group(function () {
+        Route::post('/logout', [\App\Http\Controllers\API\Auth\AuthController::class, 'logout']);
+        Route::get('/user', [\App\Http\Controllers\API\Auth\AuthController::class, 'user']);
+    });
+});
+
 /*
 |--------------------------------------------------------------------------
+
 | API Routes
 |--------------------------------------------------------------------------
 |
