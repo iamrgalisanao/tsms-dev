@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import axios from 'axios';
 import MetricCard from '../../Components/Commercial/MetricCard';
-import TransactionChart from '../../Components/dashboard/TransactionChart';
-import api from '../../services/api';
+import TransactionChart from '../../Components/Dashboard/TransactionChart';
 
 const CommercialDashboardPage = () => {
     const [metrics, setMetrics] = useState({
@@ -25,10 +25,10 @@ const CommercialDashboardPage = () => {
             // We'll fetch from the existing proxy endpoints
             // These endpoints return data in specific formats, we'll need to adapt them
             const [dailyResp, weeklyResp, monthlyResp, yearlyResp] = await Promise.all([
-                api.get('/commercial/reports/transactions/daily'),
-                api.get('/commercial/reports/transactions/weekly'),
-                api.get('/commercial/reports/transactions/monthly'),
-                api.get('/commercial/reports/transactions/yearly')
+                axios.get('/commercial/reports/transactions/daily'),
+                axios.get('/commercial/reports/transactions/weekly'),
+                axios.get('/commercial/reports/transactions/monthly'),
+                axios.get('/commercial/reports/transactions/yearly')
             ]);
 
             // For now, let's just log and see the structure or assume a structure based on previous research

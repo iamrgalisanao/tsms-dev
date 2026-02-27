@@ -45,7 +45,9 @@ const MainLayout = ({ children }) => {
 
     const filteredItems = menuItems.filter(item => {
         if (!item.roles) return true;
-        return item.roles.some(role => roles.includes(role));
+        // Normalise to lowercase so 'Commercial' and 'commercial' both match
+        const normalisedRoles = roles.map(r => (typeof r === 'string' ? r : r?.name || '').toLowerCase());
+        return item.roles.some(role => normalisedRoles.includes(role.toLowerCase()));
     });
 
     return (
