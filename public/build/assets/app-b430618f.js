@@ -1,0 +1,1 @@
+import"./bootstrap-eaa9b53a.js";console.log("App.js loaded - Authentication status:",!!window.authUser);document.addEventListener("DOMContentLoaded",function(){document.getElementById("app")&&window.authUser&&console.log("User authenticated:",window.authUser.name)});
