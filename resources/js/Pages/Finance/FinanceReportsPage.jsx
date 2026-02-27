@@ -1,251 +1,356 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useCallback } from 'react';
+import axios from 'axios';
 import {
     Box,
     Typography,
-    Grid,
+    Stack,
     Button,
     CircularProgress,
-    Stack,
-    Breadcrumbs,
-    Link as MuiLink,
     TextField,
-    MenuItem,
-    Card,
-    CardHeader,
-    CardContent,
-    Autocomplete
+    Autocomplete,
+    Alert
 } from '@mui/material';
-import NavigateNextIcon from '@mui/icons-material/NavigateNext';
-import HomeIcon from '@mui/icons-material/Home';
+import DownloadIcon from '@mui/icons-material/Download';
+import SyncIcon from '@mui/icons-material/Sync';
 import DescriptionIcon from '@mui/icons-material/Description';
-import FileDownloadIcon from '@mui/icons-material/FileDownload';
 import FilterAltIcon from '@mui/icons-material/FilterAlt';
 
-import TransactionChart from '../../Components/dashboard/TransactionChart';
-import axios from 'axios';
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+const fmt = (v, decimals = 2) =>
+    Number(v ?? 0).toLocaleString('en-PH', { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
 
+const php = (v) => `P${fmt(v)}`;
+
+// ─── CSMR Table ───────────────────────────────────────────────────────────────
+const CSMR_TABLE_STYLES = `
+.csmr-wrap { overflow-x: auto; font-family: Arial, sans-serif; font-size: 11px; }
+.csmr-table { border-collapse: collapse; min-width: 1200px; width: 100%; }
+.csmr-table th, .csmr-table td {
+    border: 1px solid #333;
+    padding: 3px 5px;
+    text-align: center;
+    white-space: nowrap;
+}
+.csmr-table thead th { background: #fff; font-weight: bold; font-size: 10px; }
+.csmr-table .section-header { background: #d9d9d9; font-weight: bold; }
+.csmr-table .total-row td { background: #f0f0f0; font-weight: bold; }
+.csmr-table .date-col { text-align: left; }
+.csmr-table tbody tr:hover td { background: #f9f9f9; }
+.csmr-logo { text-align: right; padding: 8px 0; }
+.csmr-logo img { height: 48px; object-fit: contain; }
+.csmr-title { text-align: center; margin: 12px 0 8px; }
+.csmr-title h2 { font-size: 14px; font-weight: bold; letter-spacing: 1px; }
+.csmr-title p { font-size: 11px; }
+.less-section { margin-top: 8px; font-size: 12px; }
+.less-section table { width: 100%; }
+.less-section td { padding: 2px 4px; }
+.less-section .label { width: 60%; }
+.less-section .value { width: 40%; text-align: right; }
+`;
+
+const CsmrTable = ({ reportData, tenantName, month }) => {
+    if (!reportData) return null;
+
+    const { daily_totals = {}, totals = {} } = reportData;
+    const rows = Object.entries(daily_totals).sort(([a], [b]) => a.localeCompare(b));
+
+    const monthLabel = month
+        ? new Date(month + '-01').toLocaleDateString('en-PH', { month: 'long', year: 'numeric' })
+        : '';
+
+    return (
+        <>
+            <style>{CSMR_TABLE_STYLES}</style>
+
+            {/* Logo */}
+            <div className="csmr-logo">
+                <img src="/images/pitx-logo.png" alt="PITX" />
+            </div>
+
+            {/* Title */}
+            <div className="csmr-title">
+                <h2>{tenantName || 'Tradename / Branch'}</h2>
+                <h2>CERTIFIED MONTHLY SALES REPORT</h2>
+                <p>For the month of {monthLabel}</p>
+            </div>
+
+            {/* Main Table */}
+            <div className="csmr-wrap">
+                <table className="csmr-table">
+                    <thead>
+                        <tr>
+                            <th rowSpan={3} style={{ width: 70 }}>Date</th>
+                            {/* Net Sales group */}
+                            <th colSpan={4} className="section-header">Net Sales</th>
+                            {/* Sales Discount group */}
+                            <th colSpan={7} className="section-header">Sales Discount</th>
+                            {/* Service Charge group */}
+                            <th colSpan={2} className="section-header">Service Charge</th>
+                            <th rowSpan={3} style={{ minWidth: 80 }}>Gross Sales</th>
+                        </tr>
+                        <tr>
+                            <th>Vatable Trans.<br /><small>(NET OF DISC. SERVICE CHARGE AND LOCAL TAX)</small></th>
+                            <th>SC Vat Exempt Trans.<br /><small>(NET OF DISC. SERVICE CHARGE AND LOCAL TAX)</small></th>
+                            <th>Value Added Tax (VAT)</th>
+                            <th>Promo</th>
+                            <th>Employee's Discount</th>
+                            <th>Senior Citizen's</th>
+                            <th>PWD Disc.</th>
+                            <th>VIP Cards<br /><small>(if any)</small></th>
+                            <th>Other Tax<br /><small>(Local Tax)</small></th>
+                            <th colSpan={2}>Service Charge</th>
+                        </tr>
+                        <tr>
+                            {/* Promo sub: with / without */}
+                            <th></th><th></th><th></th>
+                            <th style={{ fontSize: 9 }}>With<br />Approval</th>
+                            <th></th><th></th><th></th><th></th><th></th>
+                            {/* Service Charge sub-cols */}
+                            <th style={{ fontSize: 9 }}>Distributed<br />to Employees</th>
+                            <th style={{ fontSize: 9 }}>Retained by<br />Management</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {rows.length === 0 ? (
+                            <tr>
+                                <td>-</td>
+                                {Array.from({ length: 13 }).map((_, i) => <td key={i}>0.00</td>)}
+                            </tr>
+                        ) : (
+                            rows.map(([date, d]) => (
+                                <tr key={date}>
+                                    <td className="date-col">{new Date(date + 'T00:00:00').getDate()}</td>
+                                    <td>{fmt(d.vatable_sales)}</td>
+                                    <td>{fmt(d.sc_vat_exempt_sales)}</td>
+                                    <td>{fmt(d.vat_amount)}</td>
+                                    <td>{fmt(d.promo_with_approval)}</td>
+                                    <td>{fmt(d.employee_discount)}</td>
+                                    <td>{fmt(d.senior_discount)}</td>
+                                    <td>{fmt(d.pwd_discount)}</td>
+                                    <td>{fmt(d.vip_discount)}</td>
+                                    <td>{fmt(d.other_tax)}</td>
+                                    <td>{fmt(d.service_charge_distributed)}</td>
+                                    <td>{fmt(d.service_charge_retained)}</td>
+                                    <td>{fmt(d.gross_sales)}</td>
+                                </tr>
+                            ))
+                        )}
+
+                        {/* Totals row */}
+                        <tr className="total-row">
+                            <td className="date-col">Total</td>
+                            <td><strong>{fmt(totals.vatable_sales)}</strong></td>
+                            <td><strong>{fmt(totals.sc_vat_exempt_sales)}</strong></td>
+                            <td><strong>{fmt(totals.vat_amount)}</strong></td>
+                            <td>{fmt(totals.promo_with_approval)}</td>
+                            <td>{fmt(totals.employee_discount)}</td>
+                            <td><strong>{fmt(totals.senior_discount)}</strong></td>
+                            <td><strong>{fmt(totals.pwd_discount)}</strong></td>
+                            <td>{fmt(totals.vip_discount)}</td>
+                            <td>{fmt(totals.other_tax)}</td>
+                            <td>{fmt(totals.service_charge_distributed)}</td>
+                            <td>{fmt(totals.service_charge_retained)}</td>
+                            <td><strong>{fmt(totals.gross_sales)}</strong></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            {/* Less section */}
+            <div className="less-section">
+                <table>
+                    <tbody>
+                        <tr>
+                            <td className="label">Less:</td>
+                            <td />
+                        </tr>
+                        <tr>
+                            <td className="label" style={{ paddingLeft: 32 }}>Promo Discounts With Approval</td>
+                            <td className="value">{php(totals.promo_with_approval)}</td>
+                        </tr>
+                        <tr>
+                            <td className="label" style={{ paddingLeft: 32 }}>Promo Discounts Without Approval</td>
+                            <td className="value">{php(totals.promo_without_approval)}</td>
+                        </tr>
+                        <tr>
+                            <td className="label" style={{ paddingLeft: 32 }}>Employee's Discount</td>
+                            <td className="value">{php(totals.employee_discount)}</td>
+                        </tr>
+                        <tr style={{ borderTop: '1px solid #333', fontWeight: 'bold' }}>
+                            <td className="label">Net Sales</td>
+                            <td className="value">{php(totals.net_sales)}</td>
+                        </tr>
+                        <tr>
+                            <td className="label">VAT (12%)</td>
+                            <td className="value">{php(totals.vat_amount)}</td>
+                        </tr>
+                        <tr style={{ fontWeight: 'bold' }}>
+                            <td className="label">Net Sales Subject to Percentage Rent</td>
+                            <td className="value">{php(totals.net_subject_to_rent)}</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </>
+    );
+};
+
+// ─── Main Page ────────────────────────────────────────────────────────────────
 const FinanceReportsPage = () => {
     const [tenants, setTenants] = useState([]);
+    const [tenantsLoaded, setTenantsLoaded] = useState(false);
     const [selectedTenant, setSelectedTenant] = useState(null);
-    const [dateRange, setDateRange] = useState({
-        start: new Date().toISOString().split('T')[0],
-        end: new Date().toISOString().split('T')[0]
+    const [reportMonth, setReportMonth] = useState(() => {
+        const now = new Date();
+        return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
     });
     const [loading, setLoading] = useState(false);
-    const [charts, setCharts] = useState({
-        basketSize: null,
-        weeklySales: null,
-        monthlyIncome: null,
-        l2Small: null,
-        l1Large: null,
-        l2Large: null
-    });
+    const [reportData, setReportData] = useState(null);
+    const [error, setError] = useState(null);
 
-    const fetchTenants = useCallback(async () => {
+    // Lazy-load tenants on first open of the dropdown
+    const loadTenants = useCallback(async () => {
+        if (tenantsLoaded) return;
         try {
             const resp = await axios.get('/commercial/reports/tenants');
             setTenants(resp.data || []);
-        } catch (error) {
-            console.error('Error fetching tenants:', error);
+            setTenantsLoaded(true);
+        } catch {
+            setTenants([]);
         }
-    }, []);
+    }, [tenantsLoaded]);
 
-    const fetchReportData = useCallback(async () => {
+    const generateReport = useCallback(async () => {
         if (!selectedTenant) return;
-
         setLoading(true);
+        setError(null);
         try {
-            // In a real implementation, we would call the specialized endpoints
-            // For now, we'll simulate the data fetching logic as seen in index.blade.php
-            // and adapt it to the common TransactionChart component
-
-            // This is a placeholder for the actual API calls to /api/v1/webapp/reports/...
-            // which will be hooked up to the FinanceCalculationService on the backend
-
-            const labels = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-            const sampleSeries = [120, 150, 130, 160, 170, 180, 200, 190, 220, 260, 300, 280];
-
-            setCharts({
-                basketSize: {
-                    labels,
-                    sales: sampleSeries,
-                    volume: sampleSeries.map(s => s / 10)
-                },
-                weeklySales: {
-                    labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
-                    sales: [0.2, 0.4, 0.5, 0.6, 0.7, 0.5, 0.3],
-                    volume: [20, 40, 50, 60, 70, 50, 30]
-                },
-                monthlyIncome: {
-                    labels,
-                    sales: sampleSeries.map(v => v * 10),
-                    volume: sampleSeries
-                },
-                l2Small: {
-                    labels,
-                    sales: sampleSeries.map(v => Math.round(v * 0.5)),
-                    volume: sampleSeries.map(v => Math.round(v * 0.05))
-                },
-                l1Large: {
-                    labels,
-                    sales: sampleSeries.map(v => Math.round(v * 0.8)),
-                    volume: sampleSeries.map(v => Math.round(v * 0.08))
-                },
-                l2Large: {
-                    labels,
-                    sales: sampleSeries.map(v => Math.round(v * 0.3)),
-                    volume: sampleSeries.map(v => Math.round(v * 0.03))
-                }
+            const resp = await axios.get('/reports/data', {
+                params: { tenant: selectedTenant.id, month: reportMonth }
             });
-        } catch (error) {
-            console.error('Error fetching report data:', error);
+            setReportData(resp.data);
+        } catch (e) {
+            setError('Failed to load report data. Please try again.');
         } finally {
             setLoading(false);
         }
-    }, [selectedTenant, dateRange]);
-
-    useEffect(() => {
-        fetchTenants();
-    }, [fetchTenants]);
-
-    useEffect(() => {
-        if (selectedTenant) {
-            fetchReportData();
-        }
-    }, [selectedTenant, fetchReportData]);
+    }, [selectedTenant, reportMonth]);
 
     const handleExport = () => {
         if (!selectedTenant) return;
-        const [year, month] = dateRange.start.split('-');
-        window.open(`/finance/reports/export?year=${year}&month=${month}&tenant=${selectedTenant.id}`, '_blank');
+        const [year, month] = reportMonth.split('-');
+        window.open(
+            `/finance/reports/export?year=${year}&month=${month}&tenant=${selectedTenant.id}`,
+            '_blank'
+        );
     };
 
     return (
         <Box sx={{ pb: 10 }}>
-            {/* Breadcrumbs */}
-            <Box sx={{ py: 3 }}>
-                <Breadcrumbs
-                    separator={<NavigateNextIcon fontSize="small" />}
-                    sx={{ mb: 4, '& .MuiTypography-root': { fontWeight: 700, fontSize: '0.75rem', letterSpacing: '0.05em' } }}
-                >
-                    <MuiLink underline="hover" color="inherit" href="/dashboard" sx={{ display: 'flex', alignItems: 'center', opacity: 0.6 }}>
-                        <HomeIcon sx={{ mr: 0.5, fontSize: 16 }} />
-                        FINANCE
-                    </MuiLink>
-                    <Typography color="primary.main" sx={{ fontWeight: 800 }}>REPORTS GENERATOR</Typography>
-                </Breadcrumbs>
-
-                <Stack direction={{ xs: 'column', lg: 'row' }} justifyContent="space-between" alignItems={{ xs: 'flex-start', lg: 'center' }} sx={{ mb: 6 }} spacing={4}>
-                    <Box>
-                        <Stack direction="row" spacing={2.5} alignItems="center" sx={{ mb: 1.5 }}>
-                            <Box sx={{ p: 1.5, bgcolor: 'primary.main', color: 'white', borderRadius: 3, display: 'flex', boxShadow: '0 8px 25px rgba(29, 67, 155, 0.25)' }}>
-                                <DescriptionIcon sx={{ fontSize: 32 }} />
-                            </Box>
-                            <div>
-                                <Typography variant="h2" sx={{ fontWeight: 950, color: 'text.primary', letterSpacing: '-0.03em', mb: 0.5 }}>
-                                    Financial Reports
-                                </Typography>
-                                <Typography variant="body1" sx={{ color: 'text.secondary', fontWeight: 500, opacity: 0.8 }}>
-                                    Generate detailed analytics and export fiscal data.
-                                </Typography>
-                            </div>
-                        </Stack>
+            {/* Header */}
+            <Box sx={{ py: 3, mb: 2 }}>
+                <Stack direction="row" spacing={2.5} alignItems="center" sx={{ mb: 1 }}>
+                    <Box sx={{ p: 1.5, bgcolor: 'primary.main', color: 'white', borderRadius: 3, display: 'flex', boxShadow: '0 8px 25px rgba(29,67,155,0.2)' }}>
+                        <DescriptionIcon sx={{ fontSize: 28 }} />
                     </Box>
-
-                    <Button
-                        variant="contained"
-                        onClick={handleExport}
-                        disabled={!selectedTenant || loading}
-                        startIcon={<FileDownloadIcon />}
-                        className="pitx-gradient"
-                        sx={{
-                            borderRadius: '16px',
-                            px: 4,
-                            py: 1.5,
-                            fontWeight: 900,
-                            fontSize: '0.75rem',
-                            letterSpacing: '0.1em',
-                            textTransform: 'uppercase',
-                            color: 'white',
-                            boxShadow: '0 8px 25px rgba(29, 67, 155, 0.25)',
-                            '&:hover': { opacity: 0.9 }
-                        }}
-                    >
-                        Export to Excel
-                    </Button>
+                    <Box>
+                        <Typography variant="h2" sx={{ fontWeight: 900, color: 'text.primary', letterSpacing: '-0.02em' }}>
+                            Finance Reports
+                        </Typography>
+                        <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+                            Generate the Certified Monthly Sales Report (CSMR) per tenant.
+                        </Typography>
+                    </Box>
                 </Stack>
             </Box>
 
-            {/* Filter Section */}
-            <Box className="glass-card" sx={{ p: 4, mb: 6, borderRadius: '24px', border: '1px solid rgba(255,255,255,0.4)', boxShadow: '0 8px 32px rgba(0,0,0,0.05)' }}>
-                <Stack direction={{ xs: 'column', md: 'row' }} spacing={3} alignItems="center">
-                    <Stack direction="row" spacing={2} alignItems="center" sx={{ color: 'primary.main' }}>
-                        <FilterAltIcon />
-                        <Typography variant="subtitle2" sx={{ fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.1em' }}>Filter Command</Typography>
+            {/* Filter Bar */}
+            <Box sx={{ bgcolor: 'white', borderRadius: '20px', border: '1px solid', borderColor: 'divider', p: 3, mb: 4, boxShadow: '0 4px 16px rgba(0,0,0,0.04)' }}>
+                <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} alignItems={{ md: 'center' }}>
+                    <Stack direction="row" spacing={1} alignItems="center" sx={{ color: 'secondary.main', minWidth: 150 }}>
+                        <FilterAltIcon fontSize="small" />
+                        <Typography variant="caption" sx={{ fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                            Filter Command
+                        </Typography>
                     </Stack>
 
                     <Autocomplete
                         options={tenants}
-                        getOptionLabel={(option) => option.trade_name}
+                        getOptionLabel={(o) => o.trade_name || ''}
+                        isOptionEqualToValue={(o, v) => o.id === v.id}
                         value={selectedTenant}
-                        onChange={(event, newValue) => setSelectedTenant(newValue)}
-                        sx={{ minWidth: 300 }}
+                        onChange={(_, v) => setSelectedTenant(v)}
+                        onOpen={loadTenants}
+                        sx={{ minWidth: 280, flex: 1 }}
                         renderInput={(params) => (
-                            <TextField {...params} label="Select Tenant / Business Unit" variant="outlined" size="small" />
+                            <TextField {...params} label="Trade Name / Business Unit" size="small" />
                         )}
                     />
 
                     <TextField
-                        type="date"
-                        label="Report Start Date"
-                        value={dateRange.start}
-                        onChange={(e) => setDateRange({ ...dateRange, start: e.target.value })}
+                        type="month"
+                        label="Report Month"
+                        value={reportMonth}
+                        onChange={(e) => setReportMonth(e.target.value)}
                         size="small"
                         InputLabelProps={{ shrink: true }}
+                        sx={{ minWidth: 180 }}
                     />
 
-                    <TextField
-                        type="date"
-                        label="Report End Date"
-                        value={dateRange.end}
-                        onChange={(e) => setDateRange({ ...dateRange, end: e.target.value })}
-                        size="small"
-                        InputLabelProps={{ shrink: true }}
-                    />
+                    <Button
+                        variant="contained"
+                        color="secondary"
+                        onClick={generateReport}
+                        disabled={!selectedTenant || loading}
+                        startIcon={loading ? <CircularProgress size={16} color="inherit" /> : <SyncIcon />}
+                        sx={{ borderRadius: '12px', fontWeight: 800, px: 3, whiteSpace: 'nowrap' }}
+                    >
+                        {loading ? 'Generating...' : 'Generate Report'}
+                    </Button>
+
+                    {reportData && (
+                        <Button
+                            variant="outlined"
+                            color="primary"
+                            onClick={handleExport}
+                            startIcon={<DownloadIcon />}
+                            sx={{ borderRadius: '12px', fontWeight: 800, px: 3, whiteSpace: 'nowrap' }}
+                        >
+                            Export Excel
+                        </Button>
+                    )}
                 </Stack>
             </Box>
 
-            {!selectedTenant ? (
-                <Box sx={{ py: 10, textAlign: 'center', bgcolor: 'white', borderRadius: '32px', border: '1px dashed', borderColor: 'divider' }}>
-                    <Typography variant="h6" sx={{ color: 'text.secondary', fontWeight: 600 }}>
-                        Please select a tenant to generate insights.
-                    </Typography>
-                </Box>
-            ) : (
-                <Grid container spacing={4}>
-                    {[
-                        { title: 'Basket Size (kPhp)', key: 'basketSize' },
-                        { title: 'Weekly Sales (M Php)', key: 'weeklySales' },
-                        { title: 'Monthly Income (Category)', key: 'monthlyIncome' },
-                        { title: 'L2 <21SQM Income/SQM', key: 'l2Small' },
-                        { title: 'L1 >21SQM Income/SQM', key: 'l1Large' },
-                        { title: 'L2 >21SQM Income/SQM', key: 'l2Large' },
-                    ].map((item) => (
-                        <Grid item xs={12} md={6} lg={4} key={item.key}>
-                            <Card sx={{ borderRadius: '24px', height: '100%', border: '1px solid rgba(0,0,0,0.05)', boxShadow: '0 4px 12px rgba(0,0,0,0.03)', transition: 'transform 0.2s', '&:hover': { transform: 'translateY(-4px)' } }}>
-                                <CardHeader
-                                    title={item.title}
-                                    titleTypographyProps={{ variant: 'subtitle1', fontWeight: 900, color: 'white' }}
-                                    sx={{ bgcolor: 'secondary.main', py: 1.5 }}
-                                />
-                                <CardContent sx={{ h: 250 }}>
-                                    <TransactionChart data={charts[item.key]} loading={loading} />
-                                </CardContent>
-                            </Card>
-                        </Grid>
-                    ))}
-                </Grid>
-            )}
+            {/* Error */}
+            {error && <Alert severity="error" sx={{ mb: 3 }}>{error}</Alert>}
+
+            {/* Report Output */}
+            <Box sx={{ bgcolor: 'white', borderRadius: '20px', border: '1px solid', borderColor: 'divider', p: 4, minHeight: 300, boxShadow: '0 4px 16px rgba(0,0,0,0.04)' }}>
+                {!reportData && !loading && (
+                    <Box sx={{ py: 8, textAlign: 'center' }}>
+                        <DescriptionIcon sx={{ fontSize: 64, color: 'divider', mb: 2 }} />
+                        <Typography sx={{ color: 'text.disabled', fontWeight: 600 }}>
+                            Select a tenant and report month, then click Generate Report.
+                        </Typography>
+                    </Box>
+                )}
+
+                {loading && (
+                    <Box sx={{ py: 8, textAlign: 'center' }}>
+                        <CircularProgress color="secondary" />
+                        <Typography sx={{ mt: 2, color: 'text.secondary' }}>Generating report...</Typography>
+                    </Box>
+                )}
+
+                {reportData && !loading && (
+                    <CsmrTable
+                        reportData={reportData}
+                        tenantName={selectedTenant?.trade_name}
+                        month={reportMonth}
+                    />
+                )}
+            </Box>
         </Box>
     );
 };
