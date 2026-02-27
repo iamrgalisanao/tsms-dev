@@ -18,13 +18,13 @@ class ReportsController extends Controller
     {
         // Finance dashboard - loads interactive widgets that call the Webapp API
         // Provide tenant list and selected tenant for the view
-        $tenants = Tenant::orderBy('trade_name')->get(['id','trade_name'])->pluck('trade_name', 'id')->toArray();
+        $tenants = Tenant::orderBy('trade_name')->get(['id', 'trade_name'])->pluck('trade_name', 'id')->toArray();
         $selected_tenant = $request->get('tenant', '');
 
-    // Render the finance reports dashboard view. Use the consolidated
-    // `reports.dashboard` view which contains the Finance Reports UI and
-    // shared chart/table scripts (resources/views/reports/dashboard.blade.php).
-    return view('reports.dashboard', compact('tenants', 'selected_tenant'));
+        // Render the finance reports dashboard view. Use the consolidated
+        // `reports.dashboard` view which contains the Finance Reports UI and
+        // shared chart/table scripts (resources/views/reports/dashboard.blade.php).
+        return view('reports.dashboard', compact('tenants', 'selected_tenant'));
     }
 
     /**
@@ -58,21 +58,23 @@ class ReportsController extends Controller
         // services. Fall back to created_at when transaction_timestamp is missing.
         if (Schema::hasColumn('transactions', 'transaction_timestamp')) {
             $query->whereYear('transaction_timestamp', $year)
-                  ->whereMonth('transaction_timestamp', $month)
-                  ->orderBy('transaction_timestamp');
+                ->whereMonth('transaction_timestamp', $month)
+                ->orderBy('transaction_timestamp');
         } else {
             $query->whereYear('created_at', $year)
-                  ->whereMonth('created_at', $month)
-                  ->orderBy('created_at');
+                ->whereMonth('created_at', $month)
+                ->orderBy('created_at');
         }
 
         $transactions = $query->get();
+
+        $service = app(\App\Services\Reports\FinanceCalculationService::class);
 
         // Group transactions by the canonical date (transaction_timestamp if present,
         // otherwise completed_at/created_at) to ensure daily buckets align with
         // the reporting services (which use COALESCE(transaction_timestamp, completed_at, created_at)).
         $byDate = $transactions
-            ->groupBy(function($tx) {
+            ->groupBy(function ($tx) {
                 $ts = $tx->transaction_timestamp ?? $tx->completed_at ?? $tx->created_at;
                 try {
                     return Carbon::parse($ts)->format('Y-m-d');
@@ -81,33 +83,15 @@ class ReportsController extends Controller
                     return optional($tx->created_at)->format('Y-m-d') ?? date('Y-m-d');
                 }
             })
-            ->map(function($group) {
-                return [
-                    'net_sales'     => $group->sum('net_sales'),
-                    // The DB column is `sc_vat_exempt_sales`; expose it to the UI
-                    // as `vat_exempt_sales` to keep front-end keys stable.
-                    'vat_exempt_sales' => $group->sum('sc_vat_exempt_sales'),
-                    'promo_with_approval' => $group->sum('promo_with_approval'),
-                    'promo_without_approval' => $group->sum('promo_without_approval'),
-                    'employee_discount' => $group->sum('employee_discount'),
-                    'senior_discount' => $group->sum('senior_discount'),
-                    'pwd_discount' => $group->sum('pwd_discount'),
-                    'vip_discount' => $group->sum('vip_discount'),
-                    'other_tax' => $group->sum('other_tax'),
-                    'service_charge_distributed' => $group->sum('service_charge_distributed'),
-                    'service_charge_retained' => $group->sum('service_charge_retained'),
-                    'gross_sales' => $group->sum('gross_sales'),
-                ];
+            ->map(function ($group) use ($service) {
+                $components = $service->aggregateComponents($group);
+                return $service->deriveMetrics($components);
             })
             ->toArray();
 
         // build totals
-        $totals = array_reduce($byDate, function($carry, $day) {
-            foreach ($day as $k => $v) {
-                $carry[$k] = ($carry[$k] ?? 0) + $v;
-            }
-            return $carry;
-        }, []);
+        $totals = $service->deriveMetrics($service->aggregateComponents($transactions));
+
 
         return response()->json([
             'status' => 'success',
