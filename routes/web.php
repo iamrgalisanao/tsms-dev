@@ -46,7 +46,7 @@ Route::get('/', function () {
         }
 
         if ($isFinance) {
-            return redirect('/transactions/logs');
+            return redirect('/finance');
         }
 
         return redirect('/dashboard');
@@ -64,14 +64,14 @@ Route::middleware('guest')->group(function () {
 });
 
 Route::middleware(['auth'])->group(function () {
-    // Main Dashboard Route (React SPA)
+    // Main Dashboard Route (React SPA) - accessible to any authenticated user.
+    // Role-based content/redirect is handled client-side by React Router.
     Route::get('/dashboard/{any?}', function () {
         return view('app');
-    })->where('any', '.*')->name('dashboard')->middleware('role:admin');
+    })->where('any', '.*')->name('dashboard');
 
-    // Dashboard Group Routes
-    Route::prefix('dashboard')->name('dashboard.')->group(function () {
-        // Dismiss admin notification (POST)
+    // Dashboard API sub-routes (admin/manager only)
+    Route::prefix('dashboard')->name('dashboard.')->middleware('role:admin|manager')->group(function () {
         Route::post('/notifications/dismiss', [DashboardController::class, 'dismissNotification'])->name('notifications.dismiss');
         Route::get('/providers', [ProvidersController::class, 'index'])->name('providers.index');
         Route::get('/providers/{id}', [ProvidersController::class, 'show'])->name('providers.show');
@@ -79,21 +79,8 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/performance', [DashboardController::class, 'performance'])->name('performance');
         Route::post('/performance/export', [DashboardController::class, 'exportPerformance'])->name('performance.export');
     });
+
     Route::post('/logout', [LoginController::class, 'logout'])->name('logout');
-
-    // Main Dashboard Route (React SPA) - duplicate entry made explicit with admin middleware
-    Route::get('/dashboard/{any?}', function () {
-        return view('app');
-    })->where('any', '.*')->name('dashboard')->middleware('role:admin');
-
-    // Dashboard Group Routes
-    Route::prefix('dashboard')->name('dashboard.')->group(function () {
-        Route::get('/providers', [ProvidersController::class, 'index'])->name('providers.index');
-        Route::get('/providers/{id}', [ProvidersController::class, 'show'])->name('providers.show');
-        Route::get('/retry-history', [RetryHistoryController::class, 'index'])->name('retry-history');
-        Route::get('/performance', [DashboardController::class, 'performance'])->name('performance');
-        Route::post('/performance/export', [DashboardController::class, 'exportPerformance'])->name('performance.export');
-    });
 
     // Centralized Log Viewer Routes - renamed from logs to log-viewer
     Route::prefix('log-viewer')->name('log-viewer.')->group(function () {
