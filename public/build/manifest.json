@@ -3,7 +3,7 @@
     "file": "assets/bootstrap-eaa9b53a.js"
   },
   "resources/css/app.css": {
-    "file": "assets/app-d3beb50f.css",
+    "file": "assets/app-ba706193.css",
     "isEntry": true,
     "src": "resources/css/app.css"
   },
@@ -22,9 +22,9 @@
   "resources/js/app.jsx": {
     "css": [
       "assets/app-b34b5886.css",
-      "assets/app-d3beb50f.css"
+      "assets/app-ba706193.css"
     ],
-    "file": "assets/app-9e67c83b.js",
+    "file": "assets/app-2dc86f56.js",
     "imports": [
       "_bootstrap-eaa9b53a.js"
     ],

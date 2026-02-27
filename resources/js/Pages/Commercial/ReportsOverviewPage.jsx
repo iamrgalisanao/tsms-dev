@@ -1,155 +1,288 @@
 import React from 'react';
 import { useNavigate } from 'react-router-dom';
-import {
-    Grid,
-    Card,
-    CardContent,
-    Typography,
-    Box,
-    Avatar,
-    Button,
-    Container
-} from '@mui/material';
-import {
-    Schedule as HourIcon,
-    Today as DayIcon,
-    DateRange as WeekIcon,
-    EventNote as WeekdayIcon,
-    Hotel as WeekendIcon,
-    CalendarMonth as MonthIcon,
-    CalendarToday as YearIcon,
-    TrendingUp as ReportsIcon
-} from '@mui/icons-material';
 
-const reportTypes = [
+const REPORTS = [
     {
         title: 'Hourly Sales',
         path: '/commercial/reports/hourly',
         icon: 'schedule',
         color: '#df1160',
-        description: 'Vitals for today\'s performance. Track sales and volume per hour.'
+        bg: 'rgba(223,17,96,0.08)',
+        description: 'Track sales and transaction volume grouped by hour for any selected day.',
     },
     {
         title: 'Daily Sales',
         path: '/commercial/reports/daily',
         icon: 'today',
         color: '#2563eb',
-        description: 'Aggregate summary of transactions for a single business day.'
+        bg: 'rgba(37,99,235,0.08)',
+        description: 'Aggregate summary of all transactions for a single business day.',
     },
     {
         title: 'Weekly Sales',
         path: '/commercial/reports/weekly',
         icon: 'date_range',
         color: '#7c3aed',
-        description: 'Analysis of performance trends across a full 7-day cycle.'
+        bg: 'rgba(124,58,237,0.08)',
+        description: 'Performance trends across a full 7-day period with day-by-day breakdown.',
     },
     {
         title: 'Weekday Sales',
         path: '/commercial/reports/weekday',
         icon: 'event_note',
         color: '#ea580c',
-        description: 'Deep dive into Monday-Friday operational performance.'
+        bg: 'rgba(234,88,12,0.08)',
+        description: 'Monday to Friday operational performance — excludes weekend traffic.',
     },
     {
         title: 'Weekend Sales',
         path: '/commercial/reports/weekend',
-        icon: 'hotel',
+        icon: 'weekend',
         color: '#0891b2',
-        description: 'Peak period reporting for Saturday and Sunday traffic.'
+        bg: 'rgba(8,145,178,0.08)',
+        description: 'Peak-period report focused on Saturday and Sunday transaction flow.',
     },
     {
         title: 'Monthly Sales',
         path: '/commercial/reports/monthly',
         icon: 'calendar_month',
         color: '#059669',
-        description: 'Strategic review of monthly growth and tenant contributions.'
+        bg: 'rgba(5,150,105,0.08)',
+        description: 'Strategic view of monthly growth and tenant contributions.',
     },
     {
         title: 'Yearly Sales',
         path: '/commercial/reports/yearly',
         icon: 'calendar_today',
         color: '#4f46e5',
-        description: 'Comprehensive annual performance and target tracking.'
-    }
+        bg: 'rgba(79,70,229,0.08)',
+        description: 'Comprehensive annual performance overview with month-level drill-down.',
+    },
 ];
+
+const ReportCard = ({ report, onClick }) => (
+    <button
+        type="button"
+        onClick={onClick}
+        style={{
+            all: 'unset',
+            display: 'block',
+            cursor: 'pointer',
+            background: 'white',
+            borderRadius: 20,
+            border: '1.5px solid #e2e8f0',
+            padding: '28px 28px 24px',
+            transition: 'all 0.2s ease',
+            textAlign: 'left',
+            width: '100%',
+            boxSizing: 'border-box',
+            boxShadow: '0 1px 3px rgba(0,0,0,0.04)',
+            position: 'relative',
+        }}
+        onMouseEnter={e => {
+            e.currentTarget.style.boxShadow = `0 8px 32px ${report.color}22, 0 2px 8px rgba(0,0,0,0.06)`;
+            e.currentTarget.style.borderColor = report.color + '55';
+            e.currentTarget.style.transform = 'translateY(-3px)';
+        }}
+        onMouseLeave={e => {
+            e.currentTarget.style.boxShadow = '0 1px 3px rgba(0,0,0,0.04)';
+            e.currentTarget.style.borderColor = '#e2e8f0';
+            e.currentTarget.style.transform = 'translateY(0)';
+        }}
+    >
+        {/* Icon */}
+        <div style={{
+            width: 52, height: 52,
+            borderRadius: 14,
+            background: report.bg,
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            marginBottom: 18,
+        }}>
+            <span className="material-symbols-outlined" style={{ fontSize: 28, color: report.color }}>{report.icon}</span>
+        </div>
+
+        {/* Title */}
+        <h3 style={{ margin: '0 0 8px', fontSize: 17, fontWeight: 800, color: '#0f172a', letterSpacing: '-0.01em' }}>
+            {report.title}
+        </h3>
+
+        {/* Description */}
+        <p style={{ margin: '0 0 24px', fontSize: 13, color: '#64748b', lineHeight: 1.6, fontWeight: 500 }}>
+            {report.description}
+        </p>
+
+        {/* Footer CTA */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#94a3b8' }}>
+                View Report
+            </span>
+            <div style={{
+                width: 32, height: 32,
+                borderRadius: '50%',
+                background: report.bg,
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>
+                <span className="material-symbols-outlined" style={{ fontSize: 18, color: report.color }}>arrow_forward</span>
+            </div>
+        </div>
+
+        {/* Accent line at top */}
+        <div style={{
+            position: 'absolute', top: 0, left: 28, right: 28, height: 3,
+            borderRadius: '0 0 3px 3px',
+            background: report.color,
+            opacity: 0.15,
+        }} />
+    </button>
+);
 
 const ReportsOverviewPage = () => {
     const navigate = useNavigate();
 
     return (
-        <div className="p-8 max-w-[1600px] mx-auto">
-            <div className="flex items-center justify-between mb-12">
+        <div style={{ paddingBottom: 40 }}>
+            {/* Page Header */}
+            <div style={{ marginBottom: 36, display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 16 }}>
                 <div>
-                    <h1 className="text-4xl font-black text-slate-900 tracking-tight leading-none mb-3">
+                    <h1 style={{ margin: '0 0 8px', fontSize: 32, fontWeight: 900, color: '#0f172a', letterSpacing: '-0.025em', lineHeight: 1 }}>
                         Reports Hub
                     </h1>
-                    <p className="text-slate-500 font-medium">
+                    <p style={{ margin: 0, color: '#64748b', fontWeight: 500, fontSize: 15 }}>
                         Select an analytical engine to explore your commercial ecosystem.
                     </p>
                 </div>
-
-                <div className="flex items-center gap-2 px-4 py-2 bg-slate-100 rounded-full">
-                    <span className="size-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                    <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">Real-time Stream Active</span>
+                <div style={{
+                    display: 'flex', alignItems: 'center', gap: 8,
+                    padding: '8px 16px',
+                    background: '#f1fdf7',
+                    border: '1px solid #bbf7d0',
+                    borderRadius: 999,
+                    flexShrink: 0,
+                }}>
+                    <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#22c55e', display: 'inline-block' }} />
+                    <span style={{ fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#15803d' }}>
+                        Real-time Stream Active
+                    </span>
                 </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-                {reportTypes.map((report) => (
-                    <div
-                        key={report.path}
-                        onClick={() => navigate(report.path)}
-                        className="glass-card rounded-3xl p-8 cursor-pointer transition-all hover:-translate-y-2 hover:shadow-2xl hover:border-primary/20 group relative overflow-hidden"
+            {/* Quick-access strip */}
+            <div style={{
+                background: 'linear-gradient(135deg, #1e3a5f 0%, #df1160 100%)',
+                borderRadius: 20,
+                padding: '24px 32px',
+                marginBottom: 32,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                flexWrap: 'wrap',
+                gap: 16,
+            }}>
+                <div>
+                    <p style={{ margin: '0 0 4px', fontSize: 11, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.12em', color: 'rgba(255,255,255,0.6)' }}>
+                        Most Used
+                    </p>
+                    <h2 style={{ margin: 0, fontSize: 22, fontWeight: 900, color: 'white', letterSpacing: '-0.01em' }}>
+                        Daily &amp; Hourly Reports
+                    </h2>
+                    <p style={{ margin: '6px 0 0', fontSize: 13, color: 'rgba(255,255,255,0.7)', fontWeight: 500 }}>
+                        Quick access to the most frequently used report engines.
+                    </p>
+                </div>
+                <div style={{ display: 'flex', gap: 10 }}>
+                    <button
+                        onClick={() => navigate('/commercial/reports/daily')}
+                        style={{
+                            background: 'rgba(255,255,255,0.15)',
+                            border: '1.5px solid rgba(255,255,255,0.25)',
+                            color: 'white',
+                            borderRadius: 12,
+                            padding: '10px 20px',
+                            fontWeight: 800,
+                            fontSize: 13,
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 8,
+                            backdropFilter: 'blur(8px)',
+                        }}
                     >
-                        <div className="absolute top-0 right-0 p-8 opacity-5 group-hover:opacity-10 transition-opacity">
-                            <span className="material-symbols-outlined text-9xl">{report.icon}</span>
-                        </div>
+                        <span className="material-symbols-outlined" style={{ fontSize: 18 }}>today</span>
+                        Daily
+                    </button>
+                    <button
+                        onClick={() => navigate('/commercial/reports/hourly')}
+                        style={{
+                            background: 'white',
+                            border: 'none',
+                            color: '#1e3a5f',
+                            borderRadius: 12,
+                            padding: '10px 20px',
+                            fontWeight: 800,
+                            fontSize: 13,
+                            cursor: 'pointer',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: 8,
+                        }}
+                    >
+                        <span className="material-symbols-outlined" style={{ fontSize: 18 }}>schedule</span>
+                        Hourly
+                    </button>
+                </div>
+            </div>
 
-                        <div className="size-14 rounded-2xl pitx-gradient flex items-center justify-center text-white mb-6 shadow-lg shadow-primary/20 group-hover:scale-110 transition-transform">
-                            <span className="material-symbols-outlined text-3xl">{report.icon}</span>
-                        </div>
-
-                        <h3 className="text-xl font-black text-slate-900 mb-2 group-hover:pitx-text-gradient transition-all">
-                            {report.title}
-                        </h3>
-
-                        <p className="text-sm font-medium text-slate-500 leading-relaxed mb-8">
-                            {report.description}
-                        </p>
-
-                        <div className="flex items-center justify-between">
-                            <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest group-hover:text-primary transition-colors">
-                                View Engine
-                            </span>
-                            <div className="size-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-400 group-hover:pitx-gradient group-hover:text-white transition-all">
-                                <span className="material-symbols-outlined text-sm">arrow_forward</span>
-                            </div>
-                        </div>
-                    </div>
+            {/* Report Cards Grid */}
+            <div style={{
+                display: 'grid',
+                gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))',
+                gap: 20,
+            }}>
+                {REPORTS.map(report => (
+                    <ReportCard
+                        key={report.path}
+                        report={report}
+                        onClick={() => navigate(report.path)}
+                    />
                 ))}
 
-                {/* Info Card */}
-                <div className="bg-slate-900 rounded-3xl p-8 flex flex-col justify-between text-white premium-shadow relative overflow-hidden">
-                    <div className="z-10">
-                        <span className="material-symbols-outlined text-4xl text-primary mb-6">verified</span>
-                        <h3 className="text-xl font-black mb-2 italic">Precision Analytics</h3>
-                        <p className="text-slate-400 text-sm font-medium leading-relaxed">
-                            Our reporting suite ensures 100% data integrity for all PITX commercial transactions.
+                {/* System Info card */}
+                <div style={{
+                    background: '#0f172a',
+                    borderRadius: 20,
+                    padding: '28px 28px 24px',
+                    color: 'white',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'space-between',
+                    position: 'relative',
+                    overflow: 'hidden',
+                    minHeight: 220,
+                }}>
+                    <div style={{ position: 'relative', zIndex: 1 }}>
+                        <span className="material-symbols-outlined" style={{ fontSize: 36, color: '#df1160', display: 'block', marginBottom: 14 }}>verified</span>
+                        <h3 style={{ margin: '0 0 8px', fontSize: 18, fontWeight: 900, fontStyle: 'italic' }}>Precision Analytics</h3>
+                        <p style={{ margin: 0, fontSize: 13, color: 'rgba(255,255,255,0.55)', lineHeight: 1.6, fontWeight: 500 }}>
+                            100% data integrity across all PITX commercial transactions.
                         </p>
                     </div>
 
-                    <div className="absolute -bottom-10 -right-10 opacity-20">
-                        <span className="material-symbols-outlined text-[150px] rotate-12">monitoring</span>
-                    </div>
-
-                    <div className="mt-8 pt-8 border-t border-white/10 flex items-center gap-4">
-                        <div className="size-8 rounded-lg bg-white/10 flex items-center justify-center">
-                            <span className="material-symbols-outlined text-xs">info</span>
-                        </div>
-                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest italic leading-none">
+                    <div style={{ marginTop: 24, paddingTop: 20, borderTop: '1px solid rgba(255,255,255,0.08)', display: 'flex', alignItems: 'center', gap: 10, position: 'relative', zIndex: 1 }}>
+                        <span className="material-symbols-outlined" style={{ fontSize: 16, color: '#22c55e' }}>circle</span>
+                        <span style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'rgba(255,255,255,0.4)' }}>
                             System Status: Stable
-                        </p>
+                        </span>
                     </div>
+
+                    {/* Decorative icon — constrained inside the card */}
+                    <span className="material-symbols-outlined" style={{
+                        position: 'absolute',
+                        bottom: -20, right: -20,
+                        fontSize: 130,
+                        color: 'rgba(255,255,255,0.04)',
+                        pointerEvents: 'none',
+                        userSelect: 'none',
+                    }}>monitoring</span>
                 </div>
             </div>
         </div>
