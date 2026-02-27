@@ -1,310 +1,223 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import axios from 'axios';
-import MainLayout from '@/Layouts/MainLayout';
-import ReportHeader from '@/Components/Commercial/ReportHeader';
-import MetricCard from '@/Components/Commercial/MetricCard';
-import { Card, Table, Button, Form, Row, Col, Spinner } from 'react-bootstrap';
-import moment from 'moment';
+import {
+    Box, Typography, Stack, Button, CircularProgress,
+    TextField, Autocomplete, Alert
+} from '@mui/material';
+import SyncIcon from '@mui/icons-material/Sync';
+import DownloadIcon from '@mui/icons-material/Download';
+import FilterAltIcon from '@mui/icons-material/FilterAlt';
+import ScheduleIcon from '@mui/icons-material/Schedule';
+
+const fmt = (v) => Number(v ?? 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const today = () => new Date().toISOString().split('T')[0];
+
+const StatPill = ({ label, value }) => (
+    <Box sx={{ bgcolor: 'white', borderRadius: '14px', border: '1px solid', borderColor: 'divider', px: 3, py: 2, flex: 1, minWidth: 140 }}>
+        <Typography variant="caption" sx={{ fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'text.secondary' }}>{label}</Typography>
+        <Typography variant="h6" sx={{ fontWeight: 900 }}>{value}</Typography>
+    </Box>
+);
 
 const HourlyReportPage = () => {
-    const [date, setDate] = useState(moment().format('YYYY-MM-DD'));
+    const [date, setDate] = useState(today());
     const [tenants, setTenants] = useState([]);
-    const [selectedTenant, setSelectedTenant] = useState('');
+    const [tenantsLoaded, setTenantsLoaded] = useState(false);
+    const [selectedTenant, setSelectedTenant] = useState(null);
     const [loading, setLoading] = useState(false);
     const [reportData, setReportData] = useState([]);
     const [totals, setTotals] = useState(null);
-    const [averages, setAverages] = useState(null);
+    const [error, setError] = useState(null);
 
-    useEffect(() => {
-        fetchTenants();
-    }, []);
-
-    const fetchTenants = async () => {
+    const loadTenants = useCallback(async () => {
+        if (tenantsLoaded) return;
         try {
-            const response = await axios.get('/commercial/reports/tenants');
-            setTenants(response.data || []);
-        } catch (error) {
-            console.error('Failed to fetch tenants:', error);
-        }
+            const r = await axios.get('/commercial/reports/tenants');
+            setTenants(r.data || []);
+            setTenantsLoaded(true);
+        } catch { setTenants([]); }
+    }, [tenantsLoaded]);
+
+    const METRIC_KEYS = [
+        'gross_sales', 'vatable_sales', 'vat_amount', 'sc_pwd_discount',
+        'regular_discount', 'void', 'net_sales',
+        'cash_payment', 'card_payment', 'other_tender',
+        'net_sales_percentage_rent', 'transaction_count', 'guest_count'
+    ];
+
+    const calcTotals = (data) => {
+        if (!data?.length) return null;
+        const sums = {};
+        METRIC_KEYS.forEach(k => { sums[k] = data.reduce((a, r) => a + (Number(r[k]) || 0), 0); });
+        return sums;
     };
 
-    const loadReport = async () => {
-        if (!date || !selectedTenant) {
-            alert('Please select both date and tenant');
-            return;
-        }
-
+    const loadReport = useCallback(async () => {
+        if (!selectedTenant) return;
         setLoading(true);
+        setError(null);
         try {
-            const response = await axios.get('/commercial/reports/sales-report/transactions/hourly', {
-                params: { date, tenant_id: selectedTenant }
+            const resp = await axios.get('/commercial/reports/transactions/hourly', {
+                params: { date, tenant_id: selectedTenant.id }
             });
-            const data = response.data.data || [];
+            const data = resp.data?.data || resp.data?.rows || [];
             setReportData(data);
-            calculateMetrics(data);
-        } catch (error) {
-            console.error('Failed to load hourly report:', error);
+            setTotals(calcTotals(data));
+        } catch {
+            setError('Failed to load hourly data. Please try again.');
             setReportData([]);
+            setTotals(null);
         } finally {
             setLoading(false);
         }
-    };
-
-    const calculateMetrics = (data) => {
-        if (!data || data.length === 0) {
-            setTotals(null);
-            setAverages(null);
-            return;
-        }
-
-        const keys = [
-            'gross_sales', 'vatable_sales', 'vat_exempt_sales', 'vat_amount',
-            'sc_pwd_discount', 'regular_discount', 'void', 'return', 'net_sales',
-            'cash_payment', 'card_payment', 'other_tender', 'net_sales_percentage_rent',
-            'transaction_count', 'guest_count'
-        ];
-
-        const sums = {};
-        keys.forEach(key => {
-            sums[key] = data.reduce((acc, row) => acc + (Number(row[key]) || 0), 0);
-        });
-
-        const avgs = {};
-        keys.forEach(key => {
-            avgs[key] = sums[key] / 24; // Average across 24 hours
-        });
-
-        setTotals(sums);
-        setAverages(avgs);
-    };
+    }, [date, selectedTenant]);
 
     const handleExport = () => {
-        const url = `/commercial/reports/sales-report/export?date=${date}&tenant_id=${selectedTenant}`;
-        window.location.href = url;
+        window.open(`/commercial/reports/sales-report/export?date=${date}&tenant_id=${selectedTenant?.id || ''}`, '_blank');
     };
 
-    const formatCurrency = (val) => {
-        const num = Number(val);
-        return isNaN(num) ? '0.00' : num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    };
+    // Build 24-hour rows — fill gaps with zeros
+    const hourRows = Array.from({ length: 24 }, (_, i) => {
+        const hourStr = `${String(i).padStart(2, '0')}:00`;
+        return reportData.find(r => r.hour === hourStr) || { hour: hourStr };
+    });
 
-    const renderTableBody = () => {
-        if (loading) {
-            return (
-                <tr>
-                    <td colSpan="21" className="text-center py-5">
-                        <Spinner animation="border" variant="primary" size="sm" className="me-2" />
-                        Loading report data...
-                    </td>
-                </tr>
-            );
-        }
-
-        if (reportData.length === 0) {
-            return (
-                <tr>
-                    <td colSpan="21" className="text-center py-5 text-muted">
-                        <i className="material-symbols-outlined align-middle me-2">info</i>
-                        No data available. Select parameters and click "Load Report".
-                    </td>
-                </tr>
-            );
-        }
-
-        // Build 24 hours
-        return Array.from({ length: 24 }).map((_, i) => {
-            const hourStr = `${String(i).padStart(2, '0')}:00`;
-            const row = reportData.find(r => r.hour === hourStr) || {};
-
-            return (
-                <tr key={hourStr}>
-                    <td className="text-center">{row.customer_code || '-'}</td>
-                    <td>{row.tenant_name || '-'}</td>
-                    <td className="text-center">{row.location || '-'}</td>
-                    <td className="text-center">{row.zone || '-'}</td>
-                    <td className="text-center">{row.sales_date || '-'}</td>
-                    <td className="text-center font-weight-bold bg-light">{hourStr}</td>
-                    <td className="text-right">{formatCurrency(row.gross_sales)}</td>
-                    <td className="text-right">{formatCurrency(row.vatable_sales)}</td>
-                    <td className="text-right">{formatCurrency(row.vat_exempt_sales)}</td>
-                    <td className="text-right">{formatCurrency(row.vat_amount)}</td>
-                    <td className="text-right">{formatCurrency(row.sc_pwd_discount)}</td>
-                    <td className="text-right">{formatCurrency(row.regular_discount)}</td>
-                    <td className="text-right">{formatCurrency(row.void)}</td>
-                    <td className="text-right">{formatCurrency(row.return)}</td>
-                    <td className="text-right font-weight-bold">{formatCurrency(row.net_sales)}</td>
-                    <td className="text-right">{formatCurrency(row.cash_payment)}</td>
-                    <td className="text-right">{formatCurrency(row.card_payment)}</td>
-                    <td className="text-right">{formatCurrency(row.other_tender)}</td>
-                    <td className="text-right">{formatCurrency(row.net_sales_percentage_rent)}</td>
-                    <td className="text-center">{row.transaction_count || 0}</td>
-                    <td className="text-center">{row.guest_count || 0}</td>
-                </tr>
-            );
-        });
-    };
-
-    const renderTotalRow = (label, data, isAvg = false) => {
-        if (!data) return null;
-        return (
-            <tr className={isAvg ? "table-info font-weight-bold" : "table-warning font-weight-bold"}>
-                <td colSpan="6" className="text-center">{label}</td>
-                <td className="text-right">{formatCurrency(data.gross_sales)}</td>
-                <td className="text-right">{formatCurrency(data.vatable_sales)}</td>
-                <td className="text-right">{formatCurrency(data.vat_exempt_sales)}</td>
-                <td className="text-right">{formatCurrency(data.vat_amount)}</td>
-                <td className="text-right">{formatCurrency(data.sc_pwd_discount)}</td>
-                <td className="text-right">{formatCurrency(data.regular_discount)}</td>
-                <td className="text-right">{formatCurrency(data.void)}</td>
-                <td className="text-right">{formatCurrency(data.return)}</td>
-                <td className="text-right">{formatCurrency(data.net_sales)}</td>
-                <td className="text-right">{formatCurrency(data.cash_payment)}</td>
-                <td className="text-right">{formatCurrency(data.card_payment)}</td>
-                <td className="text-right">{formatCurrency(data.other_tender)}</td>
-                <td className="text-right">{formatCurrency(data.net_sales_percentage_rent)}</td>
-                <td className="text-center">{isAvg ? data.transaction_count.toFixed(2) : data.transaction_count}</td>
-                <td className="text-center">{isAvg ? data.guest_count.toFixed(2) : data.guest_count}</td>
-            </tr>
-        );
-    };
+    const peakRow = totals && reportData.length
+        ? reportData.reduce((max, r) => Number(r.gross_sales || 0) > Number(max.gross_sales || 0) ? r : max, reportData[0])
+        : null;
 
     return (
-        <div className="p-8 max-w-[1600px] mx-auto space-y-8">
-            <ReportHeader
-                title="Hourly Velocity Report"
-                dateFrom={date}
-                dateTo={date}
-                tenantId={selectedTenant}
-                tenants={tenants}
-                onDateFromChange={setDate}
-                onDateToChange={setDate}
-                onTenantChange={setSelectedTenant}
-                onLoadReport={loadReport}
-                onExportExcel={handleExport}
-                loading={loading}
-            />
+        <Box sx={{ pb: 10 }}>
+            {/* Header */}
+            <Stack direction="row" spacing={2.5} alignItems="center" sx={{ py: 3, mb: 2 }}>
+                <Box sx={{ p: 1.5, bgcolor: 'secondary.main', color: 'white', borderRadius: 3, display: 'flex', boxShadow: '0 8px 25px rgba(223,17,96,0.2)' }}>
+                    <ScheduleIcon sx={{ fontSize: 28 }} />
+                </Box>
+                <Box>
+                    <Typography variant="h2" sx={{ fontWeight: 900, letterSpacing: '-0.02em' }}>Hourly Velocity Report</Typography>
+                    <Typography variant="body2" sx={{ color: 'text.secondary' }}>24-hour sales and transaction distribution per tenant per day.</Typography>
+                </Box>
+            </Stack>
 
-            {/* Metrics Row (Small Summary) */}
+            {/* Filters */}
+            <Box sx={{ bgcolor: 'white', borderRadius: '20px', border: '1px solid', borderColor: 'divider', p: 3, mb: 4, boxShadow: '0 4px 16px rgba(0,0,0,0.04)' }}>
+                <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} alignItems={{ md: 'center' }} flexWrap="wrap">
+                    <Stack direction="row" spacing={1} alignItems="center" sx={{ color: 'secondary.main', minWidth: 130 }}>
+                        <FilterAltIcon fontSize="small" />
+                        <Typography variant="caption" sx={{ fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Filters</Typography>
+                    </Stack>
+
+                    <Autocomplete
+                        options={tenants}
+                        getOptionLabel={o => o.trade_name || ''}
+                        isOptionEqualToValue={(o, v) => o.id === v.id}
+                        value={selectedTenant}
+                        onChange={(_, v) => setSelectedTenant(v)}
+                        onOpen={loadTenants}
+                        sx={{ minWidth: 260, flex: 1 }}
+                        renderInput={p => <TextField {...p} label="Select Tenant *" size="small" />}
+                    />
+
+                    <TextField type="date" label="Date" value={date} onChange={e => setDate(e.target.value)} size="small" InputLabelProps={{ shrink: true }} sx={{ minWidth: 160 }} />
+
+                    <Button
+                        variant="contained" color="secondary"
+                        onClick={loadReport}
+                        disabled={loading || !selectedTenant}
+                        startIcon={loading ? <CircularProgress size={16} color="inherit" /> : <SyncIcon />}
+                        sx={{ borderRadius: '12px', fontWeight: 800, px: 3, whiteSpace: 'nowrap' }}>
+                        {loading ? 'Loading...' : 'Load Report'}
+                    </Button>
+
+                    {totals && (
+                        <Button variant="outlined" onClick={handleExport} startIcon={<DownloadIcon />}
+                            sx={{ borderRadius: '12px', fontWeight: 800, px: 3, whiteSpace: 'nowrap' }}>
+                            Export
+                        </Button>
+                    )}
+                </Stack>
+            </Box>
+
+            {error && <Alert severity="error" sx={{ mb: 3 }}>{error}</Alert>}
+
+            {/* Metrics */}
             {totals && (
-                <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-5 gap-4">
-                    <div className="glass-card rounded-2xl p-4 border border-white/40">
-                        <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Total Gross</p>
-                        <p className="text-xl font-black text-slate-900">₱{formatCurrency(totals.gross_sales)}</p>
-                    </div>
-                    <div className="glass-card rounded-2xl p-4 border border-white/40">
-                        <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Avg Hourly</p>
-                        <p className="text-xl font-black text-slate-900">₱{formatCurrency(averages.gross_sales)}</p>
-                    </div>
-                    <div className="glass-card rounded-2xl p-4 border border-white/40">
-                        <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Total TX</p>
-                        <p className="text-xl font-black text-slate-900">{totals.transaction_count}</p>
-                    </div>
-                    <div className="glass-card rounded-2xl p-4 border border-white/40">
-                        <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Net Sales</p>
-                        <p className="text-xl font-black text-slate-900">₱{formatCurrency(totals.net_sales)}</p>
-                    </div>
-                    <div className="glass-card rounded-2xl p-4 border border-white/40 bg-slate-900 text-white">
-                        <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest mb-1">Peak Hour</p>
-                        <p className="text-xl font-black text-primary italic">12:00</p>
-                    </div>
-                </div>
+                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{ mb: 4 }} flexWrap="wrap">
+                    <StatPill label="Total Gross" value={`₱${fmt(totals.gross_sales)}`} />
+                    <StatPill label="Total Net" value={`₱${fmt(totals.net_sales)}`} />
+                    <StatPill label="Avg Hourly Gross" value={`₱${fmt(totals.gross_sales / 24)}`} />
+                    <StatPill label="Total Transactions" value={(totals.transaction_count || 0).toLocaleString()} />
+                    <StatPill label="Peak Hour" value={peakRow?.hour || '—'} />
+                </Stack>
             )}
 
-            <div className="glass-card rounded-3xl overflow-hidden border border-white/40 shadow-xl">
-                <div className="p-8 border-b border-slate-100 flex items-center justify-between">
-                    <div>
-                        <h3 className="text-xl font-black text-slate-900 tracking-tight">Granular Hourly Ledger</h3>
-                        <p className="text-xs font-bold text-slate-500 uppercase tracking-widest italic opacity-70">24-hour sales distribution</p>
-                    </div>
-                </div>
+            {/* Table */}
+            <Box sx={{ bgcolor: 'white', borderRadius: '20px', border: '1px solid', borderColor: 'divider', overflow: 'hidden', boxShadow: '0 4px 16px rgba(0,0,0,0.04)' }}>
+                <Box sx={{ p: 3, borderBottom: '1px solid', borderColor: 'divider' }}>
+                    <Typography variant="subtitle1" sx={{ fontWeight: 900 }}>24-Hour Distribution</Typography>
+                    <Typography variant="caption" sx={{ color: 'text.secondary', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Granular hourly ledger</Typography>
+                </Box>
 
-                <div className="overflow-auto max-h-[700px] custom-scrollbar">
-                    <table className="w-full text-left border-collapse">
-                        <thead className="bg-slate-50/80 backdrop-blur-md sticky top-0 z-20">
-                            <tr className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-200">
-                                <th className="px-6 py-4 text-center sticky left-0 z-30 bg-slate-50/80">Hour</th>
-                                <th className="px-6 py-4 text-right bg-rose-50/30 text-rose-700">Gross Sales</th>
-                                <th className="px-6 py-4 text-right text-slate-500">Vatable</th>
-                                <th className="px-6 py-4 text-right text-slate-500">VAT</th>
-                                <th className="px-6 py-4 text-right text-slate-500">SC/PWD</th>
-                                <th className="px-6 py-4 text-right font-black text-slate-900 bg-rose-50/50">Net Sales</th>
-                                <th className="px-6 py-4 text-right text-emerald-600 bg-emerald-50/30">Cash</th>
-                                <th className="px-6 py-4 text-right text-blue-600 bg-blue-50/30">Card</th>
-                                <th className="px-6 py-4 text-center">Transactions</th>
-                                <th className="px-6 py-4 text-center">Guests</th>
+                <Box sx={{ overflowX: 'auto', maxHeight: 640, overflowY: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
+                        <thead style={{ position: 'sticky', top: 0, zIndex: 10, background: '#f8fafc' }}>
+                            <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
+                                {['Hour', 'Gross Sales', 'Vatable', 'VAT', 'SC/PWD', 'Net Sales', 'Cash', 'Card', 'Other', 'TX Count', 'Guests'].map(h => (
+                                    <th key={h} style={{ padding: '10px 14px', textAlign: h === 'Hour' ? 'center' : 'right', fontWeight: 800, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#94a3b8', whiteSpace: 'nowrap' }}>{h}</th>
+                                ))}
                             </tr>
                         </thead>
-                        <tbody className="divide-y divide-slate-100">
-                            {Array.from({ length: 24 }).map((_, i) => {
-                                const hourStr = `${String(i).padStart(2, '0')}:00`;
-                                const row = reportData.find(r => r.hour === hourStr) || {};
-                                return (
-                                    <tr key={hourStr} className="hover:bg-slate-50/50 transition-colors group">
-                                        <td className="px-6 py-3 text-center font-black text-slate-900 text-xs bg-slate-50/30 sticky left-0 z-10">
-                                            {hourStr}
-                                        </td>
-                                        <td className="px-6 py-3 text-right text-xs font-black text-rose-600">
-                                            ₱{formatCurrency(row.gross_sales)}
-                                        </td>
-                                        <td className="px-6 py-3 text-right text-xs font-bold text-slate-500">
-                                            ₱{formatCurrency(row.vatable_sales)}
-                                        </td>
-                                        <td className="px-6 py-3 text-right text-xs font-bold text-slate-500">
-                                            ₱{formatCurrency(row.vat_amount)}
-                                        </td>
-                                        <td className="px-6 py-3 text-right text-xs font-bold text-slate-500">
-                                            ₱{formatCurrency(row.sc_pwd_discount)}
-                                        </td>
-                                        <td className="px-6 py-3 text-right text-xs font-black text-slate-900 bg-rose-50/20">
-                                            ₱{formatCurrency(row.net_sales)}
-                                        </td>
-                                        <td className="px-6 py-3 text-right text-xs font-bold text-emerald-600 bg-emerald-50/10">
-                                            ₱{formatCurrency(row.cash_payment)}
-                                        </td>
-                                        <td className="px-6 py-3 text-right text-xs font-bold text-blue-600 bg-blue-50/10">
-                                            ₱{formatCurrency(row.card_payment)}
-                                        </td>
-                                        <td className="px-6 py-3 text-center">
-                                            <span className="px-3 py-1 bg-slate-100 rounded-lg text-[10px] font-black text-slate-600">
-                                                {row.transaction_count || 0}
-                                            </span>
-                                        </td>
-                                        <td className="px-6 py-3 text-center">
-                                            <span className="px-3 py-1 bg-slate-100 rounded-lg text-[10px] font-black text-slate-600">
-                                                {row.guest_count || 0}
-                                            </span>
-                                        </td>
-                                    </tr>
-                                );
-                            })}
+                        <tbody>
+                            {hourRows.map(row => (
+                                <tr key={row.hour} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                                    <td style={{ padding: '10px 14px', textAlign: 'center', fontWeight: 800, color: '#0f172a', background: '#f8fafc' }}>{row.hour}</td>
+                                    <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 700, color: '#df1160' }}>₱{fmt(row.gross_sales)}</td>
+                                    <td style={{ padding: '10px 14px', textAlign: 'right', color: '#475569' }}>₱{fmt(row.vatable_sales)}</td>
+                                    <td style={{ padding: '10px 14px', textAlign: 'right', color: '#64748b' }}>₱{fmt(row.vat_amount)}</td>
+                                    <td style={{ padding: '10px 14px', textAlign: 'right', color: '#64748b' }}>₱{fmt(row.sc_pwd_discount)}</td>
+                                    <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 700, color: '#1d437b' }}>₱{fmt(row.net_sales)}</td>
+                                    <td style={{ padding: '10px 14px', textAlign: 'right', color: '#059669' }}>₱{fmt(row.cash_payment)}</td>
+                                    <td style={{ padding: '10px 14px', textAlign: 'right', color: '#2563eb' }}>₱{fmt(row.card_payment)}</td>
+                                    <td style={{ padding: '10px 14px', textAlign: 'right', color: '#64748b' }}>₱{fmt(row.other_tender)}</td>
+                                    <td style={{ padding: '10px 14px', textAlign: 'right' }}>
+                                        <span style={{ padding: '2px 8px', background: '#f1f5f9', borderRadius: 6, fontWeight: 800 }}>{row.transaction_count || 0}</span>
+                                    </td>
+                                    <td style={{ padding: '10px 14px', textAlign: 'right' }}>
+                                        <span style={{ padding: '2px 8px', background: '#f1f5f9', borderRadius: 6, fontWeight: 800 }}>{row.guest_count || 0}</span>
+                                    </td>
+                                </tr>
+                            ))}
                         </tbody>
                         {totals && (
-                            <tfoot className="bg-slate-100/80 backdrop-blur-md sticky bottom-0 z-20">
-                                <tr className="text-xs font-black text-slate-900 border-t-2 border-slate-200">
-                                    <td className="px-6 py-4 text-center sticky left-0 z-30 bg-slate-100/80 uppercase tracking-widest">Totals</td>
-                                    <td className="px-6 py-4 text-right">₱{formatCurrency(totals.gross_sales)}</td>
-                                    <td className="px-6 py-4 text-right">₱{formatCurrency(totals.vatable_sales)}</td>
-                                    <td className="px-6 py-4 text-right">₱{formatCurrency(totals.vat_amount)}</td>
-                                    <td className="px-6 py-4 text-right">₱{formatCurrency(totals.sc_pwd_discount)}</td>
-                                    <td className="px-6 py-4 text-right bg-rose-50/50">₱{formatCurrency(totals.net_sales)}</td>
-                                    <td className="px-6 py-4 text-right bg-emerald-50/30">₱{formatCurrency(totals.cash_payment)}</td>
-                                    <td className="px-6 py-4 text-right bg-blue-50/30">₱{formatCurrency(totals.card_payment)}</td>
-                                    <td className="px-6 py-4 text-center">{totals.transaction_count}</td>
-                                    <td className="px-6 py-4 text-center">{totals.guest_count}</td>
+                            <tfoot style={{ position: 'sticky', bottom: 0, background: '#e2e8f0', fontWeight: 900 }}>
+                                <tr style={{ borderTop: '2px solid #cbd5e1' }}>
+                                    <td style={{ padding: '12px 14px', textAlign: 'center', fontSize: 10, fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.08em' }}>TOTALS</td>
+                                    <td style={{ padding: '12px 14px', textAlign: 'right', color: '#df1160' }}>₱{fmt(totals.gross_sales)}</td>
+                                    <td style={{ padding: '12px 14px', textAlign: 'right' }}>₱{fmt(totals.vatable_sales)}</td>
+                                    <td style={{ padding: '12px 14px', textAlign: 'right' }}>₱{fmt(totals.vat_amount)}</td>
+                                    <td style={{ padding: '12px 14px', textAlign: 'right' }}>₱{fmt(totals.sc_pwd_discount)}</td>
+                                    <td style={{ padding: '12px 14px', textAlign: 'right', color: '#1d437b' }}>₱{fmt(totals.net_sales)}</td>
+                                    <td style={{ padding: '12px 14px', textAlign: 'right', color: '#059669' }}>₱{fmt(totals.cash_payment)}</td>
+                                    <td style={{ padding: '12px 14px', textAlign: 'right', color: '#2563eb' }}>₱{fmt(totals.card_payment)}</td>
+                                    <td style={{ padding: '12px 14px', textAlign: 'right' }}>₱{fmt(totals.other_tender)}</td>
+                                    <td style={{ padding: '12px 14px', textAlign: 'right' }}>{totals.transaction_count}</td>
+                                    <td style={{ padding: '12px 14px', textAlign: 'right' }}>{totals.guest_count}</td>
                                 </tr>
                             </tfoot>
                         )}
                     </table>
-                </div>
 
-                {!reportData.length && !loading && (
-                    <div className="py-20 flex flex-col items-center justify-center opacity-30 gap-2">
-                        <span className="material-symbols-outlined text-6xl">data_exploration</span>
-                        <p className="text-xs font-black uppercase tracking-widest text-slate-500">Awaiting Search Parameters</p>
-                    </div>
-                )}
-            </div>
-        </div>
+                    {reportData.length === 0 && !loading && (
+                        <Box sx={{ py: 8, textAlign: 'center', color: 'text.disabled' }}>
+                            <span className="material-symbols-outlined" style={{ fontSize: 48, display: 'block', marginBottom: 8 }}>data_exploration</span>
+                            <Typography variant="caption" sx={{ fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                                Select a tenant and date, then click Load Report
+                            </Typography>
+                        </Box>
+                    )}
+                </Box>
+            </Box>
+        </Box>
     );
 };
 

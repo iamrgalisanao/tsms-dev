@@ -25,7 +25,7 @@ const MainLayout = ({ children }) => {
 
     const menuItems = [
         // ── Admin / Manager ──────────────────────────────────────────
-        { name: 'Dashboard', path: '/', icon: DashboardIcon, roles: ['admin', 'manager'] },
+        { name: 'Dashboard', path: '/dashboard', icon: DashboardIcon, roles: ['admin', 'manager'] },
         { name: 'Transactions', path: '/transactions', icon: ReceiptIcon, roles: ['admin', 'manager'] },
         { name: 'Terminal Tokens', path: '/terminal-tokens', icon: KeyIcon, roles: ['admin'] },
         { name: 'User Management', path: '/users', icon: PeopleIcon, roles: ['admin'] },
@@ -33,12 +33,14 @@ const MainLayout = ({ children }) => {
         { name: 'Settings', path: '/settings', icon: SettingsIcon, roles: ['admin'] },
 
         // ── Finance (exclusive set) ───────────────────────────────────
-        // Finance Dashboard replaces the main dashboard for finance users
         { name: 'Dashboard', path: '/finance', icon: DashboardIcon, roles: ['finance'] },
-        // Transaction Logs shared with finance
         { name: 'Transaction Logs', path: '/transactions', icon: ReceiptIcon, roles: ['finance'] },
-        // CSMR Reports — Finance-exclusive
         { name: 'Reports', path: '/reports', icon: DescriptionIcon, roles: ['finance'] },
+
+        // ── Commercial ───────────────────────────────────────────────
+        { name: 'Dashboard', path: '/commercial', icon: DashboardIcon, roles: ['commercial'] },
+        { name: 'Reports', path: '/commercial/reports', icon: DescriptionIcon, roles: ['commercial'] },
+        { name: 'Tenants', path: '/commercial/tenants', icon: PeopleIcon, roles: ['commercial'] },
     ];
 
     const filteredItems = menuItems.filter(item => {

@@ -225,48 +225,55 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/finance/reports/export', [SalesReportExportController::class, 'export'])->name('finance.sales-report.export');
     });
 
-    // Commercial Reports - accessible to commercial users and finance users for cross-team reporting
-    // Note: we intentionally allow 'finance' role here so finance users can view commercial dashboards/reports.
-    // If you prefer to allow access to only specific routes, we can narrow this to a subset instead.
+    // Commercial — accessible to commercial and finance roles
     Route::middleware(['role:commercial|finance'])->group(function () {
         Route::prefix('commercial')->name('commercial.')->group(function () {
-            // Commercial dashboard root - show dedicated commercial dashboard (charts + tenant selector)
-            Route::get('/', [CommercialReportsController::class, 'dashboard'])->name('dashboard');
+
+            // ── SPA page routes (React handles rendering) ─────────────────
+            Route::get('/', function () {
+                return view('app'); })->name('dashboard');
+            Route::get('/reports', function () {
+                return view('app'); })->name('reports');
+            Route::get('/reports/hourly', function () {
+                return view('app'); })->name('reports.hourly');
+            Route::get('/reports/daily', function () {
+                return view('app'); })->name('reports.daily');
+            Route::get('/reports/weekly', function () {
+                return view('app'); })->name('reports.weekly');
+            Route::get('/reports/weekday', function () {
+                return view('app'); })->name('reports.weekday');
+            Route::get('/reports/weekend', function () {
+                return view('app'); })->name('reports.weekend');
+            Route::get('/reports/monthly', function () {
+                return view('app'); })->name('reports.monthly');
+            Route::get('/reports/yearly', function () {
+                return view('app'); })->name('reports.yearly');
+            Route::get('/tenants', function () {
+                return view('app'); })->name('tenants');
+            Route::get('/tenants/{id}', function () {
+                return view('app'); })->name('tenants.show');
+
+            // ── JSON/data API endpoints (controllers) ─────────────────────
             Route::prefix('reports')->name('sales-report.')->group(function () {
-                Route::get('/hourly-sales-report', [CommercialReportsController::class, 'hourly'])->name('hourly');
-                // Proxy endpoint used by the hourly report view to fetch hourly aggregates (adapts single-date UI param)
+                // Data proxy endpoints used by React pages via axios
                 Route::get('/transactions/hourly', [CommercialReportsController::class, 'hourlyData'])->name('tsms-proxy.transactions.hourly');
-                // Proxy endpoint used by the daily report view to fetch daily summary
                 Route::get('/transactions/daily', [CommercialReportsController::class, 'dailyData'])->name('tsms-proxy.transactions.daily');
-                // Proxy endpoint used by the weekly report view to fetch per-day aggregates
                 Route::get('/transactions/weekly', [CommercialReportsController::class, 'weeklyData'])->name('tsms-proxy.transactions.weekly');
-                // Proxy endpoint used by the monthly report view to fetch per-day aggregates for a month
                 Route::get('/transactions/monthly', [CommercialReportsController::class, 'monthlyData'])->name('tsms-proxy.transactions.monthly');
-                // Proxy endpoint used by the yearly report view to fetch per-month aggregates for a year
                 Route::get('/transactions/yearly', [CommercialReportsController::class, 'yearlyData'])->name('tsms-proxy.transactions.yearly');
-                // Proxy endpoint used by the weekday report view to fetch per-day aggregates excluding weekends
                 Route::get('/transactions/weekday', [CommercialReportsController::class, 'weekdayData'])->name('tsms-proxy.transactions.weekday');
-                // Proxy endpoint used by the weekend report view to fetch per-day aggregates for weekends only
                 Route::get('/transactions/weekend', [CommercialReportsController::class, 'weekendData'])->name('tsms-proxy.transactions.weekend');
-                // Endpoint to fetch tenants for dropdown via AJAX
+                // Tenant list JSON (used by autocomplete dropdowns)
                 Route::get('/tenants', [CommercialReportsController::class, 'tenants'])->name('tenants');
-                // Export tenants CSV (web UI action)
-                // Export should be more restricted — only admin or manager can export tenant CSVs.
                 Route::get('/tenants/export', [CommercialReportsController::class, 'tenantsExport'])
                     ->name('tenants.export')
                     ->middleware('role:admin|manager');
-                // Tenant details page (web UI). Keep this under the same 'tenants' prefix so
-                // the sidebar link continues to work and ajax callers still receive JSON.
-                Route::get('/tenants/{id}', [CommercialReportsController::class, 'tenantShow'])->name('tenants.show');
-                // Export proxy: accept single-date & tenant_id from UI and adapt to finance export
+                // Export
                 Route::get('/export', [CommercialReportsController::class, 'exportProxy'])->name('export');
-                Route::get('/daily-sales-report', [CommercialReportsController::class, 'daily'])->name('daily');
-                Route::get('/weekly-sales-report', [CommercialReportsController::class, 'weekly'])->name('weekly');
-                Route::get('/weekday-sales-report', [CommercialReportsController::class, 'weekday'])->name('weekday');
-                Route::get('/weekend-sales-report', [CommercialReportsController::class, 'weekend'])->name('weekend');
-                Route::get('/monthly-sales-report', [CommercialReportsController::class, 'monthly'])->name('monthly');
-                Route::get('/yearly-sales-report', [CommercialReportsController::class, 'yearly'])->name('yearly');
             });
+
+            // Tenant JSON detail (AJAX — returns JSON when Accept: application/json)
+            Route::get('/reports/tenants/{id}', [CommercialReportsController::class, 'tenantShow'])->name('tenants.detail');
         });
     });
 

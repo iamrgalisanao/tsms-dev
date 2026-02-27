@@ -1,329 +1,287 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import axios from 'axios';
-import MainLayout from '@/Layouts/MainLayout';
-import ReportHeader from '@/Components/Commercial/ReportHeader';
-import MetricCard from '@/Components/Commercial/MetricCard';
-import { Card, Table, Button, Form, Row, Col, Spinner, Badge } from 'react-bootstrap';
-import { Bar, Line } from 'react-chartjs-2';
-import moment from 'moment';
+import {
+    Box,
+    Typography,
+    Stack,
+    Button,
+    CircularProgress,
+    TextField,
+    Autocomplete,
+    MenuItem,
+    Alert
+} from '@mui/material';
+import DownloadIcon from '@mui/icons-material/Download';
+import SyncIcon from '@mui/icons-material/Sync';
+import FilterAltIcon from '@mui/icons-material/FilterAlt';
+import BarChartIcon from '@mui/icons-material/BarChart';
+import TrendingUpIcon from '@mui/icons-material/TrendingUp';
+import ReceiptLongIcon from '@mui/icons-material/ReceiptLong';
+import AccountBalanceWalletIcon from '@mui/icons-material/AccountBalanceWallet';
+import { Line } from 'react-chartjs-2';
 import {
     Chart as ChartJS,
-    CategoryScale,
-    LinearScale,
-    BarElement,
-    PointElement,
-    LineElement,
-    Title,
-    Tooltip,
-    Legend,
-    Filler
+    CategoryScale, LinearScale, PointElement, LineElement,
+    Title, Tooltip, Legend, Filler
 } from 'chart.js';
 
-ChartJS.register(
-    CategoryScale,
-    LinearScale,
-    BarElement,
-    PointElement,
-    LineElement,
-    Title,
-    Tooltip,
-    Legend,
-    Filler
+ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, Filler);
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+const fmt = (v) => Number(v ?? 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+const MetricTile = ({ icon, label, value, sub }) => (
+    <Box sx={{ bgcolor: 'white', borderRadius: '16px', border: '1px solid', borderColor: 'divider', p: 2.5, flex: 1, minWidth: 160 }}>
+        <Stack direction="row" spacing={1.5} alignItems="center" sx={{ mb: 1 }}>
+            <Box sx={{ p: 1, bgcolor: 'secondary.main', color: 'white', borderRadius: 2, display: 'flex' }}>{icon}</Box>
+            <Typography variant="caption" sx={{ fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'text.secondary' }}>{label}</Typography>
+        </Stack>
+        <Typography variant="h6" sx={{ fontWeight: 900 }}>{value}</Typography>
+        {sub && <Typography variant="caption" sx={{ color: 'text.disabled' }}>{sub}</Typography>}
+    </Box>
 );
 
+// ─── Report type config ───────────────────────────────────────────────────────
+const TYPE_CONFIG = {
+    daily: { title: 'Daily Sales Report', endpoint: '/commercial/reports/transactions/daily', icon: 'today', dateMode: 'single' },
+    weekly: { title: 'Weekly Sales Report', endpoint: '/commercial/reports/transactions/weekly', icon: 'date_range', dateMode: 'range' },
+    monthly: { title: 'Monthly Sales Report', endpoint: '/commercial/reports/transactions/monthly', icon: 'calendar_month', dateMode: 'month' },
+    yearly: { title: 'Yearly Sales Report', endpoint: '/commercial/reports/transactions/yearly', icon: 'calendar_today', dateMode: 'year' },
+};
+
+const today = () => new Date().toISOString().split('T')[0];
+const thisMonth = () => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+};
+
+// ─── Main Page ────────────────────────────────────────────────────────────────
 const SalesReportPage = ({ type = 'daily' }) => {
+    const config = TYPE_CONFIG[type] || TYPE_CONFIG.daily;
+
+    const [tenants, setTenants] = useState([]);
+    const [tenantsLoaded, setTenantsLoaded] = useState(false);
+    const [selectedTenant, setSelectedTenant] = useState(null);
+    const [dateFrom, setDateFrom] = useState(today());
+    const [dateTo, setDateTo] = useState(today());
+    const [month, setMonth] = useState(thisMonth());
+    const [year, setYear] = useState(String(new Date().getFullYear()));
     const [loading, setLoading] = useState(false);
     const [reportData, setReportData] = useState([]);
     const [summary, setSummary] = useState(null);
-    const [filters, setFilters] = useState({
-        date: moment().format('YYYY-MM-DD'),
-        date_from: moment().startOf('month').format('YYYY-MM-DD'),
-        date_to: moment().format('YYYY-MM-DD'),
-        tenant_id: ''
-    });
-    const [tenants, setTenants] = useState([]);
+    const [error, setError] = useState(null);
 
-    const reportTitle = useMemo(() => {
-        const titles = {
-            daily: 'Daily Sales Report',
-            weekly: 'Weekly Sales Report',
-            monthly: 'Monthly Sales Report',
-            yearly: 'Yearly Sales Report'
-        };
-        return titles[type] || 'Sales Report';
-    }, [type]);
-
-    useEffect(() => {
-        fetchTenants();
-        loadReport();
-    }, [type]);
-
-    const fetchTenants = async () => {
+    const loadTenants = useCallback(async () => {
+        if (tenantsLoaded) return;
         try {
-            const resp = await axios.get('/commercial/reports/tenants');
-            setTenants(resp.data || []);
-        } catch (e) { console.error(e); }
+            const r = await axios.get('/commercial/reports/tenants');
+            setTenants(r.data || []);
+            setTenantsLoaded(true);
+        } catch { setTenants([]); }
+    }, [tenantsLoaded]);
+
+    const buildParams = () => {
+        const base = { tenant_id: selectedTenant?.id || '' };
+        if (config.dateMode === 'single') return { ...base, date: dateFrom };
+        if (config.dateMode === 'range') return { ...base, date_from: dateFrom, date_to: dateTo };
+        if (config.dateMode === 'month') return { ...base, month };
+        if (config.dateMode === 'year') return { ...base, year };
+        return base;
     };
 
-    const loadReport = async () => {
+    const loadReport = useCallback(async () => {
         setLoading(true);
+        setError(null);
         try {
-            const endpoint = `/commercial/reports/transactions/${type}`;
-            const params = type === 'daily'
-                ? { date: filters.date, tenant_id: filters.tenant_id }
-                : { date_from: filters.date_from, date_to: filters.date_to, tenant_id: filters.tenant_id };
-
-            const response = await axios.get(endpoint, { params });
-            const data = response.data.rows || response.data.data || response.data.months || [];
-            setReportData(data);
-            setSummary(response.data.summary || null);
-        } catch (error) {
-            console.error('Report load failed:', error);
+            const resp = await axios.get(config.endpoint, { params: buildParams() });
+            const rows = resp.data?.rows || resp.data?.days || resp.data?.months || resp.data?.data || [];
+            setReportData(rows);
+            setSummary(resp.data?.summary || resp.data?.totals || null);
+        } catch {
+            setError('Failed to load report data. Please try again.');
             setReportData([]);
         } finally {
             setLoading(false);
         }
-    };
+    }, [config, selectedTenant, dateFrom, dateTo, month, year]);
 
-    const formatCurrency = (val) => {
-        const num = Number(val);
-        return isNaN(num) ? '0.00' : num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    };
+    // auto-load on type change
+    useEffect(() => {
+        setReportData([]);
+        setSummary(null);
+        setError(null);
+    }, [type]);
 
-    const chartData = useMemo(() => {
-        const labels = reportData.map(r => r.date || r.day || r.month || r.label);
-        const datasets = [
+    const chartData = useMemo(() => ({
+        labels: reportData.map(r => r.date || r.day || r.month || r.label || r.period || ''),
+        datasets: [
             {
                 label: 'Gross Sales',
                 data: reportData.map(r => Number(r.gross_sales || r.gross || 0)),
-                backgroundColor: 'rgba(230, 57, 70, 0.2)',
-                borderColor: '#E63946',
-                borderWidth: 2,
-                tension: 0.3,
-                fill: true,
+                borderColor: '#df1160',
+                backgroundColor: 'rgba(223,17,96,0.10)',
+                borderWidth: 2, tension: 0.35, fill: true, pointRadius: 3,
+            },
+            {
+                label: 'Net Sales',
+                data: reportData.map(r => Number(r.net_sales || r.net || 0)),
+                borderColor: '#1d437b',
+                backgroundColor: 'rgba(29,67,123,0.06)',
+                borderWidth: 2, tension: 0.35, fill: true, pointRadius: 3,
             }
-        ];
-
-        // Add volume if present
-        if (reportData.some(r => r.volume || r.count || r.tx_count)) {
-            datasets.push({
-                label: 'Volume',
-                data: reportData.map(r => Number(r.volume || r.count || r.tx_count || 0)),
-                backgroundColor: 'rgba(29, 53, 87, 0.2)',
-                borderColor: '#1D3557',
-                borderWidth: 2,
-                yAxisID: 'y1',
-                type: 'line'
-            });
-        }
-
-        return { labels, datasets };
-    }, [reportData]);
+        ]
+    }), [reportData]);
 
     const chartOptions = {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-            legend: { position: 'bottom' },
-            tooltip: {
-                callbacks: {
-                    label: (ctx) => {
-                        let label = ctx.dataset.label || '';
-                        if (label === 'Gross Sales') return `${label}: ₱${formatCurrency(ctx.raw)}`;
-                        return `${label}: ${ctx.raw}`;
-                    }
-                }
-            }
-        },
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { position: 'bottom' } },
         scales: {
-            y: { beginAtZero: true, title: { display: true, text: 'Sales (₱)' } },
-            y1: {
-                beginAtZero: true,
-                position: 'right',
-                grid: { drawOnChartArea: false },
-                title: { display: true, text: 'Transaction Volume' }
-            }
+            y: { beginAtZero: true, ticks: { callback: v => `₱${Number(v).toLocaleString()}` } }
         }
     };
 
     return (
-        <div className="p-8 max-w-[1600px] mx-auto space-y-8">
-            <ReportHeader
-                title={reportTitle}
-                dateFrom={filters.date_from}
-                dateTo={filters.date_to}
-                tenantId={filters.tenant_id}
-                tenants={tenants}
-                onDateFromChange={val => setFilters({ ...filters, date_from: val })}
-                onDateToChange={val => setFilters({ ...filters, date_to: val })}
-                onTenantChange={val => setFilters({ ...filters, tenant_id: val })}
-                onLoadReport={loadReport}
-                loading={loading}
-            />
+        <Box sx={{ pb: 10 }}>
+            {/* Page Header */}
+            <Box sx={{ py: 3, mb: 2 }}>
+                <Stack direction="row" spacing={2} alignItems="center">
+                    <Box sx={{ p: 1.5, bgcolor: 'secondary.main', color: 'white', borderRadius: 3, display: 'flex', boxShadow: '0 8px 25px rgba(223,17,96,0.2)' }}>
+                        <span className="material-symbols-outlined" style={{ fontSize: 28 }}>{config.icon}</span>
+                    </Box>
+                    <Box>
+                        <Typography variant="h2" sx={{ fontWeight: 900, letterSpacing: '-0.02em' }}>{config.title}</Typography>
+                        <Typography variant="body2" sx={{ color: 'text.secondary' }}>Sales performance data for the selected period and tenant.</Typography>
+                    </Box>
+                </Stack>
+            </Box>
 
-            {/* Metrics Row */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                <MetricCard
-                    title="Gross Revenue"
-                    value={`₱${formatCurrency(summary?.gross_sales || 0)}`}
-                    icon="payments"
-                    subtitle="Total Period Sales"
-                />
-                <MetricCard
-                    title="Net Revenue"
-                    value={`₱${formatCurrency(summary?.net_sales || 0)}`}
-                    icon="account_balance_wallet"
-                    subtitle="Excluding Taxes"
-                />
-                <MetricCard
-                    title="Transactions"
-                    value={summary?.transaction_count || 0}
-                    icon="receipt_long"
-                    subtitle="Volume of Sales"
-                />
-                <MetricCard
-                    title="Period Growth"
-                    value={`${((summary?.gross_sales || 0) > 0 ? '+12.5%' : '0.0%')}`}
-                    icon="trending_up"
-                    subtitle="vs Previous Period"
-                />
-            </div>
+            {/* Filter Bar */}
+            <Box sx={{ bgcolor: 'white', borderRadius: '20px', border: '1px solid', borderColor: 'divider', p: 3, mb: 4, boxShadow: '0 4px 16px rgba(0,0,0,0.04)' }}>
+                <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} alignItems={{ md: 'center' }} flexWrap="wrap">
+                    <Stack direction="row" spacing={1} alignItems="center" sx={{ color: 'secondary.main', minWidth: 150 }}>
+                        <FilterAltIcon fontSize="small" />
+                        <Typography variant="caption" sx={{ fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Filters</Typography>
+                    </Stack>
 
-            {/* Chart & Summary Row */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-                <div className="lg:col-span-2 glass-card rounded-3xl p-8 border border-white/40 shadow-xl min-h-[450px] flex flex-col">
-                    <div className="flex items-center justify-between mb-8">
-                        <div>
-                            <h3 className="text-xl font-black text-slate-900 tracking-tight">Performance Stream</h3>
-                            <p className="text-xs font-bold text-slate-500 uppercase tracking-widest italic opacity-70">Sales Trend Visualization</p>
-                        </div>
-                        <div className="size-10 rounded-xl bg-slate-50 flex items-center justify-center text-slate-400">
-                            <span className="material-symbols-outlined">monitoring</span>
-                        </div>
-                    </div>
+                    <Autocomplete
+                        options={tenants}
+                        getOptionLabel={o => o.trade_name || ''}
+                        isOptionEqualToValue={(o, v) => o.id === v.id}
+                        value={selectedTenant}
+                        onChange={(_, v) => setSelectedTenant(v)}
+                        onOpen={loadTenants}
+                        sx={{ minWidth: 240, flex: 1 }}
+                        renderInput={params => <TextField {...params} label="Tenant (All)" size="small" />}
+                    />
 
-                    <div className="flex-grow relative">
-                        {loading ? (
-                            <div className="absolute inset-0 flex items-center justify-center bg-white/30 backdrop-blur-sm z-10 rounded-2xl">
-                                <div className="flex flex-col items-center gap-4">
-                                    <div className="size-12 border-4 border-primary/20 border-t-primary rounded-full animate-spin"></div>
-                                    <p className="text-xs font-black text-primary uppercase tracking-widest">Aggregating Data...</p>
-                                </div>
-                            </div>
-                        ) : (
-                            <div className="h-full">
-                                <Line data={chartData} options={chartOptions} />
-                            </div>
-                        )}
-                    </div>
-                </div>
+                    {config.dateMode === 'single' && (
+                        <TextField type="date" label="Date" value={dateFrom} onChange={e => setDateFrom(e.target.value)} size="small" InputLabelProps={{ shrink: true }} sx={{ minWidth: 160 }} />
+                    )}
+                    {config.dateMode === 'range' && (<>
+                        <TextField type="date" label="From" value={dateFrom} onChange={e => setDateFrom(e.target.value)} size="small" InputLabelProps={{ shrink: true }} sx={{ minWidth: 160 }} />
+                        <TextField type="date" label="To" value={dateTo} onChange={e => setDateTo(e.target.value)} size="small" InputLabelProps={{ shrink: true }} sx={{ minWidth: 160 }} />
+                    </>)}
+                    {config.dateMode === 'month' && (
+                        <TextField type="month" label="Month" value={month} onChange={e => setMonth(e.target.value)} size="small" InputLabelProps={{ shrink: true }} sx={{ minWidth: 180 }} />
+                    )}
+                    {config.dateMode === 'year' && (
+                        <TextField select label="Year" value={year} onChange={e => setYear(e.target.value)} size="small" sx={{ minWidth: 120 }}>
+                            {[...Array(5)].map((_, i) => { const y = new Date().getFullYear() - i; return <MenuItem key={y} value={String(y)}>{y}</MenuItem>; })}
+                        </TextField>
+                    )}
 
-                <div className="glass-card rounded-3xl p-8 border border-white/40 shadow-xl bg-slate-900 text-white relative overflow-hidden group">
-                    <div className="relative z-10 h-full flex flex-col">
-                        <div className="mb-12">
-                            <span className="material-symbols-outlined text-4xl text-primary mb-4">analytics</span>
-                            <h3 className="text-2xl font-black mb-2 tracking-tight">Period Insights</h3>
-                            <p className="text-slate-400 text-sm font-medium leading-relaxed">
-                                Analytics derived from {summary?.transaction_count || 0} verified transactions within the selected window.
-                            </p>
-                        </div>
+                    <Button variant="contained" color="secondary" onClick={loadReport} disabled={loading} startIcon={loading ? <CircularProgress size={16} color="inherit" /> : <SyncIcon />} sx={{ borderRadius: '12px', fontWeight: 800, px: 3, whiteSpace: 'nowrap' }}>
+                        {loading ? 'Loading...' : 'Load Report'}
+                    </Button>
 
-                        <div className="space-y-6 mt-auto">
-                            <div className="flex items-center justify-between p-4 bg-white/5 rounded-2xl border border-white/10">
-                                <div>
-                                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest leading-none mb-1">Peak Sales Day</p>
-                                    <p className="text-lg font-black">{reportData[0]?.date || 'N/A'}</p>
-                                </div>
-                                <span className="material-symbols-outlined text-emerald-400">arrow_upward</span>
-                            </div>
+                    {summary && (
+                        <Button variant="outlined" color="primary" startIcon={<DownloadIcon />}
+                            href={`/commercial/reports/sales-report/export?date_from=${dateFrom}&date_to=${dateTo}&tenant_id=${selectedTenant?.id || ''}`}
+                            target="_blank"
+                            sx={{ borderRadius: '12px', fontWeight: 800, px: 3, whiteSpace: 'nowrap' }}>
+                            Export
+                        </Button>
+                    )}
+                </Stack>
+            </Box>
 
-                            <div className="flex items-center justify-between p-4 bg-white/5 rounded-2xl border border-white/10">
-                                <div>
-                                    <p className="text-[10px] font-black text-slate-500 uppercase tracking-widest leading-none mb-1">Average Ticket</p>
-                                    <p className="text-lg font-black">₱{formatCurrency((summary?.gross_sales || 0) / (summary?.transaction_count || 1))}</p>
-                                </div>
-                                <span className="material-symbols-outlined text-blue-400">stadium</span>
-                            </div>
-                        </div>
-                    </div>
+            {error && <Alert severity="error" sx={{ mb: 3 }}>{error}</Alert>}
 
-                    <div className="absolute -bottom-20 -right-20 opacity-10 group-hover:opacity-20 transition-opacity">
-                        <span className="material-symbols-outlined text-[300px] text-white rotate-12">hub</span>
-                    </div>
-                </div>
-            </div>
+            {/* Metrics */}
+            {summary && (
+                <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{ mb: 4 }} flexWrap="wrap">
+                    <MetricTile icon={<BarChartIcon fontSize="small" />} label="Gross Revenue" value={`₱${fmt(summary.gross_sales)}`} sub="Total Period Sales" />
+                    <MetricTile icon={<AccountBalanceWalletIcon fontSize="small" />} label="Net Revenue" value={`₱${fmt(summary.net_sales)}`} sub="After Deductions" />
+                    <MetricTile icon={<ReceiptLongIcon fontSize="small" />} label="Transactions" value={(summary.transaction_count || 0).toLocaleString()} sub="Verified Volume" />
+                    <MetricTile icon={<TrendingUpIcon fontSize="small" />} label="Avg Ticket" value={`₱${fmt((summary.gross_sales || 0) / Math.max(summary.transaction_count || 1, 1))}`} sub="Per Transaction" />
+                </Stack>
+            )}
 
-            {/* Detailed Table Section */}
-            <div className="glass-card rounded-3xl overflow-hidden border border-white/40 shadow-xl">
-                <div className="p-8 border-b border-slate-100 flex items-center justify-between">
-                    <div>
-                        <h3 className="text-xl font-black text-slate-900 tracking-tight">Granular Ledger</h3>
-                        <p className="text-xs font-bold text-slate-500 uppercase tracking-widest italic opacity-70">Row-level transaction breakdown</p>
-                    </div>
-                    <div className="flex items-center gap-2">
-                        <div className="px-4 py-1.5 bg-slate-100 rounded-full text-[10px] font-black text-slate-500 uppercase tracking-widest">
-                            {reportData.length} records found
-                        </div>
-                    </div>
-                </div>
+            {/* Chart */}
+            {reportData.length > 0 && (
+                <Box sx={{ bgcolor: 'white', borderRadius: '20px', border: '1px solid', borderColor: 'divider', p: 4, mb: 4, minHeight: 340, boxShadow: '0 4px 16px rgba(0,0,0,0.04)' }}>
+                    <Typography variant="subtitle1" sx={{ fontWeight: 900, mb: 3 }}>Performance Stream</Typography>
+                    <Box sx={{ height: 280 }}>
+                        <Line data={chartData} options={chartOptions} />
+                    </Box>
+                </Box>
+            )}
 
-                <div className="overflow-x-auto custom-scrollbar">
-                    <table className="w-full text-left">
-                        <thead className="bg-slate-50/50">
-                            <tr className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">
-                                <th className="px-8 py-4">Period / Instance</th>
-                                <th className="px-8 py-4 text-right">Gross Revenue</th>
-                                <th className="px-8 py-4 text-right">Net Revenue</th>
-                                <th className="px-8 py-4 text-center">TX Volume</th>
-                                <th className="px-8 py-4 text-center">Status</th>
-                                <th className="px-8 py-4"></th>
+            {/* Table */}
+            <Box sx={{ bgcolor: 'white', borderRadius: '20px', border: '1px solid', borderColor: 'divider', overflow: 'hidden', boxShadow: '0 4px 16px rgba(0,0,0,0.04)' }}>
+                <Box sx={{ p: 3, borderBottom: '1px solid', borderColor: 'divider', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <Typography variant="subtitle1" sx={{ fontWeight: 900 }}>Granular Ledger</Typography>
+                    <Box sx={{ px: 2, py: 0.5, bgcolor: 'action.hover', borderRadius: '999px' }}>
+                        <Typography variant="caption" sx={{ fontWeight: 800, letterSpacing: '0.06em' }}>{reportData.length} records</Typography>
+                    </Box>
+                </Box>
+
+                <Box sx={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+                        <thead>
+                            <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
+                                {['Period', 'Gross Sales', 'Net Sales', 'VAT', 'Transactions', 'Status'].map(h => (
+                                    <th key={h} style={{ padding: '12px 20px', textAlign: h === 'Period' ? 'left' : 'right', fontWeight: 800, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#94a3b8', whiteSpace: 'nowrap' }}>
+                                        {h === 'Status' ? <span style={{ display: 'flex', justifyContent: 'center' }}>{h}</span> : h}
+                                    </th>
+                                ))}
                             </tr>
                         </thead>
-                        <tbody className="divide-y divide-slate-50">
+                        <tbody>
                             {reportData.map((row, idx) => (
-                                <tr key={idx} className="hover:bg-slate-50/80 transition-colors group">
-                                    <td className="px-8 py-4 font-black text-slate-900 text-sm">
-                                        {row.date || row.day || row.month || row.label}
-                                    </td>
-                                    <td className="px-8 py-4 text-right text-sm font-black text-slate-900">
-                                        ₱{formatCurrency(row.gross_sales || row.gross || 0)}
-                                    </td>
-                                    <td className="px-8 py-4 text-right text-sm font-bold text-slate-500">
-                                        ₱{formatCurrency(row.net_sales || row.net || 0)}
-                                    </td>
-                                    <td className="px-8 py-4 text-center">
-                                        <span className="px-3 py-1 bg-slate-100 rounded-lg text-xs font-black text-slate-600">
-                                            {row.transaction_count || row.count || row.volume || 0}
+                                <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                                    <td style={{ padding: '12px 20px', fontWeight: 700, color: '#0f172a' }}>{row.date || row.day || row.month || row.label || row.period || idx + 1}</td>
+                                    <td style={{ padding: '12px 20px', textAlign: 'right', fontWeight: 700, color: '#df1160' }}>₱{fmt(row.gross_sales || row.gross)}</td>
+                                    <td style={{ padding: '12px 20px', textAlign: 'right', color: '#475569' }}>₱{fmt(row.net_sales || row.net)}</td>
+                                    <td style={{ padding: '12px 20px', textAlign: 'right', color: '#64748b' }}>₱{fmt(row.vat_amount)}</td>
+                                    <td style={{ padding: '12px 20px', textAlign: 'right' }}>
+                                        <span style={{ padding: '3px 10px', background: '#f1f5f9', borderRadius: 8, fontSize: 11, fontWeight: 800, color: '#475569' }}>
+                                            {(row.transaction_count || row.count || 0).toLocaleString()}
                                         </span>
                                     </td>
-                                    <td className="px-8 py-4 text-center">
-                                        <div className="flex items-center justify-center gap-1.5 px-3 py-1 bg-emerald-50 rounded-lg text-[10px] font-black text-emerald-600 uppercase tracking-widest">
-                                            <span className="size-1.5 rounded-full bg-emerald-500"></span>
+                                    <td style={{ padding: '12px 20px', textAlign: 'center' }}>
+                                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '3px 10px', background: '#ecfdf5', color: '#059669', borderRadius: 8, fontSize: 10, fontWeight: 800, textTransform: 'uppercase' }}>
+                                            <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#10b981', display: 'inline-block' }} />
                                             Verified
-                                        </div>
-                                    </td>
-                                    <td className="px-8 py-4 text-right">
-                                        <button className="size-8 rounded-lg bg-slate-100 flex items-center justify-center text-slate-400 opacity-0 group-hover:opacity-100 hover:pitx-gradient hover:text-white transition-all">
-                                            <span className="material-symbols-outlined text-sm">visibility</span>
-                                        </button>
+                                        </span>
                                     </td>
                                 </tr>
                             ))}
-                            {reportData.length === 0 && (
+                            {reportData.length === 0 && !loading && (
                                 <tr>
-                                    <td colSpan="6" className="px-8 py-20 text-center">
-                                        <div className="flex flex-col items-center gap-2 opacity-30">
-                                            <span className="material-symbols-outlined text-6xl">database_off</span>
-                                            <p className="text-xs font-black uppercase tracking-widest">No data matching requirements</p>
-                                        </div>
+                                    <td colSpan={6} style={{ padding: '60px 20px', textAlign: 'center', color: '#cbd5e1' }}>
+                                        <span className="material-symbols-outlined" style={{ fontSize: 48, display: 'block', marginBottom: 8 }}>database_off</span>
+                                        <p style={{ fontWeight: 800, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                                            {loading ? 'Loading...' : 'Select filters and click Load Report'}
+                                        </p>
                                     </td>
                                 </tr>
                             )}
                         </tbody>
                     </table>
-                </div>
-            </div>
-        </div>
+                </Box>
+            </Box>
+        </Box>
     );
 };
 
