@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { ThemeProvider } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import theme from '../Themes/MuiTheme';
@@ -11,13 +11,17 @@ import LogoutIcon from '@mui/icons-material/Logout';
 import MenuIcon from '@mui/icons-material/Menu';
 import KeyIcon from '@mui/icons-material/Key';
 import PeopleIcon from '@mui/icons-material/People';
+import { useAuth } from '../Contexts/AuthContext';
 
 const MainLayout = ({ children }) => {
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
     const location = useLocation();
+    const navigate = useNavigate();
+    const { user: authUser, logout } = useAuth();
 
-    const user = window.authUser || { name: 'Guest', roles: [] };
-    const isFinance = user.roles?.includes('finance');
+    // Merge: prefer reactive AuthContext user, fall back to Blade-injected window.authUser
+    const user = authUser || window.authUser || { name: 'Guest', roles: [] };
+    const roles = user.roles || [];
 
     const menuItems = [
         // ── Admin / Manager ──────────────────────────────────────────
@@ -39,7 +43,7 @@ const MainLayout = ({ children }) => {
 
     const filteredItems = menuItems.filter(item => {
         if (!item.roles) return true;
-        return item.roles.some(role => user.roles?.includes(role));
+        return item.roles.some(role => roles.includes(role));
     });
 
     return (
@@ -95,12 +99,8 @@ const MainLayout = ({ children }) => {
                     <div className="p-4 border-t border-white/10 mt-auto">
                         <button
                             onClick={async () => {
-                                try {
-                                    await window.axios.post('/logout');
-                                    window.location.href = '/login';
-                                } catch (error) {
-                                    window.location.href = '/login';
-                                }
+                                await logout();
+                                navigate('/login');
                             }}
                             className="flex items-center w-full p-3 rounded-lg text-white/50 hover:bg-brand-accent/10 hover:text-brand-accent transition-all duration-200"
                         >
