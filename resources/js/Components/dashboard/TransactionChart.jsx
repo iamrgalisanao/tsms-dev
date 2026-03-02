@@ -25,7 +25,7 @@ ChartJS.register(
     Filler
 );
 
-const TransactionChart = React.memo(({ data, loading }) => {
+const TransactionChart = ({ data, loading }) => {
     if (loading) {
         return (
             <Card sx={{ height: 450, borderRadius: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -211,6 +211,6 @@ const TransactionChart = React.memo(({ data, loading }) => {
             </CardContent>
         </Card>
     );
-});
+};
 
 export default TransactionChart;
