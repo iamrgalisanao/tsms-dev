@@ -297,8 +297,9 @@ class CommercialReportsController extends Controller
                 $res = $service->getWeeklySummary($mFrom, $mTo, $tenantId, false, false, true);
                 $s = $res['summary'] ?? ['gross_sales' => 0.0, 'net_sales' => 0.0, 'transaction_count' => 0, 'guest_count' => 0];
 
-                foreach (['vatable_sales','vat_exempt_sales','vat_amount','sc_pwd_discount','regular_discount','cash_payment','card_payment','other_tender'] as $k) {
-                    if (!isset($s[$k])) $s[$k] = 0.0;
+                foreach (['vatable_sales', 'vat_exempt_sales', 'vat_amount', 'sc_pwd_discount', 'regular_discount', 'cash_payment', 'card_payment', 'other_tender'] as $k) {
+                    if (!isset($s[$k]))
+                        $s[$k] = 0.0;
                 }
 
                 $months[] = array_merge(['month' => $d->format('Y-m')], $s);
@@ -307,12 +308,12 @@ class CommercialReportsController extends Controller
                 $summary['net_sales'] += (float) ($s['net_sales'] ?? 0.0);
                 $summary['transaction_count'] += (int) ($s['transaction_count'] ?? 0);
                 $summary['guest_count'] += (int) ($s['guest_count'] ?? 0);
-                foreach (['vatable_sales','vat_exempt_sales','vat_amount','sc_pwd_discount','regular_discount','cash_payment','card_payment','other_tender'] as $k) {
+                foreach (['vatable_sales', 'vat_exempt_sales', 'vat_amount', 'sc_pwd_discount', 'regular_discount', 'cash_payment', 'card_payment', 'other_tender'] as $k) {
                     $summary[$k] += (float) ($s[$k] ?? 0.0);
                 }
             }
 
-            foreach (['gross_sales','net_sales','vatable_sales','vat_exempt_sales','vat_amount','sc_pwd_discount','regular_discount','cash_payment','card_payment','other_tender'] as $k) {
+            foreach (['gross_sales', 'net_sales', 'vatable_sales', 'vat_exempt_sales', 'vat_amount', 'sc_pwd_discount', 'regular_discount', 'cash_payment', 'card_payment', 'other_tender'] as $k) {
                 $summary[$k] = round($summary[$k], 2);
             }
 
@@ -377,21 +378,77 @@ class CommercialReportsController extends Controller
             return response()->json($jsonTenants);
         }
 
-    // For regular web requests, render a tenants listing page.
-    // Previously we returned a paginated result to avoid rendering very large
-    // tables; however, the UI now uses client-side DataTables for paging/search.
-    // If tenant counts become very large this may need to revert to server
-    // pagination or introduce server-side DataTables endpoints.
-    $allTenants = Tenant::orderBy('trade_name')->get();
-    return view('reports.commercial.tenants.index', ['tenants' => $allTenants]);
+        // For regular web requests, render a tenants listing page.
+        // Previously we returned a paginated result to avoid rendering very large
+        // tables; however, the UI now uses client-side DataTables for paging/search.
+        // If tenant counts become very large this may need to revert to server
+        // pagination or introduce server-side DataTables endpoints.
+        $allTenants = Tenant::orderBy('trade_name')->get();
+        return view('reports.commercial.tenants.index', ['tenants' => $allTenants]);
     }
 
     /**
      * Show tenant details page for a single tenant.
+     * Returns JSON for the React UI or the Blade view for the initial load.
      */
-    public function tenantShow($id)
+    public function tenantShow(Request $request, $id)
     {
-        $tenant = Tenant::with('posTerminals')->findOrFail($id);
+        $tenant = Tenant::with(['posTerminals', 'company'])->findOrFail($id);
+
+        if ($request->wantsJson()) {
+            // Calculate Current Month Sales
+            $currentMonthStart = now()->startOfMonth();
+            $currentMonthEnd = now()->endOfMonth();
+            $monthSales = $tenant->posTerminals()->get()->map(function ($terminal) use ($currentMonthStart, $currentMonthEnd) {
+                return $terminal->transactions()
+                    ->whereBetween('transaction_timestamp', [$currentMonthStart, $currentMonthEnd])
+                    ->where('validation_status', 'VALID')
+                    ->sum('gross_sales');
+            })->sum();
+
+            // Calculate YTD Sales
+            $yearStart = now()->startOfYear();
+            $yearEnd = now()->endOfYear();
+            $ytdSales = $tenant->posTerminals()->get()->map(function ($terminal) use ($yearStart, $yearEnd) {
+                return $terminal->transactions()
+                    ->whereBetween('transaction_timestamp', [$yearStart, $yearEnd])
+                    ->where('validation_status', 'VALID')
+                    ->sum('gross_sales');
+            })->sum();
+
+            // Fetch Recent Transactions
+            $recentTransactions = \App\Models\Transaction::where('tenant_id', $id)
+                ->orderBy('transaction_timestamp', 'desc')
+                ->limit(10)
+                ->get()
+                ->map(function ($tx) {
+                    return [
+                        'id' => $tx->id,
+                        'date' => $tx->transaction_timestamp->format('Y-m-d H:i'),
+                        'reference_no' => $tx->receipt_no ?? $tx->transaction_id ?? 'N/A',
+                        'amount' => (float) $tx->gross_sales,
+                        'status' => $tx->validation_status,
+                    ];
+                });
+
+            // Prepare extra data for the profile
+            $data = [
+                'id' => $tenant->id,
+                'trade_name' => $tenant->trade_name,
+                'customer_code' => $tenant->customer_code ?: ($tenant->company->customer_code ?? 'N/A'),
+                'name' => $tenant->company->company_name ?? 'N/A',
+                'level' => str_contains($tenant->location, 'Level') ? trim(str_replace('Level', '', $tenant->location)) : '1',
+                'unit_no' => $tenant->unit_no ?? 'N/A',
+                'category' => $tenant->category ?? 'Retail',
+                'ytd_sales' => round($ytdSales, 2),
+                'month_sales' => round($monthSales, 2),
+                'lease_expiry' => 'Dec 2026', // Mock for now as it's not in schema
+                'transactions' => $recentTransactions,
+            ];
+
+            return response()->json($data);
+        }
+
         return view('reports.commercial.tenants.show', compact('tenant'));
     }
 
@@ -408,10 +465,10 @@ class CommercialReportsController extends Controller
                 $allowed = $user->hasAnyRole(['admin', 'manager']);
             } elseif (isset($user->role)) {
                 $r = is_object($user->role) ? strtolower($user->role->name ?? '') : strtolower($user->role ?? '');
-                $allowed = in_array($r, ['admin','manager']);
+                $allowed = in_array($r, ['admin', 'manager']);
             }
         }
-        if (! $allowed) {
+        if (!$allowed) {
             abort(403, 'Unauthorized to export tenants');
         }
         $filename = 'tenants_' . now()->format('Ymd_His') . '.csv';
@@ -420,16 +477,16 @@ class CommercialReportsController extends Controller
             'Content-Disposition' => "attachment; filename=\"{$filename}\"",
         ];
 
-        $columns = ['tenant_code','tenant_id','trade_name','location_type','level','unit_no','status','category','zone','created_at'];
+        $columns = ['tenant_code', 'tenant_id', 'trade_name', 'location_type', 'level', 'unit_no', 'status', 'category', 'zone', 'created_at'];
 
-        $callback = function() use ($columns) {
+        $callback = function () use ($columns) {
             $handle = fopen('php://output', 'w');
             // header row
             fputcsv($handle, $columns);
 
             Tenant::orderBy('trade_name')
-                ->select(['customer_code','id','trade_name','location_type','level','unit_no','status','category','zone','created_at'])
-                ->chunk(500, function($rows) use ($handle) {
+                ->select(['customer_code', 'id', 'trade_name', 'location_type', 'level', 'unit_no', 'status', 'category', 'zone', 'created_at'])
+                ->chunk(500, function ($rows) use ($handle) {
                     foreach ($rows as $r) {
                         fputcsv($handle, [
                             $r->customer_code,
@@ -507,10 +564,10 @@ class CommercialReportsController extends Controller
         $date = $request->input('date');
         $tenantId = $request->input('tenant_id');
 
-    $service = new DailyReportService();
+        $service = new DailyReportService();
         $result = $service->getDailySummary($date, $tenantId, null, true);
-    // Only return the aggregated daily summary to the web UI (no hourly breakdown)
-    $result = ['summary' => $result['summary'] ?? ['gross_sales' => 0.0, 'net_sales' => 0.0, 'transaction_count' => 0, 'guest_count' => 0]];
+        // Only return the aggregated daily summary to the web UI (no hourly breakdown)
+        $result = ['summary' => $result['summary'] ?? ['gross_sales' => 0.0, 'net_sales' => 0.0, 'transaction_count' => 0, 'guest_count' => 0]];
 
         // Audit the UI action (non-blocking)
         try {

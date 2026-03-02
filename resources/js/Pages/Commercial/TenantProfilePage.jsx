@@ -107,7 +107,7 @@ const TenantProfilePage = () => {
 
                         <Divider sx={{ my: 3 }} />
 
-                        <Box sx={{ textAlign: 'left', spaceY: 1 }}>
+                        <Box sx={{ textAlign: 'left', display: 'flex', flexDirection: 'column', gap: 1 }}>
                             <Typography variant="subtitle2" color="text.secondary">Company</Typography>
                             <Typography variant="body1" gutterBottom>{tenant?.name || 'N/A'}</Typography>
 
@@ -126,7 +126,7 @@ const TenantProfilePage = () => {
                         <Grid item xs={12} sm={4}>
                             <MetricCard
                                 title="Total Sales YTD"
-                                value={formatCurrency(tenant?.ytd_sales || 1250000)}
+                                value={formatCurrency(tenant?.ytd_sales)}
                                 icon={SalesIcon}
                                 color="primary.main"
                             />
@@ -134,7 +134,7 @@ const TenantProfilePage = () => {
                         <Grid item xs={12} sm={4}>
                             <MetricCard
                                 title="Current Month"
-                                value={formatCurrency(tenant?.month_sales || 145000)}
+                                value={formatCurrency(tenant?.month_sales)}
                                 icon={CalendarIcon}
                                 color="info.main"
                             />
@@ -142,7 +142,7 @@ const TenantProfilePage = () => {
                         <Grid item xs={12} sm={4}>
                             <MetricCard
                                 title="Lease Expiry"
-                                value={tenant?.lease_expiry || 'Dec 2026'}
+                                value={tenant?.lease_expiry || 'N/A'}
                                 icon={ExpiryIcon}
                                 color="error.main"
                             />
@@ -165,19 +165,33 @@ const TenantProfilePage = () => {
                                     </TableRow>
                                 </TableHead>
                                 <TableBody>
-                                    {/* Mocking some transactions if real ones aren't sent yet */}
-                                    {[1, 2, 3, 4, 5].map((i) => (
-                                        <TableRow key={i} hover>
-                                            <TableCell>2026-02-{15 - i}</TableCell>
-                                            <TableCell>REF-{1000 + i}</TableCell>
-                                            <TableCell align="right">{formatCurrency(500 * i + Math.random() * 100)}</TableCell>
-                                            <TableCell>
-                                                <Typography variant="caption" sx={{ bgcolor: 'success.light', color: 'success.dark', px: 1, py: 0.5, borderRadius: 1 }}>
-                                                    Success
-                                                </Typography>
-                                            </TableCell>
+                                    {/* Real transactions from the API */}
+                                    {tenant?.transactions?.length > 0 ? (
+                                        tenant.transactions.map((tx) => (
+                                            <TableRow key={tx.id || Math.random()} hover>
+                                                <TableCell>{tx.date}</TableCell>
+                                                <TableCell>{tx.reference_no}</TableCell>
+                                                <TableCell align="right">{formatCurrency(tx.amount)}</TableCell>
+                                                <TableCell>
+                                                    <Typography
+                                                        variant="caption"
+                                                        sx={{
+                                                            bgcolor: tx.status === 'VALID' ? 'success.light' : 'warning.light',
+                                                            color: tx.status === 'VALID' ? 'success.dark' : 'warning.dark',
+                                                            px: 1, py: 0.5, borderRadius: 1,
+                                                            fontWeight: 'bold'
+                                                        }}
+                                                    >
+                                                        {tx.status}
+                                                    </Typography>
+                                                </TableCell>
+                                            </TableRow>
+                                        ))
+                                    ) : (
+                                        <TableRow>
+                                            <TableCell colSpan={4} align="center">No recent transactions found.</TableCell>
                                         </TableRow>
-                                    ))}
+                                    )}
                                 </TableBody>
                             </Table>
                         </TableContainer>

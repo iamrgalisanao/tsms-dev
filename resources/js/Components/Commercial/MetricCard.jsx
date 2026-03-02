@@ -1,12 +1,18 @@
 import React from 'react';
 import { Card, CardContent, Typography, Box, Avatar } from '@mui/material';
 
-const MetricCard = ({ title, value, icon, color = 'primary.main', subtitle }) => {
+const MetricCard = ({ title, value, icon: Icon, color = 'primary.main', subtitle }) => {
+    const RenderIcon = () => {
+        if (!Icon) return <span className="material-symbols-outlined text-2xl">analytics</span>;
+        if (typeof Icon === 'string') return <span className="material-symbols-outlined text-2xl">{Icon}</span>;
+        return <Icon sx={{ fontSize: 24 }} />;
+    };
+
     return (
         <div className="glass-card rounded-2xl p-6 border border-white/40 shadow-xl transition-all hover:-translate-y-1 hover:shadow-2xl group">
             <div className="flex justify-between items-start mb-4">
                 <div className="size-12 rounded-xl pitx-gradient flex items-center justify-center text-white shadow-lg shadow-primary/20">
-                    <span className="material-symbols-outlined text-2xl">{icon || 'analytics'}</span>
+                    <RenderIcon />
                 </div>
                 {subtitle && (
                     <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{subtitle}</span>
