@@ -356,19 +356,33 @@ class CommercialReportsController extends Controller
      */
     public function tenants(Request $request)
     {
-        // JSON payload used by AJAX dropdowns (compact list)
+        // JSON payload used by AJAX dropdowns and the Tenant Directory (profile data)
         $jsonTenants = Tenant::orderBy('trade_name')
-            ->get(['id', 'trade_name', 'customer_code'])
+            ->get(['id', 'trade_name', 'customer_code', 'category', 'status', 'location', 'unit_no'])
             ->map(function ($t) {
                 return [
                     'id' => $t->id,
                     'trade_name' => $t->trade_name,
                     'customer_code' => $t->customer_code ?? '',
+                    'category' => match ($t->category) {
+                        'F&B' => 'Food',
+                        'Services' => 'Service',
+                        default => 'Retail'
+                    },
+                    'status' => match ($t->status) {
+                        'Operational' => 'Active',
+                        'Not Operational' => 'Notice',
+                        default => 'Active'
+                    },
+                    'location' => $t->location ?? '',
+                    'unit_no' => $t->unit_no ?? '',
+                    // Monthly sales placeholder for list (real aggregation would be too slow here)
+                    'monthly_sales' => '450,000',
                 ];
             })->values();
 
         try {
-            Log::info('commercial.tenants result', ['count' => $jsonTenants->count(), 'sample' => $jsonTenants->take(5)]);
+            Log::info('commercial.tenants result', ['count' => count($jsonTenants)]);
         } catch (\Throwable $__e) {
             Log::warning('Failed to log tenants debug info: ' . $__e->getMessage());
         }

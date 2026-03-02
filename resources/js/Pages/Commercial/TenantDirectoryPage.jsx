@@ -149,8 +149,28 @@ const TenantDirectoryPage = () => {
 
     // ── Loading / Error ──────────────────────────────────────────────────────
     if (loading) return (
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 400 }}>
-            <div style={{ width: 40, height: 40, border: `3px solid ${BLUE}22`, borderTopColor: BLUE, borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+        <div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 24 }}>
+                {[1, 2, 3, 4, 5, 6].map(i => (
+                    <div key={i} className="glass" style={{ height: 260, borderRadius: 24, animation: 'pulse 1.5s infinite' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', padding: 24 }}>
+                            <div style={{ width: 60, height: 20, background: '#e2e8f0', borderRadius: 6 }} />
+                            <div style={{ width: 60, height: 20, background: '#e2e8f0', borderRadius: 6 }} />
+                        </div>
+                        <div style={{ padding: '0 24px 24px' }}>
+                            <div style={{ width: '80%', height: 28, background: '#f1f5f9', borderRadius: 8, marginBottom: 8 }} />
+                            <div style={{ width: '40%', height: 16, background: '#f1f5f9', borderRadius: 8, marginBottom: 24 }} />
+                            <div style={{ display: 'flex', gap: 12 }}>
+                                <div style={{ flex: 1, height: 40, background: '#f8fafc', borderRadius: 12 }} />
+                                <div style={{ flex: 1, height: 40, background: '#f8fafc', borderRadius: 12 }} />
+                            </div>
+                        </div>
+                    </div>
+                ))}
+            </div>
+            <style>{`
+                @keyframes pulse { 0% { opacity: 0.6; } 50% { opacity: 1; } 100% { opacity: 0.6; } }
+            `}</style>
         </div>
     );
 

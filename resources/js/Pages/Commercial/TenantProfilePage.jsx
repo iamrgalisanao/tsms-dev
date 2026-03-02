@@ -61,9 +61,30 @@ const TenantProfilePage = () => {
     const formatCurrency = (val) => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(val || 0);
 
     if (loading) return (
-        <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '80vh' }}>
-            <CircularProgress />
-        </Box>
+        <Container maxWidth="xl" sx={{ py: 4 }}>
+            <Box sx={{ mb: 4 }}>
+                <Box sx={{ width: 120, height: 20, bgcolor: 'action.hover', borderRadius: 1, mb: 2, animation: 'pulse 1.5s infinite' }} />
+                <Box sx={{ width: 300, height: 40, bgcolor: 'action.hover', borderRadius: 1, animation: 'pulse 1.5s infinite' }} />
+            </Box>
+            <Grid container spacing={3} sx={{ mb: 4 }}>
+                {[1, 2, 3].map(i => (
+                    <Grid item xs={12} sm={4} key={i}>
+                        <Paper sx={{ p: 4, borderRadius: 4, height: 160, animation: 'pulse 1.5s infinite' }} />
+                    </Grid>
+                ))}
+            </Grid>
+            <Grid container spacing={3}>
+                <Grid item xs={12} md={4}>
+                    <Paper sx={{ p: 3, borderRadius: 4, height: 400, animation: 'pulse 1.5s infinite' }} />
+                </Grid>
+                <Grid item xs={12} md={8}>
+                    <Paper sx={{ p: 3, borderRadius: 4, height: 400, animation: 'pulse 1.5s infinite' }} />
+                </Grid>
+            </Grid>
+            <style>{`
+                @keyframes pulse { 0% { opacity: 0.6; } 50% { opacity: 1; } 100% { opacity: 0.6; } }
+            `}</style>
+        </Container>
     );
 
     if (error) return (
