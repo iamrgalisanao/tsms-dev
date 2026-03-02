@@ -410,57 +410,70 @@ class CommercialReportsController extends Controller
         $tenant = Tenant::with(['posTerminals', 'company'])->findOrFail($id);
 
         if ($request->wantsJson()) {
-            // Calculate Current Month Sales
-            $currentMonthStart = now()->startOfMonth();
-            $currentMonthEnd = now()->endOfMonth();
-            $monthSales = $tenant->posTerminals()->get()->map(function ($terminal) use ($currentMonthStart, $currentMonthEnd) {
-                return $terminal->transactions()
-                    ->whereBetween('transaction_timestamp', [$currentMonthStart, $currentMonthEnd])
-                    ->where('validation_status', 'VALID')
-                    ->sum('gross_sales');
-            })->sum();
+            try {
+                // Calculate Current Month Sales
+                $currentMonthStart = now()->startOfMonth();
+                $currentMonthEnd = now()->endOfMonth();
+                $monthSales = $tenant->posTerminals()->get()->map(function ($terminal) use ($currentMonthStart, $currentMonthEnd) {
+                    try {
+                        return $terminal->transactions()
+                            ->whereBetween('transaction_timestamp', [$currentMonthStart, $currentMonthEnd])
+                            ->where('validation_status', 'VALID')
+                            ->sum('gross_sales');
+                    } catch (\Throwable $e) {
+                        return 0;
+                    }
+                })->sum();
 
-            // Calculate YTD Sales
-            $yearStart = now()->startOfYear();
-            $yearEnd = now()->endOfYear();
-            $ytdSales = $tenant->posTerminals()->get()->map(function ($terminal) use ($yearStart, $yearEnd) {
-                return $terminal->transactions()
-                    ->whereBetween('transaction_timestamp', [$yearStart, $yearEnd])
-                    ->where('validation_status', 'VALID')
-                    ->sum('gross_sales');
-            })->sum();
+                // Calculate YTD Sales
+                $yearStart = now()->startOfYear();
+                $yearEnd = now()->endOfYear();
+                $ytdSales = $tenant->posTerminals()->get()->map(function ($terminal) use ($yearStart, $yearEnd) {
+                    try {
+                        return $terminal->transactions()
+                            ->whereBetween('transaction_timestamp', [$yearStart, $yearEnd])
+                            ->where('validation_status', 'VALID')
+                            ->sum('gross_sales');
+                    } catch (\Throwable $e) {
+                        return 0;
+                    }
+                })->sum();
 
-            // Fetch Recent Transactions
-            $recentTransactions = \App\Models\Transaction::where('tenant_id', $id)
-                ->orderBy('transaction_timestamp', 'desc')
-                ->limit(10)
-                ->get()
-                ->map(function ($tx) {
-                    return [
-                        'id' => $tx->id,
-                        'date' => $tx->transaction_timestamp->format('Y-m-d H:i'),
-                        'reference_no' => $tx->receipt_no ?? $tx->transaction_id ?? 'N/A',
-                        'amount' => (float) $tx->gross_sales,
-                        'status' => $tx->validation_status,
-                    ];
-                });
+                // Fetch Recent Transactions
+                $recentTransactions = \App\Models\Transaction::where('tenant_id', $id)
+                    ->orderBy('transaction_timestamp', 'desc')
+                    ->limit(10)
+                    ->get()
+                    ->map(function ($tx) {
+                        return [
+                            'id' => $tx->id,
+                            'date' => $tx->transaction_timestamp ? $tx->transaction_timestamp->format('Y-m-d H:i') : 'N/A',
+                            'reference_no' => $tx->receipt_no ?? $tx->transaction_id ?? 'N/A',
+                            'amount' => (float) ($tx->gross_sales ?? 0),
+                            'status' => $tx->validation_status ?? 'UNKNOWN',
+                        ];
+                    });
 
-            // Prepare extra data for the profile
-            $data = [
-                'id' => $tenant->id,
-                'trade_name' => $tenant->trade_name,
-                'customer_code' => $tenant->customer_code ?: ($tenant->company->customer_code ?? 'N/A'),
-                'name' => $tenant->company->company_name ?? 'N/A',
-                'level' => str_contains($tenant->location, 'Level') ? trim(str_replace('Level', '', $tenant->location)) : '1',
-                'unit_no' => $tenant->unit_no ?? 'N/A',
-                'category' => $tenant->category ?? 'Retail',
-                'ytd_sales' => round($ytdSales, 2),
-                'month_sales' => round($monthSales, 2),
-                'lease_expiry' => 'Dec 2026', // Mock for now as it's not in schema
-                'transactions' => $recentTransactions,
-            ];
+                // Prepare extra data for the profile
+                $data = [
+                    'id' => $tenant->id,
+                    'trade_name' => $tenant->trade_name ?? 'N/A',
+                    'customer_code' => $tenant->customer_code ?: ($tenant->company?->customer_code ?? 'N/A'),
+                    'name' => $tenant->company?->company_name ?? 'N/A',
+                    'level' => str_contains($tenant->location ?? '', 'Level') ? trim(str_replace('Level', '', $tenant->location ?? '')) : '1',
+                    'unit_no' => $tenant->unit_no ?? 'N/A',
+                    'category' => $tenant->category ?? 'Retail',
+                    'ytd_sales' => round((float) $ytdSales, 2),
+                    'month_sales' => round((float) $monthSales, 2),
+                    'lease_expiry' => 'Dec 2026', // Mock for now as it's not in schema
+                    'transactions' => $recentTransactions,
+                ];
 
-            return response()->json($data);
+                return response()->json($data);
+            } catch (\Throwable $e) {
+                Log::error('Error in tenantShow: ' . $e->getMessage(), ['tenant_id' => $id, 'trace' => $e->getTraceAsString()]);
+                return response()->json(['error' => 'Failed to load tenant data: ' . $e->getMessage()], 500);
+            }
         }
 
         return view('reports.commercial.tenants.show', compact('tenant'));
