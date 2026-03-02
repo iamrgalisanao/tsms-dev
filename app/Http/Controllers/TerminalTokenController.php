@@ -127,7 +127,6 @@ class TerminalTokenController extends Controller
             $search = $request->search;
             $query->where(function ($q) use ($search) {
                 $q->where('serial_number', 'like', "%{$search}%")
-                    ->orWhere('terminal_uid', 'like', "%{$search}%")
                     ->orWhere('machine_number', 'like', "%{$search}%")
                     ->orWhereHas('tenant', function ($subQ) use ($search) {
                         $subQ->where('trade_name', 'like', "%{$search}%");
@@ -138,8 +137,7 @@ class TerminalTokenController extends Controller
         // Legacy/specific filters
         if ($request->has('terminal_id') && !empty($request->terminal_id)) {
             $query->where(function ($q) use ($request) {
-                $q->where('terminal_uid', 'like', '%' . $request->terminal_id . '%')
-                    ->orWhere('serial_number', 'like', '%' . $request->terminal_id . '%');
+                $q->where('serial_number', 'like', '%' . $request->terminal_id . '%');
             });
         }
 
