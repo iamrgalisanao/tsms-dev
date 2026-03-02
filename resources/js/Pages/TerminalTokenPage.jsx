@@ -8,13 +8,19 @@ import {
     Breadcrumbs,
     Link as MuiLink,
     Button,
-    Divider
+    Divider,
+    Dialog,
+    DialogTitle,
+    DialogContent,
+    DialogActions,
+    DialogContentText
 } from '@mui/material';
 import NavigateNextIcon from '@mui/icons-material/NavigateNext';
 import HomeIcon from '@mui/icons-material/Home';
 import KeyIcon from '@mui/icons-material/Key';
 import FileDownloadIcon from '@mui/icons-material/FileDownload';
 import AddModeratorIcon from '@mui/icons-material/AddModerator';
+import WarningAmberIcon from '@mui/icons-material/WarningAmber';
 import TokenFilterBar from '../Components/tokens/TokenFilterBar';
 import TokenTable from '../Components/tokens/TokenTable';
 import NewTokenDialog from '../Components/tokens/NewTokenDialog';
@@ -42,6 +48,15 @@ const TerminalTokenPage = () => {
     const [newToken, setNewToken] = useState(null);
     const [selectedTerminal, setSelectedTerminal] = useState(null);
     const [notification, setNotification] = useState({ open: false, message: '', severity: 'success' });
+
+    // Custom Confirmation Dialog State
+    const [confirmDialog, setConfirmDialog] = useState({
+        open: false,
+        title: '',
+        message: '',
+        actionType: null, // 'regenerate' or 'revoke'
+        targetTerminal: null
+    });
 
     const fetchData = useCallback(async () => {
         setLoading(true);
@@ -94,11 +109,17 @@ const TerminalTokenPage = () => {
         setPage(0);
     };
 
-    const handleRegenerate = async (terminal) => {
-        if (!confirm(`SECURITY OVERRIDE: Regenerating keys for ${terminal.serial_number} will revoke current sessions. Continue?`)) {
-            return;
-        }
+    const handleRegenerate = (terminal) => {
+        setConfirmDialog({
+            open: true,
+            title: 'SECURITY OVERRIDE',
+            message: `Regenerating keys for ${terminal.serial_number} will revoke its current sessions. Do you wish to continue?`,
+            actionType: 'regenerate',
+            targetTerminal: terminal
+        });
+    };
 
+    const executeRegenerate = async (terminal) => {
         try {
             const response = await terminalTokenService.regenerateToken(terminal.id);
             if (response.success) {
@@ -120,11 +141,17 @@ const TerminalTokenPage = () => {
         }
     };
 
-    const handleRevoke = async (terminal) => {
-        if (!confirm(`CRITICAL ACTION: This will PERMANENTLY BAN all active tokens for ${terminal.serial_number}. Confirm?`)) {
-            return;
-        }
+    const handleRevoke = (terminal) => {
+        setConfirmDialog({
+            open: true,
+            title: 'CRITICAL ACTION',
+            message: `This will PERMANENTLY BAN all active tokens for ${terminal.serial_number}. Are you sure you want to proceed?`,
+            actionType: 'revoke',
+            targetTerminal: terminal
+        });
+    };
 
+    const executeRevoke = async (terminal) => {
         try {
             const response = await terminalTokenService.revokeTokens(terminal.id);
             if (response.success) {
@@ -141,6 +168,21 @@ const TerminalTokenPage = () => {
                 message: error.response?.data?.message || 'Invalidation sequence failed.',
                 severity: 'error'
             });
+        }
+    };
+
+    const handleConfirmClose = () => {
+        setConfirmDialog({ ...confirmDialog, open: false });
+    };
+
+    const handleConfirmExecute = async () => {
+        const { actionType, targetTerminal } = confirmDialog;
+        handleConfirmClose(); // Close the dialog immediately
+
+        if (actionType === 'regenerate') {
+            await executeRegenerate(targetTerminal);
+        } else if (actionType === 'revoke') {
+            await executeRevoke(targetTerminal);
         }
     };
 
@@ -249,6 +291,37 @@ const TerminalTokenPage = () => {
                     {notification.message}
                 </Alert>
             </Snackbar>
+
+            {/* Custom Confirmation Dialog replacing window.confirm */}
+            <Dialog
+                open={confirmDialog.open}
+                onClose={handleConfirmClose}
+                maxWidth="xs"
+                fullWidth
+            >
+                <DialogTitle sx={{ display: 'flex', alignItems: 'center', gap: 1, fontWeight: 900, color: confirmDialog.actionType === 'revoke' ? 'error.main' : 'warning.main' }}>
+                    <WarningAmberIcon />
+                    {confirmDialog.title}
+                </DialogTitle>
+                <DialogContent>
+                    <DialogContentText sx={{ fontWeight: 500, color: 'text.primary' }}>
+                        {confirmDialog.message}
+                    </DialogContentText>
+                </DialogContent>
+                <DialogActions sx={{ px: 3, pb: 3 }}>
+                    <Button onClick={handleConfirmClose} color="inherit" sx={{ fontWeight: 600 }}>
+                        Cancel
+                    </Button>
+                    <Button
+                        onClick={handleConfirmExecute}
+                        variant="contained"
+                        color={confirmDialog.actionType === 'revoke' ? 'error' : 'primary'}
+                        sx={{ fontWeight: 700 }}
+                    >
+                        Proceed
+                    </Button>
+                </DialogActions>
+            </Dialog>
         </Box>
     );
 };
