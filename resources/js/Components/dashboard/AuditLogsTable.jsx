@@ -1,6 +1,6 @@
 import React from 'react';
 
-const AuditLogsTable = React.memo(({ logs, loading }) => {
+const AuditLogsTable = ({ logs, loading }) => {
     if (loading) {
         return (
             <div className="bg-white rounded-xl shadow-sm p-8 flex justify-center border border-gray-100 h-64 items-center">
@@ -60,6 +60,6 @@ const AuditLogsTable = React.memo(({ logs, loading }) => {
             </div>
         </div>
     );
-});
+};
 
 export default AuditLogsTable;

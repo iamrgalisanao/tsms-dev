@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
 import { format, subDays, startOfMonth, startOfYear } from 'date-fns';
 import MetricCard from '../../Components/Commercial/MetricCard';
-import TransactionChart from '../../Components/Dashboard/TransactionChart';
+import TransactionChart from '../../Components/dashboard/TransactionChart';
 
 const CommercialDashboardPage = () => {
     const [metrics, setMetrics] = useState({
@@ -12,10 +12,10 @@ const CommercialDashboardPage = () => {
         this_year_total: 0
     });
     const [charts, setCharts] = useState({
-        daily: null,
-        weekly: null,
-        monthly: null,
-        yearly: null
+        daily: { labels: [], sales: [], volume: [] },
+        weekly: { labels: [], sales: [], volume: [] },
+        monthly: { labels: [], sales: [], volume: [] },
+        yearly: { labels: [], sales: [], volume: [] }
     });
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
@@ -32,10 +32,10 @@ const CommercialDashboardPage = () => {
             // Daily: use hourly endpoint for chart breakdown + daily for summary
             // Weekly/Monthly/Yearly use their respective endpoints
             const [hourlyResp, dailyResp, weeklyResp, monthlyResp] = await Promise.all([
-                axios.get('/commercial/reports/transactions/hourly', { params: { date: todayStr } }),
-                axios.get('/commercial/reports/transactions/daily', { params: { date: todayStr } }),
-                axios.get('/commercial/reports/transactions/weekly', { params: { date_from: sevenDaysAgoStr, date_to: todayStr } }),
-                axios.get('/commercial/reports/transactions/monthly', { params: { date_from: monthStartStr, date_to: todayStr } })
+                axios.get('/commercial/reports/transactions/hourly', { params: { date: todayStr } }).catch(() => ({ data: { data: [] } })),
+                axios.get('/commercial/reports/transactions/daily', { params: { date: todayStr } }).catch(() => ({ data: { summary: { gross_sales: 0 } } })),
+                axios.get('/commercial/reports/transactions/weekly', { params: { date_from: sevenDaysAgoStr, date_to: todayStr } }).catch(() => ({ data: { days: [] } })),
+                axios.get('/commercial/reports/transactions/monthly', { params: { date_from: monthStartStr, date_to: todayStr } }).catch(() => ({ data: { days: [] } }))
             ]);
 
             const todaySum = dailyResp.data?.summary?.gross_sales || 0;
@@ -47,10 +47,10 @@ const CommercialDashboardPage = () => {
             const yearTotal = monthTotal; // Placeholder or add yearly call later if needed
 
             setMetrics({
-                today_gross: todaySum,
-                this_week_total: weekTotal,
-                this_month_total: monthTotal,
-                this_year_total: yearTotal
+                today_gross: Number(todaySum) || 0,
+                this_week_total: Number(weekTotal) || 0,
+                this_month_total: Number(monthTotal) || 0,
+                this_year_total: Number(yearTotal) || 0
             });
 
             // Map hourly data for daily chart
@@ -58,21 +58,21 @@ const CommercialDashboardPage = () => {
 
             setCharts({
                 daily: {
-                    labels: hourlyData.map(h => h.hour),
-                    sales: hourlyData.map(h => h.gross_sales),
-                    volume: hourlyData.map(h => h.transaction_count)
+                    labels: (hourlyData || []).map(h => h.hour || ''),
+                    sales: (hourlyData || []).map(h => h.gross_sales || 0),
+                    volume: (hourlyData || []).map(h => h.transaction_count || 0)
                 },
                 weekly: {
-                    labels: (weeklyResp.data?.days || []).map(d => d.date),
-                    sales: (weeklyResp.data?.days || []).map(d => d.gross_sales),
-                    volume: (weeklyResp.data?.days || []).map(d => d.transaction_count)
+                    labels: (weeklyResp.data?.days || []).map(d => d.date || ''),
+                    sales: (weeklyResp.data?.days || []).map(d => d.gross_sales || 0),
+                    volume: (weeklyResp.data?.days || []).map(d => d.transaction_count || 0)
                 },
                 monthly: {
-                    labels: (monthlyResp.data?.days || []).map(d => d.date),
-                    sales: (monthlyResp.data?.days || []).map(d => d.gross_sales),
-                    volume: (monthlyResp.data?.days || []).map(d => d.transaction_count)
+                    labels: (monthlyResp.data?.days || []).map(d => d.date || ''),
+                    sales: (monthlyResp.data?.days || []).map(d => d.gross_sales || 0),
+                    volume: (monthlyResp.data?.days || []).map(d => d.transaction_count || 0)
                 },
-                yearly: null
+                yearly: { labels: [], sales: [], volume: [] }
             });
 
         } catch (error) {
@@ -87,7 +87,11 @@ const CommercialDashboardPage = () => {
         fetchData();
     }, [fetchData]);
 
-    const formatCurrency = (val) => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(val);
+    const formatCurrency = (val) => {
+        const num = Number(val);
+        if (isNaN(num)) return '₱0.00';
+        return new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(num);
+    };
 
     return (
         <div className="p-8 max-w-[1600px] mx-auto space-y-12 animate-in fade-in slide-in-from-bottom-4 duration-700">
@@ -103,7 +107,7 @@ const CommercialDashboardPage = () => {
                         disabled={refreshing}
                         className="flex items-center gap-2 pitx-gradient text-white px-6 py-3 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg shadow-primary/20 transition-all hover:opacity-90 active:scale-95 disabled:opacity-50"
                     >
-                        <span className={`material-symbols-outlined text-sm ${refreshing ? 'animate-spin' : ''}`}>sync</span>
+                        <span className={`material - symbols - outlined text - sm ${refreshing ? 'animate-spin' : ''} `}>sync</span>
                         {refreshing ? 'Syncing Ecosystem...' : 'Force Sync'}
                     </button>
                 </div>

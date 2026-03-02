@@ -21,7 +21,7 @@ import LaunchIcon from '@mui/icons-material/Launch';
 import VisibilityIcon from '@mui/icons-material/Visibility';
 import ReceiptIcon from '@mui/icons-material/Receipt';
 
-const RecentTransactionsTable = React.memo(({ transactions, loading, onForward }) => {
+const RecentTransactionsTable = ({ transactions, loading, onForward }) => {
     if (loading) {
         return (
             <Paper sx={{ p: 8, display: 'flex', justifyContent: 'center', borderRadius: '32px' }}>
@@ -157,6 +157,6 @@ const RecentTransactionsTable = React.memo(({ transactions, loading, onForward }
             </Table>
         </TableContainer>
     );
-});
+};
 
 export default RecentTransactionsTable;

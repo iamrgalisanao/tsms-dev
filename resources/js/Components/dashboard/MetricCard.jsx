@@ -1,7 +1,7 @@
 import React from 'react';
 import { Card, CardContent, Typography, Box, Stack, useTheme } from '@mui/material';
 
-const MetricCard = React.memo(({ title, value, icon, color = 'primary', trend, sparkline }) => {
+const MetricCard = ({ title, value, icon, color = 'primary', trend, sparkline }) => {
     const theme = useTheme();
 
     const colorMap = {
@@ -130,6 +130,6 @@ const MetricCard = React.memo(({ title, value, icon, color = 'primary', trend, s
             />
         </Card>
     );
-});
+};
 
 export default MetricCard;
