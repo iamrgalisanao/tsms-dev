@@ -22,6 +22,20 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Tenant Inactivity Monitoring
+    |--------------------------------------------------------------------------
+    |
+    | Alerts when an active tenant has not sent any transactions within
+    | the configured threshold window.
+    |
+    */
+
+    'tenant_inactivity_enabled' => env('NOTIFICATION_TENANT_INACTIVITY_ENABLED', true),
+    'tenant_inactivity_threshold_minutes' => env('NOTIFICATION_TENANT_INACTIVITY_THRESHOLD_MINUTES', 60),
+    'tenant_inactivity_cooldown_minutes' => env('NOTIFICATION_TENANT_INACTIVITY_COOLDOWN_MINUTES', 60),
+
+    /*
+    |--------------------------------------------------------------------------
     | Batch Processing Monitoring
     |--------------------------------------------------------------------------
     |

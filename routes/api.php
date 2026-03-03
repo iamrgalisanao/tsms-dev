@@ -52,6 +52,8 @@ Route::middleware(['api'])->group(function () {
     Route::get('dashboard/audit-logs', [DashboardController::class, 'apiAuditLogs']);
     Route::get('dashboard/system-health', [DashboardController::class, 'apiSystemHealth']);
     Route::get('dashboard/terminal-performance', [DashboardController::class, 'apiTerminalPerformance']);
+    Route::get('dashboard/notifications', [DashboardController::class, 'apiNotifications']);
+    Route::post('dashboard/notifications/dismiss', [DashboardController::class, 'apiDismissNotification']);
     Route::post('dashboard/forward-transaction/{id}', [DashboardController::class, 'forwardTransaction']);
 
     // Transaction Logs API endpoints

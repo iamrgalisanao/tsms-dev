@@ -11,7 +11,10 @@ CFG_FINAL="memAgent/cipher-final.yml"
 CFG_LEGACY="memAgent/cipher.yml"
 [[ -f "$CFG_FINAL" ]] && CFG="$CFG_FINAL" || CFG="$CFG_LEGACY"
 
-if [[ -f "memAgent/.env" ]]; then source memAgent/.env; fi
+if [[ -f "memAgent/.env" ]]; then
+  # shellcheck disable=SC1091
+  set -a; source memAgent/.env; set +a
+fi
 
 if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   echo "Not a git repo" >&2; exit 1

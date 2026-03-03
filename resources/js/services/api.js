@@ -30,6 +30,14 @@ const api = {
     forwardTransaction: async (id) => {
         const response = await axios.post(`/api/dashboard/forward-transaction/${id}`);
         return response.data;
+    },
+    getNotifications: async () => {
+        const response = await axios.get('/api/dashboard/notifications');
+        return response.data;
+    },
+    dismissNotification: async (id) => {
+        const response = await axios.post('/api/dashboard/notifications/dismiss', { id });
+        return response.data;
     }
 };
 

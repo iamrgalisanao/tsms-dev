@@ -16,7 +16,8 @@ import {
     MenuItem,
     Stack,
     CircularProgress,
-    Divider
+    Divider,
+    Alert
 } from '@mui/material';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import BarChartIcon from '@mui/icons-material/BarChart';
@@ -47,6 +48,7 @@ const DashboardPage = () => {
     const [refreshInterval, setRefreshInterval] = useState(30000); // 30 seconds
     const [isRefreshing, setIsRefreshing] = useState(false);
     const [notification, setNotification] = useState(null);
+    const [alerts, setAlerts] = useState([]);
     const [filters, setFilters] = useState({
         start_date: '',
         end_date: '',
@@ -59,13 +61,14 @@ const DashboardPage = () => {
             if (isInitial) setLoading(true);
             setIsRefreshing(true);
 
-            const [metricsRes, chartsRes, healthRes, tpRes, transactionsRes, auditRes] = await Promise.all([
+            const [metricsRes, chartsRes, healthRes, tpRes, transactionsRes, auditRes, notificationsRes] = await Promise.all([
                 api.getMetrics(),
                 api.getCharts(),
                 api.getSystemHealth(),
                 api.getTerminalPerformance(),
                 api.getTransactions(1, filters),
-                api.getAuditLogs(1, filters)
+                api.getAuditLogs(1, filters),
+                api.getNotifications()
             ]);
 
             setMetrics(metricsRes);
@@ -74,6 +77,7 @@ const DashboardPage = () => {
             setTerminalPerformance(tpRes || []);
             setRecentTransactions(transactionsRes.data || []);
             setAuditLogs(auditRes.data || []);
+            setAlerts(notificationsRes.data || []);
 
             // Notification Detection Logic for Phase 5
             if (healthRes && healthRes.cpu > 85) {
@@ -120,6 +124,15 @@ const DashboardPage = () => {
         fetchDashboardData();
     }, [fetchDashboardData]);
 
+    const handleDismissAlert = useCallback(async (id) => {
+        try {
+            await api.dismissNotification(id);
+            setAlerts((prev) => prev.filter((n) => n.id !== id));
+        } catch (err) {
+            console.error('Failed to dismiss alert', err);
+        }
+    }, []);
+
     return (
         <Box sx={{ pb: 10 }}>
             {/* Unified Breadcrumbs */}
@@ -134,6 +147,34 @@ const DashboardPage = () => {
                     </MuiLink>
                     <Typography color="primary.main" sx={{ fontWeight: 800 }}>DASHBOARD COMMAND</Typography>
                 </Breadcrumbs>
+
+                {alerts.length > 0 && (
+                    <Stack spacing={1} sx={{ mb: 3 }}>
+                        {alerts.map((alert) => {
+                            const payload = alert.data || {};
+                            const severityRaw = payload.severity || 'info';
+                            const severity =
+                                severityRaw === 'high' || severityRaw === 'error'
+                                    ? 'error'
+                                    : severityRaw === 'medium' || severityRaw === 'warning'
+                                    ? 'warning'
+                                    : 'info';
+                            const title = payload.title || 'System Alert';
+                            const message = payload.message || title;
+
+                            return (
+                                <Alert
+                                    key={alert.id}
+                                    severity={severity}
+                                    onClose={() => handleDismissAlert(alert.id)}
+                                >
+                                    <strong>{title}: </strong>
+                                    {message}
+                                </Alert>
+                            );
+                        })}
+                    </Stack>
+                )}
 
                 <Stack direction={{ xs: 'column', lg: 'row' }} justifyContent="space-between" alignItems={{ xs: 'flex-start', lg: 'center' }} sx={{ mb: 6 }} spacing={4}>
                     <Box>

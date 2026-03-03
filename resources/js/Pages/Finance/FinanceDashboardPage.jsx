@@ -7,7 +7,8 @@ import {
     CircularProgress,
     Stack,
     Breadcrumbs,
-    Link as MuiLink
+    Link as MuiLink,
+    Alert
 } from '@mui/material';
 import NavigateNextIcon from '@mui/icons-material/NavigateNext';
 import HomeIcon from '@mui/icons-material/Home';
@@ -39,17 +40,19 @@ const FinanceDashboardPage = () => {
     });
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
+    const [alerts, setAlerts] = useState([]);
 
     const fetchData = useCallback(async () => {
         setRefreshing(true);
         try {
             // Fetch from commercial proxy endpoints as they aggregate data for all tenants
             // This matches the current Blade finance dashboard behavior
-            const [dailyResp, weeklyResp, monthlyResp, yearlyResp] = await Promise.all([
+            const [dailyResp, weeklyResp, monthlyResp, yearlyResp, notificationsResp] = await Promise.all([
                 axios.get('/commercial/reports/transactions/daily'),
                 axios.get('/commercial/reports/transactions/weekly'),
                 axios.get('/commercial/reports/transactions/monthly'),
-                axios.get('/commercial/reports/transactions/yearly')
+                axios.get('/commercial/reports/transactions/yearly'),
+                axios.get('/api/dashboard/notifications')
             ]);
 
             const todaySum = dailyResp.data?.summary?.gross_sales || 0;
@@ -87,6 +90,8 @@ const FinanceDashboardPage = () => {
                 }
             });
 
+            setAlerts((notificationsResp.data && notificationsResp.data.data) || []);
+
         } catch (error) {
             console.error('Error fetching finance dashboard data:', error);
         } finally {
@@ -98,6 +103,15 @@ const FinanceDashboardPage = () => {
     useEffect(() => {
         fetchData();
     }, [fetchData]);
+
+    const handleDismissAlert = useCallback(async (id) => {
+        try {
+            await axios.post('/api/dashboard/notifications/dismiss', { id });
+            setAlerts((prev) => prev.filter((n) => n.id !== id));
+        } catch (err) {
+            console.error('Failed to dismiss finance alert', err);
+        }
+    }, []);
 
     const formatCurrency = (val) => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(val);
 
@@ -155,6 +169,34 @@ const FinanceDashboardPage = () => {
                         {refreshing ? 'Syncing Ecosystem...' : 'Force Sync'}
                     </Button>
                 </Stack>
+
+                {alerts.length > 0 && (
+                    <Stack spacing={1} sx={{ mt: 2 }}>
+                        {alerts.map((alert) => {
+                            const payload = alert.data || {};
+                            const severityRaw = payload.severity || 'info';
+                            const severity =
+                                severityRaw === 'high' || severityRaw === 'error'
+                                    ? 'error'
+                                    : severityRaw === 'medium' || severityRaw === 'warning'
+                                    ? 'warning'
+                                    : 'info';
+                            const title = payload.title || 'System Alert';
+                            const message = payload.message || title;
+
+                            return (
+                                <Alert
+                                    key={alert.id}
+                                    severity={severity}
+                                    onClose={() => handleDismissAlert(alert.id)}
+                                >
+                                    <strong>{title}: </strong>
+                                    {message}
+                                </Alert>
+                            );
+                        })}
+                    </Stack>
+                )}
             </Box>
 
             {/* Metrics Grid */}

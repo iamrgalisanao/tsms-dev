@@ -9,6 +9,7 @@ set -e
 GREEN='\033[0;32m'
 BLUE='\033[0;34m'
 CYAN='\033[0;36m'
+RED='\033[0;31m'
 NC='\033[0m'
 
 echo -e "${CYAN}🚀 BMad-Method Team-Fullstack + TSMS Cipher Integration${NC}"
@@ -16,7 +17,8 @@ echo "==========================================================="
 
 # Load environment
 if [[ -f "memAgent/.env" ]]; then
-    source memAgent/.env
+    # shellcheck disable=SC1091
+    set -a; source memAgent/.env; set +a
     echo -e "${GREEN}✅ Environment loaded${NC}"
 fi
 

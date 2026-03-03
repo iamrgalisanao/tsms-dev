@@ -24,7 +24,7 @@ fi
 
 if [[ -f "$ROOT_DIR/memAgent/.env" ]]; then
   # shellcheck disable=SC1091
-  source "$ROOT_DIR/memAgent/.env"
+  set -a; source "$ROOT_DIR/memAgent/.env"; set +a
 fi
 
 QUERY="$*"

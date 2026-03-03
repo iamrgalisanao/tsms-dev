@@ -2,49 +2,22 @@ name: "tsms-memory-agent"
 version: "1.0.1"
 description: "Final TSMS memory agent config (sanitized)"
 
-# Prompt / system instruction providers (required by cipher 0.2.2)
-providers:
-  - name: "project-static"
-    type: "static"
-    priority: 100
-    enabled: true
-    config:
-      content: |
-        You are the TSMS project memory agent. Provide concise, technically accurate, security-aware guidance grounded ONLY in indexed TSMS project knowledge (architecture docs, POS integration notes, source references). If unsure, say you need more context.
-  - name: "bmad-roles-primer"
-    type: "static"
-    priority: 90
-    enabled: true
-    config:
-      content: |
-        BMad-Method Core Roles (primer for grounding before full bundle ingestion):
-        Orchestrator: Coordinates multi-role collaboration & workflow transitions.
-        Architect: Drives systems design, scalability, integration boundaries.
-        Analyst: Clarifies requirements, domain models, edge cases.
-        UX Expert: Ensures user flow clarity, accessibility, interaction quality.
-        PM: Schedules, risk tracking, milestone planning.
-        Product Owner: Prioritizes backlog for business value; refines acceptance criteria.
-        Use these definitions only as lightweight scaffolding; prefer bundle-sourced authoritative sections when available.
-
-settings:
-  maxGenerationTime: 8000
-  failOnProviderError: false
-  contentSeparator: "\n\n"
+systemPrompt: |
+  You are the TSMS assistant.
+  When BMad-Method instructions are present in the system prompt, follow them (including responding to BMad star-commands like *help).
+  Be concise and technically accurate; if you lack context, ask targeted questions.
 
 llm:
   provider: "openai"
   model: "gpt-4o-mini"
-  temperature: 0.2
-  max_tokens: 4000
-  api_key_env: "OPENAI_API_KEY"
   apiKey: "${OPENAI_API_KEY}"
+  maxIterations: 50
 
-embeddings:
-  provider: "openai"
+embedding:
+  type: "openai"
   model: "text-embedding-3-small"
-  dimensions: 1536
-  api_key_env: "OPENAI_API_KEY"
   apiKey: "${OPENAI_API_KEY}"
+  dimensions: 1536
 
 vector_store:
   provider: "local"

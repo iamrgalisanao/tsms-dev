@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\Schema;
 use App\Models\WebappTransactionForward;
 use App\Services\WebAppForwardingService;
 use App\Models\PosTerminal;
+use App\Services\NotificationService;
 
 Artisan::command('inspire', function () {
     $this->comment(Inspiring::quote());
@@ -258,6 +259,22 @@ Schedule::command('reporting:refresh transactions_hourly --hours=6')
     ->withoutOverlapping()
     ->onOneServer()
     ->when(fn () => (bool) (config('tsms.reporting.enabled') ?? true));
+
+// --------------------------------------------------------------------------
+// Tenant inactivity monitoring: alert when active tenants do not send any
+// transactions within the configured threshold window (default: 60 minutes).
+// Runs every 10 minutes and uses rate limiting per-tenant to avoid spam.
+// --------------------------------------------------------------------------
+Schedule::call(function () {
+    try {
+        $service = app(NotificationService::class);
+        $service->checkTenantInactivity();
+    } catch (\Exception $e) {
+        Log::error('Tenant inactivity scheduled check failed', [
+            'error' => $e->getMessage(),
+        ]);
+    }
+})->everyTenMinutes()->name('tenant-inactivity-check')->withoutOverlapping()->onOneServer();
 
 // Incremental dispatch every 5 minutes: split the last N minutes into chunk jobs
 Schedule::command('reporting:dispatch --minutes=15 --chunk=5')

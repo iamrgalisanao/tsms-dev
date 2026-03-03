@@ -1,0 +1,39 @@
+# Advanced system prompt providers for Cipher v0.2.2+
+# This file is automatically loaded by Cipher (if present) and merged with the
+# optional `systemPrompt` string from the main agent config.
+
+providers:
+  - name: "bmad-orchestrator-file"
+    type: "file-based"
+    priority: 110
+    enabled: true
+    config:
+      filePath: "memAgent/bmad-orchestrator.md"
+      watchForChanges: true
+
+  - name: "bmad-team-fullstack"
+    type: "file-based"
+    priority: 105
+    enabled: true
+    config:
+      filePath: "memAgent/bmad-team-fullstack.yaml"
+      watchForChanges: true
+
+  - name: "bmad-roles-primer"
+    type: "static"
+    priority: 90
+    enabled: true
+    config:
+      content: |
+        BMad-Method Core Roles (primer):
+        Orchestrator: Coordinates multi-role collaboration & workflow transitions.
+        Architect: Drives systems design, scalability, integration boundaries.
+        Analyst: Clarifies requirements, domain models, edge cases.
+        UX Expert: Ensures user flow clarity, accessibility, interaction quality.
+        PM: Schedules, risk tracking, milestone planning.
+        Product Owner: Prioritizes backlog for business value; refines acceptance criteria.
+
+settings:
+  maxGenerationTime: 10000
+  failOnProviderError: false
+  contentSeparator: "\n\n"

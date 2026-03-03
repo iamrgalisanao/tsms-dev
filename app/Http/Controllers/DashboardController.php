@@ -10,6 +10,8 @@ use App\Models\IntegrationLog;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use App\Models\TransactionJob;
+use Illuminate\Support\Facades\Auth;
+use App\Services\NotificationService;
 
 class DashboardController extends Controller
 {
@@ -180,6 +182,53 @@ class DashboardController extends Controller
     public function apiTerminalPerformance()
     {
         return response()->json($this->dashboardService->getTerminalPerformance());
+    }
+
+    // API: GET /api/dashboard/notifications
+    public function apiNotifications(Request $request, NotificationService $notificationService)
+    {
+        $limit = (int) $request->input('limit', 10);
+        $limit = max(1, min($limit, 50));
+
+        $userId = Auth::id();
+        $rows = $notificationService->getRecentNotifications($limit, $userId);
+
+        $notifications = array_map(function ($row) {
+            $data = null;
+            if (isset($row->data)) {
+                try {
+                    $decoded = json_decode($row->data, true);
+                    if (json_last_error() === JSON_ERROR_NONE) {
+                        $data = $decoded;
+                    }
+                } catch (\Throwable $e) {
+                    $data = null;
+                }
+            }
+
+            return [
+                'id' => $row->id,
+                'type' => $row->type ?? null,
+                'data' => $data,
+                'created_at' => $row->created_at ?? null,
+                'read_at' => $row->read_at ?? null,
+            ];
+        }, $rows);
+
+        return response()->json(['data' => $notifications]);
+    }
+
+    // API: POST /api/dashboard/notifications/dismiss
+    public function apiDismissNotification(Request $request, NotificationService $notificationService)
+    {
+        $id = (string) $request->input('id');
+        if ($id === '') {
+            return response()->json(['error' => 'Notification ID required'], 400);
+        }
+
+        $success = $notificationService->markAsRead($id);
+
+        return response()->json(['success' => $success]);
     }
 
     // API: GET /api/dashboard/transactions

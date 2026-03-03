@@ -8,7 +8,10 @@ CFG_FINAL="$ROOT_DIR/memAgent/cipher-final.yml"
 CFG_LEGACY="$ROOT_DIR/memAgent/cipher.yml"
 if [[ -f "$CFG_FINAL" ]]; then CFG="$CFG_FINAL"; elif [[ -f "$CFG_LEGACY" ]]; then CFG="$CFG_LEGACY"; else echo "No cipher config found" >&2; exit 1; fi
 
-if [[ -f "$ROOT_DIR/memAgent/.env" ]]; then source "$ROOT_DIR/memAgent/.env"; fi
+if [[ -f "$ROOT_DIR/memAgent/.env" ]]; then
+  # shellcheck disable=SC1091
+  set -a; source "$ROOT_DIR/memAgent/.env"; set +a
+fi
 
 queries=(
   "architecture overview"

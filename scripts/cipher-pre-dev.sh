@@ -40,7 +40,7 @@ command -v git >/dev/null 2>&1 || fail "git not found"
 
 if [[ -f memAgent/.env ]]; then
   # shellcheck disable=SC1091
-  source memAgent/.env
+  set -a; source memAgent/.env; set +a
 else
   fail "memAgent/.env not found (copy from .env.example)"
 fi
