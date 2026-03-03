@@ -112,9 +112,32 @@ class TransactionLogController extends Controller
                 // from child rows when denormalized columns are empty.
                 'adjustments:transaction_pk,adjustment_type,amount'
             ])
+            // Unified search: allow the primary search box to match by
+            // transaction ID, receipt number, tenant trade name, or
+            // terminal identifiers.
             ->when(isset($filters['transaction_id']), function ($query) use ($filters) {
-                $search = str_replace('TX-', '', $filters['transaction_id']);
-                return $query->where('transaction_id', 'like', "%{$search}%");
+                $search = str_replace('TX-', '', trim($filters['transaction_id']));
+
+                $query->where(function ($q) use ($search) {
+                    $q->where('transaction_id', 'like', "%{$search}%");
+
+                    // Optional: search by receipt_no when the column exists
+                    if (Schema::hasColumn('transactions', 'receipt_no')) {
+                        $q->orWhere('receipt_no', 'like', "%{$search}%");
+                    }
+
+                    // Match by terminal identifiers
+                    $q->orWhereHas('terminal', function ($terminalQuery) use ($search) {
+                        $terminalQuery
+                            ->where('serial_number', 'like', "%{$search}%")
+                            ->orWhere('machine_number', 'like', "%{$search}%");
+                    });
+
+                    // Match by tenant trade name (via direct tenant relation)
+                    $q->orWhereHas('tenant', function ($tenantQuery) use ($search) {
+                        $tenantQuery->where('trade_name', 'like', "%{$search}%");
+                    });
+                });
             })
             ->when(isset($filters['status']), function ($query) use ($filters) {
                 return $query->where('validation_status', $filters['status']);
