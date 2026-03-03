@@ -82,8 +82,6 @@ const DashboardPage = () => {
             // Notification Detection Logic for Phase 5
             if (healthRes && healthRes.cpu > 85) {
                 setNotification({ message: 'Critical high CPU usage detected! System performance may be affected.', type: 'error' });
-            } else if (healthRes && healthRes.forwarding.status === 'Offline') {
-                setNotification({ message: 'Transaction forwarding is currently OFFLINE.', type: 'warning' });
             } else if (isInitial) {
                 // Welcome/Status notification on startup
                 setNotification({ message: 'Dashboard Command Center is active and monitoring live terminals.', type: 'success' });
