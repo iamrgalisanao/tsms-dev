@@ -60,6 +60,10 @@ const TenantProfilePage = () => {
 
     const formatCurrency = (val) => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(val || 0);
 
+    const activeTerminalSerials = tenant?.active_terminals?.length
+        ? tenant.active_terminals.map((terminal) => terminal.serial_number).join(', ')
+        : '';
+
     if (loading) return (
         <Container maxWidth="xl" sx={{ py: 4 }}>
             <Box sx={{ mb: 4 }}>
@@ -129,6 +133,12 @@ const TenantProfilePage = () => {
                             Tenant ID: {tenant?.id}
                         </Typography>
 
+                        {tenant && (
+                            <Typography variant="body2" color="text.secondary" gutterBottom>
+                                Active POS Terminals: {activeTerminalSerials || 'No active terminals registered'}
+                            </Typography>
+                        )}
+
                         <Divider sx={{ my: 3 }} />
 
                         <Box sx={{ textAlign: 'left', display: 'flex', flexDirection: 'column', gap: 1 }}>
@@ -140,17 +150,6 @@ const TenantProfilePage = () => {
 
                             <Typography variant="subtitle2" color="text.secondary" sx={{ mt: 2 }}>Category</Typography>
                             <Typography variant="body1">{tenant?.category || 'Retail'}</Typography>
-
-                            <Typography variant="subtitle2" color="text.secondary" sx={{ mt: 2 }}>Active POS Terminals</Typography>
-                            {tenant?.active_terminals && tenant.active_terminals.length > 0 ? (
-                                tenant.active_terminals.map((terminal) => (
-                                    <Typography key={terminal.id} variant="body2">
-                                        • {terminal.serial_number}
-                                    </Typography>
-                                ))
-                            ) : (
-                                <Typography variant="body2">No active terminals registered</Typography>
-                            )}
                         </Box>
                     </Paper>
                 </Grid>
