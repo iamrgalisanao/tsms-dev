@@ -454,6 +454,22 @@ class CommercialReportsController extends Controller
                         ];
                     });
 
+                // Determine active POS terminals for this tenant
+                $activeTerminals = $tenant->posTerminals->filter(function ($terminal) {
+                    try {
+                        return $terminal->isActiveAndValid();
+                    } catch (\Throwable $e) {
+                        return false;
+                    }
+                })->map(function ($terminal) {
+                    return [
+                        'id' => $terminal->id,
+                        'serial_number' => $terminal->serial_number,
+                        'machine_number' => $terminal->machine_number,
+                        'last_seen_at' => optional($terminal->last_seen_at)->toDateTimeString(),
+                    ];
+                })->values();
+
                 // Prepare extra data for the profile
                 $data = [
                     'id' => $tenant->id,
@@ -467,6 +483,7 @@ class CommercialReportsController extends Controller
                     'month_sales' => round((float) $monthSales, 2),
                     'lease_expiry' => 'Dec 2026', // Mock for now as it's not in schema
                     'transactions' => $recentTransactions,
+                    'active_terminals' => $activeTerminals,
                 ];
 
                 return response()->json($data);

@@ -125,6 +125,9 @@ const TenantProfilePage = () => {
                         <Typography variant="body2" color="text.secondary" gutterBottom>
                             Code: {tenant?.customer_code}
                         </Typography>
+                        <Typography variant="body2" color="text.secondary" gutterBottom>
+                            Tenant ID: {tenant?.id}
+                        </Typography>
 
                         <Divider sx={{ my: 3 }} />
 
@@ -137,6 +140,17 @@ const TenantProfilePage = () => {
 
                             <Typography variant="subtitle2" color="text.secondary" sx={{ mt: 2 }}>Category</Typography>
                             <Typography variant="body1">{tenant?.category || 'Retail'}</Typography>
+
+                            <Typography variant="subtitle2" color="text.secondary" sx={{ mt: 2 }}>Active POS Terminals</Typography>
+                            {tenant?.active_terminals && tenant.active_terminals.length > 0 ? (
+                                tenant.active_terminals.map((terminal) => (
+                                    <Typography key={terminal.id} variant="body2">
+                                        • {terminal.serial_number}
+                                    </Typography>
+                                ))
+                            ) : (
+                                <Typography variant="body2">No active terminals registered</Typography>
+                            )}
                         </Box>
                     </Paper>
                 </Grid>
