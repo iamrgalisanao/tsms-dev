@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import api from '../Services/api';
+import api from '../services/api';
 import MetricCard from '../Components/dashboard/MetricCard';
 import TransactionChart from '../Components/dashboard/TransactionChart';
 import RecentTransactionsTable from '../Components/dashboard/RecentTransactionsTable';
