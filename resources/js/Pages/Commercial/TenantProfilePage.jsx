@@ -27,7 +27,8 @@ import {
     TrendingUp as SalesIcon,
     CalendarMonth as CalendarIcon,
     EventBusy as ExpiryIcon,
-    ChevronRight as ChevronRightIcon
+    ChevronRight as ChevronRightIcon,
+    ArrowBack as ArrowBackIcon
 } from '@mui/icons-material';
 import MetricCard from '../../Components/Commercial/MetricCard';
 
@@ -101,7 +102,19 @@ const TenantProfilePage = () => {
     return (
         <Container maxWidth="xl" sx={{ py: 4 }}>
             <Box sx={{ mb: 3 }}>
-                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 2 }}>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 1, mb: 1 }}>
+                    <Button
+                        component={Link}
+                        to="/commercial/tenants"
+                        startIcon={<ArrowBackIcon />}
+                        variant="text"
+                        size="small"
+                        sx={{ textTransform: 'none', fontWeight: 600 }}
+                    >
+                        Back to Tenant Directory
+                    </Button>
+                </Box>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 1 }}>
                     <Typography variant="h4" fontWeight="bold">{tenant?.trade_name}</Typography>
                     <Button variant="outlined" startIcon={<EditIcon />} disabled>Edit Tenant</Button>
                 </Box>
