@@ -47,6 +47,14 @@ export const terminalTokenService = {
     },
 
     /**
+     * Register a new POS terminal
+     */
+    registerTerminal: async (payload) => {
+        const response = await axios.post(`${API_BASE}/terminals`, payload);
+        return response.data;
+    },
+
+    /**
      * Get list of tenants for filter dropdown
      */
     getTenants: async () => {

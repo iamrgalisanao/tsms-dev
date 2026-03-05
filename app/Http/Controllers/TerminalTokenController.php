@@ -11,6 +11,66 @@ use Laravel\Sanctum\PersonalAccessToken;
 
 class TerminalTokenController extends Controller
 {
+    /**
+     * API endpoint to register a new POS terminal and optionally
+     * provision an initial Bearer token for it.
+     */
+    public function apiStore(Request $request)
+    {
+        try {
+            $validated = $request->validate([
+                'tenant_id' => ['required', 'exists:tenants,id'],
+                'serial_number' => ['required', 'string', 'max:255', 'unique:pos_terminals,serial_number'],
+                'machine_number' => ['nullable', 'string', 'max:255'],
+                'ip_address' => ['nullable', 'string', 'max:255'],
+            ]);
+
+            $payload = array_merge($validated, [
+                'status_id' => 1, // Active
+                'is_active' => true,
+                'registered_at' => now(),
+                'heartbeat_threshold' => config('tsms.terminals.default_heartbeat_threshold', 300),
+                'notifications_enabled' => true,
+            ]);
+
+            $terminal = PosTerminal::create($payload);
+
+            $token = $this->generateBearerToken($terminal);
+
+            Log::info('POS terminal registered via API', [
+                'terminal_id' => $terminal->id,
+                'serial_number' => $terminal->serial_number,
+                'tenant_id' => $terminal->tenant_id,
+                'user_id' => auth()->id(),
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Terminal registered successfully',
+                'data' => [
+                    'terminal' => $terminal->load('tenant:id,trade_name'),
+                    'access_token' => $token,
+                ],
+            ], 201);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation error',
+                'errors' => $e->errors(),
+            ], 422);
+        } catch (\Exception $e) {
+            Log::error('Error registering POS terminal via API', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Error registering terminal: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
     public function revoke($terminalId)
     {
         try {

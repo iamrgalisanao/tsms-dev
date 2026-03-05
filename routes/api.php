@@ -65,11 +65,12 @@ Route::middleware(['api'])->group(function () {
         Route::get('/{id}', [\App\Http\Controllers\TransactionLogController::class, 'show']);
     });
 
-    // Terminals and Tenants for filters
+    // Terminals and Tenants
     Route::get('terminals', function () {
         return \App\Models\PosTerminal::with('tenant:id,trade_name')
             ->get(['id', 'serial_number', 'tenant_id', 'machine_number']);
     });
+    Route::post('terminals', [TerminalTokenController::class, 'apiStore']);
     Route::get('tenants', function () {
         return \App\Models\Tenant::orderBy('trade_name')->get(['id', 'trade_name']);
     });

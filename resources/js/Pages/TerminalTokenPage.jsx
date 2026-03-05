@@ -13,7 +13,10 @@ import {
     DialogTitle,
     DialogContent,
     DialogActions,
-    DialogContentText
+    DialogContentText,
+    TextField,
+    MenuItem,
+    IconButton
 } from '@mui/material';
 import NavigateNextIcon from '@mui/icons-material/NavigateNext';
 import HomeIcon from '@mui/icons-material/Home';
@@ -49,6 +52,17 @@ const TerminalTokenPage = () => {
     const [selectedTerminal, setSelectedTerminal] = useState(null);
     const [notification, setNotification] = useState({ open: false, message: '', severity: 'success' });
 
+    // Register terminal dialog state
+    const [registerDialogOpen, setRegisterDialogOpen] = useState(false);
+    const [registerForm, setRegisterForm] = useState({
+        tenant_id: '',
+        serial_number: '',
+        machine_number: '',
+        ip_address: ''
+    });
+    const [registerSubmitting, setRegisterSubmitting] = useState(false);
+    const [tenants, setTenants] = useState([]);
+
     // Custom Confirmation Dialog State
     const [confirmDialog, setConfirmDialog] = useState({
         open: false,
@@ -57,6 +71,25 @@ const TerminalTokenPage = () => {
         actionType: null, // 'regenerate' or 'revoke'
         targetTerminal: null
     });
+
+    // Load tenants for registration dropdown
+    useEffect(() => {
+        const loadTenants = async () => {
+            try {
+                const data = await terminalTokenService.getTenants();
+                setTenants(data || []);
+            } catch (error) {
+                console.error('Error loading tenants for terminal registration:', error);
+                setNotification({
+                    open: true,
+                    message: 'Failed to load tenants for registration form.',
+                    severity: 'error'
+                });
+            }
+        };
+
+        loadTenants();
+    }, []);
 
     const fetchData = useCallback(async () => {
         setLoading(true);
@@ -186,6 +219,75 @@ const TerminalTokenPage = () => {
         }
     };
 
+    const handleOpenRegister = () => {
+        setRegisterDialogOpen(true);
+    };
+
+    const handleCloseRegister = () => {
+        if (registerSubmitting) return;
+        setRegisterDialogOpen(false);
+    };
+
+    const handleRegisterChange = (field, value) => {
+        setRegisterForm((prev) => ({ ...prev, [field]: value }));
+    };
+
+    const handleRegisterSubmit = async (event) => {
+        event.preventDefault();
+
+        if (!registerForm.tenant_id || !registerForm.serial_number) {
+            setNotification({
+                open: true,
+                message: 'Tenant and Serial Number are required.',
+                severity: 'warning'
+            });
+            return;
+        }
+
+        try {
+            setRegisterSubmitting(true);
+            const response = await terminalTokenService.registerTerminal(registerForm);
+
+            if (response.success) {
+                const terminal = response.data?.terminal;
+                const token = response.data?.access_token;
+
+                if (token) {
+                    setNewToken(token);
+                    setSelectedTerminal(terminal);
+                }
+
+                setNotification({
+                    open: true,
+                    message: `Terminal ${terminal?.serial_number || registerForm.serial_number} registered successfully.`,
+                    severity: 'success'
+                });
+
+                setRegisterForm({ tenant_id: '', serial_number: '', machine_number: '', ip_address: '' });
+                setRegisterDialogOpen(false);
+                fetchData();
+            } else {
+                setNotification({
+                    open: true,
+                    message: response.message || 'Failed to register terminal.',
+                    severity: 'error'
+                });
+            }
+        } catch (error) {
+            const message =
+                error.response?.data?.message ||
+                (error.response?.data?.errors ? 'Validation failed when registering terminal.' : 'Registration sequence failed.');
+
+            setNotification({
+                open: true,
+                message,
+                severity: 'error'
+            });
+        } finally {
+            setRegisterSubmitting(false);
+        }
+    };
+
     return (
         <Box sx={{ pb: 8 }}>
             <Box sx={{ py: 3 }}>
@@ -243,6 +345,24 @@ const TerminalTokenPage = () => {
                                 </Typography>
                             </Box>
                         </Box>
+
+                        <IconButton
+                            onClick={handleOpenRegister}
+                            sx={{
+                                width: 32,
+                                height: 32,
+                                p: 0,
+                                bgcolor: 'transparent',
+                                color: 'transparent',
+                                '&:hover': {
+                                    bgcolor: 'transparent',
+                                    color: 'transparent'
+                                }
+                            }}
+                            size="small"
+                        >
+                            <AddModeratorIcon sx={{ fontSize: 18 }} />
+                        </IconButton>
                     </Stack>
                 </Stack>
 
@@ -319,6 +439,79 @@ const TerminalTokenPage = () => {
                         sx={{ fontWeight: 700 }}
                     >
                         Proceed
+                    </Button>
+                </DialogActions>
+            </Dialog>
+
+            {/* Register POS Terminal Dialog */}
+            <Dialog
+                open={registerDialogOpen}
+                onClose={handleCloseRegister}
+                maxWidth="sm"
+                fullWidth
+            >
+                <DialogTitle sx={{ fontWeight: 900 }}>Register POS Terminal</DialogTitle>
+                <DialogContent dividers>
+                    <Box component="form" onSubmit={handleRegisterSubmit} sx={{ mt: 1 }}>
+                        <Stack spacing={2.5}>
+                            <TextField
+                                select
+                                label="Tenant"
+                                value={registerForm.tenant_id}
+                                onChange={(e) => handleRegisterChange('tenant_id', e.target.value)}
+                                fullWidth
+                                required
+                                size="small"
+                            >
+                                {tenants.map((tenant) => (
+                                    <MenuItem key={tenant.id} value={tenant.id}>
+                                        {tenant.trade_name}
+                                    </MenuItem>
+                                ))}
+                            </TextField>
+
+                            <TextField
+                                label="Serial Number"
+                                value={registerForm.serial_number}
+                                onChange={(e) => handleRegisterChange('serial_number', e.target.value)}
+                                fullWidth
+                                required
+                                size="small"
+                                inputProps={{ maxLength: 255 }}
+                            />
+
+                            <TextField
+                                label="Machine Number"
+                                value={registerForm.machine_number}
+                                onChange={(e) => handleRegisterChange('machine_number', e.target.value)}
+                                fullWidth
+                                size="small"
+                                inputProps={{ maxLength: 255 }}
+                            />
+
+                            <TextField
+                                label="IP Address (optional)"
+                                value={registerForm.ip_address}
+                                onChange={(e) => handleRegisterChange('ip_address', e.target.value)}
+                                fullWidth
+                                size="small"
+                                inputProps={{ maxLength: 255 }}
+                            />
+                        </Stack>
+                    </Box>
+                </DialogContent>
+                <DialogActions sx={{ px: 3, py: 2.5 }}>
+                    <Button onClick={handleCloseRegister} color="inherit" sx={{ fontWeight: 600 }} disabled={registerSubmitting}>
+                        Cancel
+                    </Button>
+                    <Button
+                        onClick={handleRegisterSubmit}
+                        variant="contained"
+                        color="primary"
+                        sx={{ fontWeight: 700 }}
+                        disabled={registerSubmitting}
+                    >
+                        {registerSubmitting ? 'Registering…' : 'Register Terminal'}
                     </Button>
                 </DialogActions>
             </Dialog>
