@@ -37,33 +37,52 @@ class AuthServiceProvider extends ServiceProvider
             }
         });
 
-        // Define gate for admin access
-        Gate::define('admin', function ($user) {
-            return $user->role === 'admin';
+        // Define gate for admin access (defensive against unauthenticated users)
+        Gate::define('admin', function ($user = null) {
+            if (!$user) {
+                return false;
+            }
+
+            return ($user->role ?? null) === 'admin';
         });
 
         // Gate for exporting transaction logs (admin or manager)
-        Gate::define('export-transaction-logs', function ($user) {
+        Gate::define('export-transaction-logs', function ($user = null) {
+            if (!$user) {
+                return false;
+            }
+
             if (method_exists($user, 'hasRole')) {
                 return $user->hasRole('admin') || $user->hasRole('manager');
             }
+
             return in_array($user->role ?? null, ['admin', 'manager'], true);
         });
 
         // Gate for retrying transactions (admin or manager)
-        Gate::define('retry-transactions', function ($user) {
+        Gate::define('retry-transactions', function ($user = null) {
+            if (!$user) {
+                return false;
+            }
+
             if (method_exists($user, 'hasRole')) {
                 return $user->hasRole('admin') || $user->hasRole('manager');
             }
+
             return in_array($user->role ?? null, ['admin', 'manager'], true);
         });
 
         // Horizon dashboard access gate
-        Gate::define('viewHorizon', function ($user) {
+        Gate::define('viewHorizon', function ($user = null) {
+            if (!$user) {
+                return false;
+            }
+
             // Support either role column or spatie/permission roles
             if (method_exists($user, 'hasRole')) {
                 return $user->hasRole('admin') || $user->hasRole('ops');
             }
+
             return in_array($user->role ?? null, ['admin','ops']);
         });
 
