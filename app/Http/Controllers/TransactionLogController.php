@@ -9,6 +9,7 @@ use Illuminate\Http\Request;
 use App\Services\TransactionLogService;
 use App\Services\TransactionDetailService;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Log;
 use Maatwebsite\Excel\Facades\Excel;
 use App\Models\PosProvider;
 use App\Models\PosTerminal;
@@ -294,10 +295,35 @@ class TransactionLogController extends Controller
 
     public function export(Request $request)
     {
-        Gate::authorize('export-transaction-logs');
+        try {
+            Gate::authorize('export-transaction-logs');
 
-        $filename = 'transaction-logs-' . now()->format('Y-m-d') . '.xlsx';
-        return Excel::download(new TransactionLogsExport($request->all()), $filename);
+            $filters = $request->all();
+
+            // Log export request for diagnostics (including filters and user context)
+            Log::info('Transaction logs export requested', [
+                'filters' => $filters,
+                'user_id' => optional($request->user())->id,
+                'guard' => optional($request->user())->getAuthIdentifierName() ?? null,
+                'expects_json' => $request->expectsJson(),
+                'path' => $request->path(),
+            ]);
+
+            $filename = 'transaction-logs-' . now()->format('Y-m-d') . '.xlsx';
+
+            return Excel::download(new TransactionLogsExport($filters), $filename);
+        } catch (\Throwable $e) {
+            // Capture full error details so we can see the real 500 cause on staging
+            Log::error('Transaction logs export failed', [
+                'message' => $e->getMessage(),
+                'exception_class' => get_class($e),
+                'filters' => $request->all(),
+                'user_id' => optional($request->user())->id ?? null,
+                'path' => $request->path(),
+            ]);
+
+            throw $e;
+        }
     }
 
     public function getUpdates(Request $request)
