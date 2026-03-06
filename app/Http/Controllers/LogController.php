@@ -75,7 +75,32 @@ class LogController extends Controller
             ->paginate(15, ['*'], 'webhook_page');
 
         // Submission events for the new tab
-        $submissionEvents = SubmissionEvent::latest('occurred_at')
+        $submissionEvents = SubmissionEvent::query()
+            ->when($request->filled('date_from'), function ($query) use ($request) {
+                return $query->whereDate('occurred_at', '>=', $request->date_from);
+            })
+            ->when($request->filled('date_to'), function ($query) use ($request) {
+                return $query->whereDate('occurred_at', '<=', $request->date_to);
+            })
+            ->when($request->filled('terminal'), function ($query) use ($request) {
+                return $query->where('terminal_id', $request->terminal);
+            })
+            ->when($request->filled('type') && $request->type === 'payload_validation', function ($query) {
+                // For payload validation focus, prefer submissions with explicit issues
+                return $query->where(function ($q) {
+                    $q->whereNotNull('reason_code')
+                        ->orWhere('status', '!=', 'COMPLETED');
+                });
+            })
+            ->when($request->filled('severity') && $request->severity === 'error', function ($query) {
+                // Error / Critical severity maps to failed or partial submissions
+                return $query->where(function ($q) {
+                    $q->where('status', 'FAILED')
+                        ->orWhere('status', 'REJECTED')
+                        ->orWhereNotNull('reason_code');
+                });
+            })
+            ->latest('occurred_at')
             ->latest('created_at')
             ->paginate(15, ['*'], 'submission_page');
 
