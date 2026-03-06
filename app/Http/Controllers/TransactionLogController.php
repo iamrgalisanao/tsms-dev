@@ -55,6 +55,11 @@ class TransactionLogController extends Controller
         $basis = in_array($request->input('date_basis'), ['created', 'completed', 'transaction']) ? $request->input('date_basis') : 'completed';
         $dateColumn = $basis === 'completed' ? 'completed_at' : ($basis === 'transaction' ? 'transaction_timestamp' : 'created_at');
 
+        // Allow callers (web UI/API) to control sort direction for the
+        // primary date column. Default remains DESC for backwards
+        // compatibility, but ASC can be requested via sort_direction=asc.
+        $sortDirection = strtolower($request->input('sort_direction')) === 'asc' ? 'asc' : 'desc';
+
         // Build select list conditionally so we don't attempt to select columns
         // that may not exist on older database schemas.
         $select = [
@@ -202,7 +207,7 @@ class TransactionLogController extends Controller
             ->when(isset($filters['amount_max']), function ($query) use ($filters) {
                 return $query->where('gross_sales', '<=', $filters['amount_max']);
             })
-            ->orderBy($dateColumn, 'desc')
+            ->orderBy($dateColumn, $sortDirection)
             ->paginate($perPage)
             ->appends($request->all());
 
@@ -445,6 +450,8 @@ class TransactionLogController extends Controller
         // group by the canonical transaction timestamp but fall back to created_at
         // for rows that don't have transaction_timestamp set.
         $basis = in_array($request->input('date_basis'), ['created', 'completed', 'transaction']) ? $request->input('date_basis') : 'completed';
+        // Allow client to control summary date ordering via sort_direction
+        $sortDirection = strtolower($request->input('sort_direction')) === 'asc' ? 'asc' : 'desc';
         if ($basis === 'completed') {
             $dateColumn = 't.completed_at';
             $dateExpr = 't.completed_at';
@@ -560,7 +567,7 @@ class TransactionLogController extends Controller
             })
             ->selectRaw('MIN(t.id) as sample_tx_id')
             ->groupBy('date', 't.tenant_id', 't.terminal_id', 'trade_name', 'term.serial_number', 'term.machine_number')
-            ->orderBy('date', 'desc');
+            ->orderBy('date', $sortDirection);
 
         // When the schema supports receipt_no, default summary roll-ups to VALID
         // transactions so aggregates align with POS-style unique receipt counts.

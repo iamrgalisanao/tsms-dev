@@ -34,6 +34,9 @@ const TransactionLogsPage = () => {
         date_basis: 'completed'
     });
 
+    // Shared sort direction for date-based ordering (detailed & summary)
+    const [sortDirection, setSortDirection] = useState('desc');
+
     const [transactions, setTransactions] = useState([]);
     const [summary, setSummary] = useState([]);
     const [loading, setLoading] = useState(false);
@@ -48,15 +51,21 @@ const TransactionLogsPage = () => {
 
     useEffect(() => {
         loadData();
-    }, [activeTab, filters, page, rowsPerPage]);
+    }, [activeTab, filters, page, rowsPerPage, sortDirection]);
 
     const loadData = async () => {
         setLoading(true);
         setError(null);
 
         try {
+            // Include sort_direction so backend can control ASC/DESC
+            const filtersWithSort = {
+                ...filters,
+                sort_direction: sortDirection
+            };
+
             const cleanFilters = Object.fromEntries(
-                Object.entries(filters).filter(([_, value]) => value !== '')
+                Object.entries(filtersWithSort).filter(([_, value]) => value !== '')
             );
 
             if (activeTab === 'detailed') {
@@ -99,6 +108,7 @@ const TransactionLogsPage = () => {
             transaction_id: '',
             date_basis: 'completed'
         });
+        setSortDirection('desc');
         setPage(0);
     };
 
@@ -261,6 +271,10 @@ const TransactionLogsPage = () => {
                                     setRowsPerPage(parseInt(e.target.value, 10));
                                     setPage(0);
                                 }}
+                                sortDirection={sortDirection}
+                                onToggleSortDirection={() =>
+                                    setSortDirection((prev) => (prev === 'asc' ? 'desc' : 'asc'))
+                                }
                             />
                         )}
                     </Box>

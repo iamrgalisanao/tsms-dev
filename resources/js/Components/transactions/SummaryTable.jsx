@@ -14,7 +14,7 @@ import {
 } from '@mui/material';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 
-const SummaryTable = ({ summary, loading, page, rowsPerPage, totalCount, onPageChange, onRowsPerPageChange }) => {
+const SummaryTable = ({ summary, loading, page, rowsPerPage, totalCount, onPageChange, onRowsPerPageChange, sortDirection = 'desc', onToggleSortDirection }) => {
     if (loading) {
         return (
             <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 400 }}>
@@ -63,7 +63,20 @@ const SummaryTable = ({ summary, loading, page, rowsPerPage, totalCount, onPageC
                 <Table size="small">
                     <TableHead>
                         <TableRow>
-                            <TableCell sx={headerStyles}>Date</TableCell>
+                            <TableCell
+                                sx={{
+                                    ...headerStyles,
+                                    cursor: 'pointer'
+                                }}
+                                onClick={onToggleSortDirection}
+                            >
+                                <Stack direction="row" spacing={0.5} alignItems="center">
+                                    <span>Date</span>
+                                    <Typography variant="caption" sx={{ fontWeight: 800 }}>
+                                        {sortDirection === 'asc' ? '↑' : '↓'}
+                                    </Typography>
+                                </Stack>
+                            </TableCell>
                             <TableCell sx={headerStyles}>Tenant</TableCell>
                             <TableCell sx={headerStyles}>Terminal</TableCell>
                             <TableCell align="right" sx={headerStyles}>Tx Count</TableCell>
