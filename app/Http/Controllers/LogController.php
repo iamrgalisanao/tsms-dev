@@ -8,6 +8,7 @@ use App\Models\WebhookLog;
 use App\Models\SubmissionEvent;
 use Illuminate\Http\Request;
 use App\Models\PosTerminal;
+use Illuminate\Support\Facades\Schema;
 
 class LogController extends Controller
 {
@@ -58,9 +59,24 @@ class LogController extends Controller
             ->latest()
             ->paginate(15, ['*'], 'audit_page');
 
+        // Detect if legacy `endpoint` column exists; fall back to new schema fields otherwise
+        $hasEndpointColumn = Schema::hasColumn('webhook_logs', 'endpoint');
+
         $webhookLogs = WebhookLog::with('terminal')
-            ->when($request->filled('search'), function ($query) use ($request) {
-                return $query->where('endpoint', 'like', "%{$request->search}%");
+            ->when($request->filled('search'), function ($query) use ($request, $hasEndpointColumn) {
+                $term = $request->search;
+
+                return $query->where(function ($q) use ($term, $hasEndpointColumn) {
+                    if ($hasEndpointColumn) {
+                        // Legacy schema: search by endpoint URL
+                        $q->where('endpoint', 'like', "%{$term}%");
+                    } else {
+                        // New schema: search by event_type, status, or payload JSON
+                        $q->where('event_type', 'like', "%{$term}%")
+                          ->orWhere('status', 'like', "%{$term}%")
+                          ->orWhere('payload', 'like', "%{$term}%");
+                    }
+                });
             })
             ->when($request->filled('status'), function ($query) use ($request) {
                 return $query->where('status', $request->status);

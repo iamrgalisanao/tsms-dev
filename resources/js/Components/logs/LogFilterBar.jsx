@@ -193,6 +193,17 @@ const LogFilterBar = ({ filters, onFilterChange, onReset, terminals, activeTab, 
                     </Stack>
                 )}
 
+                {activeTab === 'webhook' && (
+                    <Stack direction="row" spacing={1} alignItems="center">
+                        <InfoOutlinedIcon sx={{ fontSize: 16, opacity: 0.7 }} />
+                        <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 500 }}>
+                            Webhook search looks at event type, status, and the raw payload body.
+                            You can paste a transaction ID, endpoint label, or correlation value here to
+                            quickly locate related webhook attempts.
+                        </Typography>
+                    </Stack>
+                )}
+
                 <Divider sx={{ borderStyle: 'dashed' }} />
 
                 <Stack direction="row" justifyContent="space-between" alignItems="center">

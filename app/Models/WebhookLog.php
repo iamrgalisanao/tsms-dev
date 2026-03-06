@@ -8,18 +8,16 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 class WebhookLog extends Model
 {
     protected $fillable = [
+        'tenant_id',
         'terminal_id',
-        'endpoint',
+        'event_type',
+        'payload',
         'status',
-        'request_payload',
-        'response_payload',
-        'error_message',
-        'response_time'
+        'received_at',
     ];
 
     protected $casts = [
-        'request_payload' => 'array',
-        'response_payload' => 'array'
+        'payload' => 'array',
     ];
 
     /**
