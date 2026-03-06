@@ -17,6 +17,7 @@ import SearchIcon from '@mui/icons-material/Search';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import DeleteSweepIcon from '@mui/icons-material/DeleteSweep';
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 
 const LogFilterBar = ({ filters, onFilterChange, onReset, terminals, activeTab, onPruneClick }) => {
     const [localFilters, setLocalFilters] = useState(filters);
@@ -180,6 +181,17 @@ const LogFilterBar = ({ filters, onFilterChange, onReset, terminals, activeTab, 
                         </Button>
                     </Stack>
                 </Stack>
+
+                {activeTab === 'submission' && localFilters.type === 'payload_validation' && localFilters.severity === 'error' && (
+                    <Stack direction="row" spacing={1} alignItems="center">
+                        <InfoOutlinedIcon sx={{ fontSize: 16, opacity: 0.7 }} />
+                        <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 500 }}>
+                            You are viewing node submissions where payload validation detected an error or critical issue.
+                            Each row represents a single submission envelope (submission_uuid) that may contain one or more
+                            transactions.
+                        </Typography>
+                    </Stack>
+                )}
 
                 <Divider sx={{ borderStyle: 'dashed' }} />
 

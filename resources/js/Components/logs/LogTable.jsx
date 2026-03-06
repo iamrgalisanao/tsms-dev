@@ -15,12 +15,14 @@ import {
     Stack,
     CircularProgress,
     Pagination,
-    Divider
+    Divider,
+    Tooltip
 } from '@mui/material';
 import { format } from 'date-fns';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
 import CodeIcon from '@mui/icons-material/Code';
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 
 const LogRow = ({ log, type }) => {
     const [open, setOpen] = useState(false);
@@ -41,6 +43,13 @@ const LogRow = ({ log, type }) => {
         py: 1.5,
         borderBottom: '1px solid rgba(0,0,0,0.03)'
     };
+
+    const submissionStatus = (log.status || '').toUpperCase();
+    const submissionTenantId = log.tenant_id || log.context?.tenant_id;
+    const submissionTerminalId = log.terminal_id || log.context?.terminal_id;
+    const submissionReason = log.reason_code || log.reason_details;
+    const submissionTxnCount =
+        typeof log.transaction_count !== 'undefined' ? log.transaction_count : log.context?.transaction_count;
 
     return (
         <>
@@ -111,6 +120,45 @@ const LogRow = ({ log, type }) => {
                                 <Typography variant="caption" sx={{ fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
                                     Context Metadata & Payload
                                 </Typography>
+                                {type === 'submission' && (
+                                    <Tooltip
+                                        placement="right"
+                                        title={
+                                            <Box sx={{ maxWidth: 360 }}>
+                                                <Typography
+                                                    variant="caption"
+                                                    sx={{ fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em', mb: 0.5 }}
+                                                >
+                                                    Submission Insight
+                                                </Typography>
+                                                <Typography variant="body2" sx={{ fontSize: '0.75rem' }}>
+                                                    Status: {submissionStatus || 'UNKNOWN'} · Tenant {submissionTenantId || 'n/a'} ·
+                                                    Terminal {submissionTerminalId || 'n/a'}
+                                                </Typography>
+                                                {typeof submissionTxnCount !== 'undefined' && (
+                                                    <Typography variant="body2" sx={{ fontSize: '0.75rem' }}>
+                                                        Transactions in envelope: {submissionTxnCount}
+                                                    </Typography>
+                                                )}
+                                                {submissionReason && (
+                                                    <Typography variant="body2" sx={{ fontSize: '0.75rem', mt: 0.5 }}>
+                                                        Reason: {submissionReason}
+                                                    </Typography>
+                                                )}
+                                                <Typography variant="body2" sx={{ fontSize: '0.75rem', mt: 0.5 }}>
+                                                    Each row represents a single submission (submission_uuid) that may contain
+                                                    one or more transactions. COMPLETED with no reason indicates the payload
+                                                    passed validation; FAILED/REJECTED or a populated reason indicates
+                                                    validation or processing issues.
+                                                </Typography>
+                                            </Box>
+                                        }
+                                    >
+                                        <IconButton size="small" sx={{ ml: 0.5 }}>
+                                            <InfoOutlinedIcon sx={{ fontSize: 16, opacity: 0.7 }} />
+                                        </IconButton>
+                                    </Tooltip>
+                                )}
                             </Stack>
                             <Box sx={{
                                 bgcolor: '#1a202c',
