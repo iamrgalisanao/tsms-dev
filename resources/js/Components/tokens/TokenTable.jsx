@@ -53,7 +53,12 @@ const TokenTable = ({
     };
 
     const getStatusChip = (terminal) => {
-        const isActive = terminal.status_id === 1 && terminal.is_active;
+        const latestToken = terminal.tokens && terminal.tokens.length > 0 ? terminal.tokens[0] : null;
+        const now = new Date();
+        const tokenExpiry = latestToken?.expires_at ? new Date(latestToken.expires_at) : null;
+        const isTokenExpired = !!tokenExpiry && tokenExpiry < now;
+
+        const isActive = terminal.status_id === 1 && terminal.is_active && !isTokenExpired;
 
         if (isActive) {
             return (
@@ -80,6 +85,23 @@ const TokenTable = ({
                     size="small"
                     sx={{
                         bgcolor: 'error.main',
+                        color: 'white',
+                        fontWeight: 800,
+                        fontSize: '0.6rem',
+                        borderRadius: 1.5,
+                        height: 22
+                    }}
+                />
+            );
+        }
+
+        if (isTokenExpired) {
+            return (
+                <Chip
+                    label="EXPIRED"
+                    size="small"
+                    sx={{
+                        bgcolor: 'warning.main',
                         color: 'white',
                         fontWeight: 800,
                         fontSize: '0.6rem',
