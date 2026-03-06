@@ -27,4 +27,14 @@ class SubmissionEvent extends Model
         'reason_details' => 'array',
         'occurred_at' => 'datetime',
     ];
+
+    public function tenant()
+    {
+        return $this->belongsTo(Tenant::class);
+    }
+
+    public function terminal()
+    {
+        return $this->belongsTo(PosTerminal::class, 'terminal_id');
+    }
 }

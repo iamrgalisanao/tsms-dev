@@ -76,6 +76,7 @@ class LogController extends Controller
 
         // Submission events for the new tab
         $submissionEvents = SubmissionEvent::query()
+            ->with(['tenant', 'terminal'])
             ->when($request->filled('date_from'), function ($query) use ($request) {
                 return $query->whereDate('occurred_at', '>=', $request->date_from);
             })

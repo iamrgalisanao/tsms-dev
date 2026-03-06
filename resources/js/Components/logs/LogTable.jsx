@@ -45,8 +45,9 @@ const LogRow = ({ log, type }) => {
     };
 
     const submissionStatus = (log.status || '').toUpperCase();
-    const submissionTenantId = log.tenant_id || log.context?.tenant_id;
-    const submissionTerminalId = log.terminal_id || log.context?.terminal_id;
+    const submissionTenantId = log.tenant?.trade_name || log.tenant_id || log.context?.tenant_id;
+    const submissionTerminalId =
+        log.terminal?.serial_number || log.terminal_id || log.context?.terminal_id;
     const submissionReason = log.reason_code || log.reason_details;
     const submissionTxnCount =
         typeof log.transaction_count !== 'undefined' ? log.transaction_count : log.context?.transaction_count;
@@ -115,6 +116,70 @@ const LogRow = ({ log, type }) => {
                 <TableCell sx={{ py: 0 }} colSpan={6}>
                     <Collapse in={open} timeout="auto" unmountOnExit>
                         <Box sx={{ p: 3, bgcolor: 'grey.50', borderLeft: '4px solid', borderColor: 'primary.main', mb: 2, borderRadius: '0 0 8px 8px' }}>
+                            {type === 'submission' && (
+                                <Box
+                                    sx={{
+                                        mb: 2,
+                                        p: 2,
+                                        borderRadius: 2,
+                                        bgcolor: 'white',
+                                        border: '1px solid',
+                                        borderColor: 'divider'
+                                    }}
+                                >
+                                    <Typography
+                                        variant="overline"
+                                        sx={{ fontWeight: 900, letterSpacing: '0.12em', color: 'text.secondary' }}
+                                    >
+                                        Submission Overview
+                                    </Typography>
+                                    <Stack direction={{ xs: 'column', sm: 'row' }} spacing={3} sx={{ mt: 1 }}>
+                                        <Box>
+                                            <Typography variant="caption" sx={{ fontWeight: 700, color: 'text.secondary' }}>
+                                                Submission ID
+                                            </Typography>
+                                            <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                                                {log.submission_uuid || '—'}
+                                            </Typography>
+                                        </Box>
+                                        <Box>
+                                            <Typography variant="caption" sx={{ fontWeight: 700, color: 'text.secondary' }}>
+                                                Tenant
+                                            </Typography>
+                                            <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                                                {submissionTenantId || 'Unknown tenant'}
+                                            </Typography>
+                                        </Box>
+                                        <Box>
+                                            <Typography variant="caption" sx={{ fontWeight: 700, color: 'text.secondary' }}>
+                                                Terminal
+                                            </Typography>
+                                            <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                                                {submissionTerminalId || 'Unknown terminal'}
+                                            </Typography>
+                                        </Box>
+                                        <Box>
+                                            <Typography variant="caption" sx={{ fontWeight: 700, color: 'text.secondary' }}>
+                                                Status
+                                            </Typography>
+                                            <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                                                {submissionStatus || 'UNKNOWN'}
+                                            </Typography>
+                                        </Box>
+                                        {typeof submissionTxnCount !== 'undefined' && (
+                                            <Box>
+                                                <Typography variant="caption" sx={{ fontWeight: 700, color: 'text.secondary' }}>
+                                                    Transactions
+                                                </Typography>
+                                                <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                                                    {submissionTxnCount}
+                                                </Typography>
+                                            </Box>
+                                        )}
+                                    </Stack>
+                                </Box>
+                            )}
+
                             <Stack direction="row" spacing={1} alignItems="center" sx={{ mb: 2 }}>
                                 <CodeIcon fontSize="small" sx={{ color: 'primary.main' }} />
                                 <Typography variant="caption" sx={{ fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
