@@ -200,4 +200,14 @@ class TransactionLogsExport implements FromQuery, WithMapping, WithHeadings, Sho
             $query->where($dateColumn, '<=', $this->filters['date_to'] . ' 23:59:59');
         }
     }
+
+    /**
+     * Configure the chunk size for chunk reading.
+     *
+     * Laravel Excel requires this when implementing WithChunkReading.
+     */
+    public function chunkSize(): int
+    {
+        return 1000;
+    }
 }
