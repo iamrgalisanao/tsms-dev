@@ -345,6 +345,29 @@ class TransactionController extends Controller
                     'terminal_tenant_id' => $terminal->tenant_id,
                     'batch_id' => $request->batch_id ?? 'missing',
                 ]);
+                // Structured log for tenant/terminal mismatch
+                try {
+                    \App\Models\SystemLog::create([
+                        'type' => 'transaction',
+                        'log_type' => 'TENANT_TERMINAL_MISMATCH',
+                        'severity' => 'error',
+                        'terminal_uid' => $terminal->serial_number ?? null,
+                        'transaction_id' => null,
+                        'message' => 'Terminal does not belong to the specified tenant',
+                        'context' => [
+                            'declared_tenant_id' => $request->tenant_id,
+                            'terminal_tenant_id' => $terminal->tenant_id,
+                            'terminal_id' => $terminal->id,
+                            'batch_id' => $request->batch_id ?? 'missing',
+                            'endpoint' => 'transactions.batch.store',
+                        ],
+                    ]);
+                } catch (\Throwable $logEx) {
+                    Log::warning('Failed to write SystemLog for TENANT_TERMINAL_MISMATCH', [
+                        'terminal_id' => $terminal->id,
+                        'error' => $logEx->getMessage(),
+                    ]);
+                }
                 DB::rollBack();
                 return response()->json([
                     'success' => false,
@@ -394,6 +417,30 @@ class TransactionController extends Controller
                         'actual_tenant_id' => $transactionData['tenant_id'],
                     ]);
 
+                    // Structured log for per-item tenant mismatch
+                    try {
+                        \App\Models\SystemLog::create([
+                            'type' => 'transaction',
+                            'log_type' => 'TRANSACTION_TENANT_MISMATCH',
+                            'severity' => 'error',
+                            'terminal_uid' => $terminal->serial_number ?? null,
+                            'transaction_id' => $transactionData['transaction_id'] ?? 'unknown',
+                            'message' => 'Transaction tenant_id does not match batch tenant_id',
+                            'context' => [
+                                'batch_id' => $request->batch_id ?? 'missing',
+                                'batch_tenant_id' => $request->tenant_id,
+                                'transaction_tenant_id' => $transactionData['tenant_id'],
+                                'terminal_id' => $terminal->id,
+                                'endpoint' => 'transactions.batch.store',
+                            ],
+                        ]);
+                    } catch (\Throwable $logEx) {
+                        Log::warning('Failed to write SystemLog for TRANSACTION_TENANT_MISMATCH', [
+                            'transaction_id' => $transactionData['transaction_id'] ?? 'unknown',
+                            'error' => $logEx->getMessage(),
+                        ]);
+                    }
+
                     $failedTransactions[] = [
                         'transaction_id' => $transactionData['transaction_id'] ?? null,
                         'status' => 'failed',
@@ -436,6 +483,28 @@ class TransactionController extends Controller
                             'transaction_id' => $transactionData['transaction_id'] ?? 'unknown',
                             'batch_id' => $request->batch_id ?? 'missing',
                         ]);
+                        try {
+                            \App\Models\SystemLog::create([
+                                'type' => 'transaction',
+                                'log_type' => 'TRANSACTION_TENANT_MISMATCH',
+                                'severity' => 'error',
+                                'terminal_uid' => $terminal->serial_number ?? null,
+                                'transaction_id' => $transactionData['transaction_id'] ?? 'unknown',
+                                'message' => 'Transaction tenant_id does not match terminal tenant',
+                                'context' => [
+                                    'batch_id' => $request->batch_id ?? 'missing',
+                                    'transaction_tenant_id' => $transactionData['tenant_id'],
+                                    'terminal_tenant_id' => $terminal->tenant_id,
+                                    'terminal_id' => $terminal->id,
+                                    'endpoint' => 'transactions.batch.store',
+                                ],
+                            ]);
+                        } catch (\Throwable $logEx) {
+                            Log::warning('Failed to write SystemLog for TRANSACTION_TENANT_MISMATCH (terminal)', [
+                                'transaction_id' => $transactionData['transaction_id'] ?? 'unknown',
+                                'error' => $logEx->getMessage(),
+                            ]);
+                        }
                         $failedTransactions[] = [
                             'transaction_id' => $transactionData['transaction_id'] ?? 'unknown',
                             'status' => 'failed',
@@ -574,6 +643,29 @@ class TransactionController extends Controller
                                 ->first();
 
                             if ($existingTransaction) {
+                                // Structured log for idempotent transaction replay in batch ingest
+                                try {
+                                    \App\Models\SystemLog::create([
+                                        'type' => 'transaction',
+                                        'log_type' => 'BATCH_TRANSACTION_IDEMPOTENT_REPLAY',
+                                        'severity' => 'info',
+                                        'terminal_uid' => $terminal->serial_number ?? null,
+                                        'transaction_id' => $existingTransaction->transaction_id,
+                                        'message' => 'Duplicate transaction treated as idempotent in batch ingest',
+                                        'context' => [
+                                            'batch_id' => $request->batch_id ?? 'missing',
+                                            'tenant_id' => $terminal->tenant_id,
+                                            'terminal_id' => $terminal->id,
+                                            'endpoint' => 'transactions.batch.store',
+                                        ],
+                                    ]);
+                                } catch (\Throwable $logEx) {
+                                    Log::warning('Failed to write SystemLog for BATCH_TRANSACTION_IDEMPOTENT_REPLAY', [
+                                        'transaction_id' => $transactionData['transaction_id'] ?? 'unknown',
+                                        'error' => $logEx->getMessage(),
+                                    ]);
+                                }
+
                                 $processedTransactions[] = [
                                     'transaction_id' => $existingTransaction->transaction_id,
                                     'status' => 'success',
@@ -1335,6 +1427,31 @@ class TransactionController extends Controller
             // Check token expiry if set
             if (method_exists($personalToken, 'expires_at') && $personalToken->expires_at && $personalToken->expires_at->isPast()) {
                 Log::warning('storeOfficial: Authorization token has expired', ['terminal_id' => $request->terminal_id]);
+
+                // Structured log for expired terminal token
+                try {
+                    $terminalFromToken = $personalToken->tokenable;
+                    \App\Models\SystemLog::create([
+                        'type' => 'security',
+                        'log_type' => 'TERMINAL_TOKEN_EXPIRED',
+                        'severity' => 'medium',
+                        'terminal_uid' => $terminalFromToken->serial_number ?? null,
+                        'transaction_id' => null,
+                        'message' => 'Terminal token expired for official submission request',
+                        'context' => [
+                            'terminal_id' => $terminalFromToken->id ?? $request->terminal_id,
+                            'tenant_id' => $terminalFromToken->tenant_id ?? null,
+                            'path' => $request->path(),
+                            'submission_uuid' => $request->submission_uuid ?? null,
+                        ],
+                    ]);
+                } catch (\Throwable $logEx) {
+                    Log::warning('Failed to write SystemLog for TERMINAL_TOKEN_EXPIRED', [
+                        'terminal_id' => $request->terminal_id,
+                        'error' => $logEx->getMessage(),
+                    ]);
+                }
+
                 return response()->json([
                     'success' => false,
                     'message' => 'Unauthorized - token expired'
@@ -1433,6 +1550,30 @@ class TransactionController extends Controller
                     'submission_exists' => $submission ? true : false,
                     'transaction_rows' => $existingTransactions->count(),
                 ]);
+
+                // Structured log for idempotent official submission replay
+                try {
+                    \App\Models\SystemLog::create([
+                        'type' => 'transaction',
+                        'log_type' => 'OFFICIAL_SUBMISSION_IDEMPOTENT_REPLAY',
+                        'severity' => 'info',
+                        'terminal_uid' => $terminalFromToken instanceof \App\Models\PosTerminal ? $terminalFromToken->serial_number : null,
+                        'transaction_id' => null,
+                        'message' => 'Official submission already processed (idempotent replay)',
+                        'context' => [
+                            'submission_uuid' => $request->submission_uuid,
+                            'tenant_id' => $terminalFromToken->tenant_id ?? null,
+                            'terminal_id' => $request->terminal_id,
+                            'transaction_count' => $submission ? $submission->transaction_count : $existingTransactions->count(),
+                            'endpoint' => 'transactions.official.store',
+                        ],
+                    ]);
+                } catch (\Throwable $logEx) {
+                    Log::warning('Failed to write SystemLog for OFFICIAL_SUBMISSION_IDEMPOTENT_REPLAY', [
+                        'submission_uuid' => $request->submission_uuid,
+                        'error' => $logEx->getMessage(),
+                    ]);
+                }
                 // Update terminal liveness on idempotent replay
                 try {
                     if ($terminalFromToken instanceof \App\Models\PosTerminal) {
@@ -2334,6 +2475,29 @@ class TransactionController extends Controller
                         'transaction_id' => $transaction['transaction_id'] ?? 'unknown',
                         'submission_uuid' => $submission['submission_uuid'] ?? 'missing',
                     ]);
+                    // Structured log for per-item tenant mismatch (official submission)
+                    try {
+                        \App\Models\SystemLog::create([
+                            'type' => 'transaction',
+                            'log_type' => 'TRANSACTION_TENANT_MISMATCH',
+                            'severity' => 'error',
+                            'terminal_uid' => $terminal->serial_number ?? null,
+                            'transaction_id' => $transaction['transaction_id'] ?? 'unknown',
+                            'message' => 'Official submission transaction tenant_id does not match terminal tenant',
+                            'context' => [
+                                'submission_uuid' => $submission['submission_uuid'] ?? 'missing',
+                                'transaction_tenant_id' => $transaction['tenant_id'],
+                                'terminal_tenant_id' => $terminal->tenant_id,
+                                'terminal_id' => $terminal->id,
+                                'endpoint' => 'transactions.official.process',
+                            ],
+                        ]);
+                    } catch (\Throwable $logEx) {
+                        Log::warning('Failed to write SystemLog for TRANSACTION_TENANT_MISMATCH (official)', [
+                            'transaction_id' => $transaction['transaction_id'] ?? 'unknown',
+                            'error' => $logEx->getMessage(),
+                        ]);
+                    }
                     $failedTransactions[] = [
                         'transaction_id' => $transaction['transaction_id'] ?? 'unknown',
                         'status' => 'failed',

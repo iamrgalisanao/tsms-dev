@@ -2,9 +2,10 @@
 
 namespace App\Http\Middleware;
 
+use App\Models\CircuitBreaker;
+use App\Models\SystemLog;
 use Closure;
 use Illuminate\Http\Request;
-use App\Models\CircuitBreaker;
 use Illuminate\Support\Facades\Log;
 use Symfony\Component\HttpFoundation\Response;
 
@@ -34,7 +35,30 @@ class CircuitBreakerAuthBypass
                 $circuitBreaker->status = CircuitBreaker::STATUS_HALF_OPEN;
                 $circuitBreaker->save();
             } else {
-                // Circuit is open, return 503 immediately
+                // Circuit is open, record structured log and return 503 immediately
+                try {
+                    SystemLog::create([
+                        'type' => 'circuit_breaker',
+                        'log_type' => 'CIRCUIT_BREAKER_OPEN_REJECT',
+                        'severity' => 'error',
+                        'terminal_uid' => null,
+                        'transaction_id' => null,
+                        'message' => 'Circuit breaker open – request rejected',
+                        'context' => [
+                            'tenant_id' => $tenantId,
+                            'service' => $service,
+                            'retry_at' => optional($circuitBreaker->cooldown_until)->toIso8601String(),
+                            'path' => $request->path(),
+                        ],
+                    ]);
+                } catch (\Throwable $logEx) {
+                    Log::warning('Failed to write SystemLog for CIRCUIT_BREAKER_OPEN_REJECT', [
+                        'tenant_id' => $tenantId,
+                        'service' => $service,
+                        'error' => $logEx->getMessage(),
+                    ]);
+                }
+
                 return response()->json([
                     'status' => 'error',
                     'message' => 'Circuit breaker is open',
