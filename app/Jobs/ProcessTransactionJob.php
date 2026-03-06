@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Models\SystemLog;
 use App\Models\Transaction;
 use App\Services\TransactionValidationService;
 use Illuminate\Support\Facades\Cache;
@@ -348,6 +349,37 @@ class ProcessTransactionJob implements ShouldQueue, ShouldBeUnique
             'transaction_id' => optional($transaction)->transaction_id,
             'error' => $e->getMessage(),
         ]);
+        // Structured job-level failure log (non-blocking)
+        try {
+            $terminalUid = null;
+            if ($transaction && $transaction->relationLoaded('terminal')) {
+                $terminalUid = optional($transaction->terminal)->serial_number;
+            } elseif ($transaction && method_exists($transaction, 'terminal')) {
+                $terminalUid = optional($transaction->terminal)->serial_number;
+            }
+
+            SystemLog::create([
+                'type' => 'transaction',
+                'log_type' => 'TRANSACTION_PROCESSING_JOB_FAILED',
+                'severity' => 'error',
+                'terminal_uid' => $terminalUid,
+                'transaction_id' => optional($transaction)->transaction_id,
+                'message' => 'Transaction processing job failed',
+                'context' => [
+                    'transaction_pk' => $this->transactionId,
+                    'transaction_id' => optional($transaction)->transaction_id,
+                    'tenant_id' => optional($transaction)->tenant_id,
+                    'terminal_id' => optional($transaction)->terminal_id,
+                    'attempt' => $this->attempts(),
+                    'error' => $e->getMessage(),
+                ],
+            ]);
+        } catch (\Throwable $logEx) {
+            Log::warning('Failed to write SystemLog for TRANSACTION_PROCESSING_JOB_FAILED', [
+                'transaction_pk' => $this->transactionId,
+                'error' => $logEx->getMessage(),
+            ]);
+        }
         if ($transaction) {
             // Update latest job & validation audit rows if exist
             $job = $transaction->jobs()->latest()->first();

@@ -658,6 +658,33 @@ class TransactionController extends Controller
                         'error' => $e->getMessage()
                     ]);
 
+                    // Structured per-item failure log for batch ingestion (non-blocking)
+                    try {
+                        \App\Models\SystemLog::create([
+                            'type' => 'transaction',
+                            'log_type' => 'BATCH_TRANSACTION_INGESTION_FAILED',
+                            'severity' => 'error',
+                            'terminal_uid' => $terminal->serial_number ?? null,
+                            'transaction_id' => $transactionData['transaction_id'] ?? 'unknown',
+                            'message' => 'Batch transaction failed during ingestion',
+                            'context' => [
+                                'batch_id' => $request->batch_id,
+                                'tenant_id' => $request->tenant_id,
+                                'terminal_id' => $request->terminal_id,
+                                'transaction_id' => $transactionData['transaction_id'] ?? 'unknown',
+                                'endpoint' => 'transactions.batch.store',
+                                'error_message' => $e->getMessage(),
+                                'payload_checksum' => $transactionData['payload_checksum'] ?? null,
+                            ],
+                        ]);
+                    } catch (\Throwable $logEx) {
+                        Log::warning('Failed to write SystemLog for BATCH_TRANSACTION_INGESTION_FAILED', [
+                            'batch_id' => $request->batch_id,
+                            'transaction_id' => $transactionData['transaction_id'] ?? 'unknown',
+                            'error' => $logEx->getMessage(),
+                        ]);
+                    }
+
                     $failedTransactions[] = [
                         'transaction_id' => $transactionData['transaction_id'] ?? 'unknown',
                         'status' => 'failed',
@@ -2021,6 +2048,34 @@ class TransactionController extends Controller
                         'error' => $e->getMessage(),
                         'trace' => $e->getTraceAsString()
                     ]);
+
+                    // Structured per-item failure log for observability (non-blocking)
+                    try {
+                        \App\Models\SystemLog::create([
+                            'type' => 'transaction',
+                            'log_type' => 'OFFICIAL_TRANSACTION_INGESTION_FAILED',
+                            'severity' => 'error',
+                            'terminal_uid' => $terminal->serial_number ?? null,
+                            'transaction_id' => $transactionData['transaction_id'] ?? 'unknown',
+                            'message' => 'Official format transaction failed during ingestion',
+                            'context' => [
+                                'submission_uuid' => $request->submission_uuid,
+                                'tenant_id' => $request->tenant_id,
+                                'terminal_id' => $request->terminal_id,
+                                'transaction_id' => $transactionData['transaction_id'] ?? 'unknown',
+                                'endpoint' => 'transactions.official.store',
+                                'error_code' => 'PROCESSING_ERROR',
+                                'error_message' => $e->getMessage(),
+                                'payload_checksum' => $transactionData['payload_checksum'] ?? null,
+                            ],
+                        ]);
+                    } catch (\Throwable $logEx) {
+                        Log::warning('Failed to write SystemLog for OFFICIAL_TRANSACTION_INGESTION_FAILED', [
+                            'submission_uuid' => $request->submission_uuid,
+                            'transaction_id' => $transactionData['transaction_id'] ?? 'unknown',
+                            'error' => $logEx->getMessage(),
+                        ]);
+                    }
 
                     $failedTransactions[] = [
                         'transaction_id' => $transactionData['transaction_id'] ?? 'unknown',
