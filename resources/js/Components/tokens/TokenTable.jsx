@@ -55,10 +55,18 @@ const TokenTable = ({
     const getStatusChip = (terminal) => {
         const latestToken = terminal.tokens && terminal.tokens.length > 0 ? terminal.tokens[0] : null;
         const now = new Date();
-        const tokenExpiry = latestToken?.expires_at ? new Date(latestToken.expires_at) : null;
-        const isTokenExpired = !!tokenExpiry && tokenExpiry < now;
 
-        const isActive = terminal.status_id === 1 && terminal.is_active && !isTokenExpired;
+        // Backend validity primarily uses the terminal's expires_at field
+        // (see PosTerminal::isActiveAndValid), so treat that as the
+        // source of truth for expiry, with token.expires_at as an
+        // optional override when present.
+        const terminalExpiry = terminal.expires_at ? new Date(terminal.expires_at) : null;
+        const tokenExpiry = latestToken?.expires_at ? new Date(latestToken.expires_at) : null;
+
+        const effectiveExpiry = tokenExpiry || terminalExpiry;
+        const isExpired = !!effectiveExpiry && effectiveExpiry < now;
+
+        const isActive = terminal.status_id === 1 && terminal.is_active && !isExpired;
 
         if (isActive) {
             return (
@@ -95,7 +103,7 @@ const TokenTable = ({
             );
         }
 
-        if (isTokenExpired) {
+        if (isExpired) {
             return (
                 <Chip
                     label="EXPIRED"
