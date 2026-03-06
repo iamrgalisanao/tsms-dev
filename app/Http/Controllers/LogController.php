@@ -103,10 +103,9 @@ class LogController extends Controller
                       ->orWhere('correlation_id', 'like', "%{$term}%")
                       // Search inside JSON-encoded reason details for payload snippets, transaction IDs, etc.
                       ->orWhere('reason_details', 'like', "%{$term}%")
-                      // Allow searching by tenant trade name or code
+                      // Allow searching by tenant trade name
                       ->orWhereHas('tenant', function ($tenantQuery) use ($term) {
-                          $tenantQuery->where('trade_name', 'like', "%{$term}%")
-                                      ->orWhere('tenant_code', 'like', "%{$term}%");
+                          $tenantQuery->where('trade_name', 'like', "%{$term}%");
                       })
                       // Allow searching by terminal identifiers
                       ->orWhereHas('terminal', function ($terminalQuery) use ($term) {
