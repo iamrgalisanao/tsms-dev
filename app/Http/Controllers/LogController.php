@@ -93,6 +93,28 @@ class LogController extends Controller
         // Submission events for the new tab
         $submissionEvents = SubmissionEvent::query()
             ->with(['tenant', 'terminal'])
+            ->when($request->filled('search'), function ($query) use ($request) {
+                $term = $request->search;
+
+                return $query->where(function ($q) use ($term) {
+                    $q->where('submission_uuid', 'like', "%{$term}%")
+                      ->orWhere('status', 'like', "%{$term}%")
+                      ->orWhere('reason_code', 'like', "%{$term}%")
+                      ->orWhere('correlation_id', 'like', "%{$term}%")
+                      // Search inside JSON-encoded reason details for payload snippets, transaction IDs, etc.
+                      ->orWhere('reason_details', 'like', "%{$term}%")
+                      // Allow searching by tenant trade name or code
+                      ->orWhereHas('tenant', function ($tenantQuery) use ($term) {
+                          $tenantQuery->where('trade_name', 'like', "%{$term}%")
+                                      ->orWhere('tenant_code', 'like', "%{$term}%");
+                      })
+                      // Allow searching by terminal identifiers
+                      ->orWhereHas('terminal', function ($terminalQuery) use ($term) {
+                          $terminalQuery->where('serial_number', 'like', "%{$term}%")
+                                        ->orWhere('machine_number', 'like', "%{$term}%");
+                      });
+                });
+            })
             ->when($request->filled('date_from'), function ($query) use ($request) {
                 return $query->whereDate('occurred_at', '>=', $request->date_from);
             })
