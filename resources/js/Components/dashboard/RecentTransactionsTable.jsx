@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import {
     Table,
     TableBody,
@@ -14,7 +14,8 @@ import {
     Link,
     IconButton,
     CircularProgress,
-    Stack
+    Stack,
+    Pagination
 } from '@mui/material';
 import ForwardIcon from '@mui/icons-material/Forward';
 import LaunchIcon from '@mui/icons-material/Launch';
@@ -22,6 +23,14 @@ import VisibilityIcon from '@mui/icons-material/Visibility';
 import ReceiptIcon from '@mui/icons-material/Receipt';
 
 const RecentTransactionsTable = ({ transactions, loading, onForward }) => {
+    const [page, setPage] = useState(1);
+    const pageSize = 10;
+
+    useEffect(() => {
+        // Reset to first page whenever the data set changes
+        setPage(1);
+    }, [transactions]);
+
     if (loading) {
         return (
             <Paper sx={{ p: 8, display: 'flex', justifyContent: 'center', borderRadius: '32px' }}>
@@ -41,6 +50,12 @@ const RecentTransactionsTable = ({ transactions, loading, onForward }) => {
         borderBottom: '2px solid',
         borderColor: 'divider'
     };
+
+    const total = transactions.length;
+    const pageCount = total > 0 ? Math.ceil(total / pageSize) : 1;
+    const startIndex = (page - 1) * pageSize;
+    const endIndex = startIndex + pageSize;
+    const pageItems = transactions.slice(startIndex, endIndex);
 
     return (
         <TableContainer component={Paper} sx={{ borderRadius: '24px', overflow: 'hidden', boxShadow: '0 8px 32px rgba(0,0,0,0.06)', border: '1px solid', borderColor: 'divider' }}>
@@ -77,14 +92,14 @@ const RecentTransactionsTable = ({ transactions, loading, onForward }) => {
                     </TableRow>
                 </TableHead>
                 <TableBody>
-                    {transactions.length === 0 ? (
+                    {total === 0 ? (
                         <TableRow>
                             <TableCell colSpan={6} align="center" sx={{ py: 8 }}>
                                 <Typography sx={{ color: 'grey.400', fontWeight: 500 }}>No recent transactions found.</Typography>
                             </TableCell>
                         </TableRow>
                     ) : (
-                        transactions.map((tx) => (
+                        pageItems.map((tx) => (
                             <TableRow key={tx.id} sx={{ '&:hover': { bgcolor: 'rgba(25, 118, 210, 0.02)' }, transition: 'background-color 0.2s' }}>
                                 <TableCell sx={{ fontWeight: 800, color: 'text.disabled', fontSize: '11px', fontFamily: 'monospace' }}>#{tx.id}</TableCell>
                                 <TableCell>
@@ -155,6 +170,31 @@ const RecentTransactionsTable = ({ transactions, loading, onForward }) => {
                     )}
                 </TableBody>
             </Table>
+            <Box
+                sx={{
+                    px: 3,
+                    py: 2,
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    bgcolor: 'grey.50',
+                    borderTop: '1px solid',
+                    borderColor: 'divider',
+                }}
+            >
+                <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 500 }}>
+                    {total > 0
+                        ? `Showing ${Math.min(startIndex + 1, total)}-${Math.min(endIndex, total)} of ${total} transaction${total !== 1 ? 's' : ''}`
+                        : 'No recent transactions in this window'}
+                </Typography>
+                <Pagination
+                    count={pageCount}
+                    page={page}
+                    onChange={(e, value) => setPage(value)}
+                    color="primary"
+                    size="small"
+                />
+            </Box>
         </TableContainer>
     );
 };
