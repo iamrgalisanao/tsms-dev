@@ -52,6 +52,24 @@ const LogRow = ({ log, type }) => {
     const submissionTxnCount =
         typeof log.transaction_count !== 'undefined' ? log.transaction_count : log.context?.transaction_count;
 
+    // Health monitoring helpers (tenant inactivity + idle monitor)
+    const isHealthLog =
+        type === 'system' &&
+        (
+            (log.message || '').startsWith('Tenant inactivity') ||
+            (log.message || '').startsWith('Idle monitor') ||
+            (log.log_type || '').includes('TENANT_INACTIVITY') ||
+            (log.log_type || '').includes('IDLE_MONITOR') ||
+            (log.type || '').includes('tenant_inactivity') ||
+            (log.type || '').includes('terminal_heartbeat')
+        );
+
+    const healthContext = log.context || {};
+    const healthTenantLabel = healthContext.tenant_name || submissionTenantId || healthContext.tenant_id;
+    const healthInactiveMinutes = healthContext.inactive_minutes;
+    const healthLastTxnAt = healthContext.last_transaction_at;
+    const healthActiveTerminals = healthContext.active_terminal_count;
+
     return (
         <>
             <TableRow hover sx={{ '&:last-child td, &:last-child th': { border: 0 } }}>
@@ -76,9 +94,35 @@ const LogRow = ({ log, type }) => {
                                 sx={{ fontWeight: 800, fontSize: '0.6rem', height: 20, borderRadius: 1.5 }}
                             />
                         </TableCell>
-                        <TableCell sx={cellStyles}>{log.log_type || 'SYSTEM'}</TableCell>
                         <TableCell sx={cellStyles}>
-                            <Typography variant="body2" sx={{ fontWeight: 600 }}>{log.message}</Typography>
+                            {isHealthLog ? 'HEALTH' : (log.log_type || 'SYSTEM')}
+                        </TableCell>
+                        <TableCell sx={cellStyles}>
+                            <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                                {log.message}
+                            </Typography>
+                            {isHealthLog && (
+                                <Typography
+                                    variant="caption"
+                                    sx={{ display: 'block', color: 'text.secondary', mt: 0.25 }}
+                                >
+                                    {healthTenantLabel && (
+                                        <>
+                                            Tenant: <strong>{healthTenantLabel}</strong>
+                                            {"  "}
+                                        </>
+                                    )}
+                                    {typeof healthInactiveMinutes !== 'undefined' && (
+                                        <>· Inactive {healthInactiveMinutes} min{"  "}</>
+                                    )}
+                                    {healthLastTxnAt && (
+                                        <>· Last txn at {healthLastTxnAt}{"  "}</>
+                                    )}
+                                    {typeof healthActiveTerminals !== 'undefined' && (
+                                        <>· Active terminals: {healthActiveTerminals}</>
+                                    )}
+                                </Typography>
+                            )}
                         </TableCell>
                     </>
                 )}
