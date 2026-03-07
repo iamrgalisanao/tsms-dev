@@ -16,6 +16,11 @@ class LogController extends Controller
     {
         $systemLogs = SystemLog::with('user')
             ->when($request->filled('type'), function ($query) use ($request) {
+                // Health Monitoring is a composite category spanning multiple log types
+                if ($request->type === 'health') {
+                    return $query->whereIn('type', ['tenant_inactivity', 'terminal_heartbeat']);
+                }
+
                 // If the requested type is one of the enum values, filter by 'type'
                 $validTypes = ['payload_validation', 'integration', 'security', 'audit', 'retry', 'transaction'];
                 if (in_array($request->type, $validTypes)) {

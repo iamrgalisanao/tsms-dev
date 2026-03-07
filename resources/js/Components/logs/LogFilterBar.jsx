@@ -104,6 +104,7 @@ const LogFilterBar = ({ filters, onFilterChange, onReset, terminals, activeTab, 
                             <MenuItem value="integration">System Integration</MenuItem>
                             <MenuItem value="payload_validation">Payload Validation</MenuItem>
                             <MenuItem value="transaction">Transact Engine</MenuItem>
+                            <MenuItem value="health">Health Monitoring</MenuItem>
                         </Select>
                     </FormControl>
 
@@ -200,6 +201,16 @@ const LogFilterBar = ({ filters, onFilterChange, onReset, terminals, activeTab, 
                             Webhook search looks at event type, status, and the raw payload body.
                             You can paste a transaction ID, endpoint label, or correlation value here to
                             quickly locate related webhook attempts.
+                        </Typography>
+                    </Stack>
+                )}
+
+                {activeTab === 'system' && localFilters.type === 'health' && (
+                    <Stack direction="row" spacing={1} alignItems="center">
+                        <InfoOutlinedIcon sx={{ fontSize: 16, opacity: 0.7 }} />
+                        <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 500 }}>
+                            Health Monitoring groups tenant inactivity and POS terminal heartbeat events.
+                            Use this to see which tenants are quiet and which terminals went idle or recovered.
                         </Typography>
                     </Stack>
                 )}

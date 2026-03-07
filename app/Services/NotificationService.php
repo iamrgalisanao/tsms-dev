@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Transaction;
 use App\Models\Tenant;
 use App\Models\User;
+use App\Models\SystemLog;
 use App\Notifications\TransactionFailureThresholdExceeded;
 use App\Notifications\BatchProcessingFailure;
 use App\Notifications\SecurityAuditAlert;
@@ -355,6 +356,29 @@ class NotificationService
                 'silent_tenants' => $silentTenantIds->values(),
             ]);
 
+            // Mirror summary into SystemLog so it appears in System Telemetry Archive
+            try {
+                SystemLog::create([
+                    'type' => 'tenant_inactivity',
+                    'log_type' => 'TENANT_INACTIVITY_SUMMARY',
+                    'severity' => $silentTenantIds->isEmpty() ? 'info' : 'warning',
+                    'terminal_uid' => 'scheduler',
+                    'transaction_id' => null,
+                    'message' => 'Tenant inactivity check summary',
+                    'context' => [
+                        'threshold_minutes' => $thresholdMinutes,
+                        'cutoff_time' => $cutoffTime->toIso8601String(),
+                        'active_tenants' => $activeTenantIds->values(),
+                        'recent_tenants' => $recentTenantIds->values(),
+                        'silent_tenants' => $silentTenantIds->values(),
+                    ],
+                ]);
+            } catch (\Throwable $e) {
+                Log::error('Failed to write tenant inactivity SystemLog summary', [
+                    'error' => $e->getMessage(),
+                ]);
+            }
+
             if ($silentTenantIds->isEmpty()) {
                 return;
             }
@@ -400,6 +424,24 @@ class NotificationService
                 $this->sendToAdminsAndFinance($notification);
 
                 Log::warning('Tenant inactivity alert sent', $data);
+
+                // Log alert into SystemLog for telemetry visibility
+                try {
+                    SystemLog::create([
+                        'type' => 'tenant_inactivity',
+                        'log_type' => 'TENANT_INACTIVITY_ALERT',
+                        'severity' => 'warning',
+                        'terminal_uid' => 'scheduler',
+                        'transaction_id' => null,
+                        'message' => 'Tenant inactivity alert dispatched',
+                        'context' => $data,
+                    ]);
+                } catch (\Throwable $e) {
+                    Log::error('Failed to write tenant inactivity alert SystemLog', [
+                        'tenant_id' => $tenant->id,
+                        'error' => $e->getMessage(),
+                    ]);
+                }
             }
         } catch (\Exception $e) {
             Log::error('Failed to check tenant inactivity', [
