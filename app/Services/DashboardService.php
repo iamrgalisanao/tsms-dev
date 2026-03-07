@@ -149,6 +149,14 @@ class DashboardService
         $metricsToday = $this->getMetricsForDate($today);
         $metricsYesterday = $this->getMetricsForDate($yesterday);
 
+        $voidRateToday = ($metricsToday['count'] ?? 0) > 0
+            ? ($metricsToday['voids'] / $metricsToday['count']) * 100
+            : 0;
+
+        $voidRateYesterday = ($metricsYesterday['count'] ?? 0) > 0
+            ? ($metricsYesterday['voids'] / $metricsYesterday['count']) * 100
+            : 0;
+
         return [
             'total_sales' => [
                 'current' => (float) $metricsToday['sales'],
@@ -166,6 +174,11 @@ class DashboardService
                 'current' => (int) $metricsToday['voids'],
                 'previous' => (int) $metricsYesterday['voids'],
                 'trend' => $this->calculateTrend($metricsToday['voids'], $metricsYesterday['voids'], true),
+            ],
+            'void_rate' => [
+                'current' => round($voidRateToday, 2),
+                'previous' => round($voidRateYesterday, 2),
+                'trend' => $this->calculateTrend($voidRateToday, $voidRateYesterday, true),
             ],
             'active_terminals' => [
                 'current' => \App\Models\PosTerminal::where('is_active', true)->count(),

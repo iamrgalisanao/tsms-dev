@@ -64,10 +64,13 @@ const SystemHealthMonitor = ({ health, loading }) => {
                     {/* Network Status */}
                     <Box sx={{ pt: 2, borderTop: '1px solid', borderColor: 'grey.100' }}>
                         <Typography variant="caption" sx={{ fontSize: '10px', fontWeight: 900, color: 'grey.400', display: 'block', mb: 0.5 }}>NETWORK</Typography>
-                        <Stack direction="row" alignItems="center" spacing={1}>
+                        <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 1 }}>
                             <LanguageIcon sx={{ fontSize: 14, color: 'success.main' }} />
                             <Typography variant="body2" sx={{ fontWeight: 'bold', color: 'success.main' }}>{stats.network}</Typography>
                         </Stack>
+                        <Typography variant="caption" sx={{ fontSize: '10px', fontWeight: 700, color: 'grey.600' }}>
+                            Queue backlog: {stats.queues?.backlog ?? 0} job{(stats.queues?.backlog ?? 0) === 1 ? '' : 's'}
+                        </Typography>
                     </Box>
                 </Stack>
             </CardContent>

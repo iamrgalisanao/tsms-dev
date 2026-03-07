@@ -254,6 +254,9 @@ const DashboardPage = () => {
                     <BarChartIcon sx={{ mr: 2, bgcolor: 'primary.main', color: 'white', p: 1, borderRadius: 2, fontSize: 40 }} />
                     Key Performance Indicators
                 </Typography>
+                <Typography variant="body2" sx={{ color: 'text.secondary', mb: 3, fontWeight: 500 }}>
+                    Today vs yesterday, based on transaction timestamps.
+                </Typography>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
                     <MetricCard
                         title="Total Revenue"
@@ -273,7 +276,11 @@ const DashboardPage = () => {
                     />
                     <MetricCard
                         title="Voided Transactions"
-                        value={metrics?.voided_transactions?.current ?? 0}
+                        value={(() => {
+                            const voidCount = metrics?.voided_transactions?.current ?? 0;
+                            const voidRate = Number(metrics?.void_rate?.current ?? 0).toFixed(1);
+                            return `${voidCount} (${voidRate}% )`;
+                        })()}
                         trend={metrics?.voided_transactions?.trend}
                         icon={<CancelIcon />}
                         color="accent"
