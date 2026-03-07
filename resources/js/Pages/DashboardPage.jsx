@@ -257,9 +257,9 @@ const DashboardPage = () => {
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-8">
                     <MetricCard
                         title="Total Revenue"
-                        value={metrics?.total_revenue ? currencyFormat(metrics.total_revenue.current) : '₱0.00'}
-                        trend={metrics?.total_revenue?.trend}
-                        sparkline={metrics?.total_revenue?.sparkline}
+                        value={metrics?.total_sales ? currencyFormat(metrics.total_sales.current) : '₱0.00'}
+                        trend={metrics?.total_sales?.trend}
+                        sparkline={metrics?.total_sales?.sparkline}
                         icon={<AccountBalanceWalletIcon />}
                         color="primary"
                     />
