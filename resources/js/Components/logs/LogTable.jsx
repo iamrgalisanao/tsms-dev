@@ -16,7 +16,12 @@ import {
     CircularProgress,
     Pagination,
     Divider,
-    Tooltip
+    Tooltip,
+    Dialog,
+    DialogTitle,
+    DialogContent,
+    DialogActions,
+    Button
 } from '@mui/material';
 import { format } from 'date-fns';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
@@ -24,7 +29,7 @@ import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
 import CodeIcon from '@mui/icons-material/Code';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 
-const LogRow = ({ log, type }) => {
+const LogRow = ({ log, type, onShowDetails }) => {
     const [open, setOpen] = useState(false);
 
     const getSeverityColor = (severity) => {
@@ -269,16 +274,20 @@ const LogRow = ({ log, type }) => {
                                     </Tooltip>
                                 )}
                             </Stack>
-                            <Box sx={{
-                                bgcolor: '#1a202c',
-                                color: '#e2e8f0',
-                                p: 2,
-                                borderRadius: 3,
-                                fontFamily: 'monospace',
-                                fontSize: '0.75rem',
-                                overflowX: 'auto',
-                                boxShadow: 'inset 0 2px 10px rgba(0,0,0,0.2)'
-                            }}>
+                            <Box
+                                sx={{
+                                    bgcolor: '#1a202c',
+                                    color: '#e2e8f0',
+                                    p: 2,
+                                    borderRadius: 3,
+                                    fontFamily: 'monospace',
+                                    fontSize: '0.75rem',
+                                    overflowX: 'auto',
+                                    boxShadow: 'inset 0 2px 10px rgba(0,0,0,0.2)',
+                                    cursor: 'pointer',
+                                }}
+                                onClick={() => onShowDetails && onShowDetails(log)}
+                            >
                                 <pre>{JSON.stringify(log.context || log.payload || log.old_values || log, null, 2)}</pre>
                             </Box>
                         </Box>
@@ -300,6 +309,18 @@ const LogTable = ({ data, loading, type, onPageChange }) => {
         bgcolor: 'white'
     };
 
+    const [detailOpen, setDetailOpen] = useState(false);
+    const [detailLog, setDetailLog] = useState(null);
+
+    const handleShowDetails = (log) => {
+        setDetailLog(log);
+        setDetailOpen(true);
+    };
+
+    const handleCloseDetails = () => {
+        setDetailOpen(false);
+    };
+
     if (loading) {
         return (
             <Box sx={{ py: 20, textAlign: 'center' }}>
@@ -311,6 +332,10 @@ const LogTable = ({ data, loading, type, onPageChange }) => {
 
     const items = data?.data || [];
     const meta = data || {};
+
+    const from = meta.from || 0;
+    const to = meta.to || 0;
+    const total = meta.total || items.length || 0;
 
     return (
         <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 4, overflow: 'hidden' }}>
@@ -352,7 +377,7 @@ const LogTable = ({ data, loading, type, onPageChange }) => {
                             </TableRow>
                         ) : (
                             items.map((log) => (
-                                <LogRow key={log.id} log={log} type={type} />
+                                <LogRow key={log.id} log={log} type={type} onShowDetails={handleShowDetails} />
                             ))
                         )}
                     </TableBody>
@@ -361,7 +386,22 @@ const LogTable = ({ data, loading, type, onPageChange }) => {
 
             <Divider />
 
-            <Box sx={{ p: 2, display: 'flex', justifyContent: 'center', bgcolor: 'grey.50' }}>
+            <Box
+                sx={{
+                    p: 2,
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    bgcolor: 'grey.50',
+                    flexWrap: 'wrap',
+                    rowGap: 1,
+                }}
+            >
+                <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 500 }}>
+                    {total > 0
+                        ? `Showing ${from}-${to} of ${total} event${total !== 1 ? 's' : ''}`
+                        : 'No events in the current view'}
+                </Typography>
                 <Pagination
                     count={meta.last_page || 1}
                     page={meta.current_page || 1}
@@ -370,6 +410,50 @@ const LogTable = ({ data, loading, type, onPageChange }) => {
                     size="small"
                 />
             </Box>
+
+            <Dialog
+                open={detailOpen}
+                onClose={handleCloseDetails}
+                maxWidth="md"
+                fullWidth
+            >
+                <DialogTitle sx={{ fontWeight: 800, fontSize: '0.95rem' }}>
+                    {type === 'system' && 'System Log Details'}
+                    {type === 'audit' && 'Audit Entry Details'}
+                    {type === 'webhook' && 'Webhook Event Details'}
+                    {type === 'submission' && 'Submission Event Details'}
+                </DialogTitle>
+                <DialogContent dividers sx={{ bgcolor: '#0b1120' }}>
+                    <Box
+                        sx={{
+                            bgcolor: '#0b1120',
+                            color: '#e2e8f0',
+                            fontFamily: 'monospace',
+                            fontSize: '0.75rem',
+                            maxHeight: 480,
+                            overflow: 'auto',
+                        }}
+                    >
+                        <pre style={{ margin: 0 }}>
+                            {detailLog
+                                ? JSON.stringify(
+                                      detailLog.context ||
+                                          detailLog.payload ||
+                                          detailLog.old_values ||
+                                          detailLog,
+                                      null,
+                                      2
+                                  )
+                                : '// Select a row to inspect full payload and metadata'}
+                        </pre>
+                    </Box>
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={handleCloseDetails} color="primary" variant="contained" size="small">
+                        Close
+                    </Button>
+                </DialogActions>
+            </Dialog>
         </Paper>
     );
 };
