@@ -43,7 +43,7 @@ const DashboardPage = () => {
     const [recentTransactions, setRecentTransactions] = useState([]);
     const [auditLogs, setAuditLogs] = useState([]);
     const [loading, setLoading] = useState(true);
-    const [selectedTransactionId, setSelectedTransactionId] = useState(null);
+    const [selectedTransaction, setSelectedTransaction] = useState(null);
     const [detailPanelOpen, setDetailPanelOpen] = useState(false);
     const [refreshInterval, setRefreshInterval] = useState(30000); // 30 seconds
     const [isRefreshing, setIsRefreshing] = useState(false);
@@ -114,7 +114,7 @@ const DashboardPage = () => {
     }, [filters]);
 
     const handleViewDetails = useCallback((transaction) => {
-        setSelectedTransactionId(transaction.id || transaction.transaction_id);
+        setSelectedTransaction(transaction);
         setDetailPanelOpen(true);
     }, []);
 
@@ -326,8 +326,8 @@ const DashboardPage = () => {
             </Box>
 
             <TransactionDetailPanel
-                transactionId={selectedTransactionId}
                 open={detailPanelOpen}
+                transaction={selectedTransaction}
                 onClose={() => setDetailPanelOpen(false)}
             />
 
