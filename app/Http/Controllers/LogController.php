@@ -26,6 +26,13 @@ class LogController extends Controller
                                 'TERMINAL_IDLE_DETECTED',
                                 'TERMINAL_RECOVERED',
                                 'IDLE_MONITOR_SUMMARY',
+                            ])
+                            // Fallback for environments where type/log_type were not populated
+                            ->orWhereIn('message', [
+                                'Tenant inactivity check summary',
+                                'Tenant inactivity alert dispatched',
+                                'Idle monitor run summary',
+                                'Idle monitor tenant summary',
                             ]);
                     });
                 }
