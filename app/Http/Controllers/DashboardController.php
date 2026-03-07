@@ -257,6 +257,8 @@ class DashboardController extends Controller
             });
         }
 
+        $query->where('validation_status', '!=', Transaction::VALIDATION_STATUS_PENDING);
+
         $transactions = $query->orderByDesc('transaction_timestamp')->paginate(50);
         return new \App\Http\Resources\TransactionCollection($transactions);
     }
