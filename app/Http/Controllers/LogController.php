@@ -18,7 +18,16 @@ class LogController extends Controller
             ->when($request->filled('type'), function ($query) use ($request) {
                 // Health Monitoring is a composite category spanning multiple log types
                 if ($request->type === 'health') {
-                    return $query->whereIn('type', ['tenant_inactivity', 'terminal_heartbeat']);
+                    return $query->where(function ($q) {
+                        $q->whereIn('type', ['tenant_inactivity', 'terminal_heartbeat'])
+                            ->orWhereIn('log_type', [
+                                'TENANT_INACTIVITY_SUMMARY',
+                                'TENANT_INACTIVITY_ALERT',
+                                'TERMINAL_IDLE_DETECTED',
+                                'TERMINAL_RECOVERED',
+                                'IDLE_MONITOR_SUMMARY',
+                            ]);
+                    });
                 }
 
                 // If the requested type is one of the enum values, filter by 'type'
