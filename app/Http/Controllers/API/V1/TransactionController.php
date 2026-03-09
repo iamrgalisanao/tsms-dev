@@ -46,7 +46,41 @@ class TransactionController extends Controller
      */
     public function refund(Request $request, $id)
     {
-        $transaction = Transaction::findOrFail($id);
+        // Enforce POS-only refunds via Sanctum-authenticated PosTerminal
+        $posTerminal = $request->user();
+        if (!$posTerminal || !($posTerminal instanceof PosTerminal)) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Refunds are only permitted from POS terminals',
+            ], 403);
+        }
+
+        $transaction = Transaction::find($id);
+        if (!$transaction || (int) $transaction->terminal_id !== (int) $posTerminal->id) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Transaction not found or does not belong to this terminal',
+            ], 404);
+        }
+
+        // Business rule: only allow refunds on the same business day (configurable timezone)
+        try {
+            $tz = config('app.business_timezone', config('app.timezone', 'UTC'));
+            $txTime = Carbon::parse($transaction->transaction_timestamp)->setTimezone($tz);
+            $today = now()->setTimezone($tz);
+            if ($txTime->toDateString() !== $today->toDateString()) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Refunds are only permitted on the same business day',
+                ], 409);
+            }
+        } catch (\Throwable $e) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Unable to validate refund timing',
+            ], 500);
+        }
+
         $refundData = $request->validate([
             'refund_amount' => 'required|numeric|min:0.01',
             'refund_reason' => 'required|string',
@@ -54,6 +88,7 @@ class TransactionController extends Controller
         ]);
         $refundData['refund_status'] = 'REFUNDED';
         $refundData['refund_processed_at'] = now();
+
         try {
             $service = app(\App\Services\TransactionService::class);
             $service->processRefund($transaction, $refundData);

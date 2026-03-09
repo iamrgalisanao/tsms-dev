@@ -296,3 +296,5 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/rbac-audits', [\App\Http\Controllers\Admin\RbacAuditController::class, 'index'])->name('rbac-audits.index');
     });
 });
+
+// Email-based P2P approval links (no auth required; guarded by tokens)

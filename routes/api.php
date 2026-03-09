@@ -90,6 +90,8 @@ Route::middleware(['api'])->group(function () {
         Route::put('/{user}', [UserController::class, 'apiUpdate']);
         Route::delete('/{user}', [UserController::class, 'apiDestroy']);
     });
+
+    // (P2P MRF/JRF workflow endpoints removed; feature reverted.)
 });
 
 // Health check endpoint (public)
