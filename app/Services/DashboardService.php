@@ -143,7 +143,10 @@ class DashboardService
 
     public function getAdvancedMetrics($filters = [])
     {
-        return \Illuminate\Support\Facades\Cache::remember('dashboard.advanced_metrics', 300, function () use ($filters) {
+        $dateKey = Carbon::today()->toDateString();
+        $cacheKey = "dashboard.advanced_metrics.{$dateKey}";
+
+        return \Illuminate\Support\Facades\Cache::remember($cacheKey, 300, function () use ($filters) {
             $today = Carbon::today();
             $yesterday = Carbon::yesterday();
 
@@ -210,7 +213,10 @@ class DashboardService
 
     public function getTerminalPerformance()
     {
-        return \Illuminate\Support\Facades\Cache::remember('dashboard.terminal_performance', 300, function () {
+        $dateKey = Carbon::today()->toDateString();
+        $cacheKey = "dashboard.terminal_performance.{$dateKey}";
+
+        return \Illuminate\Support\Facades\Cache::remember($cacheKey, 300, function () {
             return DB::table('pos_terminals')
                 ->join('tenants', 'pos_terminals.tenant_id', '=', 'tenants.id')
                 ->leftJoin('transactions', 'pos_terminals.id', '=', 'transactions.terminal_id')
@@ -220,7 +226,7 @@ class DashboardService
                     DB::raw('COUNT(transactions.id) as transaction_count'),
                     DB::raw('SUM(transactions.gross_sales) as total_sales')
                 )
-                ->where('transactions.created_at', '>=', now()->subDay())
+                ->where('transactions.transaction_timestamp', '>=', now()->subDay())
                 ->groupBy('pos_terminals.id', 'tenants.trade_name', 'pos_terminals.serial_number')
                 ->orderByDesc('total_sales')
                 ->limit(5)

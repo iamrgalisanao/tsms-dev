@@ -131,7 +131,12 @@ class DashboardController extends Controller
     // API: GET /api/dashboard/metrics
     public function apiMetrics(Request $request)
     {
-        $metrics = $this->dashboardService->getAdvancedMetrics($request->all());
+        $dateKey = Carbon::today()->toDateString();
+        $cacheKey = "dashboard.api_metrics.{$dateKey}";
+
+        $metrics = \Illuminate\Support\Facades\Cache::remember($cacheKey, 300, function () use ($request) {
+            return $this->dashboardService->getAdvancedMetrics($request->all());
+        });
 
         return response()->json($metrics);
     }
@@ -140,9 +145,10 @@ class DashboardController extends Controller
     public function apiCharts(Request $request)
     {
         $days = (int) $request->input('days', 7);
-        $cacheKey = "dashboard.api_charts.{$days}";
+        $dateKey = Carbon::today()->toDateString();
+        $cacheKey = "dashboard.api_charts.{$days}.{$dateKey}";
 
-        return \Illuminate\Support\Facades\Cache::remember($cacheKey, 300, function () use ($days) {
+        $data = \Illuminate\Support\Facades\Cache::remember($cacheKey, 300, function () use ($days) {
             $labels = [];
             $salesData = [];
             $volumeData = [];
@@ -167,13 +173,15 @@ class DashboardController extends Controller
                 $prevSalesData[] = (float) ($prevStats->sales ?? 0);
             }
 
-            return response()->json([
+            return [
                 'labels' => $labels,
                 'sales' => $salesData,
                 'volume' => $volumeData,
                 'previous_sales' => $prevSalesData,
-            ]);
+            ];
         });
+
+        return response()->json($data);
     }
 
     // API: GET /api/dashboard/system-health
