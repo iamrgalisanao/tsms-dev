@@ -1523,7 +1523,7 @@ class TransactionController extends Controller
                 'submission_uuid' => 'required|string|uuid',
                 'tenant_id' => 'required|integer',
                 'terminal_id' => 'required|integer|exists:pos_terminals,id',
-                'submission_timestamp' => 'required|date_format:Y-m-d\TH:i
+                'submission_timestamp' => 'required|date_format:Y-m-d\TH:i:s',
                 'transaction_count' => 'required|integer|min:1',
                 'payload_checksum' => 'required|string|min:64|max:64', // SHA-256 hash
             ]);
