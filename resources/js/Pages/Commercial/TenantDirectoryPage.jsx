@@ -16,6 +16,8 @@ import {
     CheckCircle as CheckCircleIcon,
 } from '@mui/icons-material';
 import '../../../css/TenantDirectory.css';
+import { Button } from '@mui/material';
+import { useRole } from './TenantUserManagementPage'; // If useRole is exported
 
 // ── PITX brand ────────────────────────────────────────────────────────────────
 const BLUE = '#1D439B';
@@ -178,6 +180,8 @@ const TenantDirectoryPage = () => {
         <div style={{ padding: 24, background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 12, color: '#b91c1c' }}>{error}</div>
     );
 
+    const isAuthorized = typeof useRole === 'function' ? useRole() : true; // fallback if not exported
+
     return (
         <div style={{ paddingBottom: 48 }}>
 
@@ -202,6 +206,16 @@ const TenantDirectoryPage = () => {
                     <TrendingUpIcon style={{ fontSize: 14, color: BLUE }} />
                     <span style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#64748b' }}>Live Data View</span>
                 </div>
+                {isAuthorized && (
+                    <Button
+                        variant="contained"
+                        color="primary"
+                        style={{ marginLeft: 16, fontWeight: 700 }}
+                        onClick={() => navigate('/commercial/tenant-user-management')}
+                    >
+                        Add Tenant
+                    </Button>
+                )}
             </div>
 
             {/* ── Stat Row ─────────────────────────────────────────────── */}
