@@ -7,16 +7,18 @@ use App\Models\Transaction;
 use App\Models\PosTerminal;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Schema;
 use App\Jobs\ProcessTransactionJob;
 use App\Jobs\CheckTransactionFailureThresholdsJob;
-use App\Services\PayloadChecksumService; // Add this import
+use App\Services\PayloadChecksumService;
 use App\Services\NotificationService;
 use App\Http\Requests\TSMSTransactionRequest;
 use Laravel\Sanctum\PersonalAccessToken;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\Cache;
 
 class TransactionController extends Controller
 {
@@ -442,6 +444,7 @@ class TransactionController extends Controller
                     'transaction_id' => $transactionData['transaction_id'] ?? 'unknown',
                     'tenant_id' => $transactionData['tenant_id'] ?? 'missing',
                     'terminal_id' => $request->terminal_id,
+                    'transaction_timestamp' => $transactionData['transaction_timestamp'] ?? $transactionData['occurred_at'] ?? null,
                 ]);
 
                 // If item-level tenant_id is present, it must match request tenant_id
@@ -454,21 +457,22 @@ class TransactionController extends Controller
 
                     // Structured log for per-item tenant mismatch
                     try {
-                        \App\Models\SystemLog::create([
-                            'type' => 'transaction',
-                            'log_type' => 'TRANSACTION_TENANT_MISMATCH',
-                            'severity' => 'error',
-                            'terminal_uid' => $terminal->serial_number ?? null,
-                            'transaction_id' => $transactionData['transaction_id'] ?? 'unknown',
-                            'message' => 'Transaction tenant_id does not match batch tenant_id',
-                            'context' => [
-                                'batch_id' => $request->batch_id ?? 'missing',
-                                'batch_tenant_id' => $request->tenant_id,
-                                'transaction_tenant_id' => $transactionData['tenant_id'],
-                                'terminal_id' => $terminal->id,
-                                'endpoint' => 'transactions.batch.store',
-                            ],
-                        ]);
+                            \App\Models\SystemLog::create([
+                                'type' => 'transaction',
+                                'log_type' => 'TRANSACTION_TENANT_MISMATCH',
+                                'severity' => 'error',
+                                'terminal_uid' => $terminal->serial_number ?? null,
+                                'transaction_id' => $transactionData['transaction_id'] ?? 'unknown',
+                                'message' => 'Transaction tenant_id does not match batch tenant_id',
+                                'context' => [
+                                    'batch_id' => $request->batch_id ?? 'missing',
+                                    'batch_tenant_id' => $request->tenant_id,
+                                    'transaction_tenant_id' => $transactionData['tenant_id'],
+                                    'terminal_id' => $terminal->id,
+                                    'transaction_timestamp' => $transactionData['transaction_timestamp'] ?? $transactionData['occurred_at'] ?? null,
+                                    'endpoint' => 'transactions.batch.store',
+                                ],
+                            ]);
                     } catch (\Throwable $logEx) {
                         Log::warning('Failed to write SystemLog for TRANSACTION_TENANT_MISMATCH', [
                             'transaction_id' => $transactionData['transaction_id'] ?? 'unknown',
@@ -531,6 +535,7 @@ class TransactionController extends Controller
                                     'transaction_tenant_id' => $transactionData['tenant_id'],
                                     'terminal_tenant_id' => $terminal->tenant_id,
                                     'terminal_id' => $terminal->id,
+                                    'transaction_timestamp' => $transactionData['transaction_timestamp'] ?? $transactionData['occurred_at'] ?? null,
                                     'endpoint' => 'transactions.batch.store',
                                 ],
                             ]);
@@ -748,7 +753,8 @@ class TransactionController extends Controller
                             'batch_id' => $request->batch_id,
                             'transaction_id' => $transaction->transaction_id,
                             'gross_sales' => $transaction->gross_sales,
-                            'net_sales' => $transaction->net_sales
+                            'net_sales' => $transaction->net_sales,
+                            'transaction_timestamp' => $transaction->transaction_timestamp,
                         ])
                     ]);
 
@@ -1305,7 +1311,7 @@ class TransactionController extends Controller
             // Add audit log entry
             try {
                 \App\Models\AuditLog::create([
-                    'user_id' => auth()->id(),
+                    'user_id' => optional(auth())->id(),
                     'ip_address' => request()->ip(),
                     'action' => 'TRANSACTION_VOID_POS',
                     'action_type' => 'TRANSACTION_VOID_POS',
@@ -1517,7 +1523,7 @@ class TransactionController extends Controller
                 'submission_uuid' => 'required|string|uuid',
                 'tenant_id' => 'required|integer',
                 'terminal_id' => 'required|integer|exists:pos_terminals,id',
-                'submission_timestamp' => 'required|date_format:Y-m-d\TH:i:s\Z',
+                'submission_timestamp' => 'required|date_format:Y-m-d\TH:i
                 'transaction_count' => 'required|integer|min:1',
                 'payload_checksum' => 'required|string|min:64|max:64', // SHA-256 hash
             ]);
@@ -1641,8 +1647,8 @@ class TransactionController extends Controller
                     'transaction' => 'required|array',
                     'transaction.transaction_id' => 'required|string|uuid',
                     'transaction.transaction_timestamp' => 'required|date_format:Y-m-d\TH:i:s\Z',
-                    'transaction.gross_sales' => 'required|numeric|min:0',
-                    'transaction.net_sales' => 'required|numeric|min:0',
+                    'transaction.gross_sales' => 'required|numeric',
+                    'transaction.net_sales' => 'required|numeric',
                     'transaction.promo_status' => 'required|string',
                     'transaction.receipt_no' => 'nullable|string|max:128',
                     'transaction.customer_code' => 'required|string',
@@ -1659,8 +1665,8 @@ class TransactionController extends Controller
                     'transactions' => 'required|array|min:1',
                     'transactions.*.transaction_id' => 'required|string|uuid',
                     'transactions.*.transaction_timestamp' => 'required|date_format:Y-m-d\TH:i:s\Z',
-                    'transactions.*.gross_sales' => 'required|numeric|min:0',
-                    'transactions.*.net_sales' => 'required|numeric|min:0',
+                    'transactions.*.gross_sales' => 'required|numeric',
+                    'transactions.*.net_sales' => 'required|numeric',
                     'transactions.*.promo_status' => 'required|string',
                     'transactions.*.receipt_no' => 'nullable|string|max:128',
                     'transactions.*.customer_code' => 'required|string',
@@ -2193,7 +2199,7 @@ class TransactionController extends Controller
 
                     // Add audit log entry
                     \App\Models\AuditLog::create([
-                        'user_id' => auth()->id(),
+                        'user_id' => optional(auth())->id(),
                         'ip_address' => request()->ip(),
                         'action' => 'OFFICIAL_TRANSACTION_RECEIVED',
                         'action_type' => 'OFFICIAL_TRANSACTION_RECEIVED',
@@ -2371,7 +2377,7 @@ class TransactionController extends Controller
                 'success' => true,
                 'message' => "Official submission processed: {$totalProcessed} successful, {$totalFailed} failed",
                 'data' => [
-                    'submission_uuid' => $request->submission_uuid,
+                    'batch_id' => $request->submission_uuid,
                     'processed_count' => $totalProcessed,
                     'failed_count' => $totalFailed,
                     'checksum_validation' => 'passed',
@@ -2862,17 +2868,17 @@ class TransactionController extends Controller
                 'transaction' => 'required|array',
                 'transaction.transaction_id' => 'required|string|uuid',
                 'transaction.transaction_timestamp' => 'required|date_format:Y-m-d\TH:i:s\Z',
-                'transaction.gross_sales' => 'required|numeric|min:0',
+                'transaction.gross_sales' => 'required|numeric',
                 'transaction.net_sales' => 'required|numeric',
                 'transaction.promo_status' => 'required|string',
                     'transaction.receipt_no' => 'nullable|string|max:128',
                 'transaction.customer_code' => 'required|string',
                 'transaction.payload_checksum' => 'required|string|min:64|max:64',
                 'transaction.adjustments' => 'required|array|min:7',
-                'transaction.adjustments.*.adjustment_type' => 'required|string',
+                'transaction.adjustments.*.adjustment_type' => 'required_with:transaction.adjustments|string',
                 'transaction.adjustments.*.amount' => 'required|numeric',
                 'transaction.taxes' => 'required|array|min:4',
-                'transaction.taxes.*.tax_type' => 'required|string',
+                'transaction.taxes.*.tax_type' => 'required_with:transaction.taxes|string',
                 'transaction.taxes.*.amount' => 'required|numeric',
             ];
         } else {
@@ -2880,23 +2886,23 @@ class TransactionController extends Controller
                 'transactions' => 'required|array|min:1',
                 'transactions.*.transaction_id' => 'required|string|uuid',
                 'transactions.*.transaction_timestamp' => 'required|date_format:Y-m-d\TH:i:s\Z',
-                'transactions.*.gross_sales' => 'required|numeric|min:0',
+                'transactions.*.gross_sales' => 'required|numeric',
                 'transactions.*.net_sales' => 'required|numeric',
                 'transactions.*.promo_status' => 'required|string',
                     'transactions.*.receipt_no' => 'nullable|string|max:128',
                 'transactions.*.customer_code' => 'required|string',
                 'transactions.*.payload_checksum' => 'required|string|min:64|max:64',
                 'transactions.*.adjustments' => 'required|array|min:7',
-                'transactions.*.adjustments.*.adjustment_type' => 'required|string',
+                'transactions.*.adjustments.*.adjustment_type' => 'required_with:transactions.*.adjustments|string',
                 'transactions.*.adjustments.*.amount' => 'required|numeric',
                 'transactions.*.taxes' => 'required|array|min:4',
-                'transactions.*.taxes.*.tax_type' => 'required|string',
+                'transactions.*.taxes.*.tax_type' => 'required_with:transactions.*.taxes|string',
                 'transactions.*.taxes.*.amount' => 'required|numeric',
             ];
         }
 
         // Validate structure
-        $validator = \Validator::make($request->all(), $rules);
+        $validator = Validator::make($request->all(), $rules);
         
         if ($validator->fails()) {
             // Create audit event for structure validation failure
