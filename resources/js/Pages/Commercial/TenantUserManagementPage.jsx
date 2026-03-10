@@ -23,7 +23,9 @@ import {
     Chip,
     CircularProgress,
     Divider,
-    Tooltip
+    Tooltip,
+    InputAdornment,
+    MenuItem
 } from '@mui/material';
 import {
     Add as AddIcon,
@@ -32,7 +34,12 @@ import {
     Group as GroupIcon,
     Business as BusinessIcon,
     PersonAdd as PersonAddIcon,
-    Refresh as RefreshIcon
+    Refresh as RefreshIcon,
+    Badge as BadgeIcon,
+    Category as CategoryIcon,
+    LocationOn as LocationOnIcon,
+    MapsHomeWork as MapsHomeWorkIcon,
+    Info as InfoIcon
 } from '@mui/icons-material';
 import api from '../../services/api';
 import { useRole } from '../../Hooks/useRole';
@@ -281,72 +288,164 @@ const TenantUserManagementPage = () => {
             </TableContainer>
 
             {/* Tenant Dialog */}
-            <Dialog open={tenantDialogOpen} onClose={() => setTenantDialogOpen(false)} maxWidth="sm" fullWidth>
+            <Dialog
+                open={tenantDialogOpen}
+                onClose={() => setTenantDialogOpen(false)}
+                maxWidth="sm"
+                fullWidth
+                PaperProps={{
+                    sx: { borderRadius: 4, boxShadow: '0 24px 48px rgba(0,0,0,0.1)' }
+                }}
+            >
                 <form onSubmit={handleTenantSubmit}>
-                    <DialogTitle>{selectedTenant ? 'Edit Tenant' : 'Add New Tenant'}</DialogTitle>
+                    <DialogTitle sx={{ pb: 1 }}>
+                        <Stack direction="row" spacing={2} alignItems="center">
+                            <Box sx={{
+                                bgcolor: 'primary.main',
+                                color: 'white',
+                                p: 1,
+                                borderRadius: 2,
+                                display: 'flex'
+                            }}>
+                                <BusinessIcon />
+                            </Box>
+                            <Box>
+                                <Typography variant="h6" fontWeight="bold">
+                                    {selectedTenant ? 'Edit Tenant Profile' : 'Register New Tenant'}
+                                </Typography>
+                                <Typography variant="caption" color="text.secondary">
+                                    {selectedTenant ? 'Modify business details for this entity.' : 'Set up a new business entity in the commercial portal.'}
+                                </Typography>
+                            </Box>
+                        </Stack>
+                    </DialogTitle>
                     <DialogContent dividers>
-                        <Grid container spacing={2} sx={{ mt: 1 }}>
-                            <Grid item xs={12}>
-                                <TextField
-                                    fullWidth
-                                    label="Trade Name"
-                                    required
-                                    value={tenantForm.trade_name}
-                                    onChange={(e) => setTenantForm({ ...tenantForm, trade_name: e.target.value })}
-                                />
+                        <Box sx={{ py: 1 }}>
+                            <Typography variant="overline" fontWeight="bold" color="text.secondary" gutterBottom>
+                                Tenant Identity
+                            </Typography>
+                            <Grid container spacing={2.5} sx={{ mb: 3 }}>
+                                <Grid item xs={12}>
+                                    <TextField
+                                        fullWidth
+                                        label="Trade Name"
+                                        required
+                                        placeholder="e.g., Starbucks Coffee"
+                                        value={tenantForm.trade_name}
+                                        onChange={(e) => setTenantForm({ ...tenantForm, trade_name: e.target.value })}
+                                        InputProps={{
+                                            startAdornment: <InputAdornment position="start"><MapsHomeWorkIcon color="action" fontSize="small" /></InputAdornment>,
+                                        }}
+                                    />
+                                </Grid>
+                                <Grid item xs={6}>
+                                    <TextField
+                                        fullWidth
+                                        label="Customer Code"
+                                        required
+                                        placeholder="T-0001"
+                                        value={tenantForm.customer_code}
+                                        onChange={(e) => setTenantForm({ ...tenantForm, customer_code: e.target.value })}
+                                        InputProps={{
+                                            startAdornment: <InputAdornment position="start"><BadgeIcon color="action" fontSize="small" /></InputAdornment>,
+                                        }}
+                                    />
+                                </Grid>
+                                <Grid item xs={6}>
+                                    <TextField
+                                        fullWidth
+                                        select
+                                        label="Status"
+                                        value={tenantForm.status}
+                                        onChange={(e) => setTenantForm({ ...tenantForm, status: e.target.value })}
+                                    >
+                                        <MenuItem value="Operational">
+                                            <Stack direction="row" spacing={1} alignItems="center">
+                                                <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: 'success.main' }} />
+                                                <Typography variant="body2">Operational</Typography>
+                                            </Stack>
+                                        </MenuItem>
+                                        <MenuItem value="Closed">
+                                            <Stack direction="row" spacing={1} alignItems="center">
+                                                <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: 'error.main' }} />
+                                                <Typography variant="body2">Closed</Typography>
+                                            </Stack>
+                                        </MenuItem>
+                                        <MenuItem value="Pending">
+                                            <Stack direction="row" spacing={1} alignItems="center">
+                                                <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: 'warning.main' }} />
+                                                <Typography variant="body2">Pending</Typography>
+                                            </Stack>
+                                        </MenuItem>
+                                    </TextField>
+                                </Grid>
                             </Grid>
-                            <Grid item xs={6}>
-                                <TextField
-                                    fullWidth
-                                    label="Customer Code"
-                                    required
-                                    value={tenantForm.customer_code}
-                                    onChange={(e) => setTenantForm({ ...tenantForm, customer_code: e.target.value })}
-                                />
+
+                            <Divider sx={{ mb: 3 }} />
+
+                            <Typography variant="overline" fontWeight="bold" color="text.secondary" gutterBottom>
+                                Settings & Location
+                            </Typography>
+                            <Grid container spacing={2.5}>
+                                <Grid item xs={12}>
+                                    <TextField
+                                        fullWidth
+                                        label="Category"
+                                        placeholder="e.g., Food & Beverage"
+                                        value={tenantForm.category}
+                                        onChange={(e) => setTenantForm({ ...tenantForm, category: e.target.value })}
+                                        InputProps={{
+                                            startAdornment: <InputAdornment position="start"><CategoryIcon color="action" fontSize="small" /></InputAdornment>,
+                                        }}
+                                    />
+                                </Grid>
+                                <Grid item xs={6}>
+                                    <TextField
+                                        fullWidth
+                                        label="Level"
+                                        placeholder="Level-2"
+                                        value={tenantForm.location_type}
+                                        onChange={(e) => setTenantForm({ ...tenantForm, location_type: e.target.value })}
+                                        InputProps={{
+                                            startAdornment: <InputAdornment position="start"><LocationOnIcon color="action" fontSize="small" /></InputAdornment>,
+                                        }}
+                                    />
+                                </Grid>
+                                <Grid item xs={6}>
+                                    <TextField
+                                        fullWidth
+                                        label="Unit No"
+                                        placeholder="U-201"
+                                        value={tenantForm.unit_no}
+                                        onChange={(e) => setTenantForm({ ...tenantForm, unit_no: e.target.value })}
+                                        InputProps={{
+                                            startAdornment: <InputAdornment position="start"><InfoIcon color="action" fontSize="small" /></InputAdornment>,
+                                        }}
+                                    />
+                                </Grid>
                             </Grid>
-                            <Grid item xs={6}>
-                                <TextField
-                                    fullWidth
-                                    select
-                                    label="Status"
-                                    SelectProps={{ native: true }}
-                                    value={tenantForm.status}
-                                    onChange={(e) => setTenantForm({ ...tenantForm, status: e.target.value })}
-                                >
-                                    <option value="Operational">Operational</option>
-                                    <option value="Closed">Closed</option>
-                                    <option value="Pending">Pending</option>
-                                </TextField>
-                            </Grid>
-                            <Grid item xs={12}>
-                                <TextField
-                                    fullWidth
-                                    label="Category"
-                                    value={tenantForm.category}
-                                    onChange={(e) => setTenantForm({ ...tenantForm, category: e.target.value })}
-                                />
-                            </Grid>
-                            <Grid item xs={6}>
-                                <TextField
-                                    fullWidth
-                                    label="Level"
-                                    value={tenantForm.location_type}
-                                    onChange={(e) => setTenantForm({ ...tenantForm, location_type: e.target.value })}
-                                />
-                            </Grid>
-                            <Grid item xs={6}>
-                                <TextField
-                                    fullWidth
-                                    label="Unit No"
-                                    value={tenantForm.unit_no}
-                                    onChange={(e) => setTenantForm({ ...tenantForm, unit_no: e.target.value })}
-                                />
-                            </Grid>
-                        </Grid>
+                        </Box>
                     </DialogContent>
-                    <DialogActions sx={{ p: 2 }}>
-                        <Button onClick={() => setTenantDialogOpen(false)}>Cancel</Button>
-                        <Button type="submit" variant="contained">Save Tenant</Button>
+                    <DialogActions sx={{ p: 3, bgcolor: 'grey.50' }}>
+                        <Button
+                            onClick={() => setTenantDialogOpen(false)}
+                            sx={{ color: 'text.secondary', fontWeight: 'bold' }}
+                        >
+                            Cancel
+                        </Button>
+                        <Button
+                            type="submit"
+                            variant="contained"
+                            size="large"
+                            sx={{
+                                fontWeight: 'bold',
+                                px: 4,
+                                borderRadius: 2,
+                                boxShadow: '0 8px 16px rgba(29, 67, 155, 0.2)'
+                            }}
+                        >
+                            {selectedTenant ? 'Update Entity' : 'Create Entity'}
+                        </Button>
                     </DialogActions>
                 </form>
             </Dialog>
