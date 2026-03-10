@@ -47,7 +47,7 @@ return [
     ],
 
     'fast_termination' => true,
-    'memory_limit'     => 256,
+    'memory_limit'     => 512, // Increased for higher throughput
 
     'environments' => [
         'production' => [
@@ -59,9 +59,9 @@ return [
                     'transaction-processing:s4','transaction-processing:s5','transaction-processing:s6','transaction-processing:s7'
                 ],
                 'balance'    => 'auto',
-                'processes'  => env('HZ_HIGH_PROCESSES', 8),
-                'tries'      => 3,
-                'timeout'    => 30,
+                'processes'  => env('HZ_HIGH_PROCESSES', 16), // Increased for more concurrency
+                'tries'      => 5, // More retries for robustness
+                'timeout'    => 60, // Increased timeout for longer jobs
                 'nice'       => 0,
             ],
             'reporting-supervisor' => [
@@ -73,31 +73,23 @@ return [
                 'timeout'    => 300,
                 'nice'       => 5,
             ],
-            'forward-supervisor' => [
-                'connection' => 'redis',
-                'queue'      => ['forwarding'],
-                'balance'    => 'auto',
-                'processes'  => env('HZ_FORWARD_PROCESSES', 4),
-                'tries'      => 5,
-                'timeout'    => 60,
-                'nice'       => 2,
-            ],
+            // 'forward-supervisor' disabled
             'low-supervisor' => [
                 'connection' => 'redis',
                 'queue'      => ['low'],
                 'balance'    => 'auto',
-                'processes'  => env('HZ_LOW_PROCESSES', 2),
-                'tries'      => 1,
+                'processes'  => env('HZ_LOW_PROCESSES', 4), // Increased for background tasks
+                'tries'      => 2,
                 'timeout'    => 120,
                 'nice'       => 5,
             ],
             'notifications-supervisor' => [
                 'connection' => 'redis',
                 'queue'      => ['notifications'],
-                'balance'    => 'simple',
-                'processes'  => 2,
+                'balance'    => 'auto', // Use auto for dynamic scaling
+                'processes'  => 4, // Increased for notification throughput
                 'tries'      => 3,
-                'timeout'    => 30,
+                'timeout'    => 60, // Increased timeout
                 'nice'       => 0,
             ],
         ],
