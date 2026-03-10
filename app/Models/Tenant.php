@@ -11,6 +11,13 @@ class Tenant extends Model
 {
     use HasApiTokens, HasFactory, SoftDeletes;
 
+    /**
+     * Get the users associated with the tenant.
+     */
+    public function users()
+    {
+        return $this->hasMany(User::class);
+    }
 
     /**
      * Get the POS terminals for the tenant.
@@ -19,7 +26,6 @@ class Tenant extends Model
     {
         return $this->hasMany(PosTerminal::class);
     }
-    use HasApiTokens, HasFactory, SoftDeletes;
 
     protected $fillable = [
         'company_id',

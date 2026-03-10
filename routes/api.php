@@ -20,6 +20,8 @@ use App\Http\Controllers\API\V1\ChecksumSandboxController;
 use App\Http\Middleware\AttachCorrelationId;
 use App\Http\Controllers\McpController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\TenantController;
+use App\Http\Controllers\TenantUserController;
 
 // MCP endpoint for kirschbaum-development/laravel-loop (public, no auth, CSRF-free)
 Route::post('/mcp', [McpController::class, 'handle']);
@@ -72,9 +74,16 @@ Route::middleware(['api'])->group(function () {
             ->get(['id', 'serial_number', 'tenant_id', 'machine_number']);
     });
     Route::post('terminals', [TerminalTokenController::class, 'apiStore']);
-    Route::get('tenants', function () {
-        return \App\Models\Tenant::orderBy('trade_name')->get(['id', 'trade_name']);
-    });
+    Route::get('tenants', [TenantController::class, 'index']);
+    Route::post('tenants', [TenantController::class, 'store']);
+    Route::get('tenants/{tenant}', [TenantController::class, 'show']);
+    Route::put('tenants/{tenant}', [TenantController::class, 'update']);
+    Route::delete('tenants/{tenant}', [TenantController::class, 'destroy']);
+
+    // Tenant Users
+    Route::get('tenants/{tenant}/users', [TenantUserController::class, 'index']);
+    Route::post('tenants/{tenant}/users', [TenantUserController::class, 'store']);
+    Route::delete('tenants/{tenant}/users/{user}', [TenantUserController::class, 'destroy']);
 
     // Terminal Token Management
     Route::prefix('terminals/tokens')->group(function () {
