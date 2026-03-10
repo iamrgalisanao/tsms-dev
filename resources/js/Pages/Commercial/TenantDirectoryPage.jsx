@@ -211,7 +211,7 @@ const TenantDirectoryPage = () => {
                         variant="contained"
                         color="primary"
                         style={{ marginLeft: 16, fontWeight: 700 }}
-                        onClick={() => navigate('/commercial/tenant-user-management')}
+                        onClick={() => navigate('/commercial/tenants/manage')}
                     >
                         Add Tenant
                     </Button>

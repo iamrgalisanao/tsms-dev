@@ -21,6 +21,7 @@ import WeekdayReportPage from './Pages/Commercial/WeekdayReportPage.jsx';
 import WeekendReportPage from './Pages/Commercial/WeekendReportPage.jsx';
 import TenantDirectoryPage from './Pages/Commercial/TenantDirectoryPage.jsx';
 import TenantProfilePage from './Pages/Commercial/TenantProfilePage.jsx';
+import TenantUserManagementPage from './Pages/Commercial/TenantUserManagementPage.jsx';
 import './bootstrap';
 import '../css/app.css';
 
@@ -62,6 +63,7 @@ const App = () => {
                   <Route path="/commercial/reports/weekday" element={<WeekdayReportPage />} />
                   <Route path="/commercial/reports/weekend" element={<WeekendReportPage />} />
                   <Route path="/commercial/tenants" element={<TenantDirectoryPage />} />
+                  <Route path="/commercial/tenants/manage" element={<TenantUserManagementPage />} />
                   <Route path="/commercial/tenants/:id" element={<TenantProfilePage />} />
 
                   <Route path="*" element={<div className="p-8 text-center text-gray-500">Feature coming soon...</div>} />
