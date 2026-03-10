@@ -2,14 +2,15 @@ import { useAuth } from '../Contexts/AuthContext';
 
 export const useRole = () => {
     const { user } = useAuth();
+    const role = user && user.role ? user.role.toUpperCase() : null;
     console.log('[useRole] Debug Info:', {
         user,
-        role: user ? user.role : null,
+        role,
         email: user ? user.email : null,
         name: user ? user.name : null,
         rolesArray: user && user.roles ? user.roles : null,
-        isAdmin: user ? user.role === 'admin' : false,
-        isCommercial: user ? user.role === 'commercial' : false,
+        isAdmin: role === 'ADMIN',
+        isCommercial: role === 'COMMERCIAL',
     });
-    return user && (user.role === 'admin' || user.role === 'commercial');
+    return user && (role === 'ADMIN' || role === 'COMMERCIAL');
 };
