@@ -15,6 +15,7 @@ use App\Services\TransactionValidationService;
 use App\Http\Controllers\API\V1\TransactionController as ApiTransactionController;
 use App\Http\Controllers\API\V1\SubmissionEventController;
 use App\Http\Controllers\API\V1\SubmissionEventItemsController;
+use App\Http\Controllers\API\V1\IncidentController;
 use App\Http\Controllers\API\V1\ChecksumSandboxController;
 use App\Http\Middleware\AttachCorrelationId;
 use App\Http\Controllers\McpController;
@@ -131,6 +132,8 @@ Route::prefix('v1')->middleware(['auth:sanctum', 'capture.terminal.ip', AttachCo
         Route::get('/transactions/{id}/status', [TransactionController::class, 'status']);
         Route::get('/submission-events', [SubmissionEventController::class, 'index']);
         Route::get('/submission-events/{submission_uuid}/items', [SubmissionEventItemsController::class, 'index']);
+        Route::get('/incidents', [IncidentController::class, 'index']);
+        Route::get('/incidents/{id}', [IncidentController::class, 'show']);
     });
 
     // Terminal Token Management API (requires admin authentication)

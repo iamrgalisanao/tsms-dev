@@ -50,3 +50,6 @@ docs/DAILY_ACTIVITY_*.md
 # Local test dumps
 tmp_valid_tx_errors.json
 
+# Local tools and helpers (not for commit)
+tools/validate_tsms_payload.php
+

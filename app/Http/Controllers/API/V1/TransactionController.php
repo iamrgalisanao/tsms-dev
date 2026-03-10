@@ -2272,6 +2272,26 @@ class TransactionController extends Controller
                             'occurred_at'     => now(),
                             'correlation_id'  => $request->attributes->get('correlation_id'),
                         ]);
+
+                        // Aggregate this failure into a centralized incident record
+                        try {
+                            app(\App\Services\IncidentFactory::class)->recordFailure([
+                                'submission_uuid' => $request->submission_uuid,
+                                'correlation_id'  => $request->attributes->get('correlation_id'),
+                                'tenant_id'       => $request->tenant_id,
+                                'terminal_id'     => $request->terminal_id,
+                                'reason_code'     => 'PROCESSING_ERROR',
+                                'source'          => 'SUBMISSION_EVENT_ITEM',
+                                'failed_count'    => 1,
+                                'reason_details'  => ['error' => $e->getMessage()],
+                            ]);
+                        } catch (\Throwable $ie) {
+                            Log::debug('IncidentFactory recordFailure failed for item', [
+                                'submission_uuid' => $request->submission_uuid,
+                                'transaction_id'  => $transactionData['transaction_id'] ?? 'unknown',
+                                'error'           => $ie->getMessage(),
+                            ]);
+                        }
                     } catch (\Throwable $te) {
                         Log::warning('Failed to write SubmissionEventItem (FAILED)', [
                             'submission_uuid' => $request->submission_uuid,
@@ -2307,6 +2327,27 @@ class TransactionController extends Controller
                     'occurred_at'       => now(),
                     'correlation_id'    => $request->attributes->get('correlation_id'),
                 ]);
+
+                // If there were failures, also aggregate them into the incident view
+                if ($totalFailed > 0) {
+                    try {
+                        app(\App\Services\IncidentFactory::class)->recordFailure([
+                            'submission_uuid' => $request->submission_uuid,
+                            'correlation_id'  => $request->attributes->get('correlation_id'),
+                            'tenant_id'       => $request->tenant_id,
+                            'terminal_id'     => $request->terminal_id,
+                            'reason_code'     => 'PARTIAL_FAILURE',
+                            'source'          => 'SUBMISSION_EVENT',
+                            'failed_count'    => $totalFailed,
+                            'reason_details'  => ['failed_count' => $totalFailed],
+                        ]);
+                    } catch (\Throwable $ie) {
+                        Log::debug('IncidentFactory recordFailure failed for submission', [
+                            'submission_uuid' => $request->submission_uuid,
+                            'error'           => $ie->getMessage(),
+                        ]);
+                    }
+                }
             } catch (\Throwable $te) {
                 Log::warning('Failed to write SubmissionEvent (COMPLETED)', [
                     'submission_uuid' => $request->submission_uuid,
