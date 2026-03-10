@@ -23,7 +23,9 @@ import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import Tooltip from '@mui/material/Tooltip';
 import LogFilterBar from '../Components/logs/LogFilterBar';
 import LogTable from '../Components/logs/LogTable';
+import IncidentsTable from '../Components/logs/IncidentsTable';
 import { systemLogService } from '../services/systemLogService';
+import { incidentService } from '../services/incidentService';
 
 const StatCard = ({ title, value, color, icon, description }) => (
     <Paper elevation={0} sx={{ p: 2, borderRadius: 3, border: '1px solid', borderColor: 'divider', boxShadow: '0 4px 12px rgba(0,0,0,0.02)' }}>
@@ -52,6 +54,7 @@ const SystemLogsPage = () => {
     const [activeTab, setActiveTab] = useState('system');
     const [loading, setLoading] = useState(true);
     const [logData, setLogData] = useState(null);
+    const [incidents, setIncidents] = useState(null);
     const [filters, setFilters] = useState({
         type: '',
         severity: '',
@@ -69,6 +72,8 @@ const SystemLogsPage = () => {
         submission: 1
     });
 
+    const [incidentPage, setIncidentPage] = useState(1);
+
     const [notification, setNotification] = useState({ open: false, message: '', severity: 'info' });
 
     const fetchData = useCallback(async () => {
@@ -81,14 +86,24 @@ const SystemLogsPage = () => {
                 webhook_page: pages.webhook,
                 submission_page: pages.submission
             };
-            const data = await systemLogService.getLogs(params);
-            setLogData(data);
+            const [logsData, incidentsData] = await Promise.all([
+                systemLogService.getLogs(params),
+                incidentService.getIncidents({
+                    from: filters.date_from || undefined,
+                    to: filters.date_to || undefined,
+                    terminal_id: filters.terminal || undefined,
+                    page: incidentPage,
+                    per_page: 15
+                })
+            ]);
+            setLogData(logsData);
+            setIncidents(incidentsData);
         } catch (error) {
             setNotification({ open: true, message: 'Identity orchestration failed to synchronize with log authority.', severity: 'error' });
         } finally {
             setLoading(false);
         }
-    }, [filters, pages]);
+    }, [filters, pages, incidentPage]);
 
     useEffect(() => {
         fetchData();
@@ -242,6 +257,17 @@ const SystemLogsPage = () => {
                                 </Stack>
                             }
                         />
+                        <Tab
+                            value="incidents"
+                            label={
+                                <Stack direction="row" spacing={1} alignItems="center">
+                                    <span>Incidents</span>
+                                    <Tooltip title="Aggregated submission issues and POS-facing tickets derived from failed official payloads.">
+                                        <InfoOutlinedIcon sx={{ fontSize: 16, opacity: 0.6 }} />
+                                    </Tooltip>
+                                </Stack>
+                            }
+                        />
                     </Tabs>
                 </Box>
 
@@ -276,6 +302,13 @@ const SystemLogsPage = () => {
                             loading={loading}
                             type="submission"
                             onPageChange={(p) => handlePageChange('submission', p)}
+                        />
+                    )}
+                    {activeTab === 'incidents' && (
+                        <IncidentsTable
+                            data={incidents}
+                            loading={loading}
+                            onPageChange={(p) => setIncidentPage(p)}
                         />
                     )}
                 </Box>
