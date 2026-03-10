@@ -2,7 +2,14 @@ import { useAuth } from '../Contexts/AuthContext';
 
 export const useRole = () => {
     const { user } = useAuth();
-    const role = user && user.role ? user.role.toUpperCase() : null;
+    let role = null;
+    if (user) {
+        if (user.role) {
+            role = user.role.toUpperCase();
+        } else if (user.roles && Array.isArray(user.roles) && user.roles.length > 0) {
+            role = typeof user.roles[0] === 'string' ? user.roles[0].toUpperCase() : null;
+        }
+    }
     console.log('[useRole] Debug Info:', {
         user,
         role,
