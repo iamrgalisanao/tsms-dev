@@ -17,7 +17,7 @@ import {
 } from '@mui/icons-material';
 import '../../../css/TenantDirectory.css';
 import { Button } from '@mui/material';
-import { useRole } from './TenantUserManagementPage'; // If useRole is exported
+import { useRole } from '../../Hooks/useRole';
 
 // ── PITX brand ────────────────────────────────────────────────────────────────
 const BLUE = '#1D439B';

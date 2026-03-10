@@ -10,14 +10,7 @@ import {
     Alert
 } from '@mui/material';
 import { useNavigate } from 'react-router-dom';
-
-// Role check utility (stub, replace with real auth logic)
-const useRole = () => {
-    // Replace with actual role check from auth context or API
-    // Example: return ['admin', 'commercial'].includes(user.role);
-    const user = { role: 'admin' }; // Stub
-    return user.role === 'admin' || user.role === 'commercial';
-};
+import { useRole } from '../../Hooks/useRole';
 
 const TenantUserManagementPage = () => {
     const navigate = useNavigate();
