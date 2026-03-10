@@ -39,6 +39,7 @@ import {
     Category as CategoryIcon,
     LocationOn as LocationOnIcon,
     MapsHomeWork as MapsHomeWorkIcon,
+    Search as SearchIcon,
     Info as InfoIcon
 } from '@mui/icons-material';
 import api from '../../services/api';
@@ -50,6 +51,11 @@ const TenantUserManagementPage = () => {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [success, setSuccess] = useState(null);
+
+    // Filtering States
+    const [searchTerm, setSearchTerm] = useState('');
+    const [statusFilter, setStatusFilter] = useState('All');
+    const [categoryFilter, setCategoryFilter] = useState('All');
 
     // Dialog States
     const [tenantDialogOpen, setTenantDialogOpen] = useState(false);
@@ -93,6 +99,37 @@ const TenantUserManagementPage = () => {
             fetchTenants();
         }
     }, [isAuthorized, fetchTenants]);
+
+    const filteredTenants = React.useMemo(() => {
+        return tenants.filter(tenant => {
+            const matchesSearch = !searchTerm ||
+                tenant.trade_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                tenant.customer_code.toLowerCase().includes(searchTerm.toLowerCase());
+
+            const matchesStatus = statusFilter === 'All' || tenant.status === statusFilter;
+            const matchesCategory = categoryFilter === 'All' || tenant.category === categoryFilter;
+
+            return matchesSearch && matchesStatus && matchesCategory;
+        });
+    }, [tenants, searchTerm, statusFilter, categoryFilter]);
+
+    const categories = React.useMemo(() => {
+        const cats = new Set(tenants.map(t => t.category).filter(Boolean));
+        return ['All', ...Array.from(cats)].sort();
+    }, [tenants]);
+
+    const getStatusConfig = (status) => {
+        switch (status) {
+            case 'Operational':
+                return { color: 'success', icon: <Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: 'success.main', mr: 1 }} /> };
+            case 'Closed':
+                return { color: 'error', icon: <Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: 'error.main', mr: 1 }} /> };
+            case 'Pending':
+                return { color: 'warning', icon: <Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: 'warning.main', mr: 1 }} /> };
+            default:
+                return { color: 'default', icon: null };
+        }
+    };
 
     if (!isAuthorized) {
         return (
@@ -213,17 +250,104 @@ const TenantUserManagementPage = () => {
             {error && <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError(null)}>{error}</Alert>}
             {success && <Alert severity="success" sx={{ mb: 3 }} onClose={() => setSuccess(null)}>{success}</Alert>}
 
+            {/* Filter Bar */}
+            <Paper sx={{ p: 2, mb: 3, borderRadius: 3, boxShadow: '0 2px 12px rgba(0,0,0,0.05)' }}>
+                <Grid container spacing={2} alignItems="center">
+                    <Grid item xs={12} md={4}>
+                        <TextField
+                            fullWidth
+                            size="small"
+                            placeholder="Search by name or code..."
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            InputProps={{
+                                startAdornment: (
+                                    <InputAdornment position="start">
+                                        <SearchIcon fontSize="small" color="action" />
+                                    </InputAdornment>
+                                ),
+                                endAdornment: searchTerm && (
+                                    <InputAdornment position="end">
+                                        <IconButton size="small" onClick={() => setSearchTerm('')}>
+                                            <InfoIcon sx={{ fontSize: 16, transform: 'rotate(45deg)' }} />
+                                        </IconButton>
+                                    </InputAdornment>
+                                )
+                            }}
+                        />
+                    </Grid>
+                    <Grid item xs={6} md={3}>
+                        <TextField
+                            fullWidth
+                            select
+                            size="small"
+                            label="Category"
+                            value={categoryFilter}
+                            onChange={(e) => setCategoryFilter(e.target.value)}
+                            InputProps={{
+                                startAdornment: (
+                                    <InputAdornment position="start">
+                                        <CategoryIcon fontSize="small" color="action" />
+                                    </InputAdornment>
+                                ),
+                            }}
+                        >
+                            {categories.map(cat => (
+                                <MenuItem key={cat} value={cat}>{cat}</MenuItem>
+                            ))}
+                        </TextField>
+                    </Grid>
+                    <Grid item xs={6} md={3}>
+                        <TextField
+                            fullWidth
+                            select
+                            size="small"
+                            label="Status"
+                            value={statusFilter}
+                            onChange={(e) => setStatusFilter(e.target.value)}
+                            InputProps={{
+                                startAdornment: (
+                                    <InputAdornment position="start">
+                                        <InfoIcon fontSize="small" color="action" />
+                                    </InputAdornment>
+                                ),
+                            }}
+                        >
+                            <MenuItem value="All">All Statuses</MenuItem>
+                            <MenuItem value="Operational">Operational</MenuItem>
+                            <MenuItem value="Closed">Closed</MenuItem>
+                            <MenuItem value="Pending">Pending</MenuItem>
+                        </TextField>
+                    </Grid>
+                    <Grid item xs={12} md={2}>
+                        <Button
+                            fullWidth
+                            variant="text"
+                            color="secondary"
+                            disabled={searchTerm === '' && statusFilter === 'All' && categoryFilter === 'All'}
+                            onClick={() => {
+                                setSearchTerm('');
+                                setStatusFilter('All');
+                                setCategoryFilter('All');
+                            }}
+                        >
+                            Clear Filters
+                        </Button>
+                    </Grid>
+                </Grid>
+            </Paper>
+
             <TableContainer component={Paper} sx={{ borderRadius: 3, boxShadow: '0 4px 20px rgba(0,0,0,0.05)' }}>
                 <Table>
-                    <TableHead sx={{ bgcolor: 'grey.50' }}>
+                    <TableHead sx={{ bgcolor: 'grey.50', borderBottom: '2px solid', borderColor: 'grey.200' }}>
                         <TableRow>
-                            <TableCell sx={{ fontWeight: 'bold' }}>Trade Name</TableCell>
-                            <TableCell sx={{ fontWeight: 'bold' }}>Code</TableCell>
-                            <TableCell sx={{ fontWeight: 'bold' }}>Category</TableCell>
-                            <TableCell sx={{ fontWeight: 'bold' }}>Users</TableCell>
-                            <TableCell sx={{ fontWeight: 'bold' }}>Terminals</TableCell>
-                            <TableCell sx={{ fontWeight: 'bold' }}>Status</TableCell>
-                            <TableCell align="right" sx={{ fontWeight: 'bold' }}>Actions</TableCell>
+                            <TableCell sx={{ fontWeight: 800, textTransform: 'uppercase', fontSize: '0.7rem', letterSpacing: '0.05em', color: 'text.secondary' }}>Trade Name</TableCell>
+                            <TableCell sx={{ fontWeight: 800, textTransform: 'uppercase', fontSize: '0.7rem', letterSpacing: '0.05em', color: 'text.secondary' }}>Code</TableCell>
+                            <TableCell sx={{ fontWeight: 800, textTransform: 'uppercase', fontSize: '0.7rem', letterSpacing: '0.05em', color: 'text.secondary' }}>Category</TableCell>
+                            <TableCell sx={{ fontWeight: 800, textTransform: 'uppercase', fontSize: '0.7rem', letterSpacing: '0.05em', color: 'text.secondary' }}>Users</TableCell>
+                            <TableCell sx={{ fontWeight: 800, textTransform: 'uppercase', fontSize: '0.7rem', letterSpacing: '0.05em', color: 'text.secondary' }}>Terminals</TableCell>
+                            <TableCell sx={{ fontWeight: 800, textTransform: 'uppercase', fontSize: '0.7rem', letterSpacing: '0.05em', color: 'text.secondary' }}>Status</TableCell>
+                            <TableCell align="right" sx={{ fontWeight: 800, textTransform: 'uppercase', fontSize: '0.7rem', letterSpacing: '0.05em', color: 'text.secondary' }}>Actions</TableCell>
                         </TableRow>
                     </TableHead>
                     <TableBody>
@@ -233,32 +357,76 @@ const TenantUserManagementPage = () => {
                                     <CircularProgress size={24} />
                                 </TableCell>
                             </TableRow>
-                        ) : tenants.length === 0 ? (
+                        ) : filteredTenants.length === 0 ? (
                             <TableRow>
-                                <TableCell colSpan={7} align="center" sx={{ py: 3 }}>
-                                    No tenants found.
+                                <TableCell colSpan={7} align="center" sx={{ py: 5 }}>
+                                    <Box sx={{ color: 'text.secondary' }}>
+                                        <SearchIcon sx={{ fontSize: 48, mb: 1, opacity: 0.5 }} />
+                                        <Typography variant="body1" fontWeight="bold">No results found</Typography>
+                                        <Typography variant="body2">Try adjusting your search or filters.</Typography>
+                                        <Button
+                                            size="small"
+                                            sx={{ mt: 2 }}
+                                            onClick={() => {
+                                                setSearchTerm('');
+                                                setStatusFilter('All');
+                                                setCategoryFilter('All');
+                                            }}
+                                        >
+                                            Reset Filters
+                                        </Button>
+                                    </Box>
                                 </TableCell>
                             </TableRow>
-                        ) : tenants.map((tenant) => (
-                            <TableRow key={tenant.id} hover>
-                                <TableCell fontWeight="600">{tenant.trade_name}</TableCell>
-                                <TableCell><code>{tenant.customer_code}</code></TableCell>
-                                <TableCell>{tenant.category || 'N/A'}</TableCell>
+                        ) : filteredTenants.map((tenant) => (
+                            <TableRow key={tenant.id} hover sx={{ '&:last-child td, &:last-child th': { border: 0 } }}>
+                                <TableCell sx={{ fontWeight: 600, color: 'primary.main' }}>{tenant.trade_name}</TableCell>
+                                <TableCell>
+                                    <Typography variant="body2" sx={{ fontFamily: 'monospace', bgcolor: 'grey.100', px: 1, py: 0.5, borderRadius: 1, display: 'inline-block' }}>
+                                        {tenant.customer_code}
+                                    </Typography>
+                                </TableCell>
+                                <TableCell>
+                                    {tenant.category ? (
+                                        <Chip
+                                            label={tenant.category}
+                                            size="small"
+                                            variant="outlined"
+                                            sx={{ fontSize: '0.75rem', fontWeight: 600, borderColor: 'grey.300' }}
+                                        />
+                                    ) : 'N/A'}
+                                </TableCell>
                                 <TableCell>
                                     <Chip
                                         size="small"
                                         label={tenant.users_count || 0}
                                         icon={<GroupIcon sx={{ fontSize: '14px !important' }} />}
+                                        sx={{ fontWeight: 'bold' }}
                                     />
                                 </TableCell>
-                                <TableCell>{tenant.pos_terminals_count || 0}</TableCell>
                                 <TableCell>
-                                    <Chip
-                                        size="small"
-                                        label={tenant.status}
-                                        color={tenant.status === 'Operational' ? 'success' : 'warning'}
-                                        variant="outlined"
-                                    />
+                                    <Typography variant="body2" fontWeight="bold">
+                                        {tenant.pos_terminals_count || 0}
+                                    </Typography>
+                                </TableCell>
+                                <TableCell>
+                                    {(() => {
+                                        const config = getStatusConfig(tenant.status);
+                                        return (
+                                            <Chip
+                                                size="small"
+                                                label={tenant.status}
+                                                color={config.color}
+                                                variant="outlined"
+                                                icon={config.icon}
+                                                sx={{
+                                                    fontWeight: 'bold',
+                                                    px: 1,
+                                                    '& .MuiChip-icon': { ml: 0 }
+                                                }}
+                                            />
+                                        );
+                                    })()}
                                 </TableCell>
                                 <TableCell align="right">
                                     <Tooltip title="Manage Users">
