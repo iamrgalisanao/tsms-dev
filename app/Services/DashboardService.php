@@ -143,83 +143,89 @@ class DashboardService
 
     public function getAdvancedMetrics($filters = [])
     {
-        $today = Carbon::today();
-        $yesterday = Carbon::yesterday();
+        return \Illuminate\Support\Facades\Cache::remember('dashboard.advanced_metrics', 300, function () use ($filters) {
+            $today = Carbon::today();
+            $yesterday = Carbon::yesterday();
 
-        $metricsToday = $this->getMetricsForDate($today);
-        $metricsYesterday = $this->getMetricsForDate($yesterday);
+            $metricsToday = $this->getMetricsForDate($today);
+            $metricsYesterday = $this->getMetricsForDate($yesterday);
 
-        $voidRateToday = ($metricsToday['count'] ?? 0) > 0
-            ? ($metricsToday['voids'] / $metricsToday['count']) * 100
-            : 0;
+            $voidRateToday = ($metricsToday['count'] ?? 0) > 0
+                ? ($metricsToday['voids'] / $metricsToday['count']) * 100
+                : 0;
 
-        $voidRateYesterday = ($metricsYesterday['count'] ?? 0) > 0
-            ? ($metricsYesterday['voids'] / $metricsYesterday['count']) * 100
-            : 0;
+            $voidRateYesterday = ($metricsYesterday['count'] ?? 0) > 0
+                ? ($metricsYesterday['voids'] / $metricsYesterday['count']) * 100
+                : 0;
 
-        return [
-            'total_sales' => [
-                'current' => (float) $metricsToday['sales'],
-                'previous' => (float) $metricsYesterday['sales'],
-                'trend' => $this->calculateTrend($metricsToday['sales'], $metricsYesterday['sales']),
-                'sparkline' => $this->getHourlySalesSparkline($today)
-            ],
-            'total_transactions' => [
-                'current' => (int) $metricsToday['count'],
-                'previous' => (int) $metricsYesterday['count'],
-                'trend' => $this->calculateTrend($metricsToday['count'], $metricsYesterday['count']),
-                'sparkline' => $this->getHourlyCountSparkline($today)
-            ],
-            'voided_transactions' => [
-                'current' => (int) $metricsToday['voids'],
-                'previous' => (int) $metricsYesterday['voids'],
-                'trend' => $this->calculateTrend($metricsToday['voids'], $metricsYesterday['voids'], true),
-            ],
-            'void_rate' => [
-                'current' => round($voidRateToday, 2),
-                'previous' => round($voidRateYesterday, 2),
-                'trend' => $this->calculateTrend($voidRateToday, $voidRateYesterday, true),
-            ],
-            'active_terminals' => [
-                'current' => \App\Models\PosTerminal::where('is_active', true)->count(),
-                'total' => \App\Models\PosTerminal::count(),
-            ]
-        ];
+            return [
+                'total_sales' => [
+                    'current' => (float) $metricsToday['sales'],
+                    'previous' => (float) $metricsYesterday['sales'],
+                    'trend' => $this->calculateTrend($metricsToday['sales'], $metricsYesterday['sales']),
+                    'sparkline' => $this->getHourlySalesSparkline($today)
+                ],
+                'total_transactions' => [
+                    'current' => (int) $metricsToday['count'],
+                    'previous' => (int) $metricsYesterday['count'],
+                    'trend' => $this->calculateTrend($metricsToday['count'], $metricsYesterday['count']),
+                    'sparkline' => $this->getHourlyCountSparkline($today)
+                ],
+                'voided_transactions' => [
+                    'current' => (int) $metricsToday['voids'],
+                    'previous' => (int) $metricsYesterday['voids'],
+                    'trend' => $this->calculateTrend($metricsToday['voids'], $metricsYesterday['voids'], true),
+                ],
+                'void_rate' => [
+                    'current' => round($voidRateToday, 2),
+                    'previous' => round($voidRateYesterday, 2),
+                    'trend' => $this->calculateTrend($voidRateToday, $voidRateYesterday, true),
+                ],
+                'active_terminals' => [
+                    'current' => \App\Models\PosTerminal::where('is_active', true)->count(),
+                    'total' => \App\Models\PosTerminal::count(),
+                ]
+            ];
+        });
     }
 
     public function getSystemHealth()
     {
-        return [
-            'cpu' => rand(10, 80),
-            'memory' => rand(40, 90),
-            'network' => 'Stable',
-            'queues' => [
-                'status' => 'Healthy',
-                'backlog' => \DB::table('jobs')->count(),
-            ],
-            'forwarding' => [
-                'status' => config('app.forwarding_enabled', false) ? 'Active' : 'Offline',
-                'latency' => rand(50, 200) . 'ms'
-            ]
-        ];
+        return \Illuminate\Support\Facades\Cache::remember('dashboard.system_health', 60, function () {
+            return [
+                'cpu' => rand(10, 80),
+                'memory' => rand(40, 90),
+                'network' => 'Stable',
+                'queues' => [
+                    'status' => 'Healthy',
+                    'backlog' => \DB::table('jobs')->count(),
+                ],
+                'forwarding' => [
+                    'status' => config('app.forwarding_enabled', false) ? 'Active' : 'Offline',
+                    'latency' => rand(50, 200) . 'ms'
+                ]
+            ];
+        });
     }
 
     public function getTerminalPerformance()
     {
-        return DB::table('pos_terminals')
-            ->join('tenants', 'pos_terminals.tenant_id', '=', 'tenants.id')
-            ->leftJoin('transactions', 'pos_terminals.id', '=', 'transactions.terminal_id')
-            ->select(
-                'pos_terminals.serial_number as terminal_uid',
-                'tenants.trade_name',
-                DB::raw('COUNT(transactions.id) as transaction_count'),
-                DB::raw('SUM(transactions.gross_sales) as total_sales')
-            )
-            ->where('transactions.created_at', '>=', now()->subDay())
-            ->groupBy('pos_terminals.id', 'tenants.trade_name', 'pos_terminals.serial_number')
-            ->orderByDesc('total_sales')
-            ->limit(5)
-            ->get();
+        return \Illuminate\Support\Facades\Cache::remember('dashboard.terminal_performance', 300, function () {
+            return DB::table('pos_terminals')
+                ->join('tenants', 'pos_terminals.tenant_id', '=', 'tenants.id')
+                ->leftJoin('transactions', 'pos_terminals.id', '=', 'transactions.terminal_id')
+                ->select(
+                    'pos_terminals.serial_number as terminal_uid',
+                    'tenants.trade_name',
+                    DB::raw('COUNT(transactions.id) as transaction_count'),
+                    DB::raw('SUM(transactions.gross_sales) as total_sales')
+                )
+                ->where('transactions.created_at', '>=', now()->subDay())
+                ->groupBy('pos_terminals.id', 'tenants.trade_name', 'pos_terminals.serial_number')
+                ->orderByDesc('total_sales')
+                ->limit(5)
+                ->get();
+        });
     }
 
     private function getMetricsForDate($date)

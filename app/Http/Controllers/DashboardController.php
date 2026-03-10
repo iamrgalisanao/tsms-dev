@@ -139,37 +139,41 @@ class DashboardController extends Controller
     // API: GET /api/dashboard/charts
     public function apiCharts(Request $request)
     {
-        $days = $request->input('days', 7);
-        $labels = [];
-        $salesData = [];
-        $volumeData = [];
-        $prevSalesData = [];
+        $days = (int) $request->input('days', 7);
+        $cacheKey = "dashboard.api_charts.{$days}";
 
-        for ($i = $days - 1; $i >= 0; $i--) {
-            $date = Carbon::today()->subDays($i);
-            $labels[] = $date->format('M d');
+        return \Illuminate\Support\Facades\Cache::remember($cacheKey, 300, function () use ($days) {
+            $labels = [];
+            $salesData = [];
+            $volumeData = [];
+            $prevSalesData = [];
 
-            $stats = Transaction::whereDate('transaction_timestamp', $date)
-                ->selectRaw('SUM(gross_sales) as sales, COUNT(*) as count')
-                ->first();
+            for ($i = $days - 1; $i >= 0; $i--) {
+                $date = Carbon::today()->subDays($i);
+                $labels[] = $date->format('M d');
 
-            $salesData[] = (float) ($stats->sales ?? 0);
-            $volumeData[] = (int) ($stats->count ?? 0);
+                $stats = Transaction::whereDate('transaction_timestamp', $date)
+                    ->selectRaw('SUM(gross_sales) as sales, COUNT(*) as count')
+                    ->first();
 
-            // Previous period comparison (e.g., last week)
-            $prevDate = $date->copy()->subDays($days);
-            $prevStats = Transaction::whereDate('transaction_timestamp', $prevDate)
-                ->selectRaw('SUM(gross_sales) as sales')
-                ->first();
-            $prevSalesData[] = (float) ($prevStats->sales ?? 0);
-        }
+                $salesData[] = (float) ($stats->sales ?? 0);
+                $volumeData[] = (int) ($stats->count ?? 0);
 
-        return response()->json([
-            'labels' => $labels,
-            'sales' => $salesData,
-            'volume' => $volumeData,
-            'previous_sales' => $prevSalesData,
-        ]);
+                // Previous period comparison (e.g., last week)
+                $prevDate = $date->copy()->subDays($days);
+                $prevStats = Transaction::whereDate('transaction_timestamp', $prevDate)
+                    ->selectRaw('SUM(gross_sales) as sales')
+                    ->first();
+                $prevSalesData[] = (float) ($prevStats->sales ?? 0);
+            }
+
+            return response()->json([
+                'labels' => $labels,
+                'sales' => $salesData,
+                'volume' => $volumeData,
+                'previous_sales' => $prevSalesData,
+            ]);
+        });
     }
 
     // API: GET /api/dashboard/system-health

@@ -45,7 +45,7 @@ const DashboardPage = () => {
     const [loading, setLoading] = useState(true);
     const [selectedTransaction, setSelectedTransaction] = useState(null);
     const [detailPanelOpen, setDetailPanelOpen] = useState(false);
-    const [refreshInterval, setRefreshInterval] = useState(30000); // 30 seconds
+    const [refreshInterval, setRefreshInterval] = useState(300000); // 5 minutes
     const [isRefreshing, setIsRefreshing] = useState(false);
     const [notification, setNotification] = useState(null);
     const [alerts, setAlerts] = useState([]);
@@ -155,8 +155,8 @@ const DashboardPage = () => {
                                 severityRaw === 'high' || severityRaw === 'error'
                                     ? 'error'
                                     : severityRaw === 'medium' || severityRaw === 'warning'
-                                    ? 'warning'
-                                    : 'info';
+                                        ? 'warning'
+                                        : 'info';
                             const title = payload.title || 'System Alert';
                             const message = payload.message || title;
 
