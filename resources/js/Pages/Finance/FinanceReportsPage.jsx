@@ -159,9 +159,9 @@ const CsmrTable = ({ reportData, tenantName, month }) => {
                 </table>
             </div>
 
-            {/* Less section */}
+            {/* Summary Sections */}
             <div className="less-section">
-                <table>
+                <table style={{ borderCollapse: 'collapse' }}>
                     <tbody>
                         <tr>
                             <td className="label">Less:</td>
@@ -179,15 +179,64 @@ const CsmrTable = ({ reportData, tenantName, month }) => {
                             <td className="label" style={{ paddingLeft: 32 }}>Employee's Discount</td>
                             <td className="value">{php(totals.employee_discount)}</td>
                         </tr>
-                        <tr style={{ borderTop: '1px solid #333', fontWeight: 'bold' }}>
+                        <tr>
+                            <td className="label" style={{ paddingLeft: 32 }}>VIP Cards</td>
+                            <td className="value">{php(totals.vip_discount)}</td>
+                        </tr>
+                        <tr>
+                            <td className="label" style={{ paddingLeft: 32 }}>SC Vat Exempt Sales</td>
+                            <td className="value">{php(totals.sc_vat_exempt_sales)}</td>
+                        </tr>
+                        <tr>
+                            <td className="label" style={{ paddingLeft: 32 }}>Senior Citizen's & PWD Discount</td>
+                            <td className="value">{php(totals.senior_pwd)}</td>
+                        </tr>
+                        <tr>
+                            <td className="label" style={{ paddingLeft: 32 }}>Other Tax (Local Tax)</td>
+                            <td className="value">{php(totals.other_tax)}</td>
+                        </tr>
+                        <tr>
+                            <td className="label" style={{ paddingLeft: 32 }}>Service Charge Distributed to Employees</td>
+                            <td className="value">{php(totals.service_charge_distributed)}</td>
+                        </tr>
+                        <tr>
+                            <td className="label" style={{ paddingLeft: 32 }}>Service Charge Retained by Management</td>
+                            <td className="value">{php(totals.service_charge_retained)}</td>
+                        </tr>
+                        <tr style={{ borderTop: '2px solid #333', fontWeight: 'bold' }}>
                             <td className="label">Net Sales</td>
                             <td className="value">{php(totals.net_sales)}</td>
                         </tr>
                         <tr>
-                            <td className="label">VAT (12%)</td>
-                            <td className="value">{php(totals.vat_amount)}</td>
+                            <td className="label">Less 12% VAT</td>
+                            <td className="value">({php(totals.vat_amount)})</td>
                         </tr>
-                        <tr style={{ fontWeight: 'bold' }}>
+                        <tr style={{ borderBottom: '1px solid #333', fontWeight: 'bold' }}>
+                            <td className="label">Net ex-VAT</td>
+                            <td className="value">{php(totals.net_ex_vat)}</td>
+                        </tr>
+                        {/* Add Section */}
+                        <tr>
+                            <td className="label" style={{ paddingTop: 8 }}>Add:</td>
+                            <td />
+                        </tr>
+                        <tr>
+                            <td className="label" style={{ paddingLeft: 32 }}>SC Vat Exempt Sales</td>
+                            <td className="value">{php(totals.sc_vat_exempt_sales)}</td>
+                        </tr>
+                        <tr>
+                            <td className="label" style={{ paddingLeft: 32 }}>Promo Discounts Without Approval</td>
+                            <td className="value">{php(totals.promo_without_approval)}</td>
+                        </tr>
+                        <tr>
+                            <td className="label" style={{ paddingLeft: 32 }}>Other Tax (Local Tax)</td>
+                            <td className="value">{php(totals.other_tax)}</td>
+                        </tr>
+                        <tr>
+                            <td className="label" style={{ paddingLeft: 32 }}>Service Charge Retained by Management</td>
+                            <td className="value">{php(totals.service_charge_retained)}</td>
+                        </tr>
+                        <tr style={{ borderTop: '2px solid #333', fontWeight: 'bold' }}>
                             <td className="label">Net Sales Subject to Percentage Rent</td>
                             <td className="value">{php(totals.net_subject_to_rent)}</td>
                         </tr>

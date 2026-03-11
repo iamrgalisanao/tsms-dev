@@ -74,59 +74,54 @@ class FinanceCalculationService
      */
     public function deriveMetrics(array $c): array
     {
-        // 1. Calculations following Finance Standards
+        // 1. Aggregate Discs and Service Charges for readability
         $promotions = round(($c['promo_with_approval'] ?? 0) + ($c['promo_without_approval'] ?? 0), 2);
         $serviceCharge = round(($c['service_charge_distributed'] ?? 0) + ($c['service_charge_retained'] ?? 0), 2);
+        $seniorPwd = round(($c['senior_discount'] ?? 0) + ($c['pwd_discount'] ?? 0), 2);
 
-        // 2. Recalculated Gross Sales
-        // Gross = (Vatable + Recalculated VAT) + Exempt + Senior + PWD + Promotions + ServiceCharge + OtherTax
-        // But first we need Net Sales to get the canonical VAT
-
-        // Approximate Gross for first pass
-        $approxGross = round(
+        // 2. Gross Sales (Source of Truth: Sum of all 12 categorical columns A-M)
+        // Column N in Excel = Sum(B:M)
+        $gross = round(
             ($c['vatable_sales'] ?? 0)
             + ($c['sc_vat_exempt_sales'] ?? 0)
+            + ($c['vat_amount'] ?? 0)
+            + ($c['promo_with_approval'] ?? 0)
+            + ($c['promo_without_approval'] ?? 0)
+            + ($c['employee_discount'] ?? 0)
             + ($c['senior_discount'] ?? 0)
             + ($c['pwd_discount'] ?? 0)
-            + $promotions
-            + $serviceCharge
-            + ($c['other_tax'] ?? 0),
+            + ($c['vip_discount'] ?? 0)
+            + ($c['other_tax'] ?? 0)
+            + ($c['service_charge_distributed'] ?? 0)
+            + ($c['service_charge_retained'] ?? 0),
             2
         );
 
-        // 3. Net Sales
-        // Net = Gross - Senior - PWD - Promotions - Employee - OtherTax - ServiceCharge - Exempt
+        // 3. Net Sales (Source of Truth: Gross - Non-VAT components)
+        // Excel N61: Gross - (Promos + Employee + Senior/PWD + VIP + Exempt + LocalTax + SC)
+        // This effectively leaves (Vatable + VAT)
         $netSales = round(
-            $approxGross
-            - ($c['senior_discount'] ?? 0)
-            - ($c['pwd_discount'] ?? 0)
+            $gross
             - $promotions
             - ($c['employee_discount'] ?? 0)
+            - $seniorPwd
+            - ($c['vip_discount'] ?? 0)
+            - ($c['sc_vat_exempt_sales'] ?? 0)
             - ($c['other_tax'] ?? 0)
-            - $serviceCharge
-            - ($c['sc_vat_exempt_sales'] ?? 0),
+            - $serviceCharge,
             2
         );
 
         // 4. VAT (Derived from Net)
-        // VAT = (Net Sales / 1.12) * 0.12
+        // Excel N62: (Net Sales / 1.12) * 0.12
         $vat = round(($netSales / 1.12) * 0.12, 2);
 
-        // 5. Final Recalculated Gross
-        $gross = round(
-            ($c['vatable_sales'] ?? 0) + $vat
-            + ($c['sc_vat_exempt_sales'] ?? 0)
-            + ($c['senior_discount'] ?? 0)
-            + ($c['pwd_discount'] ?? 0)
-            + $promotions
-            + $serviceCharge
-            + ($c['other_tax'] ?? 0),
-            2
-        );
+        // 5. Net Ex-VAT (Equivalent to Vatable Sales after normalization)
+        // Excel N64: Net Sales - VAT
+        $netExVAT = round($netSales - $vat, 2);
 
         // 6. Net Subject to Rent
-        // Final Net = (Net Sales - VAT) + VAT Exempt + Promo (Without Approval) + Other Tax + SC Retained
-        $netExVAT = round($netSales - $vat, 2);
+        // Excel N71: Net ex-VAT + SC Exempt + Promo (Without Approval) + Other Tax + SC Retained
         $netSubjectToRent = round(
             $netExVAT
             + ($c['sc_vat_exempt_sales'] ?? 0)
@@ -139,13 +134,12 @@ class FinanceCalculationService
         return array_merge($c, [
             'total_promotions' => $promotions,
             'total_service_charge' => $serviceCharge,
+            'senior_pwd' => $seniorPwd,
             'net_sales' => $netSales,
             'vat_amount' => $vat,
             'gross_sales' => $gross,
             'net_ex_vat' => $netExVAT,
             'net_subject_to_rent' => $netSubjectToRent,
-            // Senior/PWD combined for UI Less section
-            'senior_pwd' => round(($c['senior_discount'] ?? 0) + ($c['pwd_discount'] ?? 0), 2),
         ]);
     }
 }
