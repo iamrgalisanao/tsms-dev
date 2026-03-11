@@ -48,11 +48,11 @@ class FinanceCalculationService
             $c['pwd_discount'] += (float) ($tx->pwd_discount ?? 0);
             $c['vip_discount'] += (float) ($tx->vip_card_discount ?? 0);
 
-            // For other_tax, we use the model's relation sum but EXCLUDE SC_VAT_EXEMPT_SALES 
-            // to avoid double counting, as it's handled separately above.
+            // For other_tax, we use the model's relation sum but EXCLUDE VAT components
+            // and SC_VAT_EXEMPT_SALES to avoid double counting or misclassification.
             if (method_exists($tx, 'taxes')) {
-                $c['other_tax'] += (float) $tx->taxes()->where('tax_type', '!=', 'VAT')
-                    ->where('tax_type', '!=', 'SC_VAT_EXEMPT_SALES')
+                $c['other_tax'] += (float) $tx->taxes()
+                    ->whereNotIn('tax_type', ['VAT', 'VAT_AMOUNT', 'VATABLE_SALES', 'SC_VAT_EXEMPT_SALES'])
                     ->sum('amount');
             }
 

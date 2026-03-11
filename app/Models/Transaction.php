@@ -90,21 +90,21 @@ class Transaction extends Model
         return !$this->isRefunded() && $this->gross_sales > 0;
     }
     // Validation statuses
-    public const VALIDATION_STATUS_VALID   = 'VALID';
+    public const VALIDATION_STATUS_VALID = 'VALID';
     public const VALIDATION_STATUS_PENDING = 'PENDING';
-    public const VALIDATION_STATUS_FAILED  = 'FAILED';
+    public const VALIDATION_STATUS_FAILED = 'FAILED';
     // Add more as needed
     use HasFactory;
 
     use HasFactory;
-    
+
     /**
      * The table associated with the model.
      *
      * @var string
      */
     protected $table = 'transactions';
-    
+
     /**
      * The attributes that are mass assignable.
      *
@@ -112,7 +112,7 @@ class Transaction extends Model
      */
     protected $fillable = [
         'tenant_id',
-        'terminal_id', 
+        'terminal_id',
         'transaction_id',
         'hardware_id',
         'transaction_timestamp',
@@ -122,7 +122,7 @@ class Transaction extends Model
         'gross_sales',
         'vatable_sales',
         'vat_amount',
-    'sc_vat_exempt_sales',
+        'sc_vat_exempt_sales',
         'net_sales',
         'tax_exempt',
         'service_charge',
@@ -130,21 +130,21 @@ class Transaction extends Model
         'customer_code',
         'promo_status',
         'payload_checksum',
-    'original_payload',
+        'original_payload',
         'validation_status',
-    'job_status',
-    'last_error',
-    'job_attempts',
-    'completed_at',
-    'discount_total',
+        'job_status',
+        'last_error',
+        'job_attempts',
+        'completed_at',
+        'discount_total',
         'submission_uuid',
         'submission_timestamp',
-    'receipt_no',
-    // Discount totals (denormalized for reporting)
-            // Denormalized discounts (may be computed from transaction_adjustments)
-            'promo_discount',
-            'senior_discount',
-            'pwd_discount',
+        'receipt_no',
+        // Discount totals (denormalized for reporting)
+        // Denormalized discounts (may be computed from transaction_adjustments)
+        'promo_discount',
+        'senior_discount',
+        'pwd_discount',
         'refund_status',
         'refund_amount',
         'refund_reason',
@@ -202,10 +202,10 @@ class Transaction extends Model
             }
         }
 
-    // 3) Replace control chars (C0/C1) with a single space so we preserve
-    // word boundaries when tabs/newlines are present, then collapse them
-    // in the next step.
-    $s = preg_replace('/[\x00-\x1F\x7F]/u', ' ', $s) ?? $s;
+        // 3) Replace control chars (C0/C1) with a single space so we preserve
+        // word boundaries when tabs/newlines are present, then collapse them
+        // in the next step.
+        $s = preg_replace('/[\x00-\x1F\x7F]/u', ' ', $s) ?? $s;
 
         // 4) Collapse internal whitespace runs to a single space
         $s = preg_replace('/\s+/u', ' ', $s) ?? $s;
@@ -266,15 +266,13 @@ class Transaction extends Model
      */
     public function otherTaxSum(): float
     {
-        $taxRows = $this->taxes()->where('tax_type', '!=', 'VAT')->get();
-        $sum = $taxRows->sum('amount') ?? 0.0;
+        // Exclude VAT-related components and SC_VAT_EXEMPT_SALES from "other tax" summation.
+        // These are either VAT itself, sales bases, or handled separately.
+        $sum = $this->taxes()
+            ->whereNotIn('tax_type', ['VAT', 'VAT_AMOUNT', 'VATABLE_SALES', 'SC_VAT_EXEMPT_SALES'])
+            ->sum('amount');
 
-        // If there's no explicit SC_VAT_EXEMPT_SALES tax row but we have a column value, include it
-        if ($taxRows->where('tax_type', 'SC_VAT_EXEMPT_SALES')->isEmpty() && !empty($this->sc_vat_exempt_sales)) {
-            $sum += (float) $this->sc_vat_exempt_sales;
-        }
-
-        return (float) $sum;
+        return (float) ($sum ?? 0.0);
     }
 
     /**
@@ -298,12 +296,12 @@ class Transaction extends Model
         'gross_sales' => 'decimal:2',
         'vatable_sales' => 'decimal:2',
         'vat_amount' => 'decimal:2',
-    'sc_vat_exempt_sales' => 'decimal:2',
+        'sc_vat_exempt_sales' => 'decimal:2',
         'net_sales' => 'decimal:2',
-            // Denormalized discount totals
-            'promo_discount' => 'decimal:2',
-            'senior_discount' => 'decimal:2',
-            'pwd_discount' => 'decimal:2',
+        // Denormalized discount totals
+        'promo_discount' => 'decimal:2',
+        'senior_discount' => 'decimal:2',
+        'pwd_discount' => 'decimal:2',
         'service_charge' => 'decimal:2',
         'management_service_charge' => 'decimal:2',
         'refund_amount' => 'decimal:2',
@@ -313,7 +311,7 @@ class Transaction extends Model
         'updated_at' => 'datetime',
         'tax_exempt' => 'boolean',
     ];
-    
+
     /**
      * Attributes to append to the model's array / JSON form.
      * Exposes computed values following new formulas to API consumers.
@@ -325,7 +323,7 @@ class Transaction extends Model
         'calculated_net_sales',
         'display_tenant_code',
     ];
-    
+
     // Add job status constants
     const JOB_STATUS_QUEUED = 'QUEUED';
     const JOB_STATUS_PROCESSING = 'PROCESSING';
@@ -361,7 +359,7 @@ class Transaction extends Model
     {
         return $this->hasMany(TransactionHistory::class)->orderBy('created_at', 'desc');
     }
-    
+
     /**
      * Check if this transaction occurred during store operating hours
      * 
@@ -374,7 +372,7 @@ class Transaction extends Model
         // For now, we return true as a placeholder.
         return true;
     }
-    
+
     /**
      * Calculate and validate VAT amount
      * 
@@ -386,15 +384,15 @@ class Transaction extends Model
             return $this->vat_amount === 0;
         }
         if ($this->vatable_sales > 0) {
-            $expectedVat = round($this->vatable_sales * 0.12, 2);
-            $actualVat = round($this->vat_amount, 2);
+            $expectedVat = round((float) $this->vatable_sales * 0.12, 2);
+            $actualVat = round((float) $this->vat_amount, 2);
             // Allow small rounding differences (within 0.10) to tolerate
             // inconsistent VAT rounding from varied POS implementations.
             return abs($expectedVat - $actualVat) <= 0.10;
         }
         return true;
     }
-    
+
     /**
      * Check if this transaction is a duplicate of another one
      * 
@@ -407,7 +405,7 @@ class Transaction extends Model
             ->where('id', '!=', $this->id)
             ->exists();
     }
-    
+
     /**
      * Calculate expected net sales from gross sales and VAT
      * 
@@ -420,22 +418,22 @@ class Transaction extends Model
 
     public function adjustments()
     {
-    return $this->hasMany(TransactionAdjustment::class, 'transaction_pk', 'id');
+        return $this->hasMany(TransactionAdjustment::class, 'transaction_pk', 'id');
     }
 
     public function taxes()
     {
-    return $this->hasMany(TransactionTax::class, 'transaction_pk', 'id');
+        return $this->hasMany(TransactionTax::class, 'transaction_pk', 'id');
     }
 
     public function jobs()
     {
-    return $this->hasMany(TransactionJob::class, 'transaction_pk', 'id');
+        return $this->hasMany(TransactionJob::class, 'transaction_pk', 'id');
     }
 
     public function validations()
     {
-    return $this->hasMany(TransactionValidation::class, 'transaction_pk', 'id');
+        return $this->hasMany(TransactionValidation::class, 'transaction_pk', 'id');
     }
 
     /**
@@ -501,9 +499,9 @@ class Transaction extends Model
             // Prefer tenant-scoped lookup if tenant provided, but fall back to terminal-only lookup
             if ($tenantId !== null) {
                 $tx = self::where('tenant_id', $tenantId)
-                          ->where('terminal_id', $terminalId)
-                          ->where('transaction_id', $transactionId)
-                          ->first();
+                    ->where('terminal_id', $terminalId)
+                    ->where('transaction_id', $transactionId)
+                    ->first();
                 if ($tx) {
                     return ['transaction' => $tx, 'ambiguous' => false, 'identifier' => 'transaction_id'];
                 }
@@ -511,8 +509,8 @@ class Transaction extends Model
 
             // Fallback: lookup by terminal + transaction_id (back-compat for records without tenant_id)
             $tx = self::where('terminal_id', $terminalId)
-                      ->where('transaction_id', $transactionId)
-                      ->first();
+                ->where('transaction_id', $transactionId)
+                ->first();
 
             return ['transaction' => $tx, 'ambiguous' => false, 'identifier' => 'transaction_id'];
         }
@@ -526,8 +524,8 @@ class Transaction extends Model
         // Prefer tenant-scoped lookup if tenant provided
         if ($tenantId !== null) {
             $query = self::where('tenant_id', $tenantId)
-                         ->where('terminal_id', $terminalId)
-                         ->where('receipt_no', $receiptNorm);
+                ->where('terminal_id', $terminalId)
+                ->where('receipt_no', $receiptNorm);
             $count = $query->count();
             if ($count > 1) {
                 return ['transaction' => null, 'ambiguous' => true, 'identifier' => 'receipt_no'];
@@ -540,7 +538,7 @@ class Transaction extends Model
 
         // Terminal-scoped fallback (covers legacy rows without tenant_id)
         $query = self::where('terminal_id', $terminalId)
-                     ->where('receipt_no', $receiptNorm);
+            ->where('receipt_no', $receiptNorm);
         $count = $query->count();
         if ($count === 0) {
             return ['transaction' => null, 'ambiguous' => false, 'identifier' => 'receipt_no'];
@@ -552,7 +550,7 @@ class Transaction extends Model
         return ['transaction' => $query->first(), 'ambiguous' => false, 'identifier' => 'receipt_no'];
     }
 
-    
+
 
     /**
      * Accessor: Display-friendly tenant code.
@@ -657,7 +655,7 @@ class Transaction extends Model
                     // explicit null, set a safe default of 0 to avoid inserting
                     // NULL into non-nullable legacy columns.
                     $hasCol = Schema::hasColumn((new Transaction)->getTable(), $col);
-                    $attrMissing = ! array_key_exists($col, $tx->attributes);
+                    $attrMissing = !array_key_exists($col, $tx->attributes);
                     $attrNull = array_key_exists($col, $tx->attributes) && $tx->attributes[$col] === null;
 
                     if ($hasCol && ($attrMissing || $attrNull)) {
@@ -676,8 +674,8 @@ class Transaction extends Model
             try {
                 if (!empty($tx->terminal_id) && !empty($tx->transaction_id)) {
                     $exists = Transaction::where('terminal_id', $tx->terminal_id)
-                                ->where('transaction_id', $tx->transaction_id)
-                                ->exists();
+                        ->where('transaction_id', $tx->transaction_id)
+                        ->exists();
                     if ($exists) {
                         $tx->transaction_id = $tx->transaction_id . '-' . substr((string) microtime(true), -4);
                     }
@@ -694,12 +692,12 @@ class Transaction extends Model
         });
 
         // After write operations we increment tenant_version and optionally dispatch a targeted cache invalidation
-            $handleWrite = function (Transaction $tx) {
+        $handleWrite = function (Transaction $tx) {
             // Skip webapp-related cache/versioning and targeted invalidation when the
             // WebApp integration is disabled. This preserves the transaction write
             // behavior while stopping side-effects that relate to the external
             // WebApp system (forwarding, cache invalidation, etc.).
-            if (! (bool) config('tsms.web_app.enabled', false)) {
+            if (!(bool) config('tsms.web_app.enabled', false)) {
                 return;
             }
 
