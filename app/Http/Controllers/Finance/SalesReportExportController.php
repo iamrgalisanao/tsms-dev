@@ -179,7 +179,8 @@ class SalesReportExportController extends Controller
             ->setCellValueExplicit("J{$totalRow}", round($totals['vip_discount'] ?? 0, 2), DataType::TYPE_NUMERIC)
             ->setCellValueExplicit("K{$totalRow}", round($totals['other_tax'] ?? 0, 2), DataType::TYPE_NUMERIC)
             ->setCellValueExplicit("L{$totalRow}", round($totals['service_charge_distributed'] ?? 0, 2), DataType::TYPE_NUMERIC)
-            ->setCellValueExplicit("M{$totalRow}", round($totals['service_charge_retained'] ?? 0, 2), DataType::TYPE_NUMERIC);
+            ->setCellValueExplicit("M{$totalRow}", round($totals['service_charge_retained'] ?? 0, 2), DataType::TYPE_NUMERIC)
+            ->setCellValueExplicit("N{$totalRow}", round($totals['gross_sales'] ?? 0, 2), DataType::TYPE_NUMERIC);
 
         // 8) "Less:" summary at rows 51–59
         $sheet->setCellValueExplicit("N51", $totals['promo_with_approval'], DataType::TYPE_NUMERIC)

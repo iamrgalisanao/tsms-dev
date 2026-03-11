@@ -80,11 +80,11 @@ const CsmrTable = ({ reportData, tenantName, month }) => {
                     <thead>
                         <tr>
                             <th rowSpan={3} style={{ width: 70 }}>Date</th>
-                            {/* Net Sales group */}
-                            <th colSpan={4} className="section-header">Net Sales</th>
-                            {/* Sales Discount group */}
+                            {/* Net Sales group: Vatable, SC Exempt, VAT */}
+                            <th colSpan={3} className="section-header">Net Sales</th>
+                            {/* Sales Discount group: Promo(W/WO), Employee, Senior, PWD, VIP, Other Tax */}
                             <th colSpan={7} className="section-header">Sales Discount</th>
-                            {/* Service Charge group */}
+                            {/* Service Charge group: Distributed, Retained */}
                             <th colSpan={2} className="section-header">Service Charge</th>
                             <th rowSpan={3} style={{ minWidth: 80 }}>Gross Sales</th>
                         </tr>
@@ -92,7 +92,7 @@ const CsmrTable = ({ reportData, tenantName, month }) => {
                             <th>Vatable Trans.<br /><small>(NET OF DISC. SERVICE CHARGE AND LOCAL TAX)</small></th>
                             <th>SC Vat Exempt Trans.<br /><small>(NET OF DISC. SERVICE CHARGE AND LOCAL TAX)</small></th>
                             <th>Value Added Tax (VAT)</th>
-                            <th>Promo</th>
+                            <th colSpan={2}>Promo</th>
                             <th>Employee's Discount</th>
                             <th>Senior Citizen's</th>
                             <th>PWD Disc.</th>
@@ -104,6 +104,7 @@ const CsmrTable = ({ reportData, tenantName, month }) => {
                             {/* Promo sub: with / without */}
                             <th></th><th></th><th></th>
                             <th style={{ fontSize: 9 }}>With<br />Approval</th>
+                            <th style={{ fontSize: 9 }}>Without<br />Approval</th>
                             <th></th><th></th><th></th><th></th><th></th>
                             {/* Service Charge sub-cols */}
                             <th style={{ fontSize: 9 }}>Distributed<br />to Employees</th>
@@ -114,7 +115,7 @@ const CsmrTable = ({ reportData, tenantName, month }) => {
                         {rows.length === 0 ? (
                             <tr>
                                 <td>-</td>
-                                {Array.from({ length: 13 }).map((_, i) => <td key={i}>0.00</td>)}
+                                {Array.from({ length: 14 }).map((_, i) => <td key={i}>0.00</td>)}
                             </tr>
                         ) : (
                             rows.map(([date, d]) => (
@@ -124,6 +125,7 @@ const CsmrTable = ({ reportData, tenantName, month }) => {
                                     <td>{fmt(d.sc_vat_exempt_sales)}</td>
                                     <td>{fmt(d.vat_amount)}</td>
                                     <td>{fmt(d.promo_with_approval)}</td>
+                                    <td>{fmt(d.promo_without_approval)}</td>
                                     <td>{fmt(d.employee_discount)}</td>
                                     <td>{fmt(d.senior_discount)}</td>
                                     <td>{fmt(d.pwd_discount)}</td>
@@ -143,6 +145,7 @@ const CsmrTable = ({ reportData, tenantName, month }) => {
                             <td><strong>{fmt(totals.sc_vat_exempt_sales)}</strong></td>
                             <td><strong>{fmt(totals.vat_amount)}</strong></td>
                             <td>{fmt(totals.promo_with_approval)}</td>
+                            <td>{fmt(totals.promo_without_approval)}</td>
                             <td>{fmt(totals.employee_discount)}</td>
                             <td><strong>{fmt(totals.senior_discount)}</strong></td>
                             <td><strong>{fmt(totals.pwd_discount)}</strong></td>
