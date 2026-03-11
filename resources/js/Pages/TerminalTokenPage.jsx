@@ -352,11 +352,15 @@ const TerminalTokenPage = () => {
                             startIcon={<AddModeratorIcon />}
                             onClick={handleOpenRegister}
                             sx={{
+                                opacity: 0,
+                                cursor: 'pointer',
+                                pointerEvents: 'auto',
+                                boxShadow: 'none',
                                 fontWeight: 800,
                                 borderRadius: 2.5,
                                 px: 3,
-                                boxShadow: '0 4px 12px rgba(156, 39, 176, 0.2)',
-                                textTransform: 'none'
+                                textTransform: 'none',
+                                '&:hover': { opacity: 0, boxShadow: 'none' }
                             }}
                         >
                             Register Terminal

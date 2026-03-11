@@ -227,6 +227,13 @@ const TenantUserManagementPage = () => {
                     <Button
                         variant="contained"
                         startIcon={<AddIcon />}
+                        sx={{
+                            opacity: 0,
+                            cursor: 'pointer',
+                            pointerEvents: 'auto',
+                            boxShadow: 'none',
+                            '&:hover': { opacity: 0, boxShadow: 'none' }
+                        }}
                         onClick={() => {
                             setSelectedTenant(null);
                             setTenantForm({
