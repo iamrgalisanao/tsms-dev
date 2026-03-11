@@ -346,23 +346,21 @@ const TerminalTokenPage = () => {
                             </Box>
                         </Box>
 
-                        <IconButton
+                        <Button
+                            variant="contained"
+                            color="secondary"
+                            startIcon={<AddModeratorIcon />}
                             onClick={handleOpenRegister}
                             sx={{
-                                width: 32,
-                                height: 32,
-                                p: 0,
-                                bgcolor: 'transparent',
-                                color: 'transparent',
-                                '&:hover': {
-                                    bgcolor: 'transparent',
-                                    color: 'transparent'
-                                }
+                                fontWeight: 800,
+                                borderRadius: 2.5,
+                                px: 3,
+                                boxShadow: '0 4px 12px rgba(156, 39, 176, 0.2)',
+                                textTransform: 'none'
                             }}
-                            size="small"
                         >
-                            <AddModeratorIcon sx={{ fontSize: 18 }} />
-                        </IconButton>
+                            Register Terminal
+                        </Button>
                     </Stack>
                 </Stack>
 
