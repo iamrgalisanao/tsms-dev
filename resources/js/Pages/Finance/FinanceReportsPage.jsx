@@ -64,7 +64,7 @@ const CsmrTable = ({ reportData, tenantName, month }) => {
 
             {/* Logo */}
             <div className="csmr-logo">
-                <img src="/images/pitx-logo.png" alt="PITX" />
+                <img src="/images/mwm_logo.png" alt="MWM" />
             </div>
 
             {/* Title */}
