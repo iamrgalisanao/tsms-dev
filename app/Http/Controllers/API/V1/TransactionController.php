@@ -167,7 +167,7 @@ class TransactionController extends Controller
         }
     }
 
-  
+
     /**
      * Notifies a terminal of the result of a transaction validation.
      *
@@ -457,22 +457,22 @@ class TransactionController extends Controller
 
                     // Structured log for per-item tenant mismatch
                     try {
-                            \App\Models\SystemLog::create([
-                                'type' => 'transaction',
-                                'log_type' => 'TRANSACTION_TENANT_MISMATCH',
-                                'severity' => 'error',
-                                'terminal_uid' => $terminal->serial_number ?? null,
-                                'transaction_id' => $transactionData['transaction_id'] ?? 'unknown',
-                                'message' => 'Transaction tenant_id does not match batch tenant_id',
-                                'context' => [
-                                    'batch_id' => $request->batch_id ?? 'missing',
-                                    'batch_tenant_id' => $request->tenant_id,
-                                    'transaction_tenant_id' => $transactionData['tenant_id'],
-                                    'terminal_id' => $terminal->id,
-                                    'transaction_timestamp' => $transactionData['transaction_timestamp'] ?? $transactionData['occurred_at'] ?? null,
-                                    'endpoint' => 'transactions.batch.store',
-                                ],
-                            ]);
+                        \App\Models\SystemLog::create([
+                            'type' => 'transaction',
+                            'log_type' => 'TRANSACTION_TENANT_MISMATCH',
+                            'severity' => 'error',
+                            'terminal_uid' => $terminal->serial_number ?? null,
+                            'transaction_id' => $transactionData['transaction_id'] ?? 'unknown',
+                            'message' => 'Transaction tenant_id does not match batch tenant_id',
+                            'context' => [
+                                'batch_id' => $request->batch_id ?? 'missing',
+                                'batch_tenant_id' => $request->tenant_id,
+                                'transaction_tenant_id' => $transactionData['tenant_id'],
+                                'terminal_id' => $terminal->id,
+                                'transaction_timestamp' => $transactionData['transaction_timestamp'] ?? $transactionData['occurred_at'] ?? null,
+                                'endpoint' => 'transactions.batch.store',
+                            ],
+                        ]);
                     } catch (\Throwable $logEx) {
                         Log::warning('Failed to write SystemLog for TRANSACTION_TENANT_MISMATCH', [
                             'transaction_id' => $transactionData['transaction_id'] ?? 'unknown',
@@ -643,7 +643,7 @@ class TransactionController extends Controller
                         'transaction_timestamp' => $normalizedTimestampDb,
                         'gross_sales' => $normalizedGross,
                         'net_sales' => $transactionData['net_sales'] ?? 0,
-                            'customer_code' => $transactionData['customer_code'] ?? ($terminal->tenant->company->customer_code ?? 'UNKNOWN'),
+                        'customer_code' => $transactionData['customer_code'] ?? ($terminal->tenant->company->customer_code ?? 'UNKNOWN'),
                         'payload_checksum' => $transactionData['payload_checksum'] ?? md5(json_encode($transactionData)),
                         'receipt_no' => $transactionData['receipt_no'] ?? null,
                         // If we are in accept-with-issues mode, mark created transactions accordingly
@@ -739,7 +739,7 @@ class TransactionController extends Controller
                     // Shard queue by tenant for fairness
                     $shard = $terminal->tenant_id % 8; // 8 shards
                     ProcessTransactionJob::dispatch($transaction->id)
-                        ->onQueue('transaction-processing:s'.$shard)
+                        ->onQueue('transaction-processing:s' . $shard)
                         ->afterCommit();
 
                     // Log system activity
@@ -1120,6 +1120,8 @@ class TransactionController extends Controller
                     }
                     $storedPayload['void_reason'] = $transaction->void_reason ?? '';
 
+                    $checksumService = app(\App\Services\PayloadChecksumService::class);
+                    $provided = $request->payload_checksum;
                     $storedChecksum = $checksumService->computeChecksum($storedPayload);
                     if (hash_equals($storedChecksum, $provided)) {
                         // Idempotent retry: return success with existing void details
@@ -1199,7 +1201,7 @@ class TransactionController extends Controller
             }
 
             $checksumOk = hash_equals($expectedChecksum, $provided);
-            if (! $checksumOk && $usedIdentifier === 'receipt_no') {
+            if (!$checksumOk && $usedIdentifier === 'receipt_no') {
                 // Try a few fallbacks: use DB-stored receipt_no, upper/lower case variants
                 $variants = [];
                 $reqReceipt = trim((string) ($request->receipt_no ?? ''));
@@ -1218,7 +1220,7 @@ class TransactionController extends Controller
                 }
             }
 
-            if (! $checksumOk) {
+            if (!$checksumOk) {
                 DB::rollBack();
                 return response()->json([
                     'success' => false,
@@ -1418,7 +1420,7 @@ class TransactionController extends Controller
         // Generate correlation ID for audit trail
         $correlationId = \Illuminate\Support\Str::uuid();
         $request->attributes->set('correlation_id', $correlationId);
-        
+
         try {
             DB::beginTransaction();
 
@@ -1453,7 +1455,7 @@ class TransactionController extends Controller
             $tokenableType = $personalToken->tokenable_type ?? null;
             $tokenableId = $personalToken->tokenable_id ?? null;
 
-            if ($tokenableType !== \App\Models\PosTerminal::class || (int)$tokenableId !== (int)$request->terminal_id) {
+            if ($tokenableType !== \App\Models\PosTerminal::class || (int) $tokenableId !== (int) $request->terminal_id) {
                 Log::warning('storeOfficial: Token does not belong to the declared terminal', [
                     'tokenable_type' => $tokenableType,
                     'tokenable_id' => $tokenableId,
@@ -1523,7 +1525,7 @@ class TransactionController extends Controller
                 'submission_uuid' => 'required|string|uuid',
                 'tenant_id' => 'required|integer',
                 'terminal_id' => 'required|integer|exists:pos_terminals,id',
-                'submission_timestamp' => 'required|date_format:Y-m-d\TH:i:s',
+                'submission_timestamp' => ['required', 'string', 'regex:/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z?$/'],
                 'transaction_count' => 'required|integer|min:1',
                 'payload_checksum' => 'required|string|min:64|max:64', // SHA-256 hash
             ]);
@@ -1552,7 +1554,7 @@ class TransactionController extends Controller
                 // Handle submission envelope drift detection (if submission exists)
                 if ($submission) {
                     $payloadDrift = strtolower($submission->payload_checksum) !== strtolower($request->payload_checksum);
-                    $countMismatch = (int)$submission->transaction_count !== (int)$request->transaction_count;
+                    $countMismatch = (int) $submission->transaction_count !== (int) $request->transaction_count;
 
                     if ($payloadDrift || $countMismatch) {
                         // Conflict: same terminal + submission_uuid BUT different payload characteristics
@@ -1627,7 +1629,7 @@ class TransactionController extends Controller
                         'error' => $te->getMessage(),
                     ]);
                 }
-                
+
                 DB::commit();
                 return response()->json([
                     'success' => true,
@@ -1646,7 +1648,7 @@ class TransactionController extends Controller
                 $request->validate([
                     'transaction' => 'required|array',
                     'transaction.transaction_id' => 'required|string|uuid',
-                    'transaction.transaction_timestamp' => 'required|date_format:Y-m-d\TH:i:s\Z',
+                    'transaction.transaction_timestamp' => ['required', 'string', 'regex:/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z?$/'],
                     'transaction.gross_sales' => 'required|numeric',
                     'transaction.net_sales' => 'required|numeric',
                     'transaction.promo_status' => 'required|string',
@@ -1664,7 +1666,7 @@ class TransactionController extends Controller
                 $request->validate([
                     'transactions' => 'required|array|min:1',
                     'transactions.*.transaction_id' => 'required|string|uuid',
-                    'transactions.*.transaction_timestamp' => 'required|date_format:Y-m-d\TH:i:s\Z',
+                    'transactions.*.transaction_timestamp' => ['required', 'string', 'regex:/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z?$/'],
                     'transactions.*.gross_sales' => 'required|numeric',
                     'transactions.*.net_sales' => 'required|numeric',
                     'transactions.*.promo_status' => 'required|string',
@@ -1685,17 +1687,17 @@ class TransactionController extends Controller
             if ($actualCount !== $request->transaction_count) {
                 // Emit submission-level REJECTED for count mismatch
                 $this->emitSubmissionEventSafe([
-                    'submission_uuid'   => $request->submission_uuid ?? 'unknown',
-                    'tenant_id'         => $request->tenant_id ?? null,
-                    'terminal_id'       => $request->terminal_id ?? null,
-                    'status'            => 'REJECTED',
-                    'reason_code'       => 'COUNT_MISMATCH',
-                    'reason_details'    => [
+                    'submission_uuid' => $request->submission_uuid ?? 'unknown',
+                    'tenant_id' => $request->tenant_id ?? null,
+                    'terminal_id' => $request->terminal_id ?? null,
+                    'status' => 'REJECTED',
+                    'reason_code' => 'COUNT_MISMATCH',
+                    'reason_details' => [
                         'expected' => (int) ($request->transaction_count ?? 0),
-                        'actual'   => (int) $actualCount,
+                        'actual' => (int) $actualCount,
                     ],
                     'transaction_count' => (int) ($request->transaction_count ?? 0),
-                    'correlation_id'    => $request->attributes->get('correlation_id'),
+                    'correlation_id' => $request->attributes->get('correlation_id'),
                 ]);
                 DB::rollBack();
                 return response()->json([
@@ -1718,16 +1720,16 @@ class TransactionController extends Controller
             if (!$checksumResults['valid']) {
                 // Emit a clear log for grep-based incident correlation
                 Log::warning('Checksum validation failed', [
-                    'submission_uuid'   => $request->submission_uuid,
-                    'tenant_id'         => $request->tenant_id,
-                    'terminal_id'       => $request->terminal_id,
+                    'submission_uuid' => $request->submission_uuid,
+                    'tenant_id' => $request->tenant_id,
+                    'terminal_id' => $request->terminal_id,
                     'transaction_count' => $request->transaction_count,
                     // Provide sample of transaction_ids when present to aid debugging
-                    'transaction_ids'   => $request->transaction_count === 1
+                    'transaction_ids' => $request->transaction_count === 1
                         ? [$request->transaction['transaction_id'] ?? null]
                         : collect($request->transactions ?? [])->take(10)->pluck('transaction_id')->all(),
-                    'errors'            => $checksumResults['errors'],
-                    'correlation_id'    => $correlationId,
+                    'errors' => $checksumResults['errors'],
+                    'correlation_id' => $correlationId,
                 ]);
 
                 // Record structured REJECTED event (checksum) - create outside main transaction  
@@ -1735,7 +1737,7 @@ class TransactionController extends Controller
                     'submission_uuid' => $request->submission_uuid,
                     'correlation_id' => $correlationId
                 ]);
-                
+
                 // Determine if we should accept with issues (global mode or tenant opt-in)
                 try {
                     $tenant = null;
@@ -1780,15 +1782,15 @@ class TransactionController extends Controller
 
                     // Defer emission of ACCEPTED_WITH_ISSUES until after processing & commit
                     $deferredAcceptedWithIssues = [
-                        'submission_uuid'   => $request->submission_uuid,
-                        'tenant_id'         => $request->tenant_id,
-                        'terminal_id'       => $request->terminal_id,
-                        'status'            => 'ACCEPTED_WITH_ISSUES',
-                        'reason_code'       => 'CHECKSUM_MISMATCH',
-                        'reason_details'    => ['errors' => $checksumResults['errors']],
+                        'submission_uuid' => $request->submission_uuid,
+                        'tenant_id' => $request->tenant_id,
+                        'terminal_id' => $request->terminal_id,
+                        'status' => 'ACCEPTED_WITH_ISSUES',
+                        'reason_code' => 'CHECKSUM_MISMATCH',
+                        'reason_details' => ['errors' => $checksumResults['errors']],
                         'transaction_count' => (int) ($request->transaction_count ?? 0),
-                        'occurred_at'       => now(),
-                        'correlation_id'    => $correlationId,
+                        'occurred_at' => now(),
+                        'correlation_id' => $correlationId,
                     ];
 
                     // Continue processing transactions below (do not return 422)
@@ -1825,15 +1827,15 @@ class TransactionController extends Controller
 
                     try {
                         $submissionEvent = \App\Models\SubmissionEvent::create([
-                            'submission_uuid'   => $request->submission_uuid,
-                            'tenant_id'         => $request->tenant_id,
-                            'terminal_id'       => $request->terminal_id,
-                            'status'            => 'REJECTED',
-                            'reason_code'       => 'CHECKSUM_MISMATCH',
-                            'reason_details'    => ['errors' => $checksumResults['errors']],
+                            'submission_uuid' => $request->submission_uuid,
+                            'tenant_id' => $request->tenant_id,
+                            'terminal_id' => $request->terminal_id,
+                            'status' => 'REJECTED',
+                            'reason_code' => 'CHECKSUM_MISMATCH',
+                            'reason_details' => ['errors' => $checksumResults['errors']],
                             'transaction_count' => (int) ($request->transaction_count ?? 0),
-                            'occurred_at'       => now(),
-                            'correlation_id'    => $correlationId,
+                            'occurred_at' => now(),
+                            'correlation_id' => $correlationId,
                         ]);
                         Log::info('SubmissionEvent created successfully', [
                             'event_id' => $submissionEvent->id,
@@ -1882,7 +1884,10 @@ class TransactionController extends Controller
                         'error' => $te->getMessage(),
                     ]);
                 }
-                try { \DB::commit(); } catch (\Throwable $t) {}
+                try {
+                    \DB::commit();
+                } catch (\Throwable $t) {
+                }
                 return response()->json([
                     'success' => true,
                     'message' => 'Submission already processed (idempotent)',
@@ -1935,7 +1940,10 @@ class TransactionController extends Controller
                     }
 
                     // Commit open transaction (if any) and return idempotent success
-                    try { \DB::commit(); } catch (\Throwable $t) {}
+                    try {
+                        \DB::commit();
+                    } catch (\Throwable $t) {
+                    }
                     return response()->json([
                         'success' => true,
                         'message' => 'Submission already processed (idempotent)',
@@ -1949,7 +1957,7 @@ class TransactionController extends Controller
                 }
                 throw $e; // non-duplicate DB error
             }
-            
+
             Log::info('storeOfficial: Submission envelope created', [
                 'submission_uuid' => $submission->submission_uuid,
                 'terminal_id' => $submission->terminal_id,
@@ -1958,15 +1966,15 @@ class TransactionController extends Controller
             // Record structured RECEIVED event
             try {
                 \App\Models\SubmissionEvent::create([
-                    'submission_uuid'   => $submission->submission_uuid,
-                    'tenant_id'         => $request->tenant_id,
-                    'terminal_id'       => $request->terminal_id,
-                    'status'            => 'RECEIVED',
-                    'reason_code'       => null,
-                    'reason_details'    => null,
+                    'submission_uuid' => $submission->submission_uuid,
+                    'tenant_id' => $request->tenant_id,
+                    'terminal_id' => $request->terminal_id,
+                    'status' => 'RECEIVED',
+                    'reason_code' => null,
+                    'reason_details' => null,
                     'transaction_count' => (int) ($request->transaction_count ?? 0),
-                    'occurred_at'       => now(),
-                    'correlation_id'    => $request->attributes->get('correlation_id'),
+                    'occurred_at' => now(),
+                    'correlation_id' => $request->attributes->get('correlation_id'),
                 ]);
             } catch (\Throwable $te) {
                 Log::warning('Failed to write SubmissionEvent (RECEIVED)', [
@@ -1976,7 +1984,7 @@ class TransactionController extends Controller
             }
 
             Log::info('Checksum validation passed', [
-                'submission_uuid'   => $request->submission_uuid,
+                'submission_uuid' => $request->submission_uuid,
                 'transaction_count' => $request->transaction_count,
             ]);
 
@@ -2001,17 +2009,17 @@ class TransactionController extends Controller
 
                 // Emit submission-level REJECTED event
                 $this->emitSubmissionEventSafe([
-                    'submission_uuid'   => $request->submission_uuid ?? 'unknown',
-                    'tenant_id'         => $request->tenant_id ?? null,
-                    'terminal_id'       => $request->terminal_id ?? null,
-                    'status'            => 'REJECTED',
-                    'reason_code'       => 'TENANT_TERMINAL_MISMATCH',
-                    'reason_details'    => [
+                    'submission_uuid' => $request->submission_uuid ?? 'unknown',
+                    'tenant_id' => $request->tenant_id ?? null,
+                    'terminal_id' => $request->terminal_id ?? null,
+                    'status' => 'REJECTED',
+                    'reason_code' => 'TENANT_TERMINAL_MISMATCH',
+                    'reason_details' => [
                         'terminal_tenant_id' => $terminal->tenant_id,
-                        'payload_tenant_id'  => $request->tenant_id,
+                        'payload_tenant_id' => $request->tenant_id,
                     ],
                     'transaction_count' => (int) ($request->transaction_count ?? 0),
-                    'correlation_id'    => $request->attributes->get('correlation_id'),
+                    'correlation_id' => $request->attributes->get('correlation_id'),
                 ]);
 
                 return response()->json([
@@ -2157,7 +2165,7 @@ class TransactionController extends Controller
                     Log::info('storeOfficial: Dispatching ProcessTransactionJob', ['transaction_id' => $transaction->transaction_id]);
                     $shard = $terminal->tenant_id % 8;
                     ProcessTransactionJob::dispatch($transaction->id)
-                        ->onQueue('transaction-processing:s'.$shard)
+                        ->onQueue('transaction-processing:s' . $shard)
                         ->afterCommit();
                     Log::info('storeOfficial: ProcessTransactionJob dispatched', ['transaction_id' => $transaction->transaction_id]);
 
@@ -2269,40 +2277,40 @@ class TransactionController extends Controller
                     try {
                         \App\Models\SubmissionEventItem::create([
                             'submission_uuid' => $request->submission_uuid,
-                            'tenant_id'       => $request->tenant_id,
-                            'terminal_id'     => $request->terminal_id,
-                            'transaction_id'  => $transactionData['transaction_id'] ?? 'unknown',
-                            'status'          => 'FAILED',
-                            'reason_code'     => 'PROCESSING_ERROR',
-                            'reason_details'  => ['error' => $e->getMessage()],
-                            'occurred_at'     => now(),
-                            'correlation_id'  => $request->attributes->get('correlation_id'),
+                            'tenant_id' => $request->tenant_id,
+                            'terminal_id' => $request->terminal_id,
+                            'transaction_id' => $transactionData['transaction_id'] ?? 'unknown',
+                            'status' => 'FAILED',
+                            'reason_code' => 'PROCESSING_ERROR',
+                            'reason_details' => ['error' => $e->getMessage()],
+                            'occurred_at' => now(),
+                            'correlation_id' => $request->attributes->get('correlation_id'),
                         ]);
 
                         // Aggregate this failure into a centralized incident record
                         try {
                             app(\App\Services\IncidentFactory::class)->recordFailure([
                                 'submission_uuid' => $request->submission_uuid,
-                                'correlation_id'  => $request->attributes->get('correlation_id'),
-                                'tenant_id'       => $request->tenant_id,
-                                'terminal_id'     => $request->terminal_id,
-                                'reason_code'     => 'PROCESSING_ERROR',
-                                'source'          => 'SUBMISSION_EVENT_ITEM',
-                                'failed_count'    => 1,
-                                'reason_details'  => ['error' => $e->getMessage()],
+                                'correlation_id' => $request->attributes->get('correlation_id'),
+                                'tenant_id' => $request->tenant_id,
+                                'terminal_id' => $request->terminal_id,
+                                'reason_code' => 'PROCESSING_ERROR',
+                                'source' => 'SUBMISSION_EVENT_ITEM',
+                                'failed_count' => 1,
+                                'reason_details' => ['error' => $e->getMessage()],
                             ]);
                         } catch (\Throwable $ie) {
                             Log::debug('IncidentFactory recordFailure failed for item', [
                                 'submission_uuid' => $request->submission_uuid,
-                                'transaction_id'  => $transactionData['transaction_id'] ?? 'unknown',
-                                'error'           => $ie->getMessage(),
+                                'transaction_id' => $transactionData['transaction_id'] ?? 'unknown',
+                                'error' => $ie->getMessage(),
                             ]);
                         }
                     } catch (\Throwable $te) {
                         Log::warning('Failed to write SubmissionEventItem (FAILED)', [
                             'submission_uuid' => $request->submission_uuid,
-                            'transaction_id'  => $transactionData['transaction_id'] ?? 'unknown',
-                            'error'           => $te->getMessage(),
+                            'transaction_id' => $transactionData['transaction_id'] ?? 'unknown',
+                            'error' => $te->getMessage(),
                         ]);
                     }
                 }
@@ -2323,15 +2331,15 @@ class TransactionController extends Controller
             // Record structured COMPLETED event
             try {
                 \App\Models\SubmissionEvent::create([
-                    'submission_uuid'   => $request->submission_uuid,
-                    'tenant_id'         => $request->tenant_id,
-                    'terminal_id'       => $request->terminal_id,
-                    'status'            => 'COMPLETED',
-                    'reason_code'       => $totalFailed > 0 ? 'PARTIAL_FAILURE' : null,
-                    'reason_details'    => $totalFailed > 0 ? ['failed_count' => $totalFailed] : null,
+                    'submission_uuid' => $request->submission_uuid,
+                    'tenant_id' => $request->tenant_id,
+                    'terminal_id' => $request->terminal_id,
+                    'status' => 'COMPLETED',
+                    'reason_code' => $totalFailed > 0 ? 'PARTIAL_FAILURE' : null,
+                    'reason_details' => $totalFailed > 0 ? ['failed_count' => $totalFailed] : null,
                     'transaction_count' => (int) ($request->transaction_count ?? 0),
-                    'occurred_at'       => now(),
-                    'correlation_id'    => $request->attributes->get('correlation_id'),
+                    'occurred_at' => now(),
+                    'correlation_id' => $request->attributes->get('correlation_id'),
                 ]);
 
                 // If there were failures, also aggregate them into the incident view
@@ -2339,18 +2347,18 @@ class TransactionController extends Controller
                     try {
                         app(\App\Services\IncidentFactory::class)->recordFailure([
                             'submission_uuid' => $request->submission_uuid,
-                            'correlation_id'  => $request->attributes->get('correlation_id'),
-                            'tenant_id'       => $request->tenant_id,
-                            'terminal_id'     => $request->terminal_id,
-                            'reason_code'     => 'PARTIAL_FAILURE',
-                            'source'          => 'SUBMISSION_EVENT',
-                            'failed_count'    => $totalFailed,
-                            'reason_details'  => ['failed_count' => $totalFailed],
+                            'correlation_id' => $request->attributes->get('correlation_id'),
+                            'tenant_id' => $request->tenant_id,
+                            'terminal_id' => $request->terminal_id,
+                            'reason_code' => 'PARTIAL_FAILURE',
+                            'source' => 'SUBMISSION_EVENT',
+                            'failed_count' => $totalFailed,
+                            'reason_details' => ['failed_count' => $totalFailed],
                         ]);
                     } catch (\Throwable $ie) {
                         Log::debug('IncidentFactory recordFailure failed for submission', [
                             'submission_uuid' => $request->submission_uuid,
-                            'error'           => $ie->getMessage(),
+                            'error' => $ie->getMessage(),
                         ]);
                     }
                 }
@@ -2387,7 +2395,7 @@ class TransactionController extends Controller
 
         } catch (\Illuminate\Validation\ValidationException $e) {
             DB::rollBack();
-            
+
             Log::warning('Official transaction validation failed', [
                 'submission_uuid' => $request->submission_uuid ?? 'unknown',
                 'errors' => $e->errors()
@@ -2395,14 +2403,14 @@ class TransactionController extends Controller
 
             // Record structured REJECTED event (generic validation failure)
             $this->emitSubmissionEventSafe([
-                'submission_uuid'   => $request->submission_uuid ?? 'unknown',
-                'tenant_id'         => $request->tenant_id ?? null,
-                'terminal_id'       => $request->terminal_id ?? null,
-                'status'            => 'REJECTED',
-                'reason_code'       => 'VALIDATION_FAILED',
-                'reason_details'    => ['errors' => $e->errors()],
+                'submission_uuid' => $request->submission_uuid ?? 'unknown',
+                'tenant_id' => $request->tenant_id ?? null,
+                'terminal_id' => $request->terminal_id ?? null,
+                'status' => 'REJECTED',
+                'reason_code' => 'VALIDATION_FAILED',
+                'reason_details' => ['errors' => $e->errors()],
                 'transaction_count' => (int) ($request->transaction_count ?? 0),
-                'correlation_id'    => $request->attributes->get('correlation_id'),
+                'correlation_id' => $request->attributes->get('correlation_id'),
             ]);
 
             // (Validation failure notification suppressed; errors surfaced in response and async notifications handled elsewhere)
@@ -2415,7 +2423,7 @@ class TransactionController extends Controller
 
         } catch (\Exception $e) {
             DB::rollBack();
-            
+
             Log::error('Official transaction API error', [
                 'submission_uuid' => $request->submission_uuid ?? 'unknown',
                 'error' => $e->getMessage(),
@@ -2427,7 +2435,7 @@ class TransactionController extends Controller
             try {
                 $terminalId = $request->terminal_id ?? 'unknown';
                 $terminal = is_numeric($terminalId) ? PosTerminal::find($terminalId) : null;
-                
+
                 \App\Models\SystemLog::create([
                     'type' => 'error',
                     'log_type' => 'OFFICIAL_TRANSACTION_ERROR',
@@ -2722,7 +2730,7 @@ class TransactionController extends Controller
                     'status' => 'success',
                     'message' => 'Transaction already processed',
                 ];
-           
+
             }
 
             // Create transaction - aggregate taxes and adjustments into stored columns
@@ -2860,18 +2868,18 @@ class TransactionController extends Controller
     private function validateDetailedStructure(\Illuminate\Http\Request $request, string $correlationId): void
     {
         $isSingle = $request->transaction_count === 1;
-        
+
         // Build detailed validation rules
         $rules = [];
         if ($isSingle) {
             $rules = [
                 'transaction' => 'required|array',
                 'transaction.transaction_id' => 'required|string|uuid',
-                'transaction.transaction_timestamp' => 'required|date_format:Y-m-d\TH:i:s\Z',
+                'transaction.transaction_timestamp' => ['required', 'string', 'regex:/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z?$/'],
                 'transaction.gross_sales' => 'required|numeric',
                 'transaction.net_sales' => 'required|numeric',
                 'transaction.promo_status' => 'required|string',
-                    'transaction.receipt_no' => 'nullable|string|max:128',
+                'transaction.receipt_no' => 'nullable|string|max:128',
                 'transaction.customer_code' => 'required|string',
                 'transaction.payload_checksum' => 'required|string|min:64|max:64',
                 'transaction.adjustments' => 'required|array|min:7',
@@ -2885,11 +2893,11 @@ class TransactionController extends Controller
             $rules = [
                 'transactions' => 'required|array|min:1',
                 'transactions.*.transaction_id' => 'required|string|uuid',
-                'transactions.*.transaction_timestamp' => 'required|date_format:Y-m-d\TH:i:s\Z',
+                'transactions.*.transaction_timestamp' => ['required', 'string', 'regex:/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z?$/'],
                 'transactions.*.gross_sales' => 'required|numeric',
                 'transactions.*.net_sales' => 'required|numeric',
                 'transactions.*.promo_status' => 'required|string',
-                    'transactions.*.receipt_no' => 'nullable|string|max:128',
+                'transactions.*.receipt_no' => 'nullable|string|max:128',
                 'transactions.*.customer_code' => 'required|string',
                 'transactions.*.payload_checksum' => 'required|string|min:64|max:64',
                 'transactions.*.adjustments' => 'required|array|min:7',
@@ -2903,16 +2911,16 @@ class TransactionController extends Controller
 
         // Validate structure
         $validator = Validator::make($request->all(), $rules);
-        
+
         if ($validator->fails()) {
             // Create audit event for structure validation failure
             $this->createRejectionAuditEvent(
-                $request, 
-                'STRUCTURE_INVALID', 
+                $request,
+                'STRUCTURE_INVALID',
                 $validator->errors()->toArray(),
                 $correlationId
             );
-            
+
             // Throw validation exception
             throw new \Illuminate\Validation\ValidationException($validator);
         }

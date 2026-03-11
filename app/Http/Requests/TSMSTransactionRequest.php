@@ -26,7 +26,7 @@ class TSMSTransactionRequest extends FormRequest
             'submission_uuid' => 'required|string|uuid',
             'tenant_id' => 'required|integer',
             'terminal_id' => 'required|integer|exists:pos_terminals,id',
-            'submission_timestamp' => 'required|date_format:Y-m-d\TH:i:s\Z',
+            'submission_timestamp' => ['required', 'string', 'regex:/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z?$/'],
             'transaction_count' => 'required|integer|min:1',
             'payload_checksum' => 'required|string|min:64|max:64',
         ];
