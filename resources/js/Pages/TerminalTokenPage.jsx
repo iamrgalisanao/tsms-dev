@@ -274,9 +274,15 @@ const TerminalTokenPage = () => {
                 });
             }
         } catch (error) {
-            const message =
-                error.response?.data?.message ||
-                (error.response?.data?.errors ? 'Validation failed when registering terminal.' : 'Registration sequence failed.');
+            let message = error.response?.data?.message || 'Registration sequence failed.';
+
+            if (error.response?.data?.errors) {
+                const errors = error.response.data.errors;
+                const firstField = Object.keys(errors)[0];
+                if (firstField && errors[firstField][0]) {
+                    message = errors[firstField][0];
+                }
+            }
 
             setNotification({
                 open: true,
@@ -348,19 +354,15 @@ const TerminalTokenPage = () => {
 
                         <Button
                             variant="contained"
-                            color="secondary"
+                            color="primary"
                             startIcon={<AddModeratorIcon />}
                             onClick={handleOpenRegister}
                             sx={{
-                                opacity: 0,
-                                cursor: 'pointer',
-                                pointerEvents: 'auto',
-                                boxShadow: 'none',
                                 fontWeight: 800,
                                 borderRadius: 2.5,
                                 px: 3,
                                 textTransform: 'none',
-                                '&:hover': { opacity: 0, boxShadow: 'none' }
+                                boxShadow: '0 8px 16px rgba(25, 118, 210, 0.2)'
                             }}
                         >
                             Register Terminal

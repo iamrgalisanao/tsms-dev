@@ -53,6 +53,12 @@ class TerminalTokenController extends Controller
                 ],
             ], 201);
         } catch (\Illuminate\Validation\ValidationException $e) {
+            Log::warning('Terminal registration validation failed', [
+                'errors' => $e->errors(),
+                'payload' => $request->except(['api_key', 'token']),
+                'user_id' => auth()->id(),
+            ]);
+
             return response()->json([
                 'success' => false,
                 'message' => 'Validation error',
