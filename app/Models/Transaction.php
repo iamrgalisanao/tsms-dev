@@ -291,7 +291,12 @@ class Transaction extends Model
      * @var array<string, string>
      */
     protected $casts = [
-        'transaction_timestamp' => 'datetime',
+        // Keep as 'string' (not 'datetime') to prevent Carbon from converting
+        // the raw stored value (e.g. "2026-03-12T09:54:01Z") through the app
+        // timezone, which would shift the time by +08:00 on serialization.
+        // UI formatting is handled exclusively by dateFormatter.js.
+        'transaction_timestamp' => 'string',
+
         'submission_timestamp' => 'datetime',
         'gross_sales' => 'decimal:2',
         'vatable_sales' => 'decimal:2',
