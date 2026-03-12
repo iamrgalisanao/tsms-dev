@@ -239,7 +239,7 @@ class WebAppForwardingService
         });
 
         // Pre-flight visibility: which pairs and sizes will be forwarded
-        $preflight = $groups->map->count()->toArray();
+        $preflight = $groups->map(fn($g) => $g->count())->toArray();
         $this->log('info', 'Preparing grouped forwarding batches', [
             'group_count' => count($preflight),
             'groups' => $preflight,
@@ -758,24 +758,18 @@ class WebAppForwardingService
         }
 
         // Accept Carbon or try to parse other date types/strings
+        // Parse simply without shifting or forcing timezone changes
         if (!($dt instanceof Carbon)) {
             try {
-                // FIX: Explicitly parse using application timezone and shift to it if necessary
-                // handle inputs that might include a 'Z' (signifying UTC) incorrectly
-                $dtStr = (string) $dt;
-                $dtObj = Carbon::parse($dtStr, config('app.timezone'));
-                if (str_ends_with(strtoupper($dtStr), 'Z')) {
-                    $dtObj->shiftTimezone(config('app.timezone'));
-                }
-                $dt = $dtObj;
+                $dt = Carbon::parse((string) $dt);
             } catch (\Throwable $e) {
                 return null;
             }
         }
 
-        // Use microseconds -> milliseconds (first 3 digits), zero-padded
-        // FIX: Ensure we are in UTC before formatting with Z to avoid manual Z bug
-        return $dt->utc()->format('Y-m-d\\TH:i:s.v\\Z');
+        // Return a standard format but avoid forcing UTC if the date is already local components
+        // Note: Carbon objects like created_at are already UTC, so this remains safe for system fields.
+        return $dt->format('Y-m-d\\TH:i:s.v\\Z');
     }
 
     private function isCircuitBreakerOpen(): bool
