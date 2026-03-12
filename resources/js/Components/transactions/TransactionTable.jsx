@@ -131,7 +131,16 @@ const Row = ({ transaction, onViewDetails, getStatusColor, formatCurrency, forma
                                         <Box>
                                             <DetailItem label="Tax Exempt" value={formatCurrency(transaction.tax_exempt)} />
                                             <DetailItem label="Other Tax" value="-" />
-                                            <DetailItem label="Transaction Time" value={formatDate(transaction.transaction_timestamp || transaction.created_at)} />
+                                            <DetailItem
+                                                label="Transaction Time"
+                                                value={
+                                                    <Tooltip title={`Raw: ${transaction.transaction_timestamp || 'N/A'}`} arrow>
+                                                        <Typography variant="body2" sx={{ fontWeight: 700, color: 'text.primary', cursor: 'help' }}>
+                                                            {formatDate(transaction.transaction_timestamp || transaction.created_at)} (Local)
+                                                        </Typography>
+                                                    </Tooltip>
+                                                }
+                                            />
                                             <Box sx={{ mt: 2 }}>
                                                 <Button
                                                     variant="contained"

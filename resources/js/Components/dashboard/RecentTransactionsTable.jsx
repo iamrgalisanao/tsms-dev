@@ -15,7 +15,8 @@ import {
     IconButton,
     CircularProgress,
     Stack,
-    Pagination
+    Pagination,
+    Tooltip
 } from '@mui/material';
 import ForwardIcon from '@mui/icons-material/Forward';
 import LaunchIcon from '@mui/icons-material/Launch';
@@ -30,6 +31,18 @@ const RecentTransactionsTable = ({ transactions, loading, onForward }) => {
         // Reset to first page whenever the data set changes
         setPage(1);
     }, [transactions]);
+
+    const formatDate = (dateString) => {
+        if (!dateString) return 'N/A';
+        const date = new Date(dateString);
+        return date.toLocaleString('en-PH', {
+            year: 'numeric',
+            month: 'short',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit'
+        });
+    };
 
     if (loading) {
         return (
@@ -132,11 +145,13 @@ const RecentTransactionsTable = ({ transactions, loading, onForward }) => {
                                         ₱{new Intl.NumberFormat('en-PH', { minimumFractionDigits: 2 }).format(tx.net_sales || 0)}
                                     </Typography>
                                 </TableCell>
-                                <TableCell>
-                                    <Typography sx={{ color: 'text.secondary', fontSize: '11px', fontWeight: 700, fontFamily: 'monospace' }}>
-                                        {tx.transaction_timestamp || 'N/A'}
-                                    </Typography>
-                                </TableCell>
+                                 <TableCell>
+                                    <Tooltip title={`Raw UTC: ${tx.transaction_timestamp || 'N/A'}`} arrow>
+                                        <Typography sx={{ color: 'text.secondary', fontSize: '11px', fontWeight: 700, fontFamily: 'monospace', cursor: 'help' }}>
+                                            {formatDate(tx.transaction_timestamp)} (L)
+                                        </Typography>
+                                    </Tooltip>
+                                 </TableCell>
                                 <TableCell align="right">
                                     <Button
                                         variant="contained"

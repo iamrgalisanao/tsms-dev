@@ -808,9 +808,8 @@ class WebAppForwardingService
         }
 
         // Use microseconds -> milliseconds (first 3 digits), zero-padded
-        $micro = $dt->format('u'); // 6-digit microseconds
-        $ms = str_pad(substr($micro, 0, 3), 3, '0', STR_PAD_RIGHT);
-        return $dt->format('Y-m-d\\TH:i:s') . '.' . $ms . 'Z';
+        // FIX: Ensure we are in UTC before formatting with Z to avoid manual Z bug
+        return $dt->utc()->format('Y-m-d\\TH:i:s.v\\Z');
     }
 
     private function isCircuitBreakerOpen(): bool
