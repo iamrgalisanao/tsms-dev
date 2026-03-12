@@ -23,6 +23,9 @@ class TerminalTokenController extends Controller
                 'serial_number' => ['required', 'string', 'max:255', 'unique:pos_terminals,serial_number'],
                 'machine_number' => ['nullable', 'string', 'max:255'],
                 'ip_address' => ['nullable', 'string', 'max:255'],
+            ], [
+                'serial_number.unique' => 'Terminal serial number is already registered in the system.',
+                'tenant_id.exists' => 'Selected tenant does not exist.',
             ]);
 
             $payload = array_merge($validated, [
@@ -56,12 +59,14 @@ class TerminalTokenController extends Controller
             Log::warning('Terminal registration validation failed', [
                 'errors' => $e->errors(),
                 'payload' => $request->except(['api_key', 'token']),
+                'headers' => $request->headers->all(), // Log headers for remote debugging
                 'user_id' => auth()->id(),
+                'ip' => $request->ip(),
             ]);
 
             return response()->json([
                 'success' => false,
-                'message' => 'Validation error',
+                'message' => 'The provided data was invalid. Check for duplicate serial numbers.',
                 'errors' => $e->errors(),
             ], 422);
         } catch (\Exception $e) {

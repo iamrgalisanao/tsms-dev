@@ -274,13 +274,19 @@ const TerminalTokenPage = () => {
                 });
             }
         } catch (error) {
+            console.error('Terminal registration error context:', {
+                status: error.response?.status,
+                data: error.response?.data,
+                headers: error.response?.headers
+            });
+
             let message = error.response?.data?.message || 'Registration sequence failed.';
 
             if (error.response?.data?.errors) {
                 const errors = error.response.data.errors;
                 const firstField = Object.keys(errors)[0];
                 if (firstField && errors[firstField][0]) {
-                    message = errors[firstField][0];
+                    message = `${errors[firstField][0]}`;
                 }
             }
 
