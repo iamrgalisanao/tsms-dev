@@ -42,11 +42,11 @@ class TransactionSummaryPresenter
         // Sum taxes
         $vatSum = (float) $taxes->where('tax_type', 'VAT')->sum('amount');
         $vatableSum = (float) $taxes->where('tax_type', 'VATABLE_SALES')->sum('amount');
-        $scSum = (float) $taxes->where('tax_type', 'SC_VAT_EXEMPT_SALES')->sum('amount');
+        $scSum = (float) $taxes->whereIn('tax_type', ['SC_VAT_EXEMPT_SALES', 'VAT-EXEMPT', 'EXEMPT', 'VATEXEMPT'])->sum('amount');
 
         $vat = $taxes->pluck('tax_type')->contains('VAT') ? $vatSum : null;
         $vatable = $taxes->pluck('tax_type')->contains('VATABLE_SALES') ? $vatableSum : null;
-        $sc_vat = $taxes->pluck('tax_type')->contains('SC_VAT_EXEMPT_SALES') ? $scSum : null;
+        $sc_vat = $taxes->pluck('tax_type')->intersect(['SC_VAT_EXEMPT_SALES', 'VAT-EXEMPT', 'EXEMPT', 'VATEXEMPT'])->isNotEmpty() ? $scSum : null;
 
         // Provide gross, net, refund as formatted strings (always present)
         $gross = (float) ($tx->gross_sales ?? 0.0);

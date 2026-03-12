@@ -27,6 +27,7 @@ class FinanceCalculationService
             'other_tax' => 0.0,
             'service_charge_distributed' => 0.0,
             'service_charge_retained' => 0.0,
+            'regular_discount' => 0.0,
             'gross_sales' => 0.0,
         ];
 
@@ -52,12 +53,13 @@ class FinanceCalculationService
             // and SC_VAT_EXEMPT_SALES to avoid double counting or misclassification.
             if (method_exists($tx, 'taxes')) {
                 $c['other_tax'] += (float) $tx->taxes()
-                    ->whereNotIn('tax_type', ['VAT', 'VAT_AMOUNT', 'VATABLE_SALES', 'SC_VAT_EXEMPT_SALES'])
+                    ->whereNotIn('tax_type', ['VAT', 'VAT_AMOUNT', 'VATABLE_SALES', 'SC_VAT_EXEMPT_SALES', 'VAT-EXEMPT', 'EXEMPT', 'VATEXEMPT'])
                     ->sum('amount');
             }
 
             $c['service_charge_distributed'] += (float) ($tx->service_charge ?? 0);
             $c['service_charge_retained'] += (float) ($tx->management_service_charge ?? 0);
+            $c['regular_discount'] += (float) ($tx->discount_total ?? 0);
 
             $c['gross_sales'] += (float) ($tx->gross_sales ?? 0);
         }
@@ -91,6 +93,7 @@ class FinanceCalculationService
             + ($c['senior_discount'] ?? 0)
             + ($c['pwd_discount'] ?? 0)
             + ($c['vip_discount'] ?? 0)
+            + ($c['regular_discount'] ?? 0)
             + ($c['other_tax'] ?? 0)
             + ($c['service_charge_distributed'] ?? 0)
             + ($c['service_charge_retained'] ?? 0),
@@ -106,6 +109,7 @@ class FinanceCalculationService
             - ($c['employee_discount'] ?? 0)
             - $seniorPwd
             - ($c['vip_discount'] ?? 0)
+            - ($c['regular_discount'] ?? 0)
             - ($c['sc_vat_exempt_sales'] ?? 0)
             - ($c['other_tax'] ?? 0)
             - $serviceCharge,
@@ -137,6 +141,7 @@ class FinanceCalculationService
             'senior_pwd' => $seniorPwd,
             'net_sales' => $netSales,
             'vat_amount' => $vat,
+            'vatable_sales' => $netExVAT,
             'gross_sales' => $gross,
             'net_ex_vat' => $netExVAT,
             'net_subject_to_rent' => $netSubjectToRent,

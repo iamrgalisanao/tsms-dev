@@ -1146,7 +1146,7 @@ class TransactionValidationService
                     $buckets['vat_amount'] += $amount;
                 } elseif ($type === 'VATABLE_SALES' || $type === 'VATABLE' || $type === 'VATABLESALES') {
                     $buckets['vatable_sales'] = $amount;
-                } elseif ($type === 'SC_VAT_EXEMPT_SALES' || $type === 'VAT_EXEMPT_SALES' || $type === 'VAT_EXEMPT') {
+                } elseif ($type === 'SC_VAT_EXEMPT_SALES' || $type === 'VAT_EXEMPT_SALES' || $type === 'VAT_EXEMPT' || $type === 'VATEXEMPT' || $type === 'EXEMPT') {
                     $buckets['vat_exempt_sales'] = $amount;
                 } else {
                     $buckets['other_tax_total'] += $amount;

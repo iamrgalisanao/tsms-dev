@@ -591,7 +591,7 @@ class TransactionController extends Controller
                                 $vatableSales += $tax['amount'] ?? 0;
                             } elseif ($taxType === 'VAT' || $taxType === 'VAT_AMOUNT') {
                                 $vatAmount += $tax['amount'] ?? 0;
-                            } elseif ($taxType === 'SC_VAT_EXEMPT_SALES') {
+                            } elseif ($taxType === 'SC_VAT_EXEMPT_SALES' || $taxType === 'VAT-EXEMPT' || $taxType === 'EXEMPT' || $taxType === 'VATEXEMPT') {
                                 $scVatExemptSales += $tax['amount'] ?? 0;
                             }
                         }
@@ -2086,7 +2086,7 @@ class TransactionController extends Controller
                                     $vatableSales += $tax['amount'] ?? 0;
                                 } elseif ($taxType === 'VAT' || $taxType === 'VAT_AMOUNT') {
                                     $vatAmount += $tax['amount'] ?? 0;
-                                } elseif ($taxType === 'SC_VAT_EXEMPT_SALES') {
+                                } elseif ($taxType === 'SC_VAT_EXEMPT_SALES' || $taxType === 'VAT-EXEMPT' || $taxType === 'EXEMPT' || $taxType === 'VATEXEMPT') {
                                     $scVatExemptSales += $tax['amount'] ?? 0;
                                 }
                             }
@@ -2757,7 +2757,7 @@ class TransactionController extends Controller
                         $vatableSales += $tax['amount'] ?? 0;
                     } elseif ($taxType === 'VAT' || $taxType === 'VAT_AMOUNT') {
                         $vatAmount += $tax['amount'] ?? 0;
-                    } elseif ($taxType === 'SC_VAT_EXEMPT_SALES') {
+                    } elseif ($taxType === 'SC_VAT_EXEMPT_SALES' || $taxType === 'VAT-EXEMPT' || $taxType === 'EXEMPT' || $taxType === 'VATEXEMPT') {
                         $scVatExemptSales += $tax['amount'] ?? 0;
                     }
                 }
