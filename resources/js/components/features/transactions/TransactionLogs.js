@@ -93,7 +93,7 @@ function TransactionLogs() {
                         React.createElement('th', { className: 'px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider' }, 'ID'),
                         React.createElement('th', { className: 'px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider' }, 'Transaction ID'),
                         React.createElement('th', { className: 'px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider' }, 'Status'),
-                        React.createElement('th', { className: 'px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider' }, 'Created At')
+                        React.createElement('th', { className: 'px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider' }, 'Transaction Timestamp')
                     )
                 ),
                 React.createElement(
@@ -129,7 +129,7 @@ function TransactionLogs() {
                                     log.status
                                 )
                             ),
-                            React.createElement('td', { className: 'px-6 py-4 whitespace-nowrap text-sm text-gray-900' }, new Date(log.created_at).toLocaleString())
+                            React.createElement('td', { className: 'px-6 py-4 whitespace-nowrap text-sm text-gray-900' }, log.transaction_timestamp ? new Date(log.transaction_timestamp).toLocaleString() : 'N/A')
                         ))
                 )
             )

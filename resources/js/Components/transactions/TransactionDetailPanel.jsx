@@ -197,7 +197,16 @@ const TransactionDetailPanel = ({ open, onClose, transaction }) => {
 
                 <Box>
                     <Typography variant="caption" sx={{ color: 'grey.500', textTransform: 'uppercase', fontWeight: 'bold' }}>
-                        Created At
+                        Transaction Timestamp
+                    </Typography>
+                    <Typography variant="body1" sx={{ mt: 0.5, fontWeight: 'bold' }}>
+                        {formatDate(transaction?.transaction_timestamp)}
+                    </Typography>
+                </Box>
+
+                <Box>
+                    <Typography variant="caption" sx={{ color: 'grey.500', textTransform: 'uppercase', fontWeight: 'bold' }}>
+                        System Arrival Time (Created At)
                     </Typography>
                     <Typography variant="body1" sx={{ mt: 0.5 }}>
                         {formatDate(transaction?.created_at)}
