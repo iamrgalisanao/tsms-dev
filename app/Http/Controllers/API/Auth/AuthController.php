@@ -104,12 +104,18 @@ class AuthController extends Controller
             }
 
             // 2. Explicitly log out from the web guard to clear session-based auth
+            Log::debug('Logout - Checking session presence', ['has_session' => $request->hasSession()]);
             Auth::guard('web')->logout();
+            Auth::logout(); // Ensure default guard is also out
 
             // 3. Clear the session if it exists to prevent reuse
             if ($request->hasSession()) {
+                $session_id = $request->session()->getId();
                 $request->session()->invalidate();
                 $request->session()->regenerateToken();
+                Log::info('Session invalidated successfully', ['session_id' => $session_id]);
+            } else {
+                Log::warning('Logout called but no session found in request', ['user_id' => $user->id ?? 'unknown']);
             }
 
             Log::info('Logout successful', ['user_id' => $user->id ?? 'unknown']);

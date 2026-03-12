@@ -77,7 +77,8 @@ export const AuthProvider = ({ children }) => {
             if (token) {
                 await fetch('/api/auth/logout', {
                     method: 'POST',
-                    headers: { 'Authorization': `Bearer ${token}` }
+                    headers: { 'Authorization': `Bearer ${token}` },
+                    credentials: 'include'
                 });
             }
         } catch (error) {

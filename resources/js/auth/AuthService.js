@@ -63,6 +63,7 @@ class AuthService {
                 await fetch("/api/auth/logout", {
                     method: "POST",
                     headers: this.getAuthHeaders(),
+                    credentials: "include",
                 });
             }
         } catch (error) {
