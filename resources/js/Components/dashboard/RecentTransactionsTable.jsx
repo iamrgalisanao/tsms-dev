@@ -148,7 +148,7 @@ const RecentTransactionsTable = ({ transactions, loading, onForward }) => {
                                  <TableCell>
                                     <Tooltip title={`Transaction Timestamp (Raw): ${tx.transaction_timestamp || 'N/A'}`} arrow>
                                         <Typography sx={{ color: 'text.secondary', fontSize: '11px', fontWeight: 700, fontFamily: 'monospace', cursor: 'help' }}>
-                                            {formatDate(tx.transaction_timestamp)} (Local)
+                                            {formatDate(tx.transaction_timestamp)}
                                         </Typography>
                                     </Tooltip>
                                  </TableCell>

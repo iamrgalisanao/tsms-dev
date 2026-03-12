@@ -760,8 +760,14 @@ class WebAppForwardingService
         // Accept Carbon or try to parse other date types/strings
         if (!($dt instanceof Carbon)) {
             try {
-                // FIX: Explicitly parse using application timezone to ensure local strings are correctly adjusted
-                $dt = Carbon::parse($dt, config('app.timezone'));
+                // FIX: Explicitly parse using application timezone and shift to it if necessary
+                // handle inputs that might include a 'Z' (signifying UTC) incorrectly
+                $dtStr = (string) $dt;
+                $dtObj = Carbon::parse($dtStr, config('app.timezone'));
+                if (str_ends_with(strtoupper($dtStr), 'Z')) {
+                    $dtObj->shiftTimezone(config('app.timezone'));
+                }
+                $dt = $dtObj;
             } catch (\Throwable $e) {
                 return null;
             }

@@ -620,9 +620,13 @@ class TransactionController extends Controller
                         ?? now()->toISOString();
                     // Convert ISO8601 to canonical DB-friendly ISO string with 3ms and trailing Z
                     try {
-                        // FIX: Explicitly parse using application timezone to ensure local strings are correctly adjusted before UTC conversion
+                        // FIX: Explicitly parse using application timezone and shift to it if necessary
+                        // handle terminals sending local time with a 'Z' (signifying UTC) incorrectly
                         $dt = Carbon::parse($normalizedTimestamp, config('app.timezone'));
-                        // Ensure we are in UTC before formatting with Z
+                        if (str_ends_with(strtoupper($normalizedTimestamp), 'Z')) {
+                            $dt->shiftTimezone(config('app.timezone'));
+                        }
+                        // Ensure we are in UTC before formatting with Z for storage
                         $normalizedTimestampDb = $dt->utc()->format('Y-m-d\\TH:i:s.v\\Z');
                     } catch (\Throwable $t) {
                         $dt = now();
@@ -2107,14 +2111,21 @@ class TransactionController extends Controller
                         }
                     }
 
+                    // Normalize timestamp to UTC ISO-8601 for consistent DB storage
+                    // Explicitly parse using application timezone and shift to it if necessary
+                    // handle terminals sending local time with a 'Z' (signifying UTC) incorrectly
+                    $dt = Carbon::parse($transactionData['transaction_timestamp'], config('app.timezone'));
+                    if (str_ends_with(strtoupper($transactionData['transaction_timestamp']), 'Z')) {
+                        $dt->shiftTimezone(config('app.timezone'));
+                    }
+                    $normalizedTimestampDb = $dt->utc()->format('Y-m-d\\TH:i:s.v\\Z');
+
                     $txPayload = [
                         'tenant_id' => $terminal->tenant_id,
                         'terminal_id' => $terminal->id,
                         'transaction_id' => $transactionData['transaction_id'],
                         'hardware_id' => $terminal->serial_number ?? 'UNKNOWN',
-                        // Normalize timestamp to UTC ISO-8601 for consistent DB storage
-                        // Explicitly parse using application timezone to ensure local strings are correctly adjusted
-                        'transaction_timestamp' => Carbon::parse($transactionData['transaction_timestamp'], config('app.timezone'))->utc()->format('Y-m-d\\TH:i:s.v\\Z'),
+                        'transaction_timestamp' => $normalizedTimestampDb,
                         'gross_sales' => $transactionData['gross_sales'] ?? 0,
                         'net_sales' => $transactionData['net_sales'] ?? 0,
                         'vatable_sales' => $vatableSales,
