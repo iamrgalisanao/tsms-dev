@@ -655,6 +655,7 @@ class TransactionController extends Controller
                         'vatable_sales' => $vatableSales,
                         'vat_amount' => $vatAmount,
                         'sc_vat_exempt_sales' => $scVatExemptSales,
+                        'original_payload' => json_encode($transactionData),
                     ];
 
                     if (Schema::hasColumn('transactions', 'promo_discount')) {
@@ -2138,6 +2139,7 @@ class TransactionController extends Controller
                         'validation_status' => 'PENDING',
                         'submission_uuid' => $request->submission_uuid,
                         'submission_timestamp' => $request->submission_timestamp,
+                        'original_payload' => json_encode($transactionData),
                     ];
 
                     if (Schema::hasColumn('transactions', 'promo_discount')) {
@@ -2805,6 +2807,7 @@ class TransactionController extends Controller
                 'vatable_sales' => $vatableSales,
                 'vat_amount' => $vatAmount,
                 'sc_vat_exempt_sales' => $scVatExemptSales,
+                'original_payload' => json_encode($transaction),
             ];
 
             if (Schema::hasColumn('transactions', 'promo_discount')) {
