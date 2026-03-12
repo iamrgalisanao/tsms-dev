@@ -27,6 +27,7 @@ import PrintIcon from '@mui/icons-material/Print';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
+import { formatDate } from '../../utils/dateFormatter';
 
 const Row = ({ transaction, onViewDetails, getStatusColor, formatCurrency, formatDate }) => {
     const [open, setOpen] = useState(false);
@@ -245,18 +246,7 @@ const TransactionTable = ({ transactions, loading, page, rowsPerPage, totalCount
         }).format(amount);
     };
 
-    const formatDate = (dateString) => {
-        if (!dateString) return '-';
-        const date = new Date(dateString);
-        return date.toLocaleString('en-PH', {
-            year: 'numeric',
-            month: 'short',
-            day: '2-digit',
-            hour: '2-digit',
-            minute: '2-digit',
-            second: '2-digit'
-        });
-    };
+    // formatDate is now imported from utils/dateFormatter
 
     const headerStyles = {
         fontWeight: 800,

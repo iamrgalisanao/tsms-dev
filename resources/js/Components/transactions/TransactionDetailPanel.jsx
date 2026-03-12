@@ -24,6 +24,7 @@ import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import ErrorIcon from '@mui/icons-material/Error';
 import PendingIcon from '@mui/icons-material/Pending';
 import { transactionLogService } from '../../services/transactionLogService';
+import { formatDate } from '../../utils/dateFormatter';
 
 const TransactionDetailPanel = ({ open, onClose, transaction }) => {
     const [activeTab, setActiveTab] = useState(0);
@@ -59,18 +60,7 @@ const TransactionDetailPanel = ({ open, onClose, transaction }) => {
         }).format(amount || 0);
     };
 
-    const formatDate = (dateString) => {
-        if (!dateString) return 'N/A';
-        const date = new Date(dateString);
-        return date.toLocaleString('en-PH', {
-            year: 'numeric',
-            month: '2-digit',
-            day: '2-digit',
-            hour: '2-digit',
-            minute: '2-digit',
-            second: '2-digit'
-        });
-    };
+    // formatDate is now imported from utils/dateFormatter
 
     const getStatusColor = (status) => {
         switch (status?.toUpperCase()) {

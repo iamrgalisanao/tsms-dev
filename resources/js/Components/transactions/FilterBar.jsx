@@ -58,20 +58,23 @@ const FilterBar = ({ filters, onFilterChange, onReset }) => {
         last7Days.setDate(last7Days.getDate() - 7);
         const thisMonth = new Date(today.getFullYear(), today.getMonth(), 1);
 
-        const formatDate = (date) => date.toISOString().split('T')[0];
+        const formatDateStr = (date) => {
+            // Use ISO string but cut off time part for date picker
+            return date.toISOString().split('T')[0];
+        };
 
         switch (preset) {
             case 'today':
-                onFilterChange({ ...filters, date_from: formatDate(today), date_to: formatDate(today) });
+                onFilterChange({ ...filters, date_from: formatDateStr(today), date_to: formatDateStr(today) });
                 break;
             case 'yesterday':
-                onFilterChange({ ...filters, date_from: formatDate(yesterday), date_to: formatDate(yesterday) });
+                onFilterChange({ ...filters, date_from: formatDateStr(yesterday), date_to: formatDateStr(yesterday) });
                 break;
             case 'last7days':
-                onFilterChange({ ...filters, date_from: formatDate(last7Days), date_to: formatDate(today) });
+                onFilterChange({ ...filters, date_from: formatDateStr(last7Days), date_to: formatDateStr(today) });
                 break;
             case 'thismonth':
-                onFilterChange({ ...filters, date_from: formatDate(thisMonth), date_to: formatDate(today) });
+                onFilterChange({ ...filters, date_from: formatDateStr(thisMonth), date_to: formatDateStr(today) });
                 break;
         }
     };

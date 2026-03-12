@@ -22,6 +22,7 @@ import ForwardIcon from '@mui/icons-material/Forward';
 import LaunchIcon from '@mui/icons-material/Launch';
 import VisibilityIcon from '@mui/icons-material/Visibility';
 import ReceiptIcon from '@mui/icons-material/Receipt';
+import { formatDate } from '../../utils/dateFormatter';
 
 const RecentTransactionsTable = ({ transactions, loading, onForward }) => {
     const [page, setPage] = useState(1);
@@ -32,17 +33,7 @@ const RecentTransactionsTable = ({ transactions, loading, onForward }) => {
         setPage(1);
     }, [transactions]);
 
-    const formatDate = (dateString) => {
-        if (!dateString) return 'N/A';
-        const date = new Date(dateString);
-        return date.toLocaleString('en-PH', {
-            year: 'numeric',
-            month: 'short',
-            day: '2-digit',
-            hour: '2-digit',
-            minute: '2-digit'
-        });
-    };
+    // formatDate is now imported from utils/dateFormatter
 
     if (loading) {
         return (
