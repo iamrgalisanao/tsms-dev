@@ -10,10 +10,12 @@
 export const formatDate = (dateString, includeSeconds = true) => {
     if (!dateString) return 'N/A';
     
-    // Normalize: Treat as local time by removing Z suffix if present
-    const normalizedString = typeof dateString === 'string' 
-        ? dateString.replace('Z', '') 
-        : dateString;
+    // Normalize: Force local time by removing Z and replacing T with space
+    // This is more robust than just stripping Z as some browsers treat T-sep as UTC
+    let normalizedString = dateString;
+    if (typeof dateString === 'string') {
+        normalizedString = dateString.replace(/[Zz]/g, '').replace('T', ' ');
+    }
         
     const date = new Date(normalizedString);
     
@@ -39,9 +41,10 @@ export const formatDate = (dateString, includeSeconds = true) => {
 export const formatTimeOnly = (dateString) => {
     if (!dateString) return 'N/A';
     
-    const normalizedString = typeof dateString === 'string' 
-        ? dateString.replace('Z', '') 
-        : dateString;
+    let normalizedString = dateString;
+    if (typeof dateString === 'string') {
+        normalizedString = dateString.replace(/[Zz]/g, '').replace('T', ' ');
+    }
         
     const date = new Date(normalizedString);
     if (isNaN(date.getTime())) return '-';

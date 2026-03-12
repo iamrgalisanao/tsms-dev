@@ -1,6 +1,7 @@
 /** @jsxRuntime classic */
 /** @jsx React.createElement */
 import React from 'react';
+import { formatDate } from '../../../utils/dateFormatter';
 
 function TransactionLogs() {
     const [logs, setLogs] = React.useState([]);
@@ -129,7 +130,7 @@ function TransactionLogs() {
                                     log.status
                                 )
                             ),
-                            React.createElement('td', { className: 'px-6 py-4 whitespace-nowrap text-sm text-gray-900' }, log.transaction_timestamp ? new Date(log.transaction_timestamp).toLocaleString() : 'N/A')
+                            React.createElement('td', { className: 'px-6 py-4 whitespace-nowrap text-sm text-gray-900' }, formatDate(log.transaction_timestamp))
                         ))
                 )
             )

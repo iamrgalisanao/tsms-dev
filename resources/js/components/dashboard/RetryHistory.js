@@ -2,6 +2,7 @@
 /** @jsx React.createElement */
 
 import React from 'react';
+import { formatDate } from '../../utils/dateFormatter';
 
 function RetryHistory() {
     const [retries, setRetries] = React.useState([]);
@@ -91,7 +92,7 @@ function RetryHistory() {
                                 }, retry.status)
                             ),
                             React.createElement('td', { className: 'px-6 py-4 whitespace-nowrap text-sm text-gray-500' },
-                                new Date(retry.created_at).toLocaleString()
+                                formatDate(retry.created_at)
                             )
                         )
                     )
