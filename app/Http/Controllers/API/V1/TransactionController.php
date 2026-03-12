@@ -2780,11 +2780,20 @@ class TransactionController extends Controller
                 }
             }
 
+            // Normalize timestamp to UTC ISO-8601 for consistent DB storage
+            // Explicitly parse using application timezone and shift to it if necessary
+            // handle terminals sending local time with a 'Z' (signifying UTC) incorrectly
+            $dt = Carbon::parse($transaction['transaction_timestamp'], config('app.timezone'));
+            if (str_ends_with(strtoupper($transaction['transaction_timestamp']), 'Z')) {
+                $dt->shiftTimezone(config('app.timezone'));
+            }
+            $normalizedTimestampDb = $dt->utc()->format('Y-m-d\\TH:i:s.v\\Z');
+
             $txPayload = [
                 'tenant_id' => $terminal->tenant_id,
                 'terminal_id' => $terminal->id,
                 'transaction_id' => $transaction['transaction_id'],
-                'transaction_timestamp' => $transaction['transaction_timestamp'],
+                'transaction_timestamp' => $normalizedTimestampDb,
                 'gross_sales' => $transaction['gross_sales'] ?? 0,
                 'net_sales' => $transaction['net_sales'] ?? 0,
                 'customer_code' => $transaction['customer_code'] ?? ($terminal->tenant->company->customer_code ?? 'UNKNOWN'),
