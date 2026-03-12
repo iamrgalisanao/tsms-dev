@@ -90,8 +90,47 @@ class AuthController extends Controller
 
     public function logout(Request $request)
     {
-        $request->user()->currentAccessToken()->delete();
-        return response()->json(['message' => 'Logged out successfully']);
+        $user = $request->user();
+
+        try {
+            // 1. Revoke the token if it's a Sanctum token-based request
+            // We check if currentAccessToken() exists and is NOT a TransientToken
+            // TransientTokens do not have a delete() method and are used for session-based auth.
+            if ($user && method_exists($user, 'currentAccessToken')) {
+                $token = $user->currentAccessToken();
+                if ($token && method_exists($token, 'delete')) {
+                    $token->delete();
+                }
+            }
+
+            // 2. Explicitly log out from the web guard to clear session-based auth
+            Auth::guard('web')->logout();
+
+            // 3. Clear the session if it exists to prevent reuse
+            if ($request->hasSession()) {
+                $request->session()->invalidate();
+                $request->session()->regenerateToken();
+            }
+
+            Log::info('Logout successful', ['user_id' => $user->id ?? 'unknown']);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Logged out successfully'
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Logout error', [
+                'user_id' => $user->id ?? 'unknown',
+                'error' => $e->getMessage()
+            ]);
+
+            // Even if revocation fails, we still want to indicate "success" to the frontend
+            // so it can clear its own local storage and redirect.
+            return response()->json([
+                'success' => true,
+                'message' => 'Logged out (with minor errors): ' . $e->getMessage()
+            ]);
+        }
     }
 
     public function user(Request $request)
