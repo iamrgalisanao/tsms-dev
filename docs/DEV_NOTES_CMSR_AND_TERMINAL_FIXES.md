@@ -1,4 +1,4 @@
-# Developer Reference: March 2026 Core Platform Updates
+ # Developer Reference: March 2026 Core Platform Updates
 
 This document serves as a comprehensive technical reference for the recent revamp of core platform features, ranging from ingestion logic to reporting and management UI.
 
@@ -13,9 +13,11 @@ This document serves as a comprehensive technical reference for the recent revam
 - **Logic:** Detects `Z` suffix. If the offset is exactly 0 but labeled as UTC, it shifts the value back to `Asia/Manila` to preserve the actual local occurrence time.
 - **Affected Endpoints:** `batchStore`, `storeOfficial`, `processTransaction`.
 
-### UI Integration
-- Standardized all React components to use `transaction_timestamp` (stored in DB) as the source of truth.
-- Removed confusing "(Local)" labels that previously attempted to compensate for the shift.
+### UI Integration & Normalization
+- **Common Utility:** Created `dateFormatter.js` to standardize date parsing across the frontend.
+- **`Z` Suffix Handling:** The utility explicitly strips the `Z` suffix before parsing with `new Date()`. This forces browsers to treat the timestamp as local time regardless of their default behavior, eliminating the 8-hour shift.
+- **Unified Sync:** Standardized `RecentTransactionsTable`, `TransactionTable`, and `TransactionDetailPanel` to use the same formatter.
+- **Affected Endpoints:** `batchStore`, `storeOfficial`, `processTransaction`.
 
 ---
 
@@ -50,10 +52,11 @@ This document serves as a comprehensive technical reference for the recent revam
 - **UI/UX:** Enhanced table views with refined filter bars and material icon grouping.
 - **Sidebar Integration:** Mapped management routes to the main sidebar for easier administrative access.
 
-### Terminal Registration (422 Error Fix)
+### Terminal Registration (Remote Staging Diagnostics)
 - **Visibility:** Fixed a CSS bug where the "Register Terminal" button had `opacity: 0`.
-- **Specific Error Reporting:** The React frontend now parses and displays detailed validation errors (e.g., "Duplicate Serial Number") instead of a generic failure message.
-- **Audit Logging:** Implemented specific `Log::warning` captures for failed registration attempts, including the rejected payload for debugging.
+- **Specific Error Reporting:** The React frontend now parses and displays detailed validation errors (e.g., "Terminal serial number is already registered in the system.") instead of a generic failure message.
+- **Audit Logging (Enhanced):** Implemented specific `Log::warning` captures for failed registration attempts, including request headers, client IP, and the full payload for debugging on remote staging.
+- **Frontend Debugging:** Added console logs (`Terminal registration error context`) to dump full error details in the browser for non-intrusive remote troubleshooting.
 
 ---
 
@@ -64,6 +67,7 @@ This document serves as a comprehensive technical reference for the recent revam
 | **Finance** | `FinanceCalculationService.php`, `Transaction.php` |
 | **Dashboard** | `DashboardService.php`, `DashboardPage.jsx`, `TransactionChart.jsx` |
 | **Identity** | `TerminalTokenController.php`, `TerminalTokenPage.jsx`, `Tenant.php` |
+| **Utilities** | `dateFormatter.js` |
 
 ---
 *Last Updated: March 12, 2026*
