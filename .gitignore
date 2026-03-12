@@ -46,6 +46,7 @@ tmp/*
 
 # Daily generated activity digests (produced by cipher scripts)
 docs/DAILY_ACTIVITY_*.md
+docs/DEV_NOTES_CMSR_AND_TERMINAL_FIXES.md
 
 # Local test dumps
 tmp_valid_tx_errors.json
