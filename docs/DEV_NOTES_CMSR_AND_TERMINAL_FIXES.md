@@ -60,6 +60,20 @@ This document serves as a comprehensive technical reference for the recent revam
 
 ---
 
+## 🔐 5. Authentication & Session Management
+**Objective:** Ensure stable authentication state and error-free logout across different user roles.
+
+### Logout 500 Error Fix
+- **Issue:** Admins using session-based auth (Sanctum SPA mode) encountered a 500 error because the logout logic tried to `delete()` a non-existent/transient token.
+- **Fix:** Refactored `AuthController::logout` to be defensive.
+- **Logic:** 
+  1. Checks for token existence and `delete()` method availability before invocation.
+  2. Explicitly calls `Auth::guard('web')->logout()` to clear session cookies.
+  3. Calls `session()->invalidate()` and `regenerateToken()` for full session cleanup.
+- **Resilience:** Wrapped in a `try-catch` block to ensure that even if token revocation fails, the session is cleared and the frontend can proceed to the login page.
+
+---
+
 ## 🛠️ Key Technical Files
 | Component | Primary Files |
 |-----------|---------------|
