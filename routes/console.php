@@ -200,7 +200,7 @@ Schedule::call(function () {
             'error' => $e->getMessage()
         ]);
     }
-})->hourly()->name('webapp-forwarding-health-check')->onOneServer();
+})->hourly()->name('webapp-forwarding-health-check')->onOneServer()->when(fn () => config('tsms.web_app.enabled', false));
 
 // Cleanup old completed forwards - Daily at 2 AM
 Schedule::call(function () {
@@ -232,7 +232,7 @@ Schedule::call(function () {
             'error' => $e->getMessage()
         ]);
     }
-})->dailyAt('02:00')->name('webapp-forwarding-cleanup')->onOneServer();
+})->dailyAt('02:00')->name('webapp-forwarding-cleanup')->onOneServer()->when(fn () => config('tsms.web_app.enabled', false));
 
 // --------------------------------------------------------------------------
 // SystemLog pruning: scheduled safe prune (uses systemlogs:prune command)
