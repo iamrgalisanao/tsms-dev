@@ -232,10 +232,13 @@ class FailedJobController extends Controller
             return null;
         }
 
-        // Try to find transactionId in serialized command
-        // Patterns: s:16:"*transactionId";i:12345; or s:13:"transactionId";i:12345;
-        if (preg_match('/transactionId";i:(\d+)/', $command, $matches)) {
-            $txnId = (int) $matches[1];
+        // Try to find transactionId or transaction_pk in serialized command
+        // Patterns: s:13:"transactionId";i:12345; or s:14:"transaction_pk";i:12345;
+        // Also handle string-wrapped IDs just in case: s:13:"transactionId";s:36:"...";
+        if (preg_match('/transactionId";[is]:(\d+|"[^"]+")/', $command, $matches) || 
+            preg_match('/transaction_pk";[is]:(\d+|"[^"]+")/', $command, $matches)) {
+            
+            $txnId = trim($matches[1], '"');
             try {
                 $txn = Transaction::with('tenant')->find($txnId);
                 return $txn?->tenant?->name;

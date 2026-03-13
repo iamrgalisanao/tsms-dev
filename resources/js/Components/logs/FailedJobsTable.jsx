@@ -502,7 +502,7 @@ const FailedJobsTable = ({ data, loading, onPageChange, onRefresh }) => {
                             <TableRow>
                                 <TableCell sx={headerStyles}>Failed At</TableCell>
                                 <TableCell sx={headerStyles}>Age</TableCell>
-                                <TableCell sx={headerStyles}>Tenant</TableCell>
+                                <TableCell sx={headerStyles}>Tenant / Entity</TableCell>
                                 <TableCell sx={headerStyles}>Queue</TableCell>
                                 <TableCell sx={headerStyles}>Job Class</TableCell>
                                 <TableCell sx={headerStyles}>Error Preview</TableCell>
