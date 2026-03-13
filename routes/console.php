@@ -141,6 +141,7 @@ Schedule::call(function () {
         ->get();
 
     foreach ($candidates as $txn) {
+        /** @var \App\Models\Transaction $txn */
         if (($txn->job_attempts ?? 0) >= $maxRequeues) { $skipped++; continue; }
         $tenantId = $txn->tenant_id ?? optional($txn->terminal)->tenant_id ?? 0;
         $shard = $tenantId % 8;
@@ -159,6 +160,7 @@ Schedule::call(function () {
         ->get();
 
     foreach ($stale as $txn) {
+        /** @var \App\Models\Transaction $txn */
         $txn->validation_status = 'FAILED';
         $txn->job_status = 'FAILED';
         $txn->last_error = 'Watchdog timeout exceeded';
