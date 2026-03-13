@@ -4,10 +4,12 @@ namespace App\Http\Controllers\API\V1;
 
 use App\Http\Controllers\Controller;
 use App\Models\SystemLog;
+use App\Models\Transaction;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Carbon\Carbon;
 
 class FailedJobController extends Controller
 {
@@ -42,8 +44,9 @@ class FailedJobController extends Controller
                 'uuid'        => $job->uuid,
                 'queue'       => $job->queue,
                 'job_class'   => data_get($payload, 'displayName', 'Unknown'),
+                'tenant_name' => $this->resolveTenantName($payload),
                 'failed_at'   => $job->failed_at,
-                'age_minutes' => now()->diffInMinutes(\Carbon\Carbon::parse($job->failed_at)),
+                'age_minutes' => now()->diffInMinutes(Carbon::parse($job->failed_at)),
                 'exception'   => $job->exception,
                 'payload'     => $payload,
             ];
@@ -86,8 +89,9 @@ class FailedJobController extends Controller
             'uuid'        => $job->uuid,
             'queue'       => $job->queue,
             'job_class'   => data_get($payload, 'displayName', 'Unknown'),
+            'tenant_name' => $this->resolveTenantName($payload),
             'failed_at'   => $job->failed_at,
-            'age_minutes' => now()->diffInMinutes(\Carbon\Carbon::parse($job->failed_at)),
+            'age_minutes' => now()->diffInMinutes(Carbon::parse($job->failed_at)),
             'exception'   => $job->exception,
             'payload'     => $payload,
         ]);
@@ -216,5 +220,30 @@ class FailedJobController extends Controller
             'by_queue'           => $byQueue,
             'threshold_exceeded' => $total >= (int) config('tsms.dlq.alert_threshold', 10),
         ]);
+    }
+
+    /**
+     * Resolve tenant name from job payload if possible.
+     */
+    private function resolveTenantName(array $payload): ?string
+    {
+        $command = data_get($payload, 'data.command');
+        if (!$command) {
+            return null;
+        }
+
+        // Try to find transactionId in serialized command
+        // Patterns: s:16:"*transactionId";i:12345; or s:13:"transactionId";i:12345;
+        if (preg_match('/transactionId";i:(\d+)/', $command, $matches)) {
+            $txnId = (int) $matches[1];
+            try {
+                $txn = Transaction::with('tenant')->find($txnId);
+                return $txn?->tenant?->name;
+            } catch (\Throwable $e) {
+                return null;
+            }
+        }
+
+        return null;
     }
 }

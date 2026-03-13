@@ -81,6 +81,24 @@ const GUIDE_STEPS = [
         ),
     },
     {
+        icon: <InboxIcon sx={{ fontSize: 36, color: '#3b82f6' }} />,
+        label: 'Tenant Column',
+        title: 'Which tenant is affected?',
+        color: '#3b82f6',
+        content: (
+            <Box>
+                <Typography variant="body2" sx={{ lineHeight: 1.9, color: 'text.secondary', mb: 2 }}>
+                    The <strong>Tenant</strong> column identifies which business entity the failed job belongs to.
+                </Typography>
+                <Typography variant="body2" sx={{ lineHeight: 1.9, color: 'text.secondary' }}>
+                    The system automatically extracts the <code>tenant_id</code> from the job payload and resolves its name.
+                    <br /><br />
+                    If the column says <strong>"System / Bulk"</strong>, the job is either a general background task (like report generation) or a bulk process that handles multiple tenants at once.
+                </Typography>
+            </Box>
+        ),
+    },
+    {
         icon: <AccountTreeIcon sx={{ fontSize: 36, color: '#6366f1' }} />,
         label: 'Queue Column',
         title: 'Which processing queue failed?',
@@ -484,6 +502,7 @@ const FailedJobsTable = ({ data, loading, onPageChange, onRefresh }) => {
                             <TableRow>
                                 <TableCell sx={headerStyles}>Failed At</TableCell>
                                 <TableCell sx={headerStyles}>Age</TableCell>
+                                <TableCell sx={headerStyles}>Tenant</TableCell>
                                 <TableCell sx={headerStyles}>Queue</TableCell>
                                 <TableCell sx={headerStyles}>Job Class</TableCell>
                                 <TableCell sx={headerStyles}>Error Preview</TableCell>
@@ -493,7 +512,7 @@ const FailedJobsTable = ({ data, loading, onPageChange, onRefresh }) => {
                         <TableBody>
                             {items.length === 0 ? (
                                 <TableRow>
-                                    <TableCell colSpan={6} align="center" sx={{ py: 10 }}>
+                                    <TableCell colSpan={7} align="center" sx={{ py: 10 }}>
                                         <Stack alignItems="center" spacing={1}>
                                             <CheckIcon sx={{ fontSize: 32, color: 'success.main', opacity: 0.6 }} />
                                             <Typography variant="body2" sx={{ fontWeight: 700, opacity: 0.5 }}>
@@ -530,6 +549,11 @@ const FailedJobsTable = ({ data, loading, onPageChange, onRefresh }) => {
                                                     {formatFailedAt(job.failed_at)}
                                                 </Typography>
                                             </Stack>
+                                        </TableCell>
+                                        <TableCell>
+                                            <Typography variant="caption" sx={{ fontWeight: 700, color: job.tenant_name ? 'text.primary' : 'text.disabled', fontSize: '0.68rem' }}>
+                                                {job.tenant_name || 'System / Bulk'}
+                                            </Typography>
                                         </TableCell>
                                         <TableCell>
                                             <Typography variant="caption" sx={{ fontWeight: 700, fontFamily: 'monospace', fontSize: '0.68rem', color: 'primary.main' }}>
