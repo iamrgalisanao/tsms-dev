@@ -51,6 +51,7 @@ class IncidentController extends Controller
         $perPage = max(1, min($perPage, 200));
 
         $paginator = $query
+            ->with('tenant:id,trade_name')
             ->orderByDesc('first_seen_at')
             ->orderByDesc('id')
             ->paginate($perPage)
@@ -63,6 +64,7 @@ class IncidentController extends Controller
                     'submission_uuid' => $incident->submission_uuid,
                     'correlation_id' => $incident->correlation_id,
                     'tenant_id' => $incident->tenant_id,
+                    'tenant_name' => optional($incident->tenant)->trade_name ?? ('Tenant #' . $incident->tenant_id),
                     'terminal_id' => $incident->terminal_id,
                     'category' => $incident->category,
                     'state' => $incident->state,
@@ -94,13 +96,14 @@ class IncidentController extends Controller
      */
     public function show(int $id)
     {
-        $incident = Incident::findOrFail($id);
+        $incident = Incident::with('tenant:id,trade_name')->findOrFail($id);
 
         return response()->json([
             'id' => $incident->id,
             'submission_uuid' => $incident->submission_uuid,
             'correlation_id' => $incident->correlation_id,
             'tenant_id' => $incident->tenant_id,
+            'tenant_name' => optional($incident->tenant)->trade_name ?? ('Tenant #' . $incident->tenant_id),
             'terminal_id' => $incident->terminal_id,
             'category' => $incident->category,
             'state' => $incident->state,
