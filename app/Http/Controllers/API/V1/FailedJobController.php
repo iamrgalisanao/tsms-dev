@@ -4,6 +4,7 @@ namespace App\Http\Controllers\API\V1;
 
 use App\Http\Controllers\Controller;
 use App\Models\SystemLog;
+use App\Models\Tenant;
 use App\Models\Transaction;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Artisan;
@@ -232,18 +233,29 @@ class FailedJobController extends Controller
             return null;
         }
 
-        // Try to find transactionId or transaction_pk in serialized command
-        // Patterns: s:13:"transactionId";i:12345; or s:14:"transaction_pk";i:12345;
-        // Also handle string-wrapped IDs just in case: s:13:"transactionId";s:36:"...";
-        if (preg_match('/transactionId";[is]:(\d+|"[^"]+")/', $command, $matches) || 
-            preg_match('/transaction_pk";[is]:(\d+|"[^"]+")/', $command, $matches)) {
-            
-            $txnId = trim($matches[1], '"');
-            try {
-                $txn = Transaction::with('tenant')->find($txnId);
-                return $txn?->tenant?->name;
-            } catch (\Throwable $e) {
-                return null;
+        // Try to find identifiers in serialized command
+        // Matches integers i:123; or strings s:4:"val";
+        $idPatterns = [
+            'transaction' => ['/transactionId";[is]:(\d+|"[^"]+")/', '/transaction_pk";[is]:(\d+|"[^"]+")/'],
+            'tenant'      => ['/tenantId";[is]:(\d+|"[^"]+")/', '/tenant_id";[is]:(\d+|"[^"]+")/']
+        ];
+
+        foreach ($idPatterns as $type => $patterns) {
+            foreach ($patterns as $pattern) {
+                if (preg_match($pattern, $command, $matches)) {
+                    $id = trim($matches[1], '"');
+                    try {
+                        if ($type === 'transaction') {
+                            $txn = Transaction::with('tenant')->find($id);
+                            return $txn?->tenant?->trade_name ?? $txn?->tenant?->name;
+                        } else {
+                            $tenant = Tenant::find($id);
+                            return $tenant?->trade_name ?? $tenant?->name;
+                        }
+                    } catch (\Throwable $e) {
+                        return null;
+                    }
+                }
             }
         }
 
