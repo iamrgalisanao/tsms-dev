@@ -539,12 +539,19 @@ const FailedJobsTable = ({ data, loading, onPageChange, onRefresh }) => {
                                         </TableCell>
                                         <TableCell>
                                             <Stack spacing={0.4}>
-                                                <Chip
-                                                    label={formatAge(job.age_minutes)}
-                                                    color={ageColor(job.age_minutes)}
-                                                    size="small"
-                                                    sx={{ fontWeight: 800, fontSize: '0.62rem', height: 20, borderRadius: 1.5, width: 'fit-content' }}
-                                                />
+                                                {(() => {
+                                                    const localMins = job.failed_at 
+                                                        ? Math.floor(Math.abs(new Date() - new Date(job.failed_at)) / 60000)
+                                                        : job.age_minutes;
+                                                    return (
+                                                        <Chip
+                                                            label={formatAge(localMins)}
+                                                            color={ageColor(localMins)}
+                                                            size="small"
+                                                            sx={{ fontWeight: 800, fontSize: '0.62rem', height: 20, borderRadius: 1.5, width: 'fit-content' }}
+                                                        />
+                                                    );
+                                                })()}
                                                 <Typography variant="caption" sx={{ fontSize: '0.65rem', color: 'text.disabled', fontFamily: 'monospace', lineHeight: 1.2 }}>
                                                     {formatFailedAt(job.failed_at)}
                                                 </Typography>

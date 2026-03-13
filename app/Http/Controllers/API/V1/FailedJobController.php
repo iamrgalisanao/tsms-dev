@@ -47,7 +47,7 @@ class FailedJobController extends Controller
                 'job_class'   => data_get($payload, 'displayName', 'Unknown'),
                 'tenant_name' => $this->resolveTenantName($payload),
                 'failed_at'   => $job->failed_at,
-                'age_minutes' => now()->diffInMinutes(Carbon::parse($job->failed_at)),
+                'age_minutes' => (int) abs(now()->diffInMinutes(Carbon::parse($job->failed_at))),
                 'exception'   => $job->exception,
                 'payload'     => $payload,
             ];
@@ -92,7 +92,7 @@ class FailedJobController extends Controller
             'job_class'   => data_get($payload, 'displayName', 'Unknown'),
             'tenant_name' => $this->resolveTenantName($payload),
             'failed_at'   => $job->failed_at,
-            'age_minutes' => now()->diffInMinutes(Carbon::parse($job->failed_at)),
+            'age_minutes' => (int) abs(now()->diffInMinutes(Carbon::parse($job->failed_at))),
             'exception'   => $job->exception,
             'payload'     => $payload,
         ]);
@@ -205,9 +205,9 @@ class FailedJobController extends Controller
         $total = DB::table('failed_jobs')->count();
 
         $oldest = $total > 0
-            ? now()->diffInMinutes(
+            ? (int) abs(now()->diffInMinutes(
                 \Carbon\Carbon::parse(DB::table('failed_jobs')->orderBy('failed_at')->value('failed_at'))
-              )
+              ))
             : 0;
 
         $byQueue = DB::table('failed_jobs')
