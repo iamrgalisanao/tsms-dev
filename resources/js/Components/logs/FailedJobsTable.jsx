@@ -400,6 +400,31 @@ const FailedJobsTable = ({ data, loading, onPageChange, onRefresh }) => {
 
     const ageColor = (m) => m < 30 ? 'success' : m < 120 ? 'warning' : 'error';
 
+    /** Convert total minutes → readable string like "2h 15m" or "3d 4h" */
+    const formatAge = (minutes) => {
+        if (minutes < 1)   return 'Just now';
+        if (minutes < 60)  return `${minutes}m`;
+        if (minutes < 1440) {
+            const h = Math.floor(minutes / 60);
+            const m = minutes % 60;
+            return m > 0 ? `${h}h ${m}m` : `${h}h`;
+        }
+        const d = Math.floor(minutes / 1440);
+        const h = Math.floor((minutes % 1440) / 60);
+        return h > 0 ? `${d}d ${h}h` : `${d}d`;
+    };
+
+    /** Format the raw failed_at string to a short local datetime */
+    const formatFailedAt = (ts) => {
+        if (!ts) return '—';
+        try {
+            return new Date(ts).toLocaleString('en-PH', {
+                month: 'short', day: 'numeric',
+                hour: '2-digit', minute: '2-digit', hour12: true,
+            });
+        } catch { return ts; }
+    };
+
     if (loading && !data) {
         return (
             <Box sx={{ py: 20, textAlign: 'center' }}>
@@ -494,12 +519,17 @@ const FailedJobsTable = ({ data, loading, onPageChange, onRefresh }) => {
                                             </Typography>
                                         </TableCell>
                                         <TableCell>
-                                            <Chip
-                                                label={`${job.age_minutes}m ago`}
-                                                color={ageColor(job.age_minutes)}
-                                                size="small"
-                                                sx={{ fontWeight: 800, fontSize: '0.6rem', height: 20, borderRadius: 1.5 }}
-                                            />
+                                            <Stack spacing={0.4}>
+                                                <Chip
+                                                    label={formatAge(job.age_minutes)}
+                                                    color={ageColor(job.age_minutes)}
+                                                    size="small"
+                                                    sx={{ fontWeight: 800, fontSize: '0.62rem', height: 20, borderRadius: 1.5, width: 'fit-content' }}
+                                                />
+                                                <Typography variant="caption" sx={{ fontSize: '0.65rem', color: 'text.disabled', fontFamily: 'monospace', lineHeight: 1.2 }}>
+                                                    {formatFailedAt(job.failed_at)}
+                                                </Typography>
+                                            </Stack>
                                         </TableCell>
                                         <TableCell>
                                             <Typography variant="caption" sx={{ fontWeight: 700, fontFamily: 'monospace', fontSize: '0.68rem', color: 'primary.main' }}>
