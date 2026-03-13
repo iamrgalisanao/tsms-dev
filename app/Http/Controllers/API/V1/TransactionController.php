@@ -653,10 +653,13 @@ class TransactionController extends Controller
                         $txPayload['pwd_discount'] = $pwdDiscount;
                     }
 
-                    // Create the transaction; if a race condition causes a duplicate key,
-                    // treat it as idempotent success rather than failure.
+                    // Create the transaction with deadlock retry (SQLSTATE 40001).
+                    // If a race condition causes a duplicate key (23000), treat
+                    // it as idempotent success rather than failure.
                     try {
-                        $transaction = Transaction::create($txPayload);
+                        $transaction = \DB::transaction(function () use ($txPayload) {
+                            return Transaction::create($txPayload);
+                        }, 3); // retry up to 3x on deadlock
                     } catch (\Illuminate\Database\QueryException $qe) {
                         // SQLSTATE 23000 is integrity constraint violation (duplicate key)
                         $sqlState = $qe->getCode();
@@ -724,6 +727,7 @@ class TransactionController extends Controller
                         }
                         throw $qe;
                     }
+
 
                     // Queue the transaction for processing
                     // Shard queue by tenant for fairness
@@ -2133,29 +2137,35 @@ class TransactionController extends Controller
                         $txPayload['pwd_discount'] = $pwdDiscount;
                     }
 
-                    $transaction = Transaction::create($txPayload);
+                    // Create transaction and related records atomically.
+                    // DB::transaction(..., 3) retries the whole block up to 3x on
+                    // deadlock (SQLSTATE 40001) before surfacing the error.
+                    $transaction = \DB::transaction(function () use ($txPayload, $transactionData) {
+                        $tx = Transaction::create($txPayload);
 
-                    // Process adjustments if present
-                    if (isset($transactionData['adjustments']) && is_array($transactionData['adjustments'])) {
-                        foreach ($transactionData['adjustments'] as $adjustment) {
-                            // create via relation so transaction_pk is set correctly
-                            $transaction->adjustments()->create([
-                                'adjustment_type' => $adjustment['adjustment_type'],
-                                'amount' => $adjustment['amount'],
-                            ]);
+                        // Process adjustments if present
+                        if (isset($transactionData['adjustments']) && is_array($transactionData['adjustments'])) {
+                            foreach ($transactionData['adjustments'] as $adjustment) {
+                                $tx->adjustments()->create([
+                                    'adjustment_type' => $adjustment['adjustment_type'],
+                                    'amount' => $adjustment['amount'],
+                                ]);
+                            }
                         }
-                    }
 
-                    // Process taxes if present
-                    if (isset($transactionData['taxes']) && is_array($transactionData['taxes'])) {
-                        foreach ($transactionData['taxes'] as $tax) {
-                            // create via relation so transaction_pk is set correctly
-                            $transaction->taxes()->create([
-                                'tax_type' => $tax['tax_type'],
-                                'amount' => $tax['amount'],
-                            ]);
+                        // Process taxes if present
+                        if (isset($transactionData['taxes']) && is_array($transactionData['taxes'])) {
+                            foreach ($transactionData['taxes'] as $tax) {
+                                $tx->taxes()->create([
+                                    'tax_type' => $tax['tax_type'],
+                                    'amount' => $tax['amount'],
+                                ]);
+                            }
                         }
-                    }
+
+                        return $tx;
+                    }, 3); // retry up to 3x on deadlock
+
 
                     // Queue the transaction for processing
                     Log::info('storeOfficial: Dispatching ProcessTransactionJob', ['transaction_id' => $transaction->transaction_id]);
@@ -2795,11 +2805,17 @@ class TransactionController extends Controller
                 $txPayload['pwd_discount'] = $pwdDiscount;
             }
 
-            $transactionModel = Transaction::create($txPayload);
+            // Create transaction and related records atomically.
+            // DB::transaction(..., 3) retries the whole block up to 3x on
+            // deadlock (SQLSTATE 40001) before surfacing the error.
+            $transactionModel = \DB::transaction(function () use ($txPayload, $transaction) {
+                $tx = Transaction::create($txPayload);
+                // Process adjustments & taxes inside the same atomic block
+                $this->processAdjustmentsAndTaxes($tx, $transaction);
+                return $tx;
+            }, 3); // retry up to 3x on deadlock
             $isSaved = true;
 
-            // Process adjustments & taxes
-            $this->processAdjustmentsAndTaxes($transactionModel, $transaction);
 
             // Check if terminal has notifications enabled and has a callback URL
             if (config('notifications.callbacks.enabled') && $terminal->notifications_enabled && $terminal->callback_url) {
