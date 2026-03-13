@@ -150,6 +150,16 @@ Route::prefix('v1')->middleware(['auth:sanctum', 'capture.terminal.ip', AttachCo
         Route::post('/terminals/{terminalId}/generate-token', [TerminalTokenController::class, 'generateToken']);
         Route::get('/terminals/{terminalId}/tokens', [TerminalTokenController::class, 'listTokens']);
         Route::post('/terminals/generate-all-tokens', [TerminalTokenController::class, 'generateTokensForAllTerminals']);
+
+        // Dead-Letter Queue (DLQ) management — admin only
+        Route::prefix('admin/failed-jobs')->group(function () {
+            Route::get('/',             [\App\Http\Controllers\API\V1\FailedJobController::class, 'index']);
+            Route::get('/stats',        [\App\Http\Controllers\API\V1\FailedJobController::class, 'stats']);
+            Route::get('/{uuid}',       [\App\Http\Controllers\API\V1\FailedJobController::class, 'show']);
+            Route::post('/retry-all',   [\App\Http\Controllers\API\V1\FailedJobController::class, 'retryAll']);
+            Route::post('/{uuid}/retry',[\App\Http\Controllers\API\V1\FailedJobController::class, 'retry']);
+            Route::delete('/{uuid}',    [\App\Http\Controllers\API\V1\FailedJobController::class, 'flush']);
+        });
     });
 
     // Token introspection (any authenticated token may introspect itself)

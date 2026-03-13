@@ -23,6 +23,41 @@ Schedule::call(function () {
 })->everyMinute();
 
 // --------------------------------------------------------------------------
+// DLQ Alert: warn when failed_jobs table exceeds configured threshold.
+// Runs every 5 minutes. Threshold controlled by TSMS_DLQ_ALERT_THRESHOLD.
+// --------------------------------------------------------------------------
+Schedule::call(function () {
+    $threshold = (int) config('tsms.dlq.alert_threshold', 10);
+    $count = \Illuminate\Support\Facades\DB::table('failed_jobs')->count();
+
+    if ($count >= $threshold) {
+        Log::warning('[DLQ] Dead-letter queue threshold exceeded', [
+            'failed_jobs_count' => $count,
+            'threshold'         => $threshold,
+        ]);
+
+        try {
+            \App\Models\SystemLog::create([
+                'type'           => 'queue',
+                'log_type'       => 'DLQ_THRESHOLD_EXCEEDED',
+                'severity'       => 'error',
+                'terminal_uid'   => 'scheduler',
+                'transaction_id' => null,
+                'message'        => "DLQ threshold exceeded: {$count} failed jobs (threshold: {$threshold})",
+                'context'        => [
+                    'failed_jobs_count' => $count,
+                    'threshold'         => $threshold,
+                    'checked_at'        => now()->toIso8601String(),
+                ],
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('[DLQ] Failed to write SystemLog for DLQ alert', ['error' => $e->getMessage()]);
+        }
+    }
+})->everyFiveMinutes()->name('dlq-threshold-alert')->withoutOverlapping()->onOneServer();
+
+
+// --------------------------------------------------------------------------
 // Transaction pruning: remove stale PENDING (stuck) & aged FAILED transactions
 // Runs every hour; uses configurable retention in config('tsms.transactions').
 // --------------------------------------------------------------------------

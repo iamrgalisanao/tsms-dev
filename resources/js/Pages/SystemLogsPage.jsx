@@ -19,13 +19,16 @@ import BugReportIcon from '@mui/icons-material/BugReport';
 import HistoryIcon from '@mui/icons-material/History';
 import LanguageIcon from '@mui/icons-material/Language';
 import CallMergeIcon from '@mui/icons-material/CallMerge';
+import InboxIcon from '@mui/icons-material/Inbox';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import Tooltip from '@mui/material/Tooltip';
 import LogFilterBar from '../Components/logs/LogFilterBar';
 import LogTable from '../Components/logs/LogTable';
 import IncidentsTable from '../Components/logs/IncidentsTable';
+import FailedJobsTable from '../Components/logs/FailedJobsTable';
 import { systemLogService } from '../services/systemLogService';
 import { incidentService } from '../services/incidentService';
+import { dlqService } from '../services/dlqService';
 
 const StatCard = ({ title, value, color, icon, description }) => (
     <Paper elevation={0} sx={{ p: 2, borderRadius: 3, border: '1px solid', borderColor: 'divider', boxShadow: '0 4px 12px rgba(0,0,0,0.02)' }}>
@@ -55,6 +58,9 @@ const SystemLogsPage = () => {
     const [loading, setLoading] = useState(true);
     const [logData, setLogData] = useState(null);
     const [incidents, setIncidents] = useState(null);
+    const [dlqStats, setDlqStats] = useState(null);
+    const [failedJobs, setFailedJobs] = useState(null);
+    const [dlqPage, setDlqPage] = useState(1);
     const [filters, setFilters] = useState({
         type: '',
         severity: '',
@@ -75,6 +81,18 @@ const SystemLogsPage = () => {
     const [incidentPage, setIncidentPage] = useState(1);
 
     const [notification, setNotification] = useState({ open: false, message: '', severity: 'info' });
+
+    // Fetch DLQ stats (always) and DLQ list (only when on dlq tab)
+    const fetchDlq = useCallback(async () => {
+        try {
+            const stats = await dlqService.getStats();
+            setDlqStats(stats);
+            if (activeTab === 'dlq') {
+                const jobs = await dlqService.getFailedJobs({ page: dlqPage, per_page: 20 });
+                setFailedJobs(jobs);
+            }
+        } catch (_) { /* DLQ endpoint may not be accessible to non-admins — silent fail */ }
+    }, [activeTab, dlqPage]);
 
     const fetchData = useCallback(async () => {
         setLoading(true);
@@ -104,6 +122,8 @@ const SystemLogsPage = () => {
             setLoading(false);
         }
     }, [filters, pages, incidentPage]);
+
+    useEffect(() => { fetchDlq(); }, [fetchDlq]);
 
     useEffect(() => {
         fetchData();
@@ -192,6 +212,17 @@ const SystemLogsPage = () => {
                             description="Count of login attempts, session terminations, and identity verification sequences."
                         />
                     </Grid>
+                    {dlqStats !== null && (
+                        <Grid item xs={12} sm={6} md={3}>
+                            <StatCard
+                                title="Failed Jobs (DLQ)"
+                                value={dlqStats?.total_failed ?? 0}
+                                color={dlqStats?.threshold_exceeded ? 'error' : 'warning'}
+                                icon={<InboxIcon />}
+                                description={`Dead-letter queue: jobs that failed all retries. Oldest: ${dlqStats?.oldest_age_minutes ?? 0}m ago. Click the 'Failed Jobs' tab to inspect and replay.`}
+                            />
+                        </Grid>
+                    )}
                 </Grid>
 
                 <LogFilterBar
@@ -268,6 +299,22 @@ const SystemLogsPage = () => {
                                 </Stack>
                             }
                         />
+                        <Tab
+                            value="dlq"
+                            label={
+                                <Stack direction="row" spacing={1} alignItems="center">
+                                    <span>Failed Jobs</span>
+                                    {dlqStats?.total_failed > 0 && (
+                                        <Box sx={{ bgcolor: 'error.main', color: 'white', borderRadius: '50%', width: 18, height: 18, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.6rem', fontWeight: 900 }}>
+                                            {dlqStats.total_failed > 99 ? '99+' : dlqStats.total_failed}
+                                        </Box>
+                                    )}
+                                    <Tooltip title="Dead-letter queue: jobs that exhausted retry attempts. Inspect, replay, or delete them here.">
+                                        <InfoOutlinedIcon sx={{ fontSize: 16, opacity: 0.6 }} />
+                                    </Tooltip>
+                                </Stack>
+                            }
+                        />
                     </Tabs>
                 </Box>
 
@@ -309,6 +356,14 @@ const SystemLogsPage = () => {
                             data={incidents}
                             loading={loading}
                             onPageChange={(p) => setIncidentPage(p)}
+                        />
+                    )}
+                    {activeTab === 'dlq' && (
+                        <FailedJobsTable
+                            data={failedJobs}
+                            loading={loading}
+                            onPageChange={(p) => setDlqPage(p)}
+                            onRefresh={fetchDlq}
                         />
                     )}
                 </Box>

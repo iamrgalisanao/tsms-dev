@@ -39,4 +39,10 @@ return [
         'prune_pending_after_minutes' => (int) env('TX_PRUNE_PENDING_AFTER_MIN', 180),
         'enable_pruning' => (bool) env('TX_ENABLE_PRUNING', true),
     ],
+
+    // Dead-letter queue (DLQ) monitoring configuration
+    'dlq' => [
+        // Alert logged to SystemLog when failed_jobs count reaches this number
+        'alert_threshold' => (int) env('TSMS_DLQ_ALERT_THRESHOLD', 10),
+    ],
 ];
