@@ -15,7 +15,7 @@ return [
 
     'default_limits' => [
         'api' => [
-            'attempts' => env('RATE_LIMIT_API_ATTEMPTS', 300),
+            'attempts' => env('RATE_LIMIT_API_ATTEMPTS', 60),
             'decay_minutes' => env('RATE_LIMIT_API_DECAY_MINUTES', 1),
         ],
         'auth' => [
