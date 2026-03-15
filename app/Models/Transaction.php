@@ -641,54 +641,7 @@ class Transaction extends Model
             }
         };
 
-        static::creating(function (Transaction $tx) use ($sync) {
-            // Defensive defaults for legacy sales-reporting columns. Some older
-            // staging DB schemas expect these columns to be present and non-null.
-            $legacyCols = [
-                'promo_discount',
-                'senior_discount',
-                'pwd_discount',
-                'vip_card_discount',
-                'service_charge_distributed_to_employees',
-                'service_charge_retained_by_management',
-                'employee_discount',
-            ];
-            foreach ($legacyCols as $col) {
-                try {
-                    // If the DB still contains legacy columns and the incoming
-                    // attributes either don't include them or include them as
-                    // explicit null, set a safe default of 0 to avoid inserting
-                    // NULL into non-nullable legacy columns.
-                    $hasCol = Schema::hasColumn((new Transaction)->getTable(), $col);
-                    $attrMissing = !array_key_exists($col, $tx->attributes);
-                    $attrNull = array_key_exists($col, $tx->attributes) && $tx->attributes[$col] === null;
-
-                    if ($hasCol && ($attrMissing || $attrNull)) {
-                        $tx->attributes[$col] = 0;
-                    }
-                } catch (\Throwable $e) {
-                    // Ignore schema inspection failures in constrained contexts
-                }
-            }
-
-            $sync($tx);
-            // Ensure transaction_id uniqueness per terminal in test/dev runs where
-            // factories may generate identical IDs. If a duplicate exists for the
-            // same terminal, append a short timestamp suffix to avoid DB unique
-            // constraint failures. This is defensive and only triggers when needed.
-            try {
-                if (!empty($tx->terminal_id) && !empty($tx->transaction_id)) {
-                    $exists = Transaction::where('terminal_id', $tx->terminal_id)
-                        ->where('transaction_id', $tx->transaction_id)
-                        ->exists();
-                    if ($exists) {
-                        $tx->transaction_id = $tx->transaction_id . '-' . substr((string) microtime(true), -4);
-                    }
-                }
-            } catch (\Throwable $e) {
-                // ignore lookup failures in constrained environments
-            }
-        });
+        // Removed duplicate mutation logic from creating hook as per deadlock refactor checklist.
 
         static::saving(function (Transaction $tx) use ($sync) {
             if ($tx->isDirty('tenant_id') || empty($tx->customer_code)) {
