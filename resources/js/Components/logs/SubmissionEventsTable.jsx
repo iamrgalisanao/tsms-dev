@@ -291,7 +291,6 @@ const SubmissionEventsTable = ({ data, loading, filters, terminals, onPageChange
                                 <TableCell sx={headerCellStyle}>Tenant</TableCell>
                                 <TableCell sx={headerCellStyle}>Status</TableCell>
                                 <TableCell sx={headerCellStyle}>Count</TableCell>
-                                <TableCell sx={headerCellStyle}>Net Sales</TableCell>
                                 <TableCell sx={headerCellStyle}>Timestamp</TableCell>
                                 <TableCell sx={{ ...headerCellStyle, textAlign: 'right' }}>Action</TableCell>
                             </TableRow>
@@ -356,9 +355,6 @@ const SubmissionEventsTable = ({ data, loading, filters, terminals, onPageChange
                                             </TableCell>
                                             <TableCell sx={{ ...bodyCellStyle, color: '#475569', fontWeight: 700 }}>
                                                 {row.transaction_count || 0}
-                                            </TableCell>
-                                            <TableCell sx={{ ...bodyCellStyle, color: '#1D439B', fontWeight: 900, fontSize: '0.95rem' }}>
-                                                ₱{new Intl.NumberFormat('en-PH', { minimumFractionDigits: 2 }).format(row.net_sales || 0)}
                                             </TableCell>
                                             <TableCell sx={{ ...bodyCellStyle, color: '#64748B', fontSize: '0.75rem', fontWeight: 700 }}>
                                                 {row.created_at ? formatDistanceToNow(new Date(row.created_at), { addSuffix: true }).toUpperCase() : '-'}
