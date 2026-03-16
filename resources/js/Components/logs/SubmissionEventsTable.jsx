@@ -22,7 +22,11 @@ import {
     InputLabel,
     Divider,
     TextField,
-    InputAdornment
+    InputAdornment,
+    Dialog,
+    DialogTitle,
+    DialogContent,
+    DialogActions
 } from '@mui/material';
 import { formatDistanceToNow } from 'date-fns';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
@@ -34,6 +38,8 @@ import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 
 const SubmissionEventsTable = ({ data, loading, filters, terminals, onPageChange, onFilterChange }) => {
     const [localFilters, setLocalFilters] = useState(filters || {});
+    const [detailOpen, setDetailOpen] = useState(false);
+    const [detailLog, setDetailLog] = useState(null);
 
     useEffect(() => {
         setLocalFilters(filters || {});
@@ -41,6 +47,15 @@ const SubmissionEventsTable = ({ data, loading, filters, terminals, onPageChange
 
     const handleFilterChange = (field, value) => {
         setLocalFilters(prev => ({ ...prev, [field]: value }));
+    };
+
+    const handleShowDetails = (log) => {
+        setDetailLog(log);
+        setDetailOpen(true);
+    };
+
+    const handleCloseDetails = () => {
+        setDetailOpen(false);
     };
 
     const handleApplyFilters = () => {
@@ -352,6 +367,7 @@ const SubmissionEventsTable = ({ data, loading, filters, terminals, onPageChange
                                                 <Button
                                                     variant="outlined"
                                                     size="small"
+                                                    onClick={() => handleShowDetails(row)}
                                                     sx={{
                                                         borderColor: '#E2E8F0',
                                                         color: '#1E293B',
@@ -406,6 +422,62 @@ const SubmissionEventsTable = ({ data, loading, filters, terminals, onPageChange
                     />
                 </Box>
             </Paper>
+
+            <Dialog
+                open={detailOpen}
+                onClose={handleCloseDetails}
+                maxWidth="md"
+                fullWidth
+                PaperProps={{
+                    sx: { borderRadius: 4, overflow: 'hidden' }
+                }}
+            >
+                <DialogTitle sx={{ fontWeight: 800, fontSize: '0.95rem', bgcolor: '#FFFFFF', py: 2.5 }}>
+                    Submission Event Details
+                </DialogTitle>
+                <DialogContent dividers sx={{ bgcolor: '#0B1120', p: 0 }}>
+                    <Box
+                        sx={{
+                            color: '#e2e8f0',
+                            fontFamily: 'monospace',
+                            fontSize: '0.75rem',
+                            maxHeight: 480,
+                            overflow: 'auto',
+                            p: 3
+                        }}
+                    >
+                        <pre style={{ margin: 0 }}>
+                            {detailLog
+                                ? JSON.stringify(
+                                      detailLog.context ||
+                                          detailLog.payload ||
+                                          detailLog.old_values ||
+                                          detailLog,
+                                      null,
+                                      2
+                                  )
+                                : '// Select a row to inspect full payload and metadata'}
+                        </pre>
+                    </Box>
+                </DialogContent>
+                <DialogActions sx={{ px: 3, py: 2, bgcolor: '#FFFFFF' }}>
+                    <Button 
+                        onClick={handleCloseDetails} 
+                        variant="contained" 
+                        size="small"
+                        sx={{
+                            borderRadius: 2.5,
+                            textTransform: 'none',
+                            fontWeight: 800,
+                            px: 3,
+                            bgcolor: '#1D439B',
+                            '&:hover': { bgcolor: '#153170' }
+                        }}
+                    >
+                        Close Details
+                    </Button>
+                </DialogActions>
+            </Dialog>
         </Stack>
     );
 };
