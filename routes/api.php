@@ -73,7 +73,15 @@ Route::middleware(['api'])->group(function () {
         return \App\Models\PosTerminal::with('tenant:id,trade_name')
             ->get(['id', 'serial_number', 'tenant_id', 'machine_number']);
     });
-    Route::post('terminals', [TerminalTokenController::class, 'apiStore']);
+        Route::post('terminals', [TerminalTokenController::class, 'apiStore']);    
+        // Removed duplicate expiry route; now only under v1 group
+    Route::prefix('v1')->middleware(['auth:sanctum', 'capture.terminal.ip', AttachCorrelationId::class])->group(function () {
+        // ...existing v1 routes...
+        Route::put('terminals/{terminal}/expiry', [TerminalTokenController::class, 'updateExpiry']);
+        // ...existing v1 routes...
+    });
+
+    // Tenants API
     Route::get('tenants', [TenantController::class, 'index']);
     Route::post('tenants', [TenantController::class, 'store']);
     Route::get('tenants/{tenant}', [TenantController::class, 'show']);
