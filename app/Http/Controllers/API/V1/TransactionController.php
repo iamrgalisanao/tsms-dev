@@ -8,15 +8,9 @@ use App\Models\PosTerminal;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Validator;
-use Illuminate\Support\Facades\Schema;
-use App\Jobs\ProcessTransactionJob;
-use App\Jobs\CheckTransactionFailureThresholdsJob;
-use App\Services\PayloadChecksumService;
 use App\Services\NotificationService;
 use App\Http\Requests\TSMSTransactionRequest;
-use Laravel\Sanctum\PersonalAccessToken;
 use Carbon\Carbon;
 // Removed duplicate Cache import
 
@@ -257,9 +251,71 @@ class TransactionController extends Controller
      */
     public function storeOfficial(TSMSTransactionRequest $request)
     {
-        // ...existing code from backup...
-        // (Full method body restored from backup file)
-        // ...existing code from backup...
+        // Convert request to array for checksum validation
+        $submission = $request->all();
+        $rawJson = json_encode($submission);
+        $checksumService = app(\App\Services\PayloadChecksumService::class);
+        $checksumResult = $checksumService->validateSubmissionChecksumsFromRaw($rawJson);
+        if (!$checksumResult['valid']) {
+            $this->createRejectionAuditEvent(
+                $submission,
+                'CHECKSUM_MISMATCH',
+                ['payload_checksum' => $checksumResult['errors']],
+                $submission['submission_uuid'] ?? null
+            );
+            throw new \Illuminate\Validation\ValidationException(
+                Validator::make([], []),
+                response()->json([
+                    'success' => false,
+                    'message' => 'Validation failed',
+                    'errors' => [
+                        'payload_checksum' => $checksumResult['errors'],
+                    ],
+                ], 422)
+            );
+        }
+
+        $transactions = $request->input('transactions', []);
+        // If single transaction, wrap in array for uniformity
+        if (empty($transactions) && $request->has('transaction')) {
+            $transactions = [$request->input('transaction')];
+        }
+        $processed = [];
+        $failed = [];
+        $service = $this->getTransactionIngestService();
+        foreach ($transactions as $tx) {
+            try {
+                // Compose payload for ingest (merge submission-level fields)
+                $payload = array_merge($tx, [
+                    'submission_uuid' => $request->submission_uuid,
+                    'submission_timestamp' => $request->submission_timestamp,
+                    'tenant_id' => $request->tenant_id,
+                    'terminal_id' => $request->terminal_id,
+                ]);
+                $result = $service->ingest($payload);
+                $processed[] = [
+                    'transaction_id' => $result['transaction_id'],
+                    'status' => $result['status'] === 'accepted' || $result['status'] === 'already_processed' ? 'success' : 'failed',
+                    'message' => $result['message'] ?? 'Transaction processed'
+                ];
+            } catch (\Exception $e) {
+                $failed[] = [
+                    'transaction_id' => $tx['transaction_id'] ?? null,
+                    'status' => 'failed',
+                    'message' => $e->getMessage()
+                ];
+            }
+        }
+        return response()->json([
+            'success' => true,
+            'message' => 'Submission processed',
+            'data' => [
+                'submission_uuid' => $request->submission_uuid,
+                'processed_count' => count($processed),
+                'failed_count' => count($failed),
+                'transactions' => array_merge($processed, $failed)
+            ]
+        ], 200);
     }
     /**
      * @var \App\Services\TransactionIngestService|null
@@ -365,7 +421,7 @@ class TransactionController extends Controller
     public function __construct(NotificationService $notificationService)
     {
         // Extend NotificationService to handle terminal callback notifications
-        $this->notificationService = app(NotificationService::class);
+        $this->notificationService = $notificationService;
     }
 
     /**
@@ -374,54 +430,8 @@ class TransactionController extends Controller
      * @param array $transaction
      * @return bool
      */
-    private function validateRequiredFields(array $transaction): bool
-    {
-        $requiredFields = [
-            'transaction_id',
-            'transaction_timestamp',
-            'gross_sales',
-            'payload_checksum'
-        ];
+    // Removed unused validateRequiredFields()
 
-        foreach ($requiredFields as $field) {
-            if (!isset($transaction[$field])) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    /**
-     * Process adjustments and taxes for a transaction.
-     *
-     * @param \App\Models\Transaction $transactionModel
-     * @param array $transaction
-     * @return void
-     */
-    private function processAdjustmentsAndTaxes($transactionModel, array $transaction): void
-    {
-        // Process adjustments if present
-        if (isset($transaction['adjustments']) && is_array($transaction['adjustments'])) {
-            foreach ($transaction['adjustments'] as $adjustment) {
-                // Use relation create to ensure the child record is linked by transaction_pk
-                $transactionModel->adjustments()->create([
-                    'adjustment_type' => $adjustment['adjustment_type'],
-                    'amount' => $adjustment['amount'],
-                ]);
-            }
-        }
-
-        // Process taxes if present
-        if (isset($transaction['taxes']) && is_array($transaction['taxes'])) {
-            foreach ($transaction['taxes'] as $tax) {
-                // Use relation create to ensure the child record is linked by transaction_pk
-                $transactionModel->taxes()->create([
-                    'tax_type' => $tax['tax_type'],
-                    'amount' => $tax['amount'],
-                ]);
-            }
-        }
-    }
 
 
     /**
@@ -659,39 +669,19 @@ class TransactionController extends Controller
                         'error' => $logEx->getMessage(),
                     ]);
                 }
-                DB::rollBack();
                 return response()->json([
                     'success' => false,
                     'message' => 'Validation failed',
                     'errors' => ['tenant_id' => ['Terminal does not belong to the specified tenant']]
                 ], 422);
             }
-            // Customer code tenant-binding policy: warn or reject based on config
-            $strictCustomerCode = (bool) config('tsms.validation.strict_customer_code_binding', false);
-            $declaredCustomer = $request->transaction_count === 1
-                ? ($request->transaction['customer_code'] ?? null)
-                : null; // For batch we check inside loop per item
-            $tenantCustomer = optional($terminal->tenant->company)->customer_code;
-            if ($request->transaction_count === 1 && $declaredCustomer && $tenantCustomer && $declaredCustomer !== $tenantCustomer) {
-                if ($strictCustomerCode) {
-                    DB::rollBack();
-                    return response()->json([
-                        'success' => false,
-                        'message' => 'Customer code mismatch with tenant',
-                        'errors' => ['customer_code' => ['Customer code does not match tenant company']]
-                    ], 422);
-                } else {
-                    Log::warning('Customer code mismatch with tenant (warn mode)', [
-                        'submission_uuid' => $request->submission_uuid,
-                        'declared_customer_code' => $declaredCustomer,
-                        'tenant_customer_code' => $tenantCustomer,
-                    ]);
-                }
-            }
+            // Customer code tenant-binding policy: only per-item checks below
+
             $processedTransactions = [];
             $failedTransactions = [];
             $processedCount = 0;
             $failedCount = 0;
+            $service = $this->getTransactionIngestService();
 
             foreach ($request->transactions as $transactionData) {
                 Log::info('Processing transaction', [
@@ -708,7 +698,6 @@ class TransactionController extends Controller
                         'expected_tenant_id' => $request->tenant_id,
                         'actual_tenant_id' => $transactionData['tenant_id'],
                     ]);
-
                     // Structured log for per-item tenant mismatch
                     try {
                         \App\Models\SystemLog::create([
@@ -733,7 +722,6 @@ class TransactionController extends Controller
                             'error' => $logEx->getMessage(),
                         ]);
                     }
-
                     $failedTransactions[] = [
                         'transaction_id' => $transactionData['transaction_id'] ?? null,
                         'status' => 'failed',
@@ -767,278 +755,34 @@ class TransactionController extends Controller
                             }
                         }
                     }
-                    // Optional per-item guard: if transaction payload includes tenant_id, it must match terminal's tenant
-                    if (isset($transactionData['tenant_id']) && (int) $transactionData['tenant_id'] !== (int) $terminal->tenant_id) {
-                        Log::warning('batchStore: Tenant ID mismatch in transaction item', [
-                            'payload_tenant_id' => $transactionData['tenant_id'],
-                            'terminal_tenant_id' => $terminal->tenant_id,
-                            'terminal_id' => $terminal->id,
-                            'transaction_id' => $transactionData['transaction_id'] ?? 'unknown',
-                            'batch_id' => $request->batch_id ?? 'missing',
-                        ]);
-                        try {
-                            \App\Models\SystemLog::create([
-                                'type' => 'transaction',
-                                'log_type' => 'TRANSACTION_TENANT_MISMATCH',
-                                'severity' => 'error',
-                                'terminal_uid' => $terminal->serial_number ?? null,
-                                'transaction_id' => $transactionData['transaction_id'] ?? 'unknown',
-                                'message' => 'Transaction tenant_id does not match terminal tenant',
-                                'context' => [
-                                    'batch_id' => $request->batch_id ?? 'missing',
-                                    'transaction_tenant_id' => $transactionData['tenant_id'],
-                                    'terminal_tenant_id' => $terminal->tenant_id,
-                                    'terminal_id' => $terminal->id,
-                                    'transaction_timestamp' => $transactionData['transaction_timestamp'] ?? $transactionData['occurred_at'] ?? null,
-                                    'endpoint' => 'transactions.batch.store',
-                                ],
-                            ]);
-                        } catch (\Throwable $logEx) {
-                            Log::warning('Failed to write SystemLog for TRANSACTION_TENANT_MISMATCH (terminal)', [
-                                'transaction_id' => $transactionData['transaction_id'] ?? 'unknown',
-                                'error' => $logEx->getMessage(),
-                            ]);
-                        }
+
+                    // Compose payload for ingest (merge batch-level fields)
+                    $payload = array_merge($transactionData, [
+                        'tenant_id' => $request->tenant_id,
+                        'terminal_id' => $request->terminal_id,
+                    ]);
+                    $result = $service->ingest($payload);
+                    if ($result['status'] === 'accepted' || $result['status'] === 'already_processed') {
+                        $processedTransactions[] = [
+                            'transaction_id' => $result['transaction_id'],
+                            'status' => 'success',
+                            'message' => $result['message'] ?? 'Transaction processed'
+                        ];
+                        $processedCount++;
+                    } else {
                         $failedTransactions[] = [
-                            'transaction_id' => $transactionData['transaction_id'] ?? 'unknown',
+                            'transaction_id' => $result['transaction_id'] ?? null,
                             'status' => 'failed',
-                            'message' => 'Tenant ID mismatch: transaction tenant does not match terminal tenant'
+                            'message' => $result['message'] ?? 'Transaction failed'
                         ];
                         $failedCount++;
-                        continue; // skip this item but continue the batch
                     }
-                    // Check for duplicate transaction
-                    $existingTransaction = Transaction::where('transaction_id', $transactionData['transaction_id'])
-                        ->where('terminal_id', $terminal->id)
-                        ->first();
-
-                    if ($existingTransaction) {
-                        $processedTransactions[] = [
-                            'transaction_id' => $existingTransaction->transaction_id,
-                            'status' => 'duplicate',
-                            'message' => 'Transaction already exists'
-                        ];
-                        // Update terminal activity on duplicate to reflect recent sales interaction
-                        try {
-                            $terminal->last_seen_at = now();
-                            if (Schema::hasColumn('pos_terminals', 'last_sale_at')) {
-                                $terminal->last_sale_at = now();
-                            }
-                            $terminal->save();
-                        } catch (\Throwable $te) {
-                            Log::warning('Failed to update terminal last_seen_at on duplicate transaction', [
-                                'terminal_id' => $terminal->id,
-                                'error' => $te->getMessage(),
-                            ]);
-                        }
-                        continue;
-                    }
-
-                    // Aggregate taxes and adjustments from incoming payload so we persist canonical totals
-                    $vatableSales = 0;
-                    $vatAmount = 0;
-                    $scVatExemptSales = 0;
-                    if (isset($transactionData['taxes']) && is_array($transactionData['taxes'])) {
-                        foreach ($transactionData['taxes'] as $tax) {
-                            $taxType = strtoupper($tax['tax_type'] ?? '');
-                            if ($taxType === 'VATABLE_SALES') {
-                                $vatableSales += $tax['amount'] ?? 0;
-                            } elseif ($taxType === 'VAT' || $taxType === 'VAT_AMOUNT') {
-                                $vatAmount += $tax['amount'] ?? 0;
-                            } elseif ($taxType === 'SC_VAT_EXEMPT_SALES' || $taxType === 'VAT-EXEMPT' || $taxType === 'EXEMPT' || $taxType === 'VATEXEMPT') {
-                                $scVatExemptSales += $tax['amount'] ?? 0;
-                            }
-                        }
-                    }
-
-                    $promoDiscount = 0;
-                    $seniorDiscount = 0;
-                    $pwdDiscount = 0;
-                    if (isset($transactionData['adjustments']) && is_array($transactionData['adjustments'])) {
-                        foreach ($transactionData['adjustments'] as $adj) {
-                            $type = strtolower($adj['adjustment_type'] ?? '');
-                            $amt = $adj['amount'] ?? 0;
-                            if ($type === 'promo_discount') {
-                                $promoDiscount += $amt;
-                            } elseif ($type === 'senior_discount') {
-                                $seniorDiscount += $amt;
-                            } elseif ($type === 'pwd_discount') {
-                                $pwdDiscount += $amt;
-                            }
-                        }
-                    }
-
-                    // Preserve original timestamp from payload directly (No Mutation Rule)
-                    $timestampToStore = $transactionData['transaction_timestamp']
-                        ?? $transactionData['occurred_at']
-                        ?? now()->toISOString();
-
-                    $normalizedGross = $transactionData['gross_sales']
-                        ?? $transactionData['amount']
-                        ?? 0;
-
-                    // Create transaction record
-                    $txPayload = [
-                        'tenant_id' => $terminal->tenant_id,
-                        'terminal_id' => $terminal->id,
-                        'transaction_id' => $transactionData['transaction_id'],
-                        'hardware_id' => $transactionData['hardware_id'] ?? null,
-                        'transaction_timestamp' => $timestampToStore,
-                        'gross_sales' => $normalizedGross,
-                        'net_sales' => $transactionData['net_sales'] ?? 0,
-                        'customer_code' => $transactionData['customer_code'] ?? ($terminal->tenant->company->customer_code ?? 'UNKNOWN'),
-                        'payload_checksum' => $transactionData['payload_checksum'] ?? md5(json_encode($transactionData)),
-                        'receipt_no' => $transactionData['receipt_no'] ?? null,
-                        // If we are in accept-with-issues mode, mark created transactions accordingly
-                        'validation_status' => ($acceptWithIssues ?? false) ? 'WITH_ISSUES' : 'PENDING',
-                        'vatable_sales' => $vatableSales,
-                        'vat_amount' => $vatAmount,
-                        'sc_vat_exempt_sales' => $scVatExemptSales,
-                        'original_payload' => json_encode($transactionData),
-                    ];
-
-                    if (Schema::hasColumn('transactions', 'promo_discount')) {
-                        $txPayload['promo_discount'] = $promoDiscount;
-                    }
-                    if (Schema::hasColumn('transactions', 'senior_discount')) {
-                        $txPayload['senior_discount'] = $seniorDiscount;
-                    }
-                    if (Schema::hasColumn('transactions', 'pwd_discount')) {
-                        $txPayload['pwd_discount'] = $pwdDiscount;
-                    }
-
-                    // Create the transaction with deadlock retry (SQLSTATE 40001).
-                    // If a race condition causes a duplicate key (23000), treat
-                    // it as idempotent success rather than failure.
-                    try {
-                        $transaction = \DB::transaction(function () use ($txPayload) {
-                            return Transaction::create($txPayload);
-                        }, 3); // retry up to 3x on deadlock
-                    } catch (\Illuminate\Database\QueryException $qe) {
-                        // SQLSTATE 23000 is integrity constraint violation (duplicate key)
-                        $sqlState = $qe->getCode();
-                        $message = $qe->getMessage();
-                        if ($sqlState === '23000' || str_contains($message, 'Integrity constraint violation') || str_contains($message, 'Duplicate entry')) {
-                            \Log::info('storeOfficial: Duplicate transaction detected at insert (treating as idempotent)', [
-                                'transaction_id' => $transactionData['transaction_id'],
-                                'terminal_id' => $terminal->id,
-                                'error' => $message,
-                            ]);
-
-                            $existingTransaction = Transaction::where('transaction_id', $transactionData['transaction_id'])
-                                ->where('terminal_id', $terminal->id)
-                                ->first();
-
-                            if ($existingTransaction) {
-                                // Structured log for idempotent transaction replay in batch ingest
-                                try {
-                                    \App\Models\SystemLog::create([
-                                        'type' => 'transaction',
-                                        'log_type' => 'BATCH_TRANSACTION_IDEMPOTENT_REPLAY',
-                                        'severity' => 'info',
-                                        'terminal_uid' => $terminal->serial_number ?? null,
-                                        'transaction_id' => $existingTransaction->transaction_id,
-                                        'message' => 'Duplicate transaction treated as idempotent in batch ingest',
-                                        'context' => [
-                                            'batch_id' => $request->batch_id ?? 'missing',
-                                            'tenant_id' => $terminal->tenant_id,
-                                            'terminal_id' => $terminal->id,
-                                            'endpoint' => 'transactions.batch.store',
-                                        ],
-                                    ]);
-                                } catch (\Throwable $logEx) {
-                                    Log::warning('Failed to write SystemLog for BATCH_TRANSACTION_IDEMPOTENT_REPLAY', [
-                                        'transaction_id' => $transactionData['transaction_id'] ?? 'unknown',
-                                        'error' => $logEx->getMessage(),
-                                    ]);
-                                }
-
-                                $processedTransactions[] = [
-                                    'transaction_id' => $existingTransaction->transaction_id,
-                                    'status' => 'success',
-                                    'message' => 'Transaction already processed'
-                                ];
-
-                                // Update terminal activity for idempotent transaction replay
-                                try {
-                                    $terminal->last_seen_at = now();
-                                    if (Schema::hasColumn('pos_terminals', 'last_sale_at')) {
-                                        $terminal->last_sale_at = now();
-                                    }
-                                    $terminal->save();
-                                } catch (\Throwable $te) {
-                                    Log::warning('Failed to update terminal last_seen_at after idempotent insert duplicate', [
-                                        'terminal_id' => $terminal->id,
-                                        'transaction_id' => $existingTransaction->transaction_id,
-                                        'error' => $te->getMessage(),
-                                    ]);
-                                }
-
-                                continue; // proceed to next item
-                            }
-
-                            // If for some reason we can't find it, rethrow to be handled by outer catch
-                        }
-                        throw $qe;
-                    }
-
-
-                    // Queue the transaction for processing
-                    // Shard queue by tenant for fairness
-                    $shard = $terminal->tenant_id % 8; // 8 shards
-                    ProcessTransactionJob::dispatch($transaction->id)
-                        ->onQueue('transaction-processing:s' . $shard)
-                        ->afterCommit();
-
-                    // Log system activity
-                    \App\Models\SystemLog::create([
-                        'type' => 'transaction',
-                        'severity' => 'info',
-                        'terminal_uid' => $terminal->serial_number,
-                        'transaction_id' => $transaction->transaction_id,
-                        'message' => 'Batch transaction queued for processing',
-                        'context' => json_encode([
-                            'batch_id' => $request->batch_id,
-                            'transaction_id' => $transaction->transaction_id,
-                            'gross_sales' => $transaction->gross_sales,
-                            'net_sales' => $transaction->net_sales,
-                            'transaction_timestamp' => $transaction->transaction_timestamp,
-                        ])
-                    ]);
-
-                    $processedTransactions[] = [
-                        'transaction_id' => $transaction->transaction_id,
-                        'status' => 'queued',
-                        'message' => 'Transaction queued for processing'
-                    ];
-                    $processedCount++;
-
-                    // Update terminal activity on successful creation
-                    try {
-                        $terminal->last_seen_at = now();
-                        if (Schema::hasColumn('pos_terminals', 'last_sale_at')) {
-                            $terminal->last_sale_at = now();
-                        }
-                        $terminal->save();
-                    } catch (\Throwable $te) {
-                        Log::warning('Failed to update terminal last_seen_at after transaction creation', [
-                            'terminal_id' => $terminal->id,
-                            'transaction_id' => $transaction->transaction_id,
-                            'error' => $te->getMessage(),
-                        ]);
-                    }
-
-                    Log::info('Transaction processed successfully', [
-                        'transaction_id' => $transactionData['transaction_id'] ?? 'unknown',
-                    ]);
-
                 } catch (\Exception $e) {
                     Log::error('Failed to process transaction in batch', [
                         'batch_id' => $request->batch_id,
                         'transaction_id' => $transactionData['transaction_id'] ?? 'unknown',
                         'error' => $e->getMessage()
                     ]);
-
                     // Structured per-item failure log for batch ingestion (non-blocking)
                     try {
                         \App\Models\SystemLog::create([
@@ -1065,7 +809,6 @@ class TransactionController extends Controller
                             'error' => $logEx->getMessage(),
                         ]);
                     }
-
                     $failedTransactions[] = [
                         'transaction_id' => $transactionData['transaction_id'] ?? 'unknown',
                         'status' => 'failed',
@@ -1075,24 +818,6 @@ class TransactionController extends Controller
                 }
             }
 
-            DB::commit();
-
-            // If we previously accepted this submission despite checksum issues,
-            // emit an ACCEPTED_WITH_ISSUES submission event for audit/triage purposes.
-            if (!empty($deferredAcceptedWithIssues) && is_array($deferredAcceptedWithIssues)) {
-                try {
-                    \App\Models\SubmissionEvent::create($deferredAcceptedWithIssues);
-                    Log::info('SubmissionEvent created (ACCEPTED_WITH_ISSUES)', [
-                        'submission_uuid' => $deferredAcceptedWithIssues['submission_uuid'] ?? null,
-                        'correlation_id' => $deferredAcceptedWithIssues['correlation_id'] ?? null,
-                    ]);
-                } catch (\Throwable $te) {
-                    Log::warning('Failed to write SubmissionEvent (ACCEPTED_WITH_ISSUES)', [
-                        'submission_uuid' => $deferredAcceptedWithIssues['submission_uuid'] ?? null,
-                        'error' => $te->getMessage(),
-                    ]);
-                }
-            }
 
             Log::info('Batch transaction processing completed', [
                 'batch_id' => $request->batch_id,
@@ -1118,6 +843,7 @@ class TransactionController extends Controller
                     'batch_id' => $request->batch_id ?? null,
                     'processed_count' => $processedCount,
                     'failed_count' => $failedCount,
+                    'transactions' => array_merge($processedTransactions, $failedTransactions),
                 ],
             ]);
         } catch (\Exception $e) {
@@ -1125,7 +851,6 @@ class TransactionController extends Controller
                 'batch_id' => $request->batch_id ?? null,
                 'error' => $e->getMessage(),
             ]);
-            DB::rollBack();
             return response()->json([
                 'success' => false,
                 'message' => 'Batch processing failed',
@@ -1139,11 +864,9 @@ class TransactionController extends Controller
      */
     public function processOfficialSubmission(Request $request)
     {
-        // Decode raw JSON input before Laravel mutates it
+        // 1) Basic submission-level validation
         $rawJson = $request->getContent();
         $submission = json_decode($rawJson, true);
-
-        // Basic validation of submission-level fields
         validator($submission, [
             'tenant_id' => 'required|integer',
             'terminal_id' => 'required|integer',
@@ -1151,7 +874,30 @@ class TransactionController extends Controller
             'payload_checksum' => 'required|string|min:64|max:64',
         ])->validate();
 
-        // Validate tenant and terminal consistency
+        // 2) Checksum validation (before any further processing)
+        $checksumService = app(\App\Services\PayloadChecksumService::class);
+        $checksumResult = $checksumService->validateSubmissionChecksumsFromRaw($rawJson);
+        if (!$checksumResult['valid']) {
+            $this->createRejectionAuditEvent(
+                $submission,
+                'CHECKSUM_MISMATCH',
+                ['payload_checksum' => $checksumResult['errors']],
+                $submission['submission_uuid'] ?? null
+            );
+            // Throw ValidationException to ensure Laravel returns 422
+            throw new \Illuminate\Validation\ValidationException(
+                Validator::make([], []),
+                response()->json([
+                    'success' => false,
+                    'message' => 'Validation failed',
+                    'errors' => [
+                        'payload_checksum' => $checksumResult['errors'],
+                    ],
+                ], 422)
+            );
+        }
+
+        // 3) Tenant/terminal consistency check
         $terminal = PosTerminal::findOrFail($submission['terminal_id']);
         if ((int) $terminal->tenant_id !== (int) $submission['tenant_id']) {
             return response()->json([
@@ -1160,471 +906,147 @@ class TransactionController extends Controller
             ], 422);
         }
 
-        // Determine if it's single or batch submission
+        // 4) Single/batch structure validation and ingest
         $isSingle = $submission['transaction_count'] === 1;
-
+        $transactionRules = [
+            'transaction_id' => 'required|string',
+            'transaction_timestamp' => 'required|date',
+            'gross_sales' => 'required|numeric',
+            'net_sales' => 'required|numeric',
+            'promo_status' => 'required|string',
+            'customer_code' => 'required|string',
+            'receipt_no' => 'nullable|string|max:128',
+            'payload_checksum' => 'required|string|min:64|max:64',
+            'adjustments' => 'required|array|min:1',
+            'adjustments.*.adjustment_type' => 'required_with:adjustments|string',
+            'adjustments.*.amount' => 'required|numeric',
+            'taxes' => 'required|array|min:1',
+            'taxes.*.tax_type' => 'required_with:taxes|string',
+            'taxes.*.amount' => 'required|numeric',
+        ];
         if ($isSingle) {
             // Validate single transaction structure
-            validator($submission['transaction'], [
-                'transaction_id' => 'required|string',
-                'transaction_timestamp' => 'required|date',
-                'gross_sales' => 'required|numeric',
-                'payload_checksum' => 'required|string|min:64|max:64',
-            ])->validate();
+            validator($submission['transaction'], $transactionRules)->validate();
+            $transactions = [$submission['transaction']];
         } else {
-            // Validate batch transaction structure
-            validator($submission['transactions'], [
-                '*.transaction_id' => 'required|string',
-                '*.transaction_timestamp' => 'required|date',
-                '*.gross_sales' => 'required|numeric',
-                '*.payload_checksum' => 'required|string|min:64|max:64',
-            ])->validate();
-        }
-
-        // Count validation
-        $actualCount = $isSingle ? 1 : count($submission['transactions']);
-        if ($actualCount !== $submission['transaction_count']) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Transaction count mismatch.',
-            ], 422);
-        }
-
-        // Checksum validation using raw payload
-        $checksumService = new PayloadChecksumService();
-        $checksumResults = $checksumService->validateSubmissionChecksumsFromRaw($rawJson);
-
-        if (!$checksumResults['valid']) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Invalid payload checksum.',
-            ], 422);
-        }
-
-        try {
-            // Find terminal
-            $terminal = PosTerminal::with('tenant.company')->findOrFail($submission['terminal_id']);
-
-            Log::info('storeOfficial: Terminal loaded', ['terminal_id' => $terminal->id, 'tenant_id' => $terminal->tenant_id]);
-
-            // Ensure terminal belongs to the specified tenant to prevent cross-mapping
-            if ((int) $terminal->tenant_id !== (int) $submission['tenant_id']) {
+            // Validate each transaction in the batch using wildcard rules
+            $batchRules = [];
+            foreach ($transactionRules as $key => $rule) {
+                $batchRules["*.{$key}"] = $rule;
+            }
+            $batchValidator = validator($submission['transactions'], $batchRules);
+            if ($batchValidator->fails()) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Validation failed',
-                    'errors' => ['tenant_id' => ['Terminal does not belong to the specified tenant']]
+                    'errors' => $batchValidator->errors()
                 ], 422);
             }
+            $transactions = $submission['transactions'];
+        }
 
-            // Normalize transaction list
-            $transactions = $isSingle ? [$submission['transaction']] : $submission['transactions'];
-
-            $processedTransactions = [];
-            $failedTransactions = [];
-            $processedCount = 0;
-            $failedCount = 0;
-
-            foreach ($transactions as $transaction) {
-                // Optional per-item guard: if transaction payload includes tenant_id, it must match terminal's tenant
-                if (isset($transaction['tenant_id']) && (int) $transaction['tenant_id'] !== (int) $terminal->tenant_id) {
-                    Log::warning('processOfficialSubmission: Tenant ID mismatch in transaction item', [
-                        'payload_tenant_id' => $transaction['tenant_id'],
-                        'terminal_tenant_id' => $terminal->tenant_id,
-                        'terminal_id' => $terminal->id,
+        $processedTransactions = [];
+        $failedTransactions = [];
+        $processedCount = 0;
+        $failedCount = 0;
+        $service = $this->getTransactionIngestService();
+        foreach ($transactions as $transaction) {
+            if (isset($transaction['tenant_id']) && (int) $transaction['tenant_id'] !== (int) $terminal->tenant_id) {
+                Log::warning('processOfficialSubmission: Tenant ID mismatch in transaction item', [
+                    'payload_tenant_id' => $transaction['tenant_id'],
+                    'terminal_tenant_id' => $terminal->tenant_id,
+                    'terminal_id' => $terminal->id,
+                    'transaction_id' => $transaction['transaction_id'] ?? 'unknown',
+                    'submission_uuid' => $submission['submission_uuid'] ?? 'missing',
+                ]);
+                try {
+                    \App\Models\SystemLog::create([
+                        'type' => 'transaction',
+                        'log_type' => 'TRANSACTION_TENANT_MISMATCH',
+                        'severity' => 'error',
+                        'terminal_uid' => $terminal->serial_number ?? null,
                         'transaction_id' => $transaction['transaction_id'] ?? 'unknown',
-                        'submission_uuid' => $submission['submission_uuid'] ?? 'missing',
+                        'message' => 'Official submission transaction tenant_id does not match terminal tenant',
+                        'context' => [
+                            'submission_uuid' => $submission['submission_uuid'] ?? 'missing',
+                            'transaction_tenant_id' => $transaction['tenant_id'],
+                            'terminal_tenant_id' => $terminal->tenant_id,
+                            'terminal_id' => $terminal->id,
+                            'endpoint' => 'transactions.official.process',
+                        ],
                     ]);
-                    // Structured log for per-item tenant mismatch (official submission)
-                    try {
-                        \App\Models\SystemLog::create([
-                            'type' => 'transaction',
-                            'log_type' => 'TRANSACTION_TENANT_MISMATCH',
-                            'severity' => 'error',
-                            'terminal_uid' => $terminal->serial_number ?? null,
-                            'transaction_id' => $transaction['transaction_id'] ?? 'unknown',
-                            'message' => 'Official submission transaction tenant_id does not match terminal tenant',
-                            'context' => [
-                                'submission_uuid' => $submission['submission_uuid'] ?? 'missing',
-                                'transaction_tenant_id' => $transaction['tenant_id'],
-                                'terminal_tenant_id' => $terminal->tenant_id,
-                                'terminal_id' => $terminal->id,
-                                'endpoint' => 'transactions.official.process',
-                            ],
-                        ]);
-                    } catch (\Throwable $logEx) {
-                        Log::warning('Failed to write SystemLog for TRANSACTION_TENANT_MISMATCH (official)', [
-                            'transaction_id' => $transaction['transaction_id'] ?? 'unknown',
-                            'error' => $logEx->getMessage(),
-                        ]);
-                    }
-                    $failedTransactions[] = [
+                } catch (\Throwable $logEx) {
+                    Log::warning('Failed to write SystemLog for TRANSACTION_TENANT_MISMATCH (official)', [
                         'transaction_id' => $transaction['transaction_id'] ?? 'unknown',
-                        'status' => 'failed',
-                        'message' => 'Tenant ID mismatch: transaction tenant does not match terminal tenant'
-                    ];
-                    $failedCount++;
-                    continue; // skip this item but continue the batch
+                        'error' => $logEx->getMessage(),
+                    ]);
                 }
-
-                $result = $this->processTransaction($transaction, $terminal);
-
-                if ($result['status'] === 'success') {
+                $failedTransactions[] = [
+                    'transaction_id' => $transaction['transaction_id'] ?? 'unknown',
+                    'status' => 'failed',
+                    'message' => 'Tenant ID mismatch: transaction tenant does not match terminal tenant'
+                ];
+                $failedCount++;
+                continue;
+            }
+            $payload = array_merge($transaction, [
+                'tenant_id' => $submission['tenant_id'],
+                'terminal_id' => $submission['terminal_id'],
+                'submission_uuid' => $submission['submission_uuid'] ?? null,
+                'batch_id' => $submission['batch_id'] ?? null,
+            ]);
+            try {
+                $result = $service->ingest($payload);
+                if ($result['status'] === 'accepted' || $result['status'] === 'already_processed') {
                     $processedTransactions[] = $result;
                     $processedCount++;
                 } else {
                     $failedTransactions[] = $result;
                     $failedCount++;
                 }
-            }
-
-            // Dispatch failure monitoring job
-            if ($failedCount > 0) {
-                CheckTransactionFailureThresholdsJob::dispatch($terminal->id);
-            }
-
-            // Notify terminal if applicable
-            if (config('notifications.callbacks.enabled') && $terminal->notifications_enabled && $terminal->callback_url) {
-                $this->notifyTerminalOfBatchResult(
-                    $submission['batch_id'] ?? $submission['submission_uuid'],
-                    $terminal,
-                    $processedCount,
-                    $failedCount,
-                    $processedTransactions,
-                    $failedTransactions
-                );
-            }
-
-            // Notify admin on failure
-            if ($failedCount > 0) {
-                $this->notificationService->notifyBatchProcessingFailure(
-                    $submission['batch_id'] ?? $submission['submission_uuid'],
-                    $submission['transaction_count'],
-                    $failedTransactions
-                );
-            }
-
-            return response()->json([
-                'success' => true,
-                'message' => "Batch processed: {$processedCount} successful, {$failedCount} failed",
-                'data' => [
-                    'batch_id' => $submission['batch_id'] ?? $submission['submission_uuid'],
-                    'processed_count' => $processedCount,
-                    'failed_count' => $failedCount,
-                    'transactions' => array_merge($processedTransactions, $failedTransactions)
-                ]
-            ], 200);
-
-        } catch (\Exception $e) {
-            Log::error('Error processing official batch submission', [
-                'terminal_id' => $submission['terminal_id'] ?? 'unknown',
-                'submission_uuid' => $submission['submission_uuid'] ?? 'unknown',
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
-            ]);
-
-            return response()->json([
-                'success' => false,
-                'message' => 'Error processing batch submission',
-                'error' => 'An unexpected error occurred while processing the batch'
-            ], 500);
-        }
-    }
-
-
-    /**
-     * Validate the checksum of a transaction payload.
-     *
-     * @param array $transaction
-     * @return bool
-     */
-    private function validateTransactionChecksum(array $transaction): bool
-    {
-        // Use SHA-256 for official payloads, fallback to md5 for legacy
-        if (!isset($transaction['payload_checksum'])) {
-            return false;
-        }
-
-        // Remove the checksum field before calculating
-        $payload = $transaction;
-        unset($payload['payload_checksum']);
-
-        // Calculate checksum using correct flags
-        $calculatedChecksum = hash('sha256', json_encode($payload, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE));
-
-        // Compare with provided checksum (case-insensitive)
-        return strtolower($calculatedChecksum) === strtolower($transaction['payload_checksum']);
-    }
-
-    /**
-     * Process a single transaction from the official TSMS payload
-     */
-    private function processTransaction(array $transaction, PosTerminal $terminal)
-    {
-        $validationStatus = 'VALID';
-        $validationErrors = [];
-        $isSaved = false;
-
-        try {
-            // Basic validation
-            if (!$this->validateRequiredFields($transaction)) {
-                $validationStatus = 'INVALID';
-                $validationErrors['missing_fields'] = 'Required transaction fields missing';
-                return [
-                    'transaction_id' => $transaction['transaction_id'],
+            } catch (\Exception $e) {
+                Log::error('Failed to process transaction in official submission', [
+                    'submission_uuid' => $submission['submission_uuid'] ?? null,
+                    'transaction_id' => $transaction['transaction_id'] ?? 'unknown',
+                    'error' => $e->getMessage()
+                ]);
+                $failedTransactions[] = [
+                    'transaction_id' => $transaction['transaction_id'] ?? 'unknown',
                     'status' => 'failed',
-                    'errors' => $validationErrors
+                    'message' => $e->getMessage()
                 ];
+                $failedCount++;
             }
-
-            // Checksum validation
-            if (!$this->validateTransactionChecksum($transaction)) {
-                $validationStatus = 'INVALID';
-                $validationErrors['checksum'] = 'Transaction checksum validation failed';
-                return [
-                    'transaction_id' => $transaction['transaction_id'],
-                    'status' => 'failed',
-                    'errors' => $validationErrors
-                ];
-            }
-
-            // Check for existing transaction
-            $existingTransaction = Transaction::where('transaction_id', $transaction['transaction_id'])
-                ->where('terminal_id', $terminal->id)
-                ->first();
-
-            if ($existingTransaction) {
-                // If transaction already exists, return success for idempotency
-                return [
-                    'transaction_id' => $transaction['transaction_id'],
-                    'status' => 'success',
-                    'message' => 'Transaction already processed',
-                ];
-
-            }
-
-            // Create transaction - aggregate taxes and adjustments into stored columns
-            $vatableSales = 0;
-            $vatAmount = 0;
-            $scVatExemptSales = 0;
-            if (isset($transaction['taxes']) && is_array($transaction['taxes'])) {
-                foreach ($transaction['taxes'] as $tax) {
-                    $taxType = strtoupper($tax['tax_type'] ?? '');
-                    if ($taxType === 'VATABLE_SALES') {
-                        $vatableSales += $tax['amount'] ?? 0;
-                    } elseif ($taxType === 'VAT' || $taxType === 'VAT_AMOUNT') {
-                        $vatAmount += $tax['amount'] ?? 0;
-                    } elseif ($taxType === 'SC_VAT_EXEMPT_SALES' || $taxType === 'VAT-EXEMPT' || $taxType === 'EXEMPT' || $taxType === 'VATEXEMPT') {
-                        $scVatExemptSales += $tax['amount'] ?? 0;
-                    }
-                }
-            }
-
-            $promoDiscount = 0;
-            $seniorDiscount = 0;
-            $pwdDiscount = 0;
-            if (isset($transaction['adjustments']) && is_array($transaction['adjustments'])) {
-                foreach ($transaction['adjustments'] as $adj) {
-                    $type = strtolower($adj['adjustment_type'] ?? '');
-                    $amt = $adj['amount'] ?? 0;
-                    if ($type === 'promo_discount') {
-                        $promoDiscount += $amt;
-                    } elseif ($type === 'senior_discount') {
-                        $seniorDiscount += $amt;
-                    } elseif ($type === 'pwd_discount') {
-                        $pwdDiscount += $amt;
-                    }
-                }
-            }
-
-            // Preserve original timestamp from payload directly
-            $timestampToStore = $transaction['transaction_timestamp'];
-
-            $txPayload = [
-                'tenant_id' => $terminal->tenant_id,
-                'terminal_id' => $terminal->id,
-                'transaction_id' => $transaction['transaction_id'],
-                'transaction_timestamp' => $timestampToStore,
-                'gross_sales' => $transaction['gross_sales'] ?? 0,
-                'net_sales' => $transaction['net_sales'] ?? 0,
-                'customer_code' => $transaction['customer_code'] ?? ($terminal->tenant->company->customer_code ?? 'UNKNOWN'),
-                'promo_status' => $transaction['promo_status'],
-                'receipt_no' => $transaction['receipt_no'] ?? null,
-                'payload_checksum' => $transaction['payload_checksum'] ?? '',
-                'validation_status' => $validationStatus,
-                'submission_uuid' => $transaction['submission_uuid'] ?? null,
-                'vatable_sales' => $vatableSales,
-                'vat_amount' => $vatAmount,
-                'sc_vat_exempt_sales' => $scVatExemptSales,
-                'original_payload' => json_encode($transaction),
-            ];
-
-            if (Schema::hasColumn('transactions', 'promo_discount')) {
-                $txPayload['promo_discount'] = $promoDiscount;
-            }
-            if (Schema::hasColumn('transactions', 'senior_discount')) {
-                $txPayload['senior_discount'] = $seniorDiscount;
-            }
-            if (Schema::hasColumn('transactions', 'pwd_discount')) {
-                $txPayload['pwd_discount'] = $pwdDiscount;
-            }
-
-            // Create transaction and related records atomically.
-            // DB::transaction(..., 3) retries the whole block up to 3x on
-            // deadlock (SQLSTATE 40001) before surfacing the error.
-            $transactionModel = \DB::transaction(function () use ($txPayload, $transaction) {
-                $tx = Transaction::create($txPayload);
-                // Process adjustments & taxes inside the same atomic block
-                $this->processAdjustmentsAndTaxes($tx, $transaction);
-                return $tx;
-            }, 3); // retry up to 3x on deadlock
-            $isSaved = true;
-
-
-            // Check if terminal has notifications enabled and has a callback URL
-            if (config('notifications.callbacks.enabled') && $terminal->notifications_enabled && $terminal->callback_url) {
-                $this->notifyTerminalOfValidationResult(
-                    [
-                        'transaction_id' => $transactionModel->transaction_id,
-                        'terminal_id' => $terminal->id,
-                        'submission_uuid' => $transaction['submission_uuid'] ?? null,
-                        'customer_code' => $transactionModel->customer_code,
-                    ],
-                    $validationStatus,
-                    $validationErrors,
-                    $terminal->callback_url
-                );
-            }
-
-            return [
-                'transaction_id' => $transaction['transaction_id'],
-                'status' => 'success',
-            ];
-
-        } catch (\Exception $e) {
-            // Set validation status to INVALID and record error
-            $validationStatus = 'INVALID';
-            $validationErrors['system'] = $e->getMessage();
-
-            // If we already created the transaction, update its validation status
-            if ($isSaved && isset($transactionModel)) {
-                $transactionModel->update(['validation_status' => $validationStatus]);
-            }
-
-            // Try to notify terminal of error if enabled
-            if (config('notifications.callbacks.enabled') && $terminal->notifications_enabled && $terminal->callback_url) {
-                $this->notifyTerminalOfValidationResult(
-                    [
-                        'transaction_id' => $transaction['transaction_id'] ?? 'unknown',
-                        'terminal_id' => $terminal->id,
-                        'submission_uuid' => $transaction['submission_uuid'] ?? null,
-                    ],
-                    'INVALID',
-                    ['system_error' => 'Transaction processing failed: ' . $e->getMessage()],
-                    $terminal->callback_url
-                );
-            }
-
-            // Log the error
-            Log::error('Transaction processing error', [
-                'transaction_id' => $transaction['transaction_id'] ?? 'unknown',
-                'terminal_id' => $terminal->id ?? 'unknown',
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString()
-            ]);
-
-            return [
-                'transaction_id' => $transaction['transaction_id'] ?? 'unknown',
-                'status' => 'failed',
-                'errors' => ['system' => 'System error occurred while processing transaction']
-            ];
         }
-    }
-
-    /**
-     * Validate detailed transaction structure (moved from TSMSTransactionRequest)
-     * Creates audit trail for validation failures
-     */
-    private function validateDetailedStructure(\Illuminate\Http\Request $request, string $correlationId): void
-    {
-        $isSingle = $request->transaction_count === 1;
-
-        // Build detailed validation rules
-        $rules = [];
-        if ($isSingle) {
-            $rules = [
-                'transaction' => 'required|array',
-                'transaction.transaction_id' => 'required|string|uuid',
-                'transaction.transaction_timestamp' => ['required', 'string', 'regex:/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z?$/'],
-                'transaction.gross_sales' => 'required|numeric',
-                'transaction.net_sales' => 'required|numeric',
-                'transaction.promo_status' => 'required|string',
-                'transaction.receipt_no' => 'nullable|string|max:128',
-                'transaction.customer_code' => 'required|string',
-                'transaction.payload_checksum' => 'required|string|min:64|max:64',
-                'transaction.adjustments' => 'required|array|min:7',
-                'transaction.adjustments.*.adjustment_type' => 'required_with:transaction.adjustments|string',
-                'transaction.adjustments.*.amount' => 'required|numeric',
-                'transaction.taxes' => 'required|array|min:4',
-                'transaction.taxes.*.tax_type' => 'required_with:transaction.taxes|string',
-                'transaction.taxes.*.amount' => 'required|numeric',
-            ];
-        } else {
-            $rules = [
-                'transactions' => 'required|array|min:1',
-                'transactions.*.transaction_id' => 'required|string|uuid',
-                'transactions.*.transaction_timestamp' => ['required', 'string', 'regex:/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z?$/'],
-                'transactions.*.gross_sales' => 'required|numeric',
-                'transactions.*.net_sales' => 'required|numeric',
-                'transactions.*.promo_status' => 'required|string',
-                'transactions.*.receipt_no' => 'nullable|string|max:128',
-                'transactions.*.customer_code' => 'required|string',
-                'transactions.*.payload_checksum' => 'required|string|min:64|max:64',
-                'transactions.*.adjustments' => 'required|array|min:7',
-                'transactions.*.adjustments.*.adjustment_type' => 'required_with:transactions.*.adjustments|string',
-                'transactions.*.adjustments.*.amount' => 'required|numeric',
-                'transactions.*.taxes' => 'required|array|min:4',
-                'transactions.*.taxes.*.tax_type' => 'required_with:transactions.*.taxes|string',
-                'transactions.*.taxes.*.amount' => 'required|numeric',
-            ];
-        }
-
-        // Validate structure
-        $validator = Validator::make($request->all(), $rules);
-
-        if ($validator->fails()) {
-            // Create audit event for structure validation failure
-            $this->createRejectionAuditEvent(
-                $request,
-                'STRUCTURE_INVALID',
-                $validator->errors()->toArray(),
-                $correlationId
-            );
-
-            // Throw validation exception
-            throw new \Illuminate\Validation\ValidationException($validator);
-        }
+        return response()->json([
+            'success' => true,
+            'processed_count' => $processedCount,
+            'failed_count' => $failedCount,
+            'processed_transactions' => $processedTransactions,
+            'failed_transactions' => $failedTransactions,
+        ]);
     }
 
     /**
      * Create rejection audit event for validation failures
      */
-    private function createRejectionAuditEvent(\Illuminate\Http\Request $request, string $reasonCode, array $errors, string $correlationId = null): void
+    private function createRejectionAuditEvent(array $submission, string $reasonCode, array $errors, ?string $correlationId = null): void
     {
         try {
             \App\Models\SubmissionEvent::create([
-                'submission_uuid' => $request->submission_uuid,
-                'tenant_id' => $request->tenant_id,
-                'terminal_id' => $request->terminal_id,
+                'submission_uuid' => $submission['submission_uuid'] ?? null,
+                'tenant_id' => $submission['tenant_id'] ?? null,
+                'terminal_id' => $submission['terminal_id'] ?? null,
                 'status' => 'REJECTED',
                 'reason_code' => $reasonCode,
                 'reason_details' => ['errors' => $errors],
-                'transaction_count' => (int) ($request->transaction_count ?? 0),
+                'transaction_count' => (int) ($submission['transaction_count'] ?? 0),
                 'occurred_at' => now(),
                 'correlation_id' => $correlationId,
             ]);
         } catch (\Throwable $e) {
             Log::warning('Failed to create SubmissionEvent', [
-                'submission_uuid' => $request->submission_uuid,
+                'submission_uuid' => $submission['submission_uuid'] ?? null,
                 'reason_code' => $reasonCode,
                 'error' => $e->getMessage(),
                 'correlation_id' => $correlationId
