@@ -94,7 +94,14 @@ const TerminalTokenPage = () => {
         const loadTenants = async () => {
             try {
                 const data = await terminalTokenService.getTenants();
-                setTenants(data || []);
+                // Defensive: ensure tenants is always an array
+                if (Array.isArray(data)) {
+                    setTenants(data);
+                } else if (data && Array.isArray(data.data)) {
+                    setTenants(data.data);
+                } else {
+                    setTenants([]);
+                }
             } catch (error) {
                 console.error('Error loading tenants for terminal registration:', error);
                 setNotification({
@@ -104,7 +111,6 @@ const TerminalTokenPage = () => {
                 });
             }
         };
-
         loadTenants();
     }, []);
 
@@ -116,8 +122,16 @@ const TerminalTokenPage = () => {
                 page + 1,
                 rowsPerPage
             );
-            setTerminals(response.data);
-            setTotalCount(response.meta.total);
+            // Defensive: ensure terminals is always an array
+            if (Array.isArray(response.data)) {
+                setTerminals(response.data);
+            } else if (response && Array.isArray(response.data?.data)) {
+                setTerminals(response.data.data);
+            } else {
+                setTerminals([]);
+            }
+            // Defensive: check meta exists before accessing total
+            setTotalCount(response.meta && typeof response.meta.total === 'number' ? response.meta.total : 0);
         } catch (error) {
             console.error('Error fetching terminal tokens:', error);
             setNotification({

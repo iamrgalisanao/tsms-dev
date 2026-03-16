@@ -8,8 +8,11 @@ export const terminalTokenService = {
      * @param {string|number} terminalId
      * @param {string} newDate
      */
-    updateExpiry: (terminalId, newDate) =>
-        axios.put(`/api/v1/terminals/${terminalId}/expiry`, { expires_at: newDate }),
+    updateExpiry: async (terminalId, newDate) => {
+        // Ensure CSRF cookie is set for session-auth requests
+        await axios.get('/sanctum/csrf-cookie');
+        return axios.put(`/api/v1/terminals/${terminalId}/expiry`, { expires_at: newDate });
+    },
     /**
      * Get paginated list of terminals with their tokens
      * @param {Object} filters - Filter parameters
