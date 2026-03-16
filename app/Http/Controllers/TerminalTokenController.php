@@ -12,6 +12,36 @@ use Laravel\Sanctum\PersonalAccessToken;
 class TerminalTokenController extends Controller
 {
     /**
+     * Update expiry date for a terminal (API)
+     */
+    public function updateExpiry($terminalId, Request $request)
+    {
+        try {
+            $terminal = PosTerminal::findOrFail($terminalId);
+            $validated = $request->validate([
+                'expires_at' => ['required', 'date'],
+            ]);
+            $terminal->expires_at = $validated['expires_at'];
+            $terminal->save();
+            return response()->json([
+                'success' => true,
+                'message' => 'Expiry date updated.',
+                'terminal' => $terminal
+            ]);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed.',
+                'errors' => $e->errors()
+            ], 422);
+        } catch (\Exception $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Error updating expiry: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+    /**
      * API endpoint to register a new POS terminal and optionally
      * provision an initial Bearer token for it.
      */
