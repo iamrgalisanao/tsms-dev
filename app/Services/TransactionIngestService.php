@@ -105,7 +105,7 @@ final class TransactionIngestService
             'transaction_id',
             'hardware_id',
             'transaction_timestamp',
-            'base_amount',
+            'gross_sales',
             'customer_code',
             'payload_checksum',
         ];
@@ -120,7 +120,7 @@ final class TransactionIngestService
             'transaction_id' => $payload['transaction_id'],
             'hardware_id' => $payload['hardware_id'],
             'transaction_timestamp' => $payload['transaction_timestamp'],
-            'base_amount' => $payload['base_amount'],
+            'gross_sales' => $payload['gross_sales'],
             'customer_code' => $payload['customer_code'],
             'payload_checksum' => $payload['payload_checksum'],
             'validation_status' => $payload['validation_status'] ?? 'PENDING',
