@@ -24,6 +24,7 @@ import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import Tooltip from '@mui/material/Tooltip';
 import LogFilterBar from '../Components/logs/LogFilterBar';
 import LogTable from '../Components/logs/LogTable';
+import SubmissionEventsTable from '../Components/logs/SubmissionEventsTable';
 import IncidentsTable from '../Components/logs/IncidentsTable';
 import FailedJobsTable from '../Components/logs/FailedJobsTable';
 import { systemLogService } from '../services/systemLogService';
@@ -225,14 +226,16 @@ const SystemLogsPage = () => {
                     )}
                 </Grid>
 
-                <LogFilterBar
-                    filters={filters}
-                    activeTab={activeTab}
-                    onFilterChange={setFilters}
-                    onReset={setFilters}
-                    terminals={logData?.terminals || []}
-                    onPruneClick={handlePruneClick}
-                />
+                {activeTab !== 'submission' && (
+                    <LogFilterBar
+                        filters={filters}
+                        activeTab={activeTab}
+                        onFilterChange={setFilters}
+                        onReset={setFilters}
+                        terminals={logData?.terminals || []}
+                        onPruneClick={handlePruneClick}
+                    />
+                )}
 
                 <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 3 }}>
                     <Tabs
@@ -344,11 +347,13 @@ const SystemLogsPage = () => {
                         />
                     )}
                     {activeTab === 'submission' && (
-                        <LogTable
+                        <SubmissionEventsTable
                             data={logData?.submissionEvents}
                             loading={loading}
-                            type="submission"
+                            filters={filters}
+                            terminals={logData?.terminals || []}
                             onPageChange={(p) => handlePageChange('submission', p)}
+                            onFilterChange={(newFilters) => setFilters(newFilters)}
                         />
                     )}
                     {activeTab === 'incidents' && (
