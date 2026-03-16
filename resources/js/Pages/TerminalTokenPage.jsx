@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react';
+import EditCalendarIcon from '@mui/icons-material/EditCalendar';
 import {
     Box,
     Typography,
@@ -30,6 +31,22 @@ import NewTokenDialog from '../Components/tokens/NewTokenDialog';
 import { terminalTokenService } from '../services/terminalTokenService';
 
 const TerminalTokenPage = () => {
+    // Expiry dialog state
+    const [expiryDialog, setExpiryDialog] = useState({ open: false, terminal: null, newDate: '' });
+    const handleExtendExpiry = (terminal) => {
+        setExpiryDialog({ open: true, terminal, newDate: terminal.expires_at ? terminal.expires_at.substring(0, 10) : '' });
+    };
+
+    const handleExpirySubmit = async () => {
+        try {
+            await terminalTokenService.updateExpiry(expiryDialog.terminal.id, expiryDialog.newDate);
+            setNotification({ open: true, message: 'Expiry date updated.', severity: 'success' });
+            setExpiryDialog({ open: false, terminal: null, newDate: '' });
+            fetchData();
+        } catch (error) {
+            setNotification({ open: true, message: 'Failed to update expiry.', severity: 'error' });
+        }
+    };
     useEffect(() => {
         document.title = "Terminal Identity Management | TSMS";
     }, []);
@@ -392,7 +409,26 @@ const TerminalTokenPage = () => {
                     onRowsPerPageChange={handleRowsPerPageChange}
                     onRegenerate={handleRegenerate}
                     onRevoke={handleRevoke}
+                    onExtendExpiry={handleExtendExpiry}
                 />
+                        {/* Extend Expiry Dialog */}
+                        <Dialog open={expiryDialog.open} onClose={() => setExpiryDialog({ open: false, terminal: null, newDate: '' })}>
+                            <DialogTitle>Extend Terminal Expiry</DialogTitle>
+                            <DialogContent>
+                                <TextField
+                                    label="New Expiry Date"
+                                    type="date"
+                                    value={expiryDialog.newDate}
+                                    onChange={e => setExpiryDialog(ed => ({ ...ed, newDate: e.target.value }))}
+                                    InputLabelProps={{ shrink: true }}
+                                    fullWidth
+                                />
+                            </DialogContent>
+                            <DialogActions>
+                                <Button onClick={() => setExpiryDialog({ open: false, terminal: null, newDate: '' })}>Cancel</Button>
+                                <Button onClick={handleExpirySubmit} variant="contained" color="primary">Update</Button>
+                            </DialogActions>
+                        </Dialog>
             </Box>
 
             <NewTokenDialog

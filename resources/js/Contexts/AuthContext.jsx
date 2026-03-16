@@ -23,13 +23,22 @@ export const AuthProvider = ({ children }) => {
             const token = localStorage.getItem('auth_token');
             if (token) {
                 const response = await fetch('/api/auth/user', {
-                    headers: { 'Authorization': `Bearer ${token}` }
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Accept': 'application/json'
+                    }
                 });
                 if (response.ok) {
-                    const data = await response.json();
-                    // /api/auth/user returns the user object directly (not nested)
-                    window.authUser = data;
-                    setUser(data);
+                    const text = await response.text();
+                    try {
+                        const data = JSON.parse(text);
+                        window.authUser = data;
+                        setUser(data);
+                    } catch (jsonError) {
+                        // Response is not valid JSON (likely HTML error page)
+                        console.error('Auth check failed: Invalid JSON', text);
+                        setUser(null);
+                    }
                 } else {
                     localStorage.removeItem('auth_token');
                     setUser(null);

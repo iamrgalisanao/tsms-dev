@@ -20,6 +20,7 @@ import { format } from 'date-fns';
 import KeyIcon from '@mui/icons-material/Key';
 import BlockIcon from '@mui/icons-material/Block';
 import RefreshIcon from '@mui/icons-material/Refresh';
+import EditCalendarIcon from '@mui/icons-material/EditCalendar';
 
 const TokenTable = ({
     terminals,
@@ -30,7 +31,8 @@ const TokenTable = ({
     onPageChange,
     onRowsPerPageChange,
     onRegenerate,
-    onRevoke
+    onRevoke,
+    onExtendExpiry
 }) => {
 
     const headerStyles = {
@@ -267,6 +269,22 @@ const TokenTable = ({
                                                     }}
                                                 >
                                                     <BlockIcon fontSize="small" />
+                                                </Button>
+                                            </Tooltip>
+                                            <Tooltip title="Extend Expiry">
+                                                <Button
+                                                    size="small"
+                                                    onClick={() => onExtendExpiry(terminal)}
+                                                    sx={{
+                                                        minWidth: 36,
+                                                        height: 36,
+                                                        borderRadius: 2,
+                                                        bgcolor: 'warning.50',
+                                                        color: 'warning.main',
+                                                        '&:hover': { bgcolor: 'warning.100' }
+                                                    }}
+                                                >
+                                                    <EditCalendarIcon fontSize="small" />
                                                 </Button>
                                             </Tooltip>
                                         </Stack>

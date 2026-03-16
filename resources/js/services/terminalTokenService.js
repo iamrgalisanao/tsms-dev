@@ -4,6 +4,13 @@ const API_BASE = window.config?.api_base || '/api';
 
 export const terminalTokenService = {
     /**
+     * Update expiry date for a terminal
+     * @param {string|number} terminalId
+     * @param {string} newDate
+     */
+    updateExpiry: (terminalId, newDate) =>
+        axios.put(`/api/v1/terminals/${terminalId}/expiry`, { expires_at: newDate }),
+    /**
      * Get paginated list of terminals with their tokens
      * @param {Object} filters - Filter parameters
      * @param {number} page - Page number
