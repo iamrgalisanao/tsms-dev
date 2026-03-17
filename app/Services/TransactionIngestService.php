@@ -46,8 +46,8 @@ final class TransactionIngestService
                                     'message' => 'inserted but not found',
                                 ];
                             }
-                            $this->insertAdjustments($transaction->transaction_id, $payload['adjustments'] ?? []);
-                            $this->insertTaxes($transaction->transaction_id, $payload['taxes'] ?? []);
+                            $this->insertAdjustments($transaction->id, $payload['adjustments'] ?? []);
+                            $this->insertTaxes($transaction->id, $payload['taxes'] ?? []);
                             return [
                                 'status' => 'accepted',
                                 'id' => $transaction->id,
@@ -132,16 +132,16 @@ final class TransactionIngestService
     /**
      * Insert adjustments only for new parent.
      */
-    protected function insertAdjustments($transactionId, array $adjustments): void
+    protected function insertAdjustments($transactionPk, array $adjustments): void
     {
         foreach ($adjustments as $adj) {
             // Only insert if both adjustment_type and amount are present
             if (!isset($adj['adjustment_type'], $adj['amount']) || $adj['adjustment_type'] === '' || $adj['amount'] === null) {
-                Log::warning('TransactionIngestService: Skipping malformed adjustment row', ['transaction_id' => $transactionId, 'row' => $adj]);
+                Log::warning('TransactionIngestService: Skipping malformed adjustment row', ['transaction_pk' => $transactionPk, 'row' => $adj]);
                 continue;
             }
             DB::table('transaction_adjustments')->insert([
-                'transaction_pk' => $transactionId, // string FK, not numeric PK
+                'transaction_pk' => $transactionPk, // numeric PK
                 'adjustment_type' => $adj['adjustment_type'],
                 'amount' => $adj['amount'],
                 'created_at' => now(),
@@ -153,16 +153,16 @@ final class TransactionIngestService
     /**
      * Insert taxes only for new parent.
      */
-    protected function insertTaxes($transactionId, array $taxes): void
+    protected function insertTaxes($transactionPk, array $taxes): void
     {
         foreach ($taxes as $tax) {
             // Only insert if both tax_type and amount are present
             if (!isset($tax['tax_type'], $tax['amount']) || $tax['tax_type'] === '' || $tax['amount'] === null) {
-                Log::warning('TransactionIngestService: Skipping malformed tax row', ['transaction_id' => $transactionId, 'row' => $tax]);
+                Log::warning('TransactionIngestService: Skipping malformed tax row', ['transaction_pk' => $transactionPk, 'row' => $tax]);
                 continue;
             }
             DB::table('transaction_taxes')->insert([
-                'transaction_pk' => $transactionId, // string FK, not numeric PK
+                'transaction_pk' => $transactionPk, // numeric PK
                 'tax_type' => $tax['tax_type'],
                 'amount' => $tax['amount'],
                 'created_at' => now(),
