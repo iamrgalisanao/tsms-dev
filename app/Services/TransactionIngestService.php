@@ -141,7 +141,7 @@ final class TransactionIngestService
                 continue;
             }
             DB::table('transaction_adjustments')->insert([
-                'transaction_id' => $transactionId, // string FK, not numeric PK
+                'transaction_pk' => $transactionId, // string FK, not numeric PK
                 'adjustment_type' => $adj['adjustment_type'],
                 'amount' => $adj['amount'],
                 'created_at' => now(),
@@ -162,7 +162,7 @@ final class TransactionIngestService
                 continue;
             }
             DB::table('transaction_taxes')->insert([
-                'transaction_id' => $transactionId, // string FK, not numeric PK
+                'transaction_pk' => $transactionId, // string FK, not numeric PK
                 'tax_type' => $tax['tax_type'],
                 'amount' => $tax['amount'],
                 'created_at' => now(),
