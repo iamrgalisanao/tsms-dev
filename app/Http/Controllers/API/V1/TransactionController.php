@@ -275,10 +275,36 @@ class TransactionController extends Controller
             );
         }
 
-        $transactions = $request->input('transactions', []);
-        // If single transaction, wrap in array for uniformity
-        if (empty($transactions) && $request->has('transaction')) {
+        $transactions = [];
+        
+        // Block batch submissions (transactions array) for Phase 1
+        if ($request->has('transactions')) {
+            $this->createRejectionAuditEvent(
+                $submission,
+                'BATCH_DISABLED',
+                ['transactions' => 'Batch transaction submission is temporarily disabled. Please use single transaction submission mode.'],
+                $submission['submission_uuid'] ?? null
+            );
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => [
+                    'transactions' => 'Batch transaction submission is temporarily disabled. Please use single transaction submission mode.',
+                ],
+            ], 422);
+        }
+
+        // Only allow single transaction submission
+        if ($request->has('transaction')) {
             $transactions = [$request->input('transaction')];
+        } else {
+            return response()->json([
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => [
+                    'transaction' => 'Single transaction object is required.',
+                ],
+            ], 422);
         }
         $processed = [];
         $failed = [];
@@ -1052,6 +1078,44 @@ class TransactionController extends Controller
                 'correlation_id' => $correlationId
             ]);
         }
+    }
+
+    /**
+     * Get the status of a transaction by its transaction_id
+     */
+    public function status($id)
+    {
+        // Enforce terminal ownership
+        $posTerminal = request()->user();
+        if (!$posTerminal) {
+            return response()->json(['success' => false, 'message' => 'Unauthorized'], 401);
+        }
+
+        $transaction = Transaction::where('transaction_id', $id)
+            ->where('terminal_id', $posTerminal->id)
+            ->first();
+
+        if (!$transaction) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Transaction not found or does not belong to this terminal'
+            ], 404);
+        }
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'transaction_id' => $transaction->transaction_id,
+                'validation_status' => $transaction->validation_status,
+                'job_status' => $transaction->job_status,
+                'is_voided' => $transaction->isVoided(),
+                'refund_status' => $transaction->refund_status ?? 'NONE',
+                'gross_sales' => (float)$transaction->gross_sales,
+                'net_sales' => (float)$transaction->net_sales,
+                'created_at' => $transaction->created_at->toISOString(),
+                'updated_at' => $transaction->updated_at->toISOString()
+            ]
+        ]);
     }
 }
 

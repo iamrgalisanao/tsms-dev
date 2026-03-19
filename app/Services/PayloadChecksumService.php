@@ -141,9 +141,9 @@ class PayloadChecksumService
                 // Recurse
                 $value = $this->canonicalize($value);
 
-                // Cast monetary fields to float
+                // Format monetary fields as strict 2-decimal strings
                 if (in_array($key, ['gross_sales', 'net_sales', 'amount'], true)) {
-                    $value = (float) $value;
+                    $value = number_format((float) $value, 2, '.', '');
                 }
             }
         }

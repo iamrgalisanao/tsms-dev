@@ -119,6 +119,7 @@ final class TransactionIngestService
             'terminal_id' => $payload['terminal_id'],
             'transaction_id' => $payload['transaction_id'],
             'hardware_id' => $payload['hardware_id'],
+            'receipt_no' => $payload['receipt_no'] ?? null,
             'transaction_timestamp' => $payload['transaction_timestamp'],
             'gross_sales' => $payload['gross_sales'],
             'customer_code' => $payload['customer_code'],
