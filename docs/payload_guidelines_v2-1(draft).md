@@ -537,6 +537,7 @@ A **Refund** is used to return funds for a previously completed transaction.
 
 **Rules**:
 - **Same-Day Restriction**: Refunds are currently only permitted on the **same business day** as the original transaction.
+- **Reference ID**: The `refund_reference_id` is the **POS-generated Refund Receipt Number** (for internal tracking). It is NOT the original sale receipt number.
 - Partial refunds are supported if `refund_amount` is less than or equal to the original `net_sales`.
 
 ### 17.3 Transaction Status
@@ -568,6 +569,8 @@ Use this to check the processing results of a previously submitted transaction.
 | `INVALID` | `FAILED` | Data Error | **Stop & Fix**: Correct payload logic. |
 | `VALID` | `PENDING` | Queued | Wait 5 seconds and poll again. |
 | `VALID` | `PROCESSING`| Active | Wait 5 seconds and poll again. |
+| `failed` | `ingest_failed` | DB Error | **Retry**: Server-side transient error. |
+| `failed` | `inserted but not found` | Critical | **Support**: Contact TSMS Admin. |
 
 ---
 
