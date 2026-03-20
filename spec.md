@@ -89,7 +89,7 @@ To maintain architectural discipline, the following files and directories must e
 - `task_plan.md`: Overall phases, milestones, and priorities.
 - `progress.md`: Current completion state, blockers, and next steps.
 - `findings.md`: Verified discoveries, research evidence, and issue lessons.
-- `coding-standards.md`: Mechanical rules for naming, sharding, and safety.
+- [`coding-standards.md`](docs/standards/coding-standards.md): Mechanical rules for naming, sharding, and safety.
 
 ### 6.2 Required Directories
 - `docs/architecture/`: HL7 Engine, Unified Architecture, Sharding Logic.

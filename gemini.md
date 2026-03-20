@@ -51,7 +51,7 @@ The following order of precedence applies to all TSMS development:
 2.  **`spec.md`**: The domain-specific rules, non-negotiables, and functional requirements.
 3.  **Subagents**: Operations-level logic for specific tasks (e.g., Code Scanning).
 4.  **`operational_protocol.md`**: The mandatory gatekeeper for daily development and risk management.
-5.  **`coding-standards.md`**: The mechanical rules for naming, sharding, and multi-tenant safety.
+5.  **[`coding-standards.md`](docs/standards/coding-standards.md)**: The mechanical rules for naming, sharding, and multi-tenant safety.
 
 ---
 

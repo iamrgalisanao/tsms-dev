@@ -2,7 +2,7 @@
 
 - **Operational Protocol Enforcement**: AI **MUST** read [operational_protocol.md](operational_protocol.md) at the start of every session or task before calling any other tool. Follow the "Pre-Flight" checklist strictly.
 - **Strict Compliance with spec.md**: AI must strictly and non-negotiably adhere to the [spec.md](spec.md) requirements, particularly the **Non-Negotiables (Privacy-First)** section.
-- **A.N.T. Pattern Adherence**: Follow the **A.N.T.** (Architecture, Navigation, Tools) structural patterns for all development and decision-making.
+- **A.N.T. Pattern Adherence**: Follow the **A.N.T.** (Architecture, Navigation, Tools) structural patterns for all development and decision-making. AI **MUST** read [coding-standards.md](docs/standards/coding-standards.md) before implementing multi-tenant or financial logic.
 - **Transactional/Compliance Logic**: Always refer to the [V2.1 Payload Standards](docs/payload_guidelines_v2-1(draft).md) and data privacy regulations (RA 10173/DPA) when modifying ingestion workflows or reporting logic.
 - **Branching Awareness**: Always work on a specific feature/fix branch. Never commit directly to `main` unless small/chore documentation updates are explicitly requested.
 - **Commit Discipline**: Follow conventional commit formats. Each commit should represent a verifiable step in the task-gating protocol.
@@ -27,4 +27,5 @@
     2. **Design**: Ask security/privacy review questions BEFORE coding.
     3. **Review**: Perform a mandatory pre-merge hygiene sweep (check for dead or orphaned code).
     4. **Release**: Confirm all high-risk actions (voids, refunds, record edits) are verified and logged.
+- **Subagent Compliance Verification**: For specialized reviews, AI **MUST** invoke the relevant subagent instructions from `.agents/subagents/` (Compliance, Architecture, UI/UX) before marking a task as complete.
 - **Strict Compliance Remediation**: Any deviation from these rules (e.g., working on `main`) is a critical error and must be remediated immediately.

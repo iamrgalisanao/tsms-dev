@@ -63,6 +63,9 @@ Consult focused architecture docs as required:
 - **`docs/architecture/sharding-strategy.md`**: Required when affecting Redis queues or job serialization.
 - **`docs/architecture/checksum-v2-protocol.md`**: Required when changing ingestion or payload parsing.
 - **`docs/security/terminal-auth-matrix.md`**: Required when changing Sanctum token abilities or POS roles.
+- **`.agents/subagents/compliance-scanner.md`**: Required for all ingestion or PII-affecting PR reviews.
+- **`.agents/subagents/architectural-sentinel.md`**: Required for new Service/Logic implementation.
+- **`.agents/subagents/ui-ux-critic.md`**: Required for all Dashboard/React modifications.
 
 ---
 

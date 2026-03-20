@@ -26,3 +26,6 @@ For every feature or fix implemented, the AI MUST update the following files in 
 
 6. **Feature Records**
    - Ensure a corresponding file exists in `docs/context/features/` documenting the implementation.
+
+7. **Subagent Validation**
+   - Execute mandated subagent scans (`.agents/subagents/compliance-scanner.md`, `.agents/subagents/architectural-sentinel.md`) for all logical changes.

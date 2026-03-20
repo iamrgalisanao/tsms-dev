@@ -18,14 +18,30 @@ class TenantScope implements Scope
      */
     public function apply(Builder $builder, Model $model)
     {
-        if (Auth::check()) {
-            $user = Auth::user();
+        // Don't apply in console or if recursion is detected
+        if (app()->runningInConsole()) {
+            return;
+        }
 
-            // If the authenticated entity (Terminal or User) has a tenant_id,
-            // restrict all queries to that tenant.
-            if ($user && isset($user->tenant_id) && $user->tenant_id !== null) {
-                $builder->where($model->getTable() . '.tenant_id', $user->tenant_id);
+        static $resolvingUser = false;
+        if ($resolvingUser) {
+            return;
+        }
+
+        $resolvingUser = true;
+
+        try {
+            if (Auth::check()) {
+                $user = Auth::user();
+
+                // If the authenticated entity (Terminal or User) has a tenant_id,
+                // restrict all queries to that tenant.
+                if ($user && isset($user->tenant_id) && $user->tenant_id !== null) {
+                    $builder->where($model->getTable() . '.tenant_id', $user->tenant_id);
+                }
             }
+        } finally {
+            $resolvingUser = false;
         }
     }
 }
