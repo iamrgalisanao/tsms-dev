@@ -29,3 +29,4 @@ For every feature or fix implemented, the AI MUST update the following files in 
 
 7. **Subagent Validation**
    - Execute mandated subagent scans (`.agents/subagents/compliance-scanner.md`, `.agents/subagents/architectural-sentinel.md`) for all logical changes.
+   - Record all validation results and technical anomalies in `findings.md`.

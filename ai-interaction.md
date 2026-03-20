@@ -27,5 +27,5 @@
     2. **Design**: Ask security/privacy review questions BEFORE coding.
     3. **Review**: Perform a mandatory pre-merge hygiene sweep (check for dead or orphaned code).
     4. **Release**: Confirm all high-risk actions (voids, refunds, record edits) are verified and logged.
-- **Subagent Compliance Verification**: For specialized reviews, AI **MUST** invoke the relevant subagent instructions from `.agents/subagents/` (Compliance, Architecture, UI/UX) before marking a task as complete.
+- **Subagent & Skill Compliance**: For specialized reviews and complex domain tasks (Ingestion, Security, Governance), AI **MUST** invoke the relevant subagent instructions from `.agents/subagents/` and check the corresponding `.agents/skills/[skill]/SKILL.md` for specific rules and scripts.
 - **Strict Compliance Remediation**: Any deviation from these rules (e.g., working on `main`) is a critical error and must be remediated immediately.

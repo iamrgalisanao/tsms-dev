@@ -66,6 +66,7 @@ Consult focused architecture docs as required:
 - **`.agents/subagents/compliance-scanner.md`**: Required for all ingestion or PII-affecting PR reviews.
 - **`.agents/subagents/architectural-sentinel.md`**: Required for new Service/Logic implementation.
 - **`.agents/subagents/ui-ux-critic.md`**: Required for all Dashboard/React modifications.
+- **`.agents/skills/[skill]/SKILL.md`**: Required for specialized domain tasks (Ingestion, Governance, Security).
 
 ---
 

@@ -5,10 +5,10 @@ All notable changes to the TSMS project will be documented in this file.
 ## [Unreleased] - 2026-03-20
 
 ### Added
+- **TSMS Skills System**: Implemented a structured `.agents/skills/` system with specialized commands and scripts for `Ingestion`, `Governance`, and `Security`.
+- **Architectural Refinement**: Decluttered the repository by archiving over 120 stale documents into `docs/archive/` and aligning the root `README.md` with the SOQT (Source of Truth Quintet).
 - **Multi-Tenant Isolation**: Implemented `BelongsToTenant` trait and `TenantScope` for automated global query filtering across core models.
 - **Custom Subagents**: Created standard-compliance, architectural, and UI/UX subagents in `.agents/subagents/`.
-- **Documentation Infrastructure**: Established the [Source of Truth Suite](docs/standards/pr-review-checklist.md) by adding `ROADMAP.md`, `progress.md`, and `WALKTHROUGH.md`.
-- **AI Interaction Standards**: Created `ai-interaction.md` and the `.agents/workflows/documentation-sync.md` workflow.
 
 ### Changed
 - **Operational Protocol**: Refactored `operational_protocol.md` with TSMS-specific task-gating and session rules.
