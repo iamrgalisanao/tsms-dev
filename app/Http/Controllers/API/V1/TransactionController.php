@@ -319,6 +319,25 @@ class TransactionController extends Controller
                     'terminal_id' => $request->terminal_id,
                 ]);
                 $result = $service->ingest($payload);
+                
+                // RESTORED: Real-time job dispatch for seconds-level latency
+                if ($result['status'] === 'accepted' || $result['status'] === 'already_processed') {
+                    if (isset($result['transaction_id'])) {
+                        $transaction = \App\Models\Transaction::where('transaction_id', $result['transaction_id'])->first();
+                        if ($transaction) {
+                            $shard = (int) ($request->tenant_id % 8);
+                            \App\Jobs\ProcessTransactionJob::dispatch($transaction->id)
+                                ->onQueue('transaction-processing:s' . $shard)
+                                ->afterCommit();
+                                
+                            Log::info('storeOfficial: Real-time dispatch successful', [
+                                'transaction_id' => $transaction->transaction_id,
+                                'queue' => 'transaction-processing:s' . $shard
+                            ]);
+                        }
+                    }
+                }
+
                 $processed[] = [
                     'transaction_id' => $result['transaction_id'],
                     'status' => $result['status'] === 'accepted' || $result['status'] === 'already_processed' ? 'success' : 'failed',
@@ -641,6 +660,15 @@ class TransactionController extends Controller
 
     public function batchStore(Request $request)
     {
+        // Batch transaction submission is temporarily disabled per client agreement for Phase 1
+        return response()->json([
+            'success' => false,
+            'message' => 'Validation failed',
+            'errors' => [
+                'batch' => 'Batch transaction submission is temporarily disabled. Please use single transaction submission mode.',
+            ],
+        ], 422);
+
         try {
             Log::info('Batch transaction API request received', [
                 'payload_size' => strlen(json_encode($request->all())),
@@ -789,6 +817,17 @@ class TransactionController extends Controller
                     ]);
                     $result = $service->ingest($payload);
                     if ($result['status'] === 'accepted' || $result['status'] === 'already_processed') {
+                        // RESTORED: Real-time job dispatch for seconds-level latency
+                        if (isset($result['transaction_id'])) {
+                            $transaction = \App\Models\Transaction::where('transaction_id', $result['transaction_id'])->first();
+                            if ($transaction) {
+                                $shard = (int) ($request->tenant_id % 8);
+                                \App\Jobs\ProcessTransactionJob::dispatch($transaction->id)
+                                    ->onQueue('transaction-processing:s' . $shard)
+                                    ->afterCommit();
+                            }
+                        }
+
                         $processedTransactions[] = [
                             'transaction_id' => $result['transaction_id'],
                             'status' => 'success',

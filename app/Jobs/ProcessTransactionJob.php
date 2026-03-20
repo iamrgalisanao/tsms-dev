@@ -50,6 +50,14 @@ class ProcessTransactionJob implements ShouldQueue, ShouldBeUnique
     }
 
     /**
+     * Get the transaction ID associated with this job.
+     */
+    public function getTransactionId(): int
+    {
+        return $this->transactionId;
+    }
+
+    /**
      * Ensure only one job per transaction ID is on the queue at a time.
      */
     public function uniqueId(): string
