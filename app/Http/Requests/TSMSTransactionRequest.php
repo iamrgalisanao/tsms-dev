@@ -40,6 +40,13 @@ class TSMSTransactionRequest extends FormRequest
      */
     protected function failedValidation(Validator $validator): void
     {
+        \Log::warning('TSMSTransactionRequest: Validation failed', [
+            'errors' => $validator->errors()->toArray(),
+            'submission_uuid' => $this->input('submission_uuid'),
+            'terminal_id' => $this->input('terminal_id'),
+            'ip' => $this->ip(),
+        ]);
+
         throw new HttpResponseException(
             response()->json([
                 'success' => false,

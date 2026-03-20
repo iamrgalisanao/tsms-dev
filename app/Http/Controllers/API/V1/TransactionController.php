@@ -251,12 +251,23 @@ class TransactionController extends Controller
      */
     public function storeOfficial(TSMSTransactionRequest $request)
     {
+        Log::info('storeOfficial: Request received', [
+            'submission_uuid' => $request->submission_uuid,
+            'terminal_id' => $request->terminal_id,
+            'tenant_id' => $request->tenant_id,
+        ]);
+
         // Convert request to array for checksum validation
         $submission = $request->all();
         $rawJson = json_encode($submission);
         $checksumService = app(\App\Services\PayloadChecksumService::class);
         $checksumResult = $checksumService->validateSubmissionChecksumsFromRaw($rawJson);
         if (!$checksumResult['valid']) {
+            Log::warning('storeOfficial: Checksum validation failed', [
+                'submission_uuid' => $submission['submission_uuid'] ?? null,
+                'errors' => $checksumResult['errors'],
+            ]);
+
             $this->createRejectionAuditEvent(
                 $submission,
                 'CHECKSUM_MISMATCH',
