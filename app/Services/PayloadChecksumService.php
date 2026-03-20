@@ -28,40 +28,62 @@ class PayloadChecksumService
     }
 
     /**
-     * Validate both transaction and submission checksums.
+     * Validate both transaction and submission checksums with fallback logic.
      *
      * @param  array  $submission  The decoded submission payload
      * @return array  ['valid' => bool, 'errors' => array]
      */
     public function validateSubmissionChecksums(array $submission): array
     {
-        $errors = [];
+        // Try V2.1 (Strict String) first
+        $result = $this->validateWithVersion($submission, 'v2.1');
+        if ($result['valid']) {
+            return $result;
+        }
 
-        // Single transaction submission (preserve working logic)
+        // Fallback to V2.0 (Float Normalization)
+        $fallback = $this->validateWithVersion($submission, 'v2.0');
+        if ($fallback['valid']) {
+            \Log::info('Checksum validated via V2.0 fallback', ['submission_uuid' => $submission['submission_uuid'] ?? null]);
+            return $fallback;
+        }
+
+        return $result; // Return the original V2.1 errors if both fail
+    }
+
+    /**
+     * Internal validation for a specific version logic.
+     */
+    private function validateWithVersion(array $submission, string $version): array
+    {
+        $errors = [];
+        $this->currentVersion = $version;
+
+        // Single transaction
         if (isset($submission['transaction'])) {
             $txn = $submission['transaction'];
             $txnCopy = $txn;
             unset($txnCopy['payload_checksum']);
             $computedTxn = $this->computeChecksum($txnCopy);
+            
             if (!isset($txn['payload_checksum']) || $txn['payload_checksum'] !== $computedTxn) {
-                $errors[] = 'Invalid payload_checksum for transaction';
+                $errors[] = "Invalid payload_checksum for transaction ({$version})";
             }
 
-            // Validate submission-level checksum
             $submissionCopy = $submission;
             unset($submissionCopy['payload_checksum']);
             $computedSubmission = $this->computeChecksum($submissionCopy);
             if (!isset($submission['payload_checksum']) || $submission['payload_checksum'] !== $computedSubmission) {
-                $errors[] = 'Invalid submission payload_checksum';
+                $errors[] = "Invalid submission payload_checksum ({$version})";
             }
 
             return [
-                'valid'  => empty($errors),
+                'valid' => empty($errors),
                 'errors' => $errors,
             ];
         }
 
-        // Batch transaction submission
+        // Batch transactions
         if (isset($submission['transactions']) && is_array($submission['transactions'])) {
             $allTxnValid = true;
             foreach ($submission['transactions'] as $i => $txn) {
@@ -69,46 +91,31 @@ class PayloadChecksumService
                 unset($txnCopy['payload_checksum']);
                 $computedTxn = $this->computeChecksum($txnCopy);
                 if (!isset($txn['payload_checksum']) || $txn['payload_checksum'] !== $computedTxn) {
-                    $errors[] = "Invalid payload_checksum for transaction at index {$i}";
+                    $errors[] = "Invalid payload_checksum for transaction at index {$i} ({$version})";
                     $allTxnValid = false;
                 }
             }
 
-            // Only validate submission-level checksum if all transaction checksums are valid
             if ($allTxnValid) {
                 $submissionCopy = $submission;
                 unset($submissionCopy['payload_checksum']);
                 $computedSubmission = $this->computeChecksum($submissionCopy);
                 if (!isset($submission['payload_checksum']) || $submission['payload_checksum'] !== $computedSubmission) {
-                    $errors[] = 'Invalid submission payload_checksum';
+                    $errors[] = "Invalid submission payload_checksum ({$version})";
                 }
             }
 
             return [
-                'valid'  => empty($errors),
+                'valid' => empty($errors),
                 'errors' => $errors,
             ];
         }
 
-        // If neither single nor batch, just check submission-level checksum
-        $submissionCopy = $submission;
-        unset($submissionCopy['payload_checksum']);
-        $computedSubmission = $this->computeChecksum($submissionCopy);
-        if (!isset($submission['payload_checksum']) || $submission['payload_checksum'] !== $computedSubmission) {
-            $errors[] = 'Invalid submission payload_checksum';
-        }
-
-        return [
-            'valid'  => empty($errors),
-            'errors' => $errors,
-        ];
+        return ['valid' => false, 'errors' => ['Unsupported payload structure']];
     }
 
     /**
      * Compute SHA-256 checksum of the payload after canonicalization.
-     *
-     * @param  mixed  $payload  Array or scalar data
-     * @return string  Hexadecimal SHA-256 hash
      */
     public function computeChecksum($payload): string
     {
@@ -119,38 +126,33 @@ class PayloadChecksumService
             JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE
         );
 
-        \Log::debug('PayloadChecksumService: Hashing JSON', [
-            'json' => $json,
-            'hash' => hash('sha256', $json)
-        ]);
-
         return hash('sha256', $json);
     }
 
     /**
-     * Recursively canonicalize data for consistent JSON serialization:
-     * - Sort associative arrays by key
-     * - Preserve indexed arrays order
-     * - Cast monetary values to float
-     *
-     * @param  mixed  $data
-     * @return mixed
+     * Recursively canonicalize data
      */
     private function canonicalize($data)
     {
         if (is_array($data)) {
-            // If associative array, sort by keys
             if ($this->isAssoc($data)) {
                 ksort($data);
             }
 
             foreach ($data as $key => &$value) {
-                // Recurse
                 $value = $this->canonicalize($value);
 
-                // Format monetary fields as strict 2-decimal strings
-                if (in_array($key, ['gross_sales', 'net_sales', 'amount'], true)) {
-                    $value = number_format((float) $value, 2, '.', '');
+                if ($this->currentVersion === 'v2.1') {
+                    if (in_array($key, ['gross_sales', 'net_sales', 'receipt_no', 'amount'], true)) {
+                        if (is_numeric($value)) {
+                            $value = number_format((float) $value, 2, '.', '');
+                        }
+                    }
+                } elseif ($this->currentVersion === 'v2.0') {
+                    if (in_array($key, ['gross_sales', 'net_sales', 'amount'], true)) {
+                        $value = (float) $value;
+                        // PHP json_encode will strip trailing zeros for floats
+                    }
                 }
             }
         }
@@ -158,12 +160,8 @@ class PayloadChecksumService
         return $data;
     }
 
-    /**
-     * Determine if an array is associative.
-     *
-     * @param  array  $array
-     * @return bool
-     */
+    private string $currentVersion = 'v2.1';
+
     private function isAssoc(array $array): bool
     {
         return array_keys($array) !== range(0, count($array) - 1);
