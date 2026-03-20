@@ -28,8 +28,8 @@ TSMS (Transaction Management System) is a Laravel-based system that manages Poin
 - **POS Terminal Management**: Terminal authentication, registration, and monitoring.
 - **Transaction Validation**: Real-time validation with dual-version checksum verification (V2.0/V2.1 fallback).
 - **Queue Processing**: Real-time, sharded background job processing using Laravel Horizon with sub-second latency.
-- **WebApp Forwarding**: Integration with external transaction processing systems.
-- **Circuit Breaker**: Fault tolerance for external integrations.
+- **WebApp Forwarding**: [DISABLED FOR PHASE 1] Integration with external transaction processing systems.
+- **Circuit Breaker**: [INACTIVE] Fault tolerance for external integrations.
 - **Audit & Logging**: Comprehensive audit trails and system logging.
 - **Void & Refund**: Transaction reversal capabilities.
 
@@ -49,10 +49,10 @@ TSMS (Transaction Management System) is a Laravel-based system that manages Poin
 ```
 ┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
 │   POS Terminal  │───▶│   TSMS API      │───▶│   WebApp        │
-│   (Sanctum)     │    │   (Laravel)     │    │   (External)    │
+│   (Sanctum)     │    │   (Laravel)     │    │   (Disabled)    │
 └─────────────────┘    └─────────────────┘    └─────────────────┘
-                              │
-                              ▼
+                              │                               (X)
+                              ▼                            (Inactive)
                        ┌─────────────────┐
                        │   Redis Queue   │
                        │   (Horizon)     │
@@ -484,7 +484,7 @@ class ProcessTransactionJob implements ShouldQueue
 4. `TransactionValidationService` validates transaction details.
 5. `PayloadChecksumService` performs dual-layer validation (tries V2.1 first, falls back to V2.0).
 6. Results stored in `TransactionValidation` table.
-7. Success: Transaction marked VALID, eligible for webapp forwarding.
+7. Success: Transaction marked VALID. (WebApp forwarding is currently **DISABLED** for Phase 1).
 8. Failure: Job retried up to 3 times, then marked FAILED.
 
 ---
@@ -526,7 +526,7 @@ POST /api/v1/auth/terminal
 
 ## Integration Points
 
-### WebApp Forwarding Service
+### WebApp Forwarding Service [DISABLED FOR PHASE 1]
 ```php
 // Configuration via .env
 WEBAPP_FORWARDING_ENABLED=true
