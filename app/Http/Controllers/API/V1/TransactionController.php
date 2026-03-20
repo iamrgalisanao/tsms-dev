@@ -261,6 +261,12 @@ class TransactionController extends Controller
         $submission = $request->all();
         $rawJson = json_encode($submission);
         $checksumService = app(\App\Services\PayloadChecksumService::class);
+
+        Log::debug('storeOfficial: Canonicalizing for debug', [
+            'submission_uuid' => $submission['submission_uuid'] ?? null,
+            'canonicalized_submission' => $checksumService->getCanonicalized($submission),
+        ]);
+
         $checksumResult = $checksumService->validateSubmissionChecksumsFromRaw($rawJson);
         if (!$checksumResult['valid']) {
             Log::warning('storeOfficial: Checksum validation failed', [
