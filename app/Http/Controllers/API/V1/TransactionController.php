@@ -193,7 +193,7 @@ class TransactionController extends Controller
                     'terminal_serial' => $posTerminal->serial_number,
                 ];
                 if (method_exists($forwardingService, 'forwardVoidedTransaction')) {
-                    $forwardingService->forwardVoidedTransaction($payload);
+                    $forwardingService->forwardVoidedTransaction($transaction);
                 } else {
                     // Fallback: send via generic forward method
                     $forwardingService->forward($payload);
@@ -249,7 +249,7 @@ class TransactionController extends Controller
      * @param Request $request
      * @return \Illuminate\Http\JsonResponse
      */
-    public function storeOfficial(TSMSTransactionRequest $request)
+    public function storeOfficial(TSMSTransactionRequest $request, \App\Services\PayloadChecksumService $checksumService)
     {
         Log::info('storeOfficial: Request received', [
             'submission_uuid' => $request->submission_uuid,
@@ -260,7 +260,6 @@ class TransactionController extends Controller
         // Convert request to array for checksum validation
         $submission = $request->all();
         $rawJson = json_encode($submission);
-        $checksumService = app(\App\Services\PayloadChecksumService::class);
 
         $checksumResult = $checksumService->validateSubmissionChecksumsFromRaw($rawJson);
         if (!$checksumResult['valid']) {

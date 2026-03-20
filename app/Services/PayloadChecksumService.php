@@ -10,8 +10,11 @@ class PayloadChecksumService
 {
     /**
      * Public wrapper for canonicalize (for debugging/external use)
+     * 
+     * @param mixed $data
+     * @return array
      */
-    public function getCanonicalized($data)
+    public function getCanonicalized($data): array
     {
         return $this->canonicalize($data);
     }
@@ -53,6 +56,10 @@ class PayloadChecksumService
 
     /**
      * Internal validation for a specific version logic.
+     * 
+     * @param array $submission
+     * @param string $version
+     * @return array
      */
     private function validateWithVersion(array $submission, string $version): array
     {
@@ -130,7 +137,10 @@ class PayloadChecksumService
     }
 
     /**
-     * Recursively canonicalize data
+     * Recursively canonicalize data according to strict version-specific rules.
+     * 
+     * @param mixed $data
+     * @return mixed
      */
     private function canonicalize($data)
     {
