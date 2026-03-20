@@ -16,6 +16,8 @@ All notable changes to the TSMS project will be documented in this file.
 
 ### Fixed
 - **Queue Bottleneck**: Resolved the issue where transactions were staying in `PENDING` status for up to 5 minutes due to missing immediate dispatch logic originally lost during the March 16th refactor.
+- **Checksum Validation Failure**: Restored staging compatibility by implementing a V2.0/V2.1 **Multi-Version Fallback** in `PayloadChecksumService.php`. This allows legacy POS systems (V2.0 float-based) and newer systems (V2.1 string-based) to coexist.
+- **V2.1 Specification Gaps**: Corrected `PayloadChecksumService.php` to include `receipt_no` in monetary formatting and added a required `is_numeric()` guard per the V2.1 Draft Guidelines.
 
 ### Security
 - **Batch Submission Disablement**: Explicitly disabled batch transaction submission in both `storeOfficial` and `batchStore` endpoints per client agreement for Phase 1. Both endpoints now return a `422 Unprocessable Entity` response if batch arrays are detected.
