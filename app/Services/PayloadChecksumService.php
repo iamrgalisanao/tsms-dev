@@ -114,10 +114,17 @@ class PayloadChecksumService
     {
         $canonical = $this->canonicalize($payload);
 
-        return hash('sha256', json_encode(
+        $json = json_encode(
             $canonical,
             JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE
-        ));
+        );
+
+        \Log::debug('PayloadChecksumService: Hashing JSON', [
+            'json' => $json,
+            'hash' => hash('sha256', $json)
+        ]);
+
+        return hash('sha256', $json);
     }
 
     /**
