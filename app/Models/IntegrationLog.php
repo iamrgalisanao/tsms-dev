@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 
 class IntegrationLog extends Model
 {
-    use HasFactory;
+    use HasFactory, \App\Traits\BelongsToTenant;
 
     /**
      * The attributes that are mass assignable.

@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Model;
 
 class TransactionIdentity extends Model
 {
+    use \App\Traits\BelongsToTenant;
     protected $table = 'transaction_identities';
 
     protected $fillable = [

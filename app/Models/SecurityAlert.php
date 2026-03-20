@@ -9,7 +9,7 @@ use App\Models\SecurityAlertResponse;
 
 class SecurityAlert extends Model
 {
-    use HasFactory;
+    use HasFactory, \App\Traits\BelongsToTenant;
 
     protected $fillable = [
         'title',

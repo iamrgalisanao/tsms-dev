@@ -17,9 +17,7 @@ use App\Traits\BelongsToTenant;
  */
 class TransactionSubmission extends Model
 {
-    use BelongsToTenant;
-    
-    use HasFactory;
+    use HasFactory, BelongsToTenant;
 
     protected $fillable = [
         'tenant_id',
