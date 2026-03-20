@@ -6,7 +6,8 @@ See the detailed development roadmap in [_md/NEXT_DEVELOPMENT_ROADMAP.md](_md/NE
 - [x] Dual-Checksum Validation (V2.1/V2.0)
 - [x] Multi-Tenant Isolation (Global Scopes)
 - [x] Real-time Ingestion Proof (TransactionValidation)
-- [ ] Compliance Audit Logging (90% complete)
+- [x] Contextual Memory Layer (Fixes, Features, Research)
+- [x] Compliance Audit Logging (findings.md)
 
 ## Phase 2: React UI & Dashboards (Planned)
 - [ ] Multi-Tenant Dashboard

@@ -3,7 +3,7 @@
 ---
 name: governance
 description: Enforce A.N.T. architecture and maintain documentation sync
-argument-hint: sync|audit|sentinel
+argument-hint: sync|audit|fix|sentinel
 ---
 
 # Governance Skill
@@ -18,6 +18,7 @@ argument-hint: sync|audit|sentinel
 |--------|-------------|
 | `sync` | Execute the `documentation-sync` workflow across all core docs. |
 | `audit` | Generate or update `findings.md` with compliance scan results. |
+| `fix` | Create a technical fix record in `docs/context/fixes/` for regressions. |
 | `sentinel` | Run the `architectural-sentinel` subagent check. |
 
 ## Reference Files

@@ -24,9 +24,10 @@ For every feature or fix implemented, the AI MUST update the following files in 
    - Update `docs/RBAC_matrix.md` if permission requirements changed.
    - Update `docs/standards/transaction-integrity-model.md` for logic changes.
 
-6. **Feature Records**
-   - Ensure a corresponding file exists in `docs/context/features/` documenting the implementation.
+6. **Contextual Memory (Features & Fixes)**
+   - **Features**: Ensure a corresponding file exists in `docs/context/features/`.
+   - **Fixes**: For regressions, create a record in `docs/context/fixes/` using the standard template.
 
-7. **Subagent Validation**
-   - Execute mandated subagent scans (`.agents/subagents/compliance-scanner.md`, `.agents/subagents/architectural-sentinel.md`) for all logical changes.
+7. **Subagent Validation & Findings**
+   - Execute mandated subagent scans (`.agents/subagents/compliance-scanner.md`, `.agents/subagents/architectural-sentinel.md`).
    - Record all validation results and technical anomalies in `findings.md`.
