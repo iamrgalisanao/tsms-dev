@@ -5,32 +5,17 @@ All notable changes to the TSMS project will be documented in this file.
 ## [Unreleased] - 2026-03-20
 
 ### Added
-- **Real-Time Transaction Processing**: Restored immediate `ProcessTransactionJob` dispatching in `TransactionController` for `storeOfficial` and `batchStore` endpoints.
-- **Queue Sharding**: Implemented sharded queue routing (`transaction-processing:s0-s7`) based on `tenant_id` to ensure load balancing and fairness across tenants.
-- **Developer Experience**: Added `getTransactionId()` public getter to `ProcessTransactionJob` to facilitate automated testing.
-- **Automated Verification**: Created `tests/Feature/API/V1/RealTimeDispatchTest.php` to ensure regression-free restoration of real-time processing.
+- **Multi-Tenant Isolation**: Implemented `BelongsToTenant` trait and `TenantScope` for automated global query filtering across core transactional and identity models.
+- **Documentation Infrastructure**: Established the [Source of Truth Suite](docs/standards/pr-review-checklist.md) by adding `ROADMAP.md`, `progress.md`, and `WALKTHROUGH.md` to the root directory.
+- **AI Interaction Standards**: Created `ai-interaction.md` and the `.agents/workflows/documentation-sync.md` workflow to enforce high-discipline development practices.
 
 ### Changed
-- **Latency Optimization**: Reduced transaction processing latency from ~5 minutes (watchdog-based) to under 2 seconds (event-driven).
-- **Concurrency Safety**: Forced `afterCommit()` on job dispatches to ensure data consistency before background processing starts.
+- **Operational Protocol**: Refactored `operational_protocol.md` with TSMS-specific task-gating and session rules.
+- **Security & Hygiene**: Adapted `docs/security/security-hygiene-guardrails.md` and `docs/standards/engineering-safeguards-policy.md` to the transactional ingestion domain.
 
 ### Fixed
-- **Queue Bottleneck**: Resolved the issue where transactions were staying in `PENDING` status for up to 5 minutes due to missing immediate dispatch logic originally lost during the March 16th refactor.
-- **Checksum Validation Failure**: Restored staging compatibility by implementing a V2.0/V2.1 **Multi-Version Fallback** in `PayloadChecksumService.php`. This allows legacy POS systems (V2.0 float-based) and newer systems (V2.1 string-based) to coexist.
-- **V2.1 Specification Gaps**: Corrected `PayloadChecksumService.php` to include `receipt_no` in monetary formatting and added a required `is_numeric()` guard per the V2.1 Draft Guidelines.
-- **Ingestion Validation Failure**: Resolved the `hardware_id is required` error by implementing a fallback to `terminal_id` for legacy systems in `TransactionIngestService.php`.
-
-### Security
-- **Batch Submission Disablement**: Explicitly disabled batch transaction submission in both `storeOfficial` and `batchStore` endpoints per client agreement for Phase 1. Both endpoints now return a `422 Unprocessable Entity` response if batch arrays are detected.
-- **Audit Logging**: Enhanced rejection audit events for disabled batch submissions.
-
-### Refactored
-- **Dependency Injection**: Refactored `storeOfficial` to use method injection for `PayloadChecksumService`, improving testability and alignment with Laravel standards.
-- **Strict Typing**: Applied missing return type hints and improved PHPDoc blocks across `PayloadChecksumService.php` and `TransactionIngestService.php`.
-
-### Style
-- **PSR-12 Alignment**: Corrected indentation issues in `TransactionIngestService.php` and cleaned up method signatures across the service layer.
+- **Tenant Leakage Prevention**: Hardened `TransactionIngestService` by adding explicit `tenant_id` scoping to raw `DB::table` queries, ensuring absolute data isolation at the storage layer.
 
 ### Documentation
-- **Technical Guidelines**: Updated `payload_guidelines_v2-1(draft).md` to explicitly link `ingest_failed` status with missing `hardware_id` and provided clear POS corrective actions.
+- **Developer Standards**: Created `docs/standards/developer-quick-guides.md` and `docs/standards/pr-review-checklist.md` to align PR reviews with TSMS-specific architectural invariants.
 - **Architectural Reference**: Updated `project-documentation.md` to reflect real-time sharding, multi-version checksum fallbacks, and the `hardware_id` compatibility shim.

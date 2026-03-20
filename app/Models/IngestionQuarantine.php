@@ -3,9 +3,11 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
+use App\Traits\BelongsToTenant;
 
 class IngestionQuarantine extends Model
 {
+    use BelongsToTenant;
     protected $table = 'ingestion_quarantine';
 
     protected $fillable = [

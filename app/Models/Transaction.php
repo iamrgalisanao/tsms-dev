@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use App\Models\Tenant;
+use App\Traits\BelongsToTenant;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
@@ -13,6 +14,7 @@ use App\Jobs\Reporting\InvalidateCountCacheJob;
 
 class Transaction extends Model
 {
+    use BelongsToTenant;
     // ...existing code...
     // Scopes for common filtering patterns
     public function scopeValidOnly($query)
@@ -349,13 +351,7 @@ class Transaction extends Model
         return $this->belongsTo(PosTerminal::class, 'terminal_id');
     }
 
-    /**
-     * Get the tenant that owns this transaction.
-     */
-    public function tenant()
-    {
-        return $this->belongsTo(Tenant::class, 'tenant_id');
-    }
+    // Relational definitions moved to BelongsToTenant trait
 
     /**
      * Get the processing history for this transaction.

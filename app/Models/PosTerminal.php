@@ -4,13 +4,14 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use App\Traits\BelongsToTenant;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Auth\Authenticatable as AuthenticatableTrait;
 use Laravel\Sanctum\HasApiTokens;
 
 class PosTerminal extends Model implements Authenticatable
 {
-    use HasFactory, AuthenticatableTrait, HasApiTokens;
+    use HasFactory, AuthenticatableTrait, HasApiTokens, BelongsToTenant;
 
     protected $fillable = [
         'tenant_id',
@@ -92,11 +93,7 @@ class PosTerminal extends Model implements Authenticatable
                (!$this->expires_at || $this->expires_at->isFuture());
     }
 
-    // Relationships
-    public function tenant()
-    {
-        return $this->belongsTo(Tenant::class);
-    }
+    // Relational definitions moved to BelongsToTenant trait
 
     public function provider()
     {

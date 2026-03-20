@@ -190,7 +190,7 @@ The following format is currently **NOT ACCEPTED** by the TSMS API.
 | Field | Required | Type | Role / Notes |
 | :--- | :--- | :--- | :--- |
 | `transaction_id` | Yes | String | **Business ID**: Unique per sale event (UUID).|
-| `hardware_id` | Yes | String | Physical POS device identifier. |
+| `hardware_id` | Yes | String | **Internal Ingestion Key**: Physical device identifier. Used for audit trails and uniquely identifying POS hardware. Failing to provide this will result in `ingest_failed`. |
 | `receipt_no` | Yes | String | **Invoice/Receipt Number**: Human-readable ID from POS. |
 | `transaction_timestamp` | Yes | ISO-8601 | Time of sale completion |
 | `gross_sales` | Yes | String | Strict 2-decimal format (e.g., `"1499.00"`) |
@@ -569,7 +569,7 @@ Use this to check the processing results of a previously submitted transaction.
 | `INVALID` | `FAILED` | Data Error | **Stop & Fix**: Correct payload logic. |
 | `VALID` | `PENDING` | Queued | Wait 5 seconds and poll again. |
 | `VALID` | `PROCESSING`| Active | Wait 5 seconds and poll again. |
-| `failed` | `ingest_failed` | DB Error | **Retry**: Server-side transient error. |
+| `failed` | `ingest_failed` | Validation/DB Error | **Fix**: Check for missing `hardware_id`. |
 | `failed` | `inserted but not found` | Critical | **Support**: Contact TSMS Admin. |
 
 ---

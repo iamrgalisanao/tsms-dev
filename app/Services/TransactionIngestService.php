@@ -1,4 +1,5 @@
 <?php
+declare(strict_types=1);
 
 
 namespace App\Services;
@@ -8,7 +9,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
 use App\Services\DeadlockRetryService;
 
-final class TransactionIngestService
+final readonly class TransactionIngestService
 {
     protected DeadlockRetryService $retryService;
 
@@ -33,6 +34,7 @@ final class TransactionIngestService
 
                     if ($inserted === 1) {
                         $transaction = DB::table('transactions')
+                            ->where('tenant_id', $parent['tenant_id'])
                             ->where('transaction_id', $parent['transaction_id'])
                             ->first();
                         if (!$transaction) {
@@ -58,6 +60,7 @@ final class TransactionIngestService
                     }
 
                     $existing = DB::table('transactions')
+                        ->where('tenant_id', $parent['tenant_id'])
                         ->where('transaction_id', $parent['transaction_id'])
                         ->first();
 

@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use App\Traits\BelongsToTenant;
 
 /**
  * TransactionSubmission represents a logical submission envelope containing one or more transactions
@@ -16,6 +17,8 @@ use Illuminate\Database\Eloquent\Model;
  */
 class TransactionSubmission extends Model
 {
+    use BelongsToTenant;
+    
     use HasFactory;
 
     protected $fillable = [
