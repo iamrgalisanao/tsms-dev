@@ -98,6 +98,11 @@ final class TransactionIngestService
      */
     protected function normalizePayload(array $payload): array
     {
+        // Fallback: If hardware_id is missing but terminal_id is present, use terminal_id as hardware_id
+        if ((!isset($payload['hardware_id']) || $payload['hardware_id'] === '') && isset($payload['terminal_id'])) {
+            $payload['hardware_id'] = (string) $payload['terminal_id'];
+        }
+
         // Enforce all required fields, no defaults for required
         $required = [
             'tenant_id',
