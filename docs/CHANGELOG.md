@@ -23,3 +23,14 @@ All notable changes to the TSMS project will be documented in this file.
 ### Security
 - **Batch Submission Disablement**: Explicitly disabled batch transaction submission in both `storeOfficial` and `batchStore` endpoints per client agreement for Phase 1. Both endpoints now return a `422 Unprocessable Entity` response if batch arrays are detected.
 - **Audit Logging**: Enhanced rejection audit events for disabled batch submissions.
+
+### Refactored
+- **Dependency Injection**: Refactored `storeOfficial` to use method injection for `PayloadChecksumService`, improving testability and alignment with Laravel standards.
+- **Strict Typing**: Applied missing return type hints and improved PHPDoc blocks across `PayloadChecksumService.php` and `TransactionIngestService.php`.
+
+### Style
+- **PSR-12 Alignment**: Corrected indentation issues in `TransactionIngestService.php` and cleaned up method signatures across the service layer.
+
+### Documentation
+- **Technical Guidelines**: Updated `payload_guidelines_v2-1(draft).md` to explicitly link `ingest_failed` status with missing `hardware_id` and provided clear POS corrective actions.
+- **Architectural Reference**: Updated `project-documentation.md` to reflect real-time sharding, multi-version checksum fallbacks, and the `hardware_id` compatibility shim.
