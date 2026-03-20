@@ -24,14 +24,14 @@
 TSMS (Transaction Management System) is a Laravel-based system that manages Point of Sale (POS) transaction processing for PITX (Paranaque Integrated Terminal Exchange). The system handles transaction ingestion, validation, processing, and forwarding to external web applications.
 
 ### Key Capabilities
-- **Transaction Ingestion**: Multi-format transaction processing (single, batch, official TSMS format)
-- **POS Terminal Management**: Terminal authentication, registration, and monitoring
-- **Transaction Validation**: Real-time validation with checksum verification
-- **Queue Processing**: Background job processing using Laravel Horizon
-- **WebApp Forwarding**: Integration with external transaction processing systems
-- **Circuit Breaker**: Fault tolerance for external integrations
-- **Audit & Logging**: Comprehensive audit trails and system logging
-- **Void & Refund**: Transaction reversal capabilities
+- **Transaction Ingestion**: Multi-format transaction processing (single, official TSMS format). Batch ingestion is currently disabled for Phase 1.
+- **POS Terminal Management**: Terminal authentication, registration, and monitoring.
+- **Transaction Validation**: Real-time validation with dual-version checksum verification (V2.0/V2.1 fallback).
+- **Queue Processing**: Real-time, sharded background job processing using Laravel Horizon with sub-second latency.
+- **WebApp Forwarding**: Integration with external transaction processing systems.
+- **Circuit Breaker**: Fault tolerance for external integrations.
+- **Audit & Logging**: Comprehensive audit trails and system logging.
+- **Void & Refund**: Transaction reversal capabilities.
 
 ### Current State Assessment
 - **Status**: Production-ready brownfield system with active technical debt
@@ -468,21 +468,24 @@ class ProcessTransactionJob implements ShouldQueue
 }
 ```
 
-#### Queue Configuration:
+### Queue Configuration:
 - **Queue Driver**: Redis
 - **Queue Monitor**: Laravel Horizon
+- **Sharding**: Jobs are sharded across 8 queues (`transaction-processing:s0-s7`) based on `tenant_id % 8` to ensure fairness and prevent head-of-line blocking.
 - **Max Attempts**: 3 retries per job
 - **Retry Delay**: Exponential backoff
-- **Failed Job Handling**: Stored in failed_jobs table
+- **Failed Job Handling**: Stored in `failed_jobs` table
+- **Latency**: Real-time event-driven dispatching (approx. 1s from API submission to queue entry).
 
 ### Queue Processing Flow:
-1. Transaction submitted via API
-2. `ProcessTransactionJob` dispatched to Redis queue
-3. Horizon worker picks up job
-4. `TransactionValidationService` validates transaction
-5. Results stored in `TransactionValidation` table
-6. Success: Transaction marked VALID, eligible for webapp forwarding
-7. Failure: Job retried up to 3 times, then marked FAILED
+1. Transaction submitted via API (`storeOfficial` or `store`).
+2. Immediate dispatch of `ProcessTransactionJob` to the sharded queue.
+3. Horizon worker picks up job.
+4. `TransactionValidationService` validates transaction details.
+5. `PayloadChecksumService` performs dual-layer validation (tries V2.1 first, falls back to V2.0).
+6. Results stored in `TransactionValidation` table.
+7. Success: Transaction marked VALID, eligible for webapp forwarding.
+8. Failure: Job retried up to 3 times, then marked FAILED.
 
 ---
 
@@ -506,12 +509,13 @@ POST /api/v1/auth/terminal
 ```
 
 ### Security Features:
-- **SHA-256 Payload Checksums**: Integrity verification for POS requests
-- **Rate Limiting**: Configurable API rate limits
-- **Circuit Breaker**: External service fault tolerance
-- **Audit Logging**: Comprehensive security event tracking
-- **Token Expiration**: Configurable token lifetimes
-- **IP Restrictions**: Terminal-specific IP validation (when configured)
+- **SHA-256 Payload Checksums**: Integrity verification for POS requests with V2.0 (Float-based) and V2.1 (String-based) dual-support.
+- **Rate Limiting**: Configurable API rate limits.
+- **Circuit Breaker**: External service fault tolerance.
+- **Audit Logging**: Comprehensive security event tracking.
+- **Token Expiration**: Configurable token lifetimes.
+- **IP Restrictions**: Terminal-specific IP validation (when configured).
+- **Ingestion Fallbacks**: `hardware_id` automatically falls back to `terminal_id` if missing in legacy payloads.
 
 ### Token Abilities:
 - `transaction:create` - Create transactions
