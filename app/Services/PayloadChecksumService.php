@@ -75,14 +75,14 @@ class PayloadChecksumService
             $computedTxn = $this->computeChecksum($txnCopy);
             
             if (!isset($txn['payload_checksum']) || $txn['payload_checksum'] !== $computedTxn) {
-                $errors[] = "Invalid payload_checksum for transaction ({$version})";
+                $errors[] = "Invalid payload_checksum for transaction ({$version}). Received: " . ($txn['payload_checksum'] ?? 'missing') . ", Computed: {$computedTxn}";
             }
 
             $submissionCopy = $submission;
             unset($submissionCopy['payload_checksum']);
             $computedSubmission = $this->computeChecksum($submissionCopy);
             if (!isset($submission['payload_checksum']) || $submission['payload_checksum'] !== $computedSubmission) {
-                $errors[] = "Invalid submission payload_checksum ({$version})";
+                $errors[] = "Invalid submission payload_checksum ({$version}). Received: " . ($submission['payload_checksum'] ?? 'missing') . ", Computed: {$computedSubmission}";
             }
 
             return [
@@ -99,7 +99,7 @@ class PayloadChecksumService
                 unset($txnCopy['payload_checksum']);
                 $computedTxn = $this->computeChecksum($txnCopy);
                 if (!isset($txn['payload_checksum']) || $txn['payload_checksum'] !== $computedTxn) {
-                    $errors[] = "Invalid payload_checksum for transaction at index {$i} ({$version})";
+                    $errors[] = "Invalid payload_checksum for transaction at index {$i} ({$version}). Received: " . ($txn['payload_checksum'] ?? 'missing') . ", Computed: {$computedTxn}";
                     $allTxnValid = false;
                 }
             }
@@ -109,7 +109,7 @@ class PayloadChecksumService
                 unset($submissionCopy['payload_checksum']);
                 $computedSubmission = $this->computeChecksum($submissionCopy);
                 if (!isset($submission['payload_checksum']) || $submission['payload_checksum'] !== $computedSubmission) {
-                    $errors[] = "Invalid submission payload_checksum ({$version})";
+                    $errors[] = "Invalid submission payload_checksum ({$version}). Received: " . ($submission['payload_checksum'] ?? 'missing') . ", Computed: {$computedSubmission}";
                 }
             }
 
@@ -154,7 +154,7 @@ class PayloadChecksumService
                 $value = $this->canonicalize($value);
 
                 if ($this->currentVersion === 'v2.1') {
-                    if (in_array($key, ['gross_sales', 'net_sales', 'receipt_no', 'amount'], true)) {
+                    if (in_array($key, ['gross_sales', 'net_sales', 'amount'], true)) {
                         if (is_numeric($value)) {
                             $value = number_format((float) $value, 2, '.', '');
                         }
