@@ -266,6 +266,7 @@ class TransactionController extends Controller
             Log::warning('storeOfficial: Checksum validation failed', [
                 'submission_uuid' => $submission['submission_uuid'] ?? null,
                 'errors' => $checksumResult['errors'],
+                'received_submission' => $submission, // Log for deep-dive troubleshooting
             ]);
 
             $this->createRejectionAuditEvent(
