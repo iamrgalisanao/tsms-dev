@@ -426,7 +426,7 @@ class TransactionController extends Controller
             ], 403);
         }
 
-        $transaction = Transaction::find($id);
+        $transaction = Transaction::where('transaction_id', $id)->first();
         if (!$transaction || (int) $transaction->terminal_id !== (int) $posTerminal->id) {
             return response()->json([
                 'status' => 'error',
