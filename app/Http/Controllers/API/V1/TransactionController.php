@@ -455,7 +455,7 @@ class TransactionController extends Controller
         $refundData = $request->validate([
             'refund_amount' => 'required|numeric|min:0.01',
             'refund_reason' => 'required|string',
-            'refund_reference_id' => 'nullable|string',
+            'refund_reference' => 'nullable|string',
         ]);
         $refundData['refund_status'] = 'REFUNDED';
         $refundData['refund_processed_at'] = now();

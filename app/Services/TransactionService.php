@@ -24,7 +24,7 @@ class TransactionService
             'refund_status' => $refundData['refund_status'] ?? 'REFUNDED',
             'refund_amount' => $refundData['refund_amount'] ?? null,
             'refund_reason' => $refundData['refund_reason'] ?? null,
-            'refund_reference_id' => $refundData['refund_reference_id'] ?? null,
+            'refund_reference' => $refundData['refund_reference'] ?? null,
             'refund_processed_at' => $refundData['refund_processed_at'] ?? now(),
         ]);
         $this->logTransactionHistory($transaction, 'REFUNDED', $refundData['refund_reason'] ?? null);
