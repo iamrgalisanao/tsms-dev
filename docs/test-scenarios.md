@@ -127,6 +127,23 @@ To ensure a high-quality integration, focus on these four key areas:
 }
 ```
 
+### TC-REF-01: Refund Transaction
+| Attribute | Details |
+| :--- | :--- |
+| **Objective** | Verify that a previously submitted transaction can be refunded. |
+| **Pre-conditions** | Transaction `SALE-001` exists and was submitted on the current business day. |
+| **Endpoint** | `POST /api/v1/transactions/{transaction_id}/refund` |
+| **Expected Result** | `200 OK`; `refund_status` transitions to `REFUNDED`. |
+
+**Sample JSON Structure:**
+```json
+{
+  "refund_amount": "1120.00",
+  "refund_reason": "Customer return",
+  "refund_reference": "SALE-001"
+}
+```
+
 ---
 
 ## 5. Reliability & Security Testing
