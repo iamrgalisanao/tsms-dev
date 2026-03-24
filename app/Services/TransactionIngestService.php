@@ -122,20 +122,60 @@ final readonly class TransactionIngestService
                 throw new \InvalidArgumentException("$field is required in transaction payload");
             }
         }
-        return [
+        $normalized = [
             'tenant_id' => $payload['tenant_id'],
             'terminal_id' => $payload['terminal_id'],
             'transaction_id' => $payload['transaction_id'],
             'hardware_id' => $payload['hardware_id'],
             'receipt_no' => $payload['receipt_no'] ?? null,
             'transaction_timestamp' => $payload['transaction_timestamp'],
-            'gross_sales' => $payload['gross_sales'],
+            'gross_sales' => (float) $payload['gross_sales'],
+            'net_sales' => (float) ($payload['net_sales'] ?? 0.0),
             'customer_code' => $payload['customer_code'],
+            'promo_status' => $payload['promo_status'] ?? 'NONE',
             'payload_checksum' => $payload['payload_checksum'],
             'validation_status' => $payload['validation_status'] ?? 'PENDING',
             'created_at' => $payload['created_at'] ?? now(),
             'updated_at' => $payload['updated_at'] ?? now(),
         ];
+
+        // Process Taxes
+        if (!empty($payload['taxes']) && is_array($payload['taxes'])) {
+            foreach ($payload['taxes'] as $tax) {
+                $type = strtoupper(trim((string) ($tax['tax_type'] ?? '')));
+                $amount = (float) ($tax['amount'] ?? 0.0);
+                
+                if ($type === 'VATABLE_SALES' || $type === 'VATABLE') {
+                    $normalized['vatable_sales'] = $amount;
+                } elseif ($type === 'SC_VAT_EXEMPT_SALES' || $type === 'VAT_EXEMPT_SALES') {
+                    $normalized['sc_vat_exempt_sales'] = $amount;
+                } elseif ($type === 'VAT' || $type === 'VAT_AMOUNT') {
+                    $normalized['vat_amount'] = $amount;
+                }
+            }
+        }
+
+        // Process Adjustments
+        if (!empty($payload['adjustments']) && is_array($payload['adjustments'])) {
+            foreach ($payload['adjustments'] as $adj) {
+                $type = strtolower(trim((string) ($adj['adjustment_type'] ?? '')));
+                $amount = (float) ($adj['amount'] ?? 0.0);
+
+                if ($type === 'promo_discount') {
+                    $normalized['promo_discount'] = $amount;
+                } elseif ($type === 'senior_discount') {
+                    $normalized['senior_discount'] = $amount;
+                } elseif ($type === 'pwd_discount') {
+                    $normalized['pwd_discount'] = $amount;
+                } elseif ($type === 'service_charge' || $type === 'service_charge_distributed_to_employees') {
+                    $normalized['service_charge'] = $amount;
+                } elseif ($type === 'management_service_charge' || $type === 'service_charge_retained_by_management') {
+                    $normalized['management_service_charge'] = $amount;
+                }
+            }
+        }
+
+        return $normalized;
     }
 
     /**
