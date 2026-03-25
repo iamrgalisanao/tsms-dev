@@ -1,0 +1,67 @@
+{
+    "submission_uuid": "5b1fc30a-6ca4-4a9b-a715-9e9e787bfb84",
+    "tenant_id": 40,
+    "terminal_id": 55,
+    "submission_timestamp": "2026-03-25T00:42:35Z",
+    "transaction_count": 1,
+    "transaction": {
+        "transaction_id": "e5ffbee7-2270-425d-95a2-f0f5d099fb11",
+        "hardware_id": "8600025",
+        "receipt_no": "R-20260325-7957",
+        "transaction_timestamp": "2026-03-25T00:42:35Z",
+        "gross_sales": "1499.00",
+        "net_sales": "1499.00",
+        "promo_status": "WITH_APPROVAL",
+        "customer_code": "C-F1001",
+        "adjustments": [
+            {
+                "adjustment_type": "promo_discount",
+                "amount": "0.00"
+            },
+            {
+                "adjustment_type": "senior_discount",
+                "amount": "0.00"
+            },
+            {
+                "adjustment_type": "pwd_discount",
+                "amount": "0.00"
+            },
+            {
+                "adjustment_type": "vip_card_discount",
+                "amount": "0.00"
+            },
+            {
+                "adjustment_type": "service_charge_distributed_to_employees",
+                "amount": "0.00"
+            },
+            {
+                "adjustment_type": "service_charge_retained_by_management",
+                "amount": "0.00"
+            },
+            {
+                "adjustment_type": "employee_discount",
+                "amount": "0.00"
+            }
+        ],
+        "taxes": [
+            {
+                "tax_type": "VAT",
+                "amount": "160.61"
+            },
+            {
+                "tax_type": "VATABLE_SALES",
+                "amount": "1338.39"
+            },
+            {
+                "tax_type": "SC_VAT_EXEMPT_SALES",
+                "amount": "0.00"
+            },
+            {
+                "tax_type": "OTHER_TAX",
+                "amount": "0.00"
+            }
+        ],
+        "payload_checksum": "dbb0c7e86a325c3f2dd8f093ffb1ee0d3f4be4bd3486b6096aa0d5b91b81398f"
+    },
+    "payload_checksum": "9083025f3b1ccd3328d9542475cc3fefdc89255dee99823b8614af85e57656c6"
+}

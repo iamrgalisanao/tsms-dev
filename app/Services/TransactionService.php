@@ -21,11 +21,10 @@ class TransactionService
             throw new \Exception('Transaction cannot be refunded.');
         }
         $transaction->update([
-            'refund_status' => $refundData['refund_status'] ?? 'REFUNDED',
+            'is_refunded' => $refundData['is_refunded'] ?? true,
             'refund_amount' => $refundData['refund_amount'] ?? null,
             'refund_reason' => $refundData['refund_reason'] ?? null,
             'refund_reference' => $refundData['refund_reference'] ?? null,
-            'refund_processed_at' => $refundData['refund_processed_at'] ?? now(),
         ]);
         $this->logTransactionHistory($transaction, 'REFUNDED', $refundData['refund_reason'] ?? null);
         event(new TransactionUpdated($transaction));

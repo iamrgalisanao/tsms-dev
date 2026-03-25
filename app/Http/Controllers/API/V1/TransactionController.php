@@ -11,6 +11,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
 use App\Services\NotificationService;
 use App\Http\Requests\TSMSTransactionRequest;
+use App\Http\Requests\API\V1\RefundTransactionRequest;
 use Carbon\Carbon;
 // Removed duplicate Cache import
 
@@ -19,21 +20,29 @@ class TransactionController extends Controller
     /**
      * Void a transaction from POS
      */
-    public function voidFromPOS(Request $request, $transaction_id)
+    public function voidFromPOS(Transaction $transaction, Request $request)
     {
         try {
             DB::beginTransaction();
 
-            // Validate request includes transaction_id and matches route parameter
+            // Enforce ownership via TransactionPolicy (Terminal must own it)
+            $this->authorize('update', $transaction);
+            
+            $posTerminal = $request->user();
+            $tenant_id = $transaction->tenant_id;
+
+            // Enforce ownership via TransactionPolicy (Terminal must own it)
+            $this->authorize('update', $transaction);
+
+            // Validate request includes matching transaction parameters
             $request->validate([
-                // Require RFC 4122 UUID (Laravel uuid rule validates format) to prevent accepting malformed IDs
                 'transaction_id' => 'required|string|uuid|max:191',
                 'void_reason' => 'required|string|max:255',
-                'payload_checksum' => 'required|string|min:64|max:64', // SHA-256 required for POS requests
+                'payload_checksum' => 'required|string|min:64|max:64',
             ]);
 
-            // Ensure request transaction_id matches route parameter for security
-            if ($request->transaction_id !== $transaction_id) {
+            // Business rule: transaction_id parameter must match the bound model for safety
+            if ($request->transaction_id !== $transaction->transaction_id) {
                 DB::rollBack();
                 return response()->json([
                     'success' => false,
@@ -41,33 +50,6 @@ class TransactionController extends Controller
                     'errors' => ['transaction_id' => ['Request transaction_id must match the transaction being voided']]
                 ], 422);
             }
-
-            // Get authenticated terminal (from Sanctum middleware)
-            $posTerminal = $request->user(); // This is the POS terminal making the request
-            
-            if (!$posTerminal) {
-                DB::rollBack();
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Unauthorized - invalid terminal token'
-                ], 401);
-            }
-
-            $transaction = Transaction::where('transaction_id', $transaction_id)
-                ->where('terminal_id', $posTerminal->id)
-                ->first();
-            
-            if (!$transaction) {
-                DB::rollBack();
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Transaction not found or does not belong to this terminal'
-                ], 404);
-            }
-
-            // Fix: Move variable assignment after null check
-            $tenant_id = $transaction->tenant_id ?? null;
-            $terminal_id = $posTerminal->id;
 
             if ($transaction->voided_at) {
                 DB::rollBack();
@@ -186,9 +168,9 @@ class TransactionController extends Controller
                 $payload = [
                     'transaction_id' => $transaction->transaction_id,
                     'voided_at' => $transaction->voided_at,
-                    'void_reason' => $transaction->void_reason,
+                    'terminal_id' => $posTerminal->id,
                     'tenant_id' => $tenant_id,
-                    'terminal_id' => $terminal_id,
+                    'void_reason' => $transaction->void_reason,
                     'initiated_by' => 'POS',
                     'terminal_serial' => $posTerminal->serial_number,
                 ];
@@ -228,7 +210,7 @@ class TransactionController extends Controller
         } catch (\Exception $e) {
             DB::rollBack();
             Log::error('POS void transaction error', [
-                'transaction_id' => $transaction_id,
+                'transaction_id' => isset($transaction) ? $transaction->transaction_id : 'unknown',
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
                 'terminal_id' => isset($posTerminal) ? $posTerminal->id : 'unknown',
@@ -415,57 +397,45 @@ class TransactionController extends Controller
      * @param int $id
      * @return \Illuminate\Http\JsonResponse
      */
-    public function refund(Request $request, $id)
+    public function refund(Transaction $transaction, RefundTransactionRequest $request)
     {
-        // Enforce POS-only refunds via Sanctum-authenticated PosTerminal
-        $posTerminal = $request->user();
-        if (!$posTerminal || !($posTerminal instanceof PosTerminal)) {
+        // Enforce ownership via TransactionPolicy
+        $this->authorize('update', $transaction);
+
+        // Industry standard same-day business rule
+        $tz = config('app.business_timezone', config('app.timezone', 'UTC'));
+        $txTime = Carbon::parse($transaction->transaction_timestamp)->setTimezone($tz);
+        $today = now()->setTimezone($tz);
+        if ($txTime->toDateString() !== $today->toDateString()) {
             return response()->json([
                 'status' => 'error',
-                'message' => 'Refunds are only permitted from POS terminals',
-            ], 403);
+                'message' => 'Refunds are only permitted on the same business day',
+            ], 409);
         }
 
-        $transaction = Transaction::where('transaction_id', $id)->first();
-        if (!$transaction || (int) $transaction->terminal_id !== (int) $posTerminal->id) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Transaction not found or does not belong to this terminal',
-            ], 404);
-        }
-
-        // Business rule: only allow refunds on the same business day (configurable timezone)
-        try {
-            $tz = config('app.business_timezone', config('app.timezone', 'UTC'));
-            $txTime = Carbon::parse($transaction->transaction_timestamp)->setTimezone($tz);
-            $today = now()->setTimezone($tz);
-            if ($txTime->toDateString() !== $today->toDateString()) {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => 'Refunds are only permitted on the same business day',
-                ], 409);
-            }
-        } catch (\Throwable $e) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Unable to validate refund timing',
-            ], 500);
-        }
-
-        $refundData = $request->validate([
-            'refund_amount' => 'required|numeric|min:0.01',
-            'refund_reason' => 'required|string',
-            'refund_reference' => 'nullable|string',
-        ]);
-        $refundData['refund_status'] = 'REFUNDED';
-        $refundData['refund_processed_at'] = now();
+        $refundData = $request->validated();
+        $refundData['is_refunded'] = true;
 
         try {
             $service = app(\App\Services\TransactionService::class);
             $service->processRefund($transaction, $refundData);
-            return response()->json(['status' => 'success', 'transaction' => $transaction]);
+
+            return response()->json([
+                'status' => 'success',
+                'message' => 'Refund processed successfully',
+                'data' => [
+                    'transaction_id' => $transaction->transaction_id,
+                    'is_refunded' => true,
+                    'refund_amount' => $transaction->refund_amount,
+                    'refund_reference' => $transaction->refund_reference,
+                ]
+            ]);
         } catch (\Exception $e) {
-            return response()->json(['status' => 'error', 'message' => $e->getMessage()], 400);
+            Log::error('Refund failed: ' . $e->getMessage());
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Refund failed: ' . $e->getMessage()
+            ], 400);
         }
     }
     /**
@@ -1134,24 +1104,10 @@ class TransactionController extends Controller
     /**
      * Get the status of a transaction by its transaction_id
      */
-    public function status($id)
+    public function status(Transaction $transaction)
     {
-        // Enforce terminal ownership
-        $posTerminal = request()->user();
-        if (!$posTerminal) {
-            return response()->json(['success' => false, 'message' => 'Unauthorized'], 401);
-        }
-
-        $transaction = Transaction::where('transaction_id', $id)
-            ->where('terminal_id', $posTerminal->id)
-            ->first();
-
-        if (!$transaction) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Transaction not found or does not belong to this terminal'
-            ], 404);
-        }
+        // Enforce ownership via TransactionPolicy
+        $this->authorize('view', $transaction);
 
         return response()->json([
             'success' => true,
@@ -1160,7 +1116,8 @@ class TransactionController extends Controller
                 'validation_status' => $transaction->validation_status,
                 'job_status' => $transaction->job_status,
                 'is_voided' => $transaction->isVoided(),
-                'refund_status' => $transaction->refund_status ?? 'NONE',
+                'is_refunded' => (bool)$transaction->is_refunded,
+                'refund_status' => $transaction->is_refunded ? 'REFUNDED' : 'NONE', // Backwards compatibility for UI
                 'gross_sales' => (float)$transaction->gross_sales,
                 'net_sales' => (float)$transaction->net_sales,
                 'created_at' => $transaction->created_at->toISOString(),

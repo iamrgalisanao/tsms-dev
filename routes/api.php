@@ -141,12 +141,12 @@ Route::prefix('v1')->middleware(['auth:sanctum', 'capture.terminal.ip', AttachCo
         // Route::post('/transactions', [TransactionController::class, 'store']);
         Route::post('/transactions/batch', [TransactionController::class, 'batchStore']);
         Route::post('/transactions/official', [TransactionController::class, 'storeOfficial']);
-        Route::post('/transactions/{id}/refund', [TransactionController::class, 'refund']);
-        Route::post('/transactions/{transaction_id}/void', [TransactionController::class, 'voidFromPOS']);
+        Route::post('/transactions/{transaction}/refund', [TransactionController::class, 'refund']);
+        Route::post('/transactions/{transaction}/void', [TransactionController::class, 'voidFromPOS']);
     });
 
     Route::middleware(['abilities:transaction:read', 'api.limit:api'])->group(function () {
-        Route::get('/transactions/{id}/status', [TransactionController::class, 'status']);
+        Route::get('/transactions/{transaction}/status', [TransactionController::class, 'status']);
         Route::get('/submission-events', [SubmissionEventController::class, 'index']);
         Route::get('/submission-events/{submission_uuid}/items', [SubmissionEventItemsController::class, 'index']);
         Route::get('/incidents', [IncidentController::class, 'index']);

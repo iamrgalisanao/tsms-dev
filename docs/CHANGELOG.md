@@ -2,6 +2,24 @@
 
 All notable changes to the TSMS project will be documented in this file.
 
+## [Unreleased] - 2026-03-25
+
+### Added
+- **Transaction Authorization**: Implemented `TransactionPolicy` to strictly enforce terminal-level ownership and tenant-level visibility, replacing manual controller checks.
+- **Refund Validation**: Created `RefundTransactionRequest` for structured, decoupled validation of POS-initiated refund payloads.
+- **Model Binding**: Configured the `Transaction` model and `api.php` routes for Route Model Binding via `transaction_id` (UUID), reducing manual lookup boilerplate by 30+ lines.
+
+### Fixed
+- **Refund 404 (UUID Lookup)**: Resolved `404 Not Found` in the refund lifecycle by switching from internal ID lookups to POS-generated `transaction_id` (UUID) lookups.
+- **Refund Schema Alignment**: Fixed SQL `Unknown column` errors by aligning the codebase with the actual database schema:
+    - Replaced `refund_status` and `refund_processed_at` with `is_refunded` (tinyint).
+    - Synchronized `refund_reference_id` to `refund_reference` across all layers.
+- **Inconsistent Ingestion**: Refactored `TransactionIngestService` for "Zero-Mutation" mapping, ensuring nested `taxes` and `adjustments` arrays match the database without arithmetic error.
+
+### Documentation
+- **POS Test Scenarios**: Comprehensive update to `docs/test-scenarios.md` with V2.1 API-compliant payloads and "System Connectivity" (Base URL/Prefix) guidelines.
+- **System Architecture**: Created `docs/system-functionalities.md` as the definitive technical reference for the TSMS API and data flow.
+
 ## [Unreleased] - 2026-03-20
 
 ### Added

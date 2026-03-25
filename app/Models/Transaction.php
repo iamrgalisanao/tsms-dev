@@ -62,6 +62,16 @@ class Transaction extends Model
     }
 
     /**
+     * Use transaction_id for route model binding.
+     *
+     * @return string
+     */
+    public function getRouteKeyName()
+    {
+        return 'transaction_id';
+    }
+
+    /**
      * Check if this transaction is voided.
      *
      * @return bool
@@ -78,7 +88,7 @@ class Transaction extends Model
      */
     public function isRefunded(): bool
     {
-        return $this->refund_status === 'REFUNDED' && $this->refund_amount > 0;
+        return (bool) $this->is_refunded && $this->refund_amount > 0;
     }
 
     /**
@@ -147,11 +157,10 @@ class Transaction extends Model
         'promo_discount',
         'senior_discount',
         'pwd_discount',
-        'refund_status',
+        'is_refunded',
         'refund_amount',
         'refund_reason',
         'refund_reference',
-        'refund_processed_at',
         'voided_at',
         'void_reason',
         'created_at',
@@ -311,8 +320,7 @@ class Transaction extends Model
         'pwd_discount' => 'decimal:2',
         'service_charge' => 'decimal:2',
         'management_service_charge' => 'decimal:2',
-        'refund_amount' => 'decimal:2',
-        'refund_processed_at' => 'datetime',
+        'is_refunded' => 'boolean',
         'voided_at' => 'datetime',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
