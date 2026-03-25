@@ -56,14 +56,12 @@ $submission_uuid = (string) Str::uuid();
 $now = Carbon::now()->toIso8601ZuluString();
 $receipt_no = 'R-' . date('Ymd') . '-' . str_pad((string)rand(1, 9999), 4, '0', STR_PAD_LEFT);
 
-// 3. Build Preliminary Payload Structure
-$payload = [
-    'submission_uuid' => $submission_uuid,
-    'tenant_id' => $tenant_id,
-    'terminal_id' => $terminal_id,
-    'submission_timestamp' => $now,
-    'transaction_count' => 1,
-    'transaction' => [
+// 3. Build Preliminary Payload Structure (Gold Standard V2.1 Positioning)
+$checksumService = new PayloadChecksumService();
+
+try {
+    // Step A: Build Inner Transaction Object
+    $transaction = [
         'transaction_id' => $transaction_id,
         'hardware_id' => $hardware_id,
         'receipt_no' => $receipt_no,
@@ -72,35 +70,42 @@ $payload = [
         'net_sales' => "1499.00",
         'promo_status' => "WITH_APPROVAL",
         'customer_code' => "C-F1001",
-        'adjustments' => [
-            ['adjustment_type' => 'promo_discount', 'amount' => '0.00'],
-            ['adjustment_type' => 'senior_discount', 'amount' => '0.00'],
-            ['adjustment_type' => 'pwd_discount', 'amount' => '0.00'],
-            ['adjustment_type' => 'vip_card_discount', 'amount' => '0.00'],
-            ['adjustment_type' => 'service_charge_distributed_to_employees', 'amount' => '0.00'],
-            ['adjustment_type' => 'service_charge_retained_by_management', 'amount' => '0.00'],
-            ['adjustment_type' => 'employee_discount', 'amount' => '0.00']
-        ],
-        'taxes' => [
-            ['tax_type' => 'VAT', 'amount' => '160.61'],
-            ['tax_type' => 'VATABLE_SALES', 'amount' => '1338.39'],
-            ['tax_type' => 'SC_VAT_EXEMPT_SALES', 'amount' => '0.00'],
-            ['tax_type' => 'OTHER_TAX', 'amount' => '0.00']
-        ]
-    ]
-];
+    ];
 
-// 4. Compute Checksums (Industry Standard Double-Layer)
-$checksumService = new PayloadChecksumService();
+    // Compute and Insert Inner Checksum correctly (Above adjustments/taxes)
+    $transaction['payload_checksum'] = $checksumService->computeChecksum($transaction);
 
-try {
-    // Step A: Transaction-level Hash
-    $txnCopy = $payload['transaction'];
-    $payload['transaction']['payload_checksum'] = $checksumService->computeChecksum($txnCopy);
+    // Append Detail Arrays
+    $transaction['adjustments'] = [
+        ['adjustment_type' => 'promo_discount', 'amount' => '0.00'],
+        ['adjustment_type' => 'senior_discount', 'amount' => '0.00'],
+        ['adjustment_type' => 'pwd_discount', 'amount' => '0.00'],
+        ['adjustment_type' => 'vip_card_discount', 'amount' => '0.00'],
+        ['adjustment_type' => 'service_charge_distributed_to_employees', 'amount' => '0.00'],
+        ['adjustment_type' => 'service_charge_retained_by_management', 'amount' => '0.00'],
+        ['adjustment_type' => 'employee_discount', 'amount' => '0.00']
+    ];
+    $transaction['taxes'] = [
+        ['tax_type' => 'VAT', 'amount' => '160.61'],
+        ['tax_type' => 'VATABLE_SALES', 'amount' => '1338.39'],
+        ['tax_type' => 'SC_VAT_EXEMPT_SALES', 'amount' => '0.00'],
+        ['tax_type' => 'OTHER_TAX', 'amount' => '0.00']
+    ];
 
-    // Step B: Submission-level Hash (must include the transaction hash computed above)
-    $subCopy = $payload;
-    $payload['payload_checksum'] = $checksumService->computeChecksum($subCopy);
+    // Step B: Build Root Submission Object
+    $payload = [
+        'submission_timestamp' => $now,
+        'submission_uuid' => $submission_uuid,
+        'tenant_id' => $tenant_id,
+        'terminal_id' => $terminal_id,
+        'transaction_count' => 1,
+    ];
+
+    // Compute and Insert Root Checksum (Above transaction object)
+    $payload['payload_checksum'] = $checksumService->computeChecksum(array_merge($payload, ['transaction' => $transaction]));
+
+    // Append Transaction Object
+    $payload['transaction'] = $transaction;
 
     echo "\n\033[1;32mSUCCESS: Payload generated successfully!\033[0m\n";
     

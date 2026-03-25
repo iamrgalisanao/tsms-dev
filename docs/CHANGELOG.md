@@ -5,16 +5,23 @@ All notable changes to the TSMS project will be documented in this file.
 ## [Unreleased] - 2026-03-25
 
 ### Added
+- **Sanctum Authorizable Check**: Implemented `Authorizable` interface and trait in `PosTerminal` model, resolving `TypeError` when checking permissions via Spatie/Laravel Gate.
+- **Resilient Audit Logging**: Implemented "Safe Logging" in `TransactionService` to prevent API failures when the `transaction_histories` table is missing (automatic fallback to `Log::info`).
 - **Transaction Authorization**: Implemented `TransactionPolicy` to strictly enforce terminal-level ownership and tenant-level visibility, replacing manual controller checks.
 - **Refund Validation**: Created `RefundTransactionRequest` for structured, decoupled validation of POS-initiated refund payloads.
 - **Model Binding**: Configured the `Transaction` model and `api.php` routes for Route Model Binding via `transaction_id` (UUID), reducing manual lookup boilerplate by 30+ lines.
 
 ### Fixed
+- **V2.1 Checksum Compliancy**: Restructured `PayloadChecksumService` and `TransactionController` to strictly adhere to V2.1 positioning standards (checksum positioning above transaction/adjustments).
+- **Nested Array Hashing**: Fixed logic error in payload generation where nested `adjustments` and `taxes` were excluded from the hash calculation.
 - **Refund 404 (UUID Lookup)**: Resolved `404 Not Found` in the refund lifecycle by switching from internal ID lookups to POS-generated `transaction_id` (UUID) lookups.
 - **Refund Schema Alignment**: Fixed SQL `Unknown column` errors by aligning the codebase with the actual database schema:
     - Replaced `refund_status` and `refund_processed_at` with `is_refunded` (tinyint).
     - Synchronized `refund_reference_id` to `refund_reference` across all layers.
 - **Inconsistent Ingestion**: Refactored `TransactionIngestService` for "Zero-Mutation" mapping, ensuring nested `taxes` and `adjustments` arrays match the database without arithmetic error.
+
+### Changed
+- **Payload Generator V2.1**: Revised `tools/generate_tsms_payload.php` to use the "Gold Standard" structural formatting, ensuring bit-perfect alignment with integration guidelines.
 
 ### Documentation
 - **POS Test Scenarios**: Comprehensive update to `docs/test-scenarios.md` with V2.1 API-compliant payloads and "System Connectivity" (Base URL/Prefix) guidelines.
