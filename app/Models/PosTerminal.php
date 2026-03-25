@@ -7,11 +7,13 @@ use Illuminate\Database\Eloquent\Model;
 use App\Traits\BelongsToTenant;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Auth\Authenticatable as AuthenticatableTrait;
+use Illuminate\Contracts\Auth\Access\Authorizable;
+use Illuminate\Foundation\Auth\Access\Authorizable as AuthorizableTrait;
 use Laravel\Sanctum\HasApiTokens;
 
-class PosTerminal extends Model implements Authenticatable
+class PosTerminal extends Model implements Authenticatable, Authorizable
 {
-    use HasFactory, AuthenticatableTrait, HasApiTokens, BelongsToTenant;
+    use HasFactory, AuthenticatableTrait, AuthorizableTrait, HasApiTokens, BelongsToTenant;
 
     protected $fillable = [
         'tenant_id',
