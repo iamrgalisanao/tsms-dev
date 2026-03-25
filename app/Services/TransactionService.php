@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Transaction;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use App\Events\TransactionUpdated;
 
 class TransactionService
@@ -65,12 +66,23 @@ class TransactionService
 
     protected function logTransactionHistory($transaction, $status, $message = null)
     {
-        return $transaction->processingHistory()->create([
-            'status' => $status,
-            'message' => $message,
-            'attempt_number' => $transaction->job_attempts,
-            'created_by' => 'system'
+        // Safe Logging: Check if the table exists to prevent crash if migration is missing
+        if (Schema::hasTable('transaction_histories')) {
+            return $transaction->processingHistory()->create([
+                'status' => $status,
+                'message' => $message,
+                'attempt_number' => $transaction->job_attempts,
+                'created_by' => 'system'
+            ]);
+        }
+
+        // Fallback to standard Laravel logs
+        Log::info("Transaction History [{$status}]: " . ($message ?? 'N/A'), [
+            'transaction_id' => $transaction->transaction_id,
+            'terminal_id' => $transaction->terminal_id,
         ]);
+
+        return null;
     }
 
     protected function updateStatus($transaction, $status, $message = null)
