@@ -402,15 +402,17 @@ class TransactionController extends Controller
         // Enforce ownership via TransactionPolicy
         $this->authorize('update', $transaction);
 
-        // Industry standard same-day business rule
-        $tz = config('app.business_timezone', config('app.timezone', 'UTC'));
-        $txTime = Carbon::parse($transaction->transaction_timestamp)->setTimezone($tz);
-        $today = now()->setTimezone($tz);
-        if ($txTime->toDateString() !== $today->toDateString()) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Refunds are only permitted on the same business day',
-            ], 409);
+        // Optional same-day business rule (configured via TSMS_STRICT_REFUNDS)
+        if (config('app.strict_refunds', false)) {
+            $tz = config('app.business_timezone', config('app.timezone', 'UTC'));
+            $txTime = Carbon::parse($transaction->transaction_timestamp)->setTimezone($tz);
+            $today = now()->setTimezone($tz);
+            if ($txTime->toDateString() !== $today->toDateString()) {
+                return response()->json([
+                    'status' => 'error',
+                    'message' => 'Refunds are only permitted on the same business day',
+                ], 409);
+            }
         }
 
         $refundData = $request->validated();

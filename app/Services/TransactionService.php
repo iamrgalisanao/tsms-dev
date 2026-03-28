@@ -21,11 +21,16 @@ class TransactionService
         if (!$transaction->canRefund()) {
             throw new \Exception('Transaction cannot be refunded.');
         }
+
+        // Enforce that refund amount does not exceed net sales
+        if (isset($refundData['refund_amount']) && (float)$refundData['refund_amount'] > (float)$transaction->net_sales) {
+            throw new \Exception('Refund amount cannot exceed the original net sales.');
+        }
         $transaction->update([
             'is_refunded' => $refundData['is_refunded'] ?? true,
             'refund_amount' => $refundData['refund_amount'] ?? null,
             'refund_reason' => $refundData['refund_reason'] ?? null,
-            'refund_reference' => $refundData['refund_reference'] ?? null,
+            'refund_reference' => $transaction->transaction_id,
         ]);
         $this->logTransactionHistory($transaction, 'REFUNDED', $refundData['refund_reason'] ?? null);
         event(new TransactionUpdated($transaction));

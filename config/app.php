@@ -128,6 +128,8 @@ return [
 
     'retry_transaction_endpoint' => env('RETRY_TRANSACTION_ENDPOINT', 'http://localhost/fallback-endpoint'),
 
+    'strict_refunds' => env('TSMS_STRICT_REFUNDS', false),
+
     /*
     |--------------------------------------------------------------------------
     | Autoloaded Service Providers

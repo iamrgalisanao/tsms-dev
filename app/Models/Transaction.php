@@ -354,6 +354,34 @@ class Transaction extends Model
     /**
      * Get the terminal that made this transaction.
      */
+    /**
+     * Get the attributes that should be cast.
+     *
+     * @return array<string, string>
+     */
+    protected function casts(): array
+    {
+        return [
+            'transaction_timestamp' => 'datetime',
+            'completed_at' => 'datetime',
+            'voided_at' => 'datetime',
+            'submission_timestamp' => 'datetime',
+            'is_refunded' => 'boolean',
+            'gross_sales' => 'decimal:2',
+            'net_sales' => 'decimal:2',
+            'vat_amount' => 'decimal:2',
+            'refund_amount' => 'decimal:2',
+            'vatable_sales' => 'decimal:2',
+            'sc_vat_exempt_sales' => 'decimal:2',
+            'tax_exempt' => 'decimal:2',
+            'promo_discount' => 'decimal:2',
+            'senior_discount' => 'decimal:2',
+            'pwd_discount' => 'decimal:2',
+            'service_charge' => 'decimal:2',
+            'management_service_charge' => 'decimal:2',
+        ];
+    }
+
     public function terminal()
     {
         return $this->belongsTo(PosTerminal::class, 'terminal_id');
