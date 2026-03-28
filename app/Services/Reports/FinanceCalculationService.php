@@ -34,6 +34,15 @@ class FinanceCalculationService
         foreach ($transactions as $tx) {
             $c['vatable_sales'] += (float) ($tx->vatable_sales ?? 0);
             $c['sc_vat_exempt_sales'] += (float) ($tx->sc_vat_exempt_sales ?? 0);
+
+            // Defensive: if the transaction column for exempt sales is 0, check for tax rows
+            // that are actually base amounts (common in some POS integrations).
+            if ((float)($tx->sc_vat_exempt_sales ?? 0) === 0.0 && method_exists($tx, 'taxes')) {
+                $c['sc_vat_exempt_sales'] += (float) $tx->taxes()
+                    ->whereIn('tax_type', ['SC_VAT_EXEMPT_SALES', 'VAT_EXEMPT_SALES', 'VATEXEMPT_SALES', 'VAT-EXEMPT', 'EXEMPT', 'VATEXEMPT'])
+                    ->sum('amount');
+            }
+
             $c['vat_amount'] += (float) ($tx->vat_amount ?? 0);
 
             $promo = (float) ($tx->promo_discount ?? 0);
@@ -53,7 +62,11 @@ class FinanceCalculationService
             // and SC_VAT_EXEMPT_SALES to avoid double counting or misclassification.
             if (method_exists($tx, 'taxes')) {
                 $c['other_tax'] += (float) $tx->taxes()
-                    ->whereNotIn('tax_type', ['VAT', 'VAT_AMOUNT', 'VATABLE_SALES', 'SC_VAT_EXEMPT_SALES', 'VAT-EXEMPT', 'EXEMPT', 'VATEXEMPT'])
+                    ->whereNotIn('tax_type', [
+                        'VAT', 'VAT_AMOUNT', 'VATABLE_SALES', 'SC_VAT_EXEMPT_SALES', 
+                        'VAT-EXEMPT', 'EXEMPT', 'VATEXEMPT', 'VATEXEMPT_SALES', 
+                        'VAT_EXEMPT_SALES', 'ZERO_RATED', 'NON-VAT', 'NON_VAT', 'ZERO-RATED'
+                    ])
                     ->sum('amount');
             }
 

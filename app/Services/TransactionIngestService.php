@@ -147,7 +147,7 @@ final readonly class TransactionIngestService
                 
                 if ($type === 'VATABLE_SALES' || $type === 'VATABLE') {
                     $normalized['vatable_sales'] = $amount;
-                } elseif ($type === 'SC_VAT_EXEMPT_SALES' || $type === 'VAT_EXEMPT_SALES') {
+                } elseif ($type === 'SC_VAT_EXEMPT_SALES' || $type === 'VAT_EXEMPT_SALES' || $type === 'VATEXEMPT_SALES') {
                     $normalized['sc_vat_exempt_sales'] = $amount;
                 } elseif ($type === 'VAT' || $type === 'VAT_AMOUNT') {
                     $normalized['vat_amount'] = $amount;
