@@ -45,6 +45,14 @@ class FinanceCalculationService
 
             $c['vat_amount'] += (float) ($tx->vat_amount ?? 0);
 
+            // Remap generic OTHER_TAX records to vat_amount if not already captured
+            // This satisfies current POS providers who dump VAT into OTHER_TAX.
+            if (method_exists($tx, 'taxes')) {
+                $c['vat_amount'] += (float) $tx->taxes()
+                    ->whereIn('tax_type', ['OTHER_TAX', 'OTHER-TAX'])
+                    ->sum('amount');
+            }
+
             $promo = (float) ($tx->promo_discount ?? 0);
             if ($tx->promo_status === 'WITH_APPROVAL') {
                 $c['promo_with_approval'] += $promo;
@@ -65,7 +73,8 @@ class FinanceCalculationService
                     ->whereNotIn('tax_type', [
                         'VAT', 'VAT_AMOUNT', 'VATABLE_SALES', 'SC_VAT_EXEMPT_SALES', 
                         'VAT-EXEMPT', 'EXEMPT', 'VATEXEMPT', 'VATEXEMPT_SALES', 
-                        'VAT_EXEMPT_SALES', 'ZERO_RATED', 'NON-VAT', 'NON_VAT', 'ZERO-RATED'
+                        'VAT_EXEMPT_SALES', 'ZERO_RATED', 'NON-VAT', 'NON_VAT', 'ZERO-RATED',
+                        'OTHER_TAX', 'OTHER-TAX'
                     ])
                     ->sum('amount');
             }

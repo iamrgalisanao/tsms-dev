@@ -283,7 +283,8 @@ class Transaction extends Model
             ->whereNotIn('tax_type', [
                 'VAT', 'VAT_AMOUNT', 'VATABLE_SALES', 'SC_VAT_EXEMPT_SALES', 
                 'VAT-EXEMPT', 'EXEMPT', 'VATEXEMPT', 'VATEXEMPT_SALES', 
-                'VAT_EXEMPT_SALES', 'ZERO_RATED', 'NON-VAT', 'NON_VAT', 'ZERO-RATED'
+                'VAT_EXEMPT_SALES', 'ZERO_RATED', 'NON-VAT', 'NON_VAT', 'ZERO-RATED',
+                'OTHER_TAX', 'OTHER-TAX'
             ])
             ->sum('amount');
 
