@@ -45,12 +45,17 @@ class FinanceCalculationService
 
             $c['vat_amount'] += (float) ($tx->vat_amount ?? 0);
 
-            // Remap generic OTHER_TAX records to vat_amount if not already captured
-            // This satisfies current POS providers who dump VAT into OTHER_TAX.
+            // Remap generic OTHER_TAX records to vat_amount ONLY if not already captured
+            // This satisfies legacy POS providers who dump VAT into OTHER_TAX,
+            // but prevents double-counting or misclassification for modern providers.
             if (method_exists($tx, 'taxes')) {
-                $c['vat_amount'] += (float) $tx->taxes()
-                    ->whereIn('tax_type', ['OTHER_TAX', 'OTHER-TAX'])
-                    ->sum('amount');
+                $otherTaxItems = $tx->taxes()->whereIn('tax_type', ['OTHER_TAX', 'OTHER-TAX']);
+                
+                if ((float)($tx->vat_amount ?? 0) === 0.0) {
+                    $c['vat_amount'] += (float) $otherTaxItems->sum('amount');
+                } else {
+                    $c['other_tax'] += (float) $otherTaxItems->sum('amount');
+                }
             }
 
             $promo = (float) ($tx->promo_discount ?? 0);
@@ -103,9 +108,10 @@ class FinanceCalculationService
         $serviceCharge = round(($c['service_charge_distributed'] ?? 0) + ($c['service_charge_retained'] ?? 0), 2);
         $seniorPwd = round(($c['senior_discount'] ?? 0) + ($c['pwd_discount'] ?? 0), 2);
 
-        // 2. Gross Sales (Source of Truth: Sum of all 12 categorical columns A-M)
-        // Column N in Excel = Sum(B:M)
-        $gross = round(
+        // 2. Gross Sales (Source of Truth)
+        // We prefer the Nominal Gross (sum of column) to absorb minor component-level rounding errors.
+        // If nominal is unavailable or mismatched significantly, we fall back to component sum.
+        $componentSum = round(
             ($c['vatable_sales'] ?? 0)
             + ($c['sc_vat_exempt_sales'] ?? 0)
             + ($c['vat_amount'] ?? 0)
@@ -114,13 +120,21 @@ class FinanceCalculationService
             + ($c['employee_discount'] ?? 0)
             + ($c['senior_discount'] ?? 0)
             + ($c['pwd_discount'] ?? 0)
+            + ($c['other_tax'] ?? 0)
             + ($c['vip_discount'] ?? 0)
             + ($c['regular_discount'] ?? 0)
-            + ($c['other_tax'] ?? 0)
             + ($c['service_charge_distributed'] ?? 0)
             + ($c['service_charge_retained'] ?? 0),
             2
         );
+
+        $nominalGross = round($c['gross_sales'] ?? 0, 2);
+        
+        // Use nominal gross if it exists, otherwise use component sum.
+        // A difference of > 1% would suggest a payload integrity issue, not just rounding.
+        $gross = ($nominalGross > 0 && abs($nominalGross - $componentSum) < ($nominalGross * 0.01))
+            ? $nominalGross
+            : $componentSum;
 
         // 3. Net Sales (Source of Truth: Gross - Non-VAT components)
         // Excel N61: Gross - (Promos + Employee + Senior/PWD + VIP + Exempt + LocalTax + SC)
