@@ -13,6 +13,14 @@ class FinanceCalculationDiscrepancyTest extends TestCase
 {
     use RefreshDatabase;
 
+    protected function setUp(): void
+    {
+        parent::setUp();
+        config(['database.default' => 'sqlite']);
+        config(['database.connections.sqlite.database' => ':memory:']);
+        $this->artisan('migrate');
+    }
+
     /**
      * Replicates the 41.06 PHP variance seen on 2026-03-28.
      * 40.97 from OTHER_TAX misclassification + 0.09 from rounding accumulation.
