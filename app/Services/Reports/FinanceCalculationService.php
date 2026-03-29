@@ -45,17 +45,13 @@ class FinanceCalculationService
 
             $c['vat_amount'] += (float) ($tx->vat_amount ?? 0);
 
-            // Remap generic OTHER_TAX records to vat_amount ONLY if not already captured
-            // This satisfies legacy POS providers who dump VAT into OTHER_TAX,
-            // but prevents double-counting or misclassification for modern providers.
+            // Generic OTHER_TAX records should ALWAYS map to the other_tax bucket.
+            // Aggregating them into vat_amount causes misclassification in CSMR reports
+            // for providers that use OTHER_TAX for non-VAT items (e.g., Shadow VAT).
             if (method_exists($tx, 'taxes')) {
-                $otherTaxItems = $tx->taxes()->whereIn('tax_type', ['OTHER_TAX', 'OTHER-TAX']);
-                
-                if ((float)($tx->vat_amount ?? 0) === 0.0) {
-                    $c['vat_amount'] += (float) $otherTaxItems->sum('amount');
-                } else {
-                    $c['other_tax'] += (float) $otherTaxItems->sum('amount');
-                }
+                $c['other_tax'] += (float) $tx->taxes()
+                    ->whereIn('tax_type', ['OTHER_TAX', 'OTHER-TAX'])
+                    ->sum('amount');
             }
 
             $promo = (float) ($tx->promo_discount ?? 0);
