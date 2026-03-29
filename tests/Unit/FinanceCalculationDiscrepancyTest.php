@@ -26,6 +26,7 @@ class FinanceCalculationDiscrepancyTest extends TestCase
                 // Mock the query builder behavior for taxes()
                 return new class {
                     public function whereIn($col, $val) { return $this; }
+                    public function whereNotIn($col, $val) { return $this; }
                     public function sum($col) { return 10.20; }
                 };
             }
@@ -40,6 +41,7 @@ class FinanceCalculationDiscrepancyTest extends TestCase
             public function taxes() {
                 return new class {
                     public function whereIn($col, $val) { return $this; }
+                    public function whereNotIn($col, $val) { return $this; }
                     public function sum($col) { return 10.20; }
                 };
             }
@@ -54,6 +56,7 @@ class FinanceCalculationDiscrepancyTest extends TestCase
             public function taxes() {
                 return new class {
                     public function whereIn($col, $val) { return $this; }
+                    public function whereNotIn($col, $val) { return $this; }
                     public function sum($col) { return 20.57; }
                 };
             }
