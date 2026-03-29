@@ -17,50 +17,64 @@ class FinanceCalculationDiscrepancyTest extends TestCase
         // 1. Mock Transaction with OTHER_TAX (Misclassification Pattern)
         // We use an anonymous class to mimic the Transaction model behavior
         $tx1 = new class {
+            public $tax_amount;
             public $gross_sales = 435.20;
             public $vatable_sales = 303.57;
             public $vat_amount = 36.43;
             public $sc_vat_exempt_sales = 85.00;
             public $promo_status = 'NONE';
             public function taxes() {
-                // Mock the query builder behavior for taxes()
-                return new class {
+                return new class($this->tax_amount) {
+                    private $tax_amount;
+                    private $is_excluding = false;
+                    public function __construct($amt) { $this->tax_amount = $amt; }
                     public function whereIn($col, $val) { return $this; }
-                    public function whereNotIn($col, $val) { return $this; }
-                    public function sum($col) { return 10.20; }
+                    public function whereNotIn($col, $val) { $this->is_excluding = true; return $this; }
+                    public function sum($col) { return $this->is_excluding ? 0.0 : $this->tax_amount; }
                 };
             }
         };
+        $tx1->tax_amount = 10.20;
 
         $tx2 = new class {
+            public $tax_amount;
             public $gross_sales = 435.20;
             public $vatable_sales = 303.57;
             public $vat_amount = 36.43;
             public $sc_vat_exempt_sales = 85.00;
             public $promo_status = 'NONE';
             public function taxes() {
-                return new class {
+                return new class($this->tax_amount) {
+                    private $tax_amount;
+                    private $is_excluding = false;
+                    public function __construct($amt) { $this->tax_amount = $amt; }
                     public function whereIn($col, $val) { return $this; }
-                    public function whereNotIn($col, $val) { return $this; }
-                    public function sum($col) { return 10.20; }
+                    public function whereNotIn($col, $val) { $this->is_excluding = true; return $this; }
+                    public function sum($col) { return $this->is_excluding ? 0.0 : $this->tax_amount; }
                 };
             }
         };
+        $tx2->tax_amount = 10.20;
 
         $tx3 = new class {
+            public $tax_amount;
             public $gross_sales = 870.43;
             public $vatable_sales = 607.14;
             public $vat_amount = 72.86;
             public $sc_vat_exempt_sales = 170.00;
             public $promo_status = 'NONE';
             public function taxes() {
-                return new class {
+                return new class($this->tax_amount) {
+                    private $tax_amount;
+                    private $is_excluding = false;
+                    public function __construct($amt) { $this->tax_amount = $amt; }
                     public function whereIn($col, $val) { return $this; }
-                    public function whereNotIn($col, $val) { return $this; }
-                    public function sum($col) { return 20.57; }
+                    public function whereNotIn($col, $val) { $this->is_excluding = true; return $this; }
+                    public function sum($col) { return $this->is_excluding ? 0.0 : $this->tax_amount; }
                 };
             }
         };
+        $tx3->tax_amount = 20.57;
 
         // 2. Mock Rounding Discrepancy (9 transactions with 0.01 error)
         $roundingTransactions = [];
