@@ -585,8 +585,6 @@ class TransactionLogController extends Controller
         ->selectRaw("COALESCE(SUM(CASE WHEN t.promo_status != 'WITH_APPROVAL' THEN t.promo_discount ELSE 0 END),0) as promo_without_approval")
         ->selectRaw('COALESCE(SUM(t.senior_discount),0) as senior_discount')
         ->selectRaw('COALESCE(SUM(t.pwd_discount),0) as pwd_discount')
-        ->selectRaw('COALESCE(SUM(t.employee_discount),0) as employee_discount')
-        ->selectRaw('COALESCE(SUM(t.vip_card_discount),0) as vip_discount')
         ->selectRaw('COALESCE(SUM(t.discount_total),0) as regular_discount')
         ->selectRaw('COALESCE(SUM(t.service_charge),0) as service_charge_distributed')
         ->selectRaw('COALESCE(SUM(t.management_service_charge),0) as service_charge_retained')
@@ -594,6 +592,12 @@ class TransactionLogController extends Controller
         // We will sum the transaction-level tax_exempt column as a proxy if it exists.
         ->when(Schema::hasColumn('transactions', 'tax_exempt'), function ($q) {
             $q->selectRaw('COALESCE(SUM(t.tax_exempt),0) as other_tax');
+        })
+        ->when(Schema::hasColumn('transactions', 'employee_discount'), function ($q) {
+            $q->selectRaw('COALESCE(SUM(t.employee_discount),0) as employee_discount');
+        })
+        ->when(Schema::hasColumn('transactions', 'vip_card_discount'), function ($q) {
+            $q->selectRaw('COALESCE(SUM(t.vip_card_discount),0) as vip_discount');
         })
         ->selectRaw('MIN(t.id) as sample_tx_id')
         ->groupBy('date', 't.tenant_id', 't.terminal_id', 'trade_name', 'term.serial_number', 'term.machine_number')
@@ -617,10 +621,10 @@ class TransactionLogController extends Controller
                 'vat_amount' => (float)$row->raw_vat_amount,
                 'promo_with_approval' => (float)$row->promo_with_approval,
                 'promo_without_approval' => (float)$row->promo_without_approval,
-                'employee_discount' => (float)$row->employee_discount,
+                'employee_discount' => (float)($row->employee_discount ?? 0),
                 'senior_discount' => (float)$row->senior_discount,
                 'pwd_discount' => (float)$row->pwd_discount,
-                'vip_discount' => (float)$row->vip_discount,
+                'vip_discount' => (float)($row->vip_discount ?? 0),
                 'other_tax' => (float)($row->other_tax ?? 0),
                 'service_charge_distributed' => (float)$row->service_charge_distributed,
                 'service_charge_retained' => (float)$row->service_charge_retained,
