@@ -55,7 +55,7 @@ To ensure high-volume performance, TSMS uses a **Synchronous Handshake** followe
 | Aspect | Specification |
 | :--- | :--- |
 | **Method** | `POST` |
-| **Endpoint** | `https://stagingtsms.pitx.com.test/api/v1/transactions/official` |
+| **Endpoint** | `https://stagingtsms.pitx.com.ph/api/v1/transactions/official` |
 | **Content-Type** | `application/json` |
 | **Authentication** | `Authorization: Bearer <BEARER_TOKEN>` |
 
@@ -64,7 +64,7 @@ The primary environment for initial integration and UAT is the **Sanctum / Stagi
 
 | Environment | Base URL | Note |
 | :--- | :--- | :--- |
-| **Sandbox / Staging**| `https://stagingtsms.pitx.com.test` | Primary integration endpoint |
+| **Sandbox / Staging**| `https://stagingtsms.pitx.com.ph` | Primary integration endpoint |
 | **Production** | *Available upon request* | For certified providers only |
 
 ### 3.2 Authentication Details
@@ -478,6 +478,15 @@ No. You must send an empty array `"adjustments": []`.
 **Q: What is the rate limit for submissions?**
 The default limit is 60 requests per minute. Exceeding this will return a 429 error.
 
+**Q: Why do I get the message "insert ignored but no existing transaction found"?**
+**A: Duplication Breach/Receipt Conflict.** This occurs when you submit a transaction with a **new UUID** (`transaction_id`) but a **Receipt Number** (`receipt_no`) and **Date** that has already been used by the same terminal on the same day. 
+- **Rule**: TSMS enforces unique receipt numbers per terminal/day. If you are retrying a previously failed or interrupted submission, you **must** use the same `transaction_id` (UUID). Changing the UUID for the same physical receipt will trigger this error.
+
+**Q: Do I need to poll the Status Endpoint if the ingestion response is "success"?**
+**A: Yes, it is recommended best practice.**
+- **Ingestion Success**: This means TSMS has successfully received, hashed, and safely stored your data in the database (Handshake complete).
+- **Polling Requirement**: Success at ingestion does **not** yet mean the background **Business & Financial Validation** (tax math, discount logic, etc.) has finished. You should poll the Status Endpoint until `validation_status` reaches `VALID`. This ensures your data is mathematically accurate and ready for final financial reporting.
+
 ---
 
 ## 16. Implementation Checklist
@@ -500,6 +509,16 @@ POS providers may need to cancel or refund transactions after they have been suc
 
 ### 17.1 Void Transaction
 A **Void** is used to cancel a transaction typically before the business day is closed.
+
+#### 17.1.1 Clarification: Pre-Payment vs. Post-Payment
+To simplify integration, POS providers should distinguish between these two scenarios:
+
+1.  **Pre-Payment Cancellation (Line-Item Void)**:
+    - **Scenario**: Action occurs *before* the sale is closed and *before* payment is processed.
+    - **Rule**: This is an internal POS action. **Do not send** anything to TSMS. The final payload submitted to TSMS should only reflect the "net" transaction after these item-level voids.
+2.  **Post-Payment Void (Official Transaction Void)**:
+    - **Scenario**: Action occurs *after* a sale has been finalized and successful `201 Accepted` or `200 OK` has been received from TSMS.
+    - **Rule**: This **must** be sent to the `/void` endpoint using the original **UUID (`transaction_id`)**.
 
 | Aspect | Specification |
 | :--- | :--- |

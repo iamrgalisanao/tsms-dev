@@ -20,11 +20,16 @@ class TransactionLogController extends Controller
 {
     protected $logService;
     protected $detailService;
+    protected $financeService;
 
-    public function __construct(TransactionLogService $logService, TransactionDetailService $detailService)
-    {
+    public function __construct(
+        TransactionLogService $logService,
+        TransactionDetailService $detailService,
+        \App\Services\Reports\FinanceCalculationService $financeService
+    ) {
         $this->logService = $logService;
         $this->detailService = $detailService;
+        $this->financeService = $financeService;
     }
 
     public function index(Request $request)
@@ -116,7 +121,8 @@ class TransactionLogController extends Controller
                 'terminal.tenant:id,trade_name',
                 // Eager-load adjustments so the Detailed view can compute discounts
                 // from child rows when denormalized columns are empty.
-                'adjustments:transaction_pk,adjustment_type,amount'
+                'adjustments:transaction_pk,adjustment_type,amount',
+                'taxes:transaction_id,tax_type,amount'
             ])
             // Unified search: allow the primary search box to match by
             // transaction ID, receipt number, tenant trade name, or
@@ -210,6 +216,39 @@ class TransactionLogController extends Controller
             ->orderBy($dateColumn, $sortDirection)
             ->paginate($perPage)
             ->appends($request->all());
+
+        // Normalize metrics for each individual transaction in the Detailed View
+        $logs->getCollection()->transform(function($tx) {
+            $components = [
+                'vatable_sales' => (float)($tx->vatable_sales ?? 0),
+                'sc_vat_exempt_sales' => (float)($tx->sc_vat_exempt_sales ?? 0),
+                'vat_amount' => (float)($tx->vat_amount ?? 0),
+                'promo_with_approval' => $tx->promo_status === 'WITH_APPROVAL' ? (float)($tx->promo_discount ?? 0) : 0,
+                'promo_without_approval' => $tx->promo_status !== 'WITH_APPROVAL' ? (float)($tx->promo_discount ?? 0) : 0,
+                'employee_discount' => (float)($tx->employee_discount ?? 0),
+                'senior_discount' => (float)($tx->senior_discount ?? 0),
+                'pwd_discount' => (float)($tx->pwd_discount ?? 0),
+                'vip_discount' => (float)($tx->vip_card_discount ?? 0),
+                'other_tax' => (float)($tx->tax_exempt ?? 0),
+                'service_charge_distributed' => (float)($tx->service_charge ?? 0),
+                'service_charge_retained' => (float)($tx->management_service_charge ?? 0),
+                'regular_discount' => (float)($tx->discount_total ?? 0),
+                'gross_sales' => (float)($tx->gross_sales ?? 0),
+            ];
+
+            $derived = $this->financeService->deriveMetrics($components);
+
+            // Override display values with normalized logic
+            $tx->amount = $derived['gross_sales'];
+            // For Detailed View "Net Sales" column, we match the Summary View "Net Total"
+            // specifically INCLUDING Exempt sales for user-facing parity.
+            $tx->net_sales = round($derived['net_sales'] + $derived['sc_vat_exempt_sales'], 2);
+            $tx->vat_amount = $derived['vat_amount'];
+            $tx->vatable_sales = $derived['vatable_sales'];
+            $tx->sc_vat_exempt_sales = $derived['sc_vat_exempt_sales'];
+
+            return $tx;
+        });
 
         if ($request->wantsJson()) {
             return response()->json($logs);
@@ -532,42 +571,33 @@ class TransactionLogController extends Controller
                 // as distinct; treat empty strings as NULL so they are excluded.
                 $q->selectRaw("COUNT(DISTINCT NULLIF(t.receipt_no, '')) as unique_receipts");
             })
-            // Use stored gross_sales as the canonical gross for summary so it matches
-            // the Detailed view and POS Z-reading totals.
-            ->selectRaw('COALESCE(SUM(t.gross_sales),0) as gross')
-            ->selectRaw('COALESCE(SUM(t.vat_amount),0) as vat')
-            ->selectRaw('COALESCE(SUM(t.net_sales),0) as net')
-            ->selectRaw('COALESCE(SUM(t.refund_amount),0) as refund')
-            // Add available discount fields
-            ->when(Schema::hasColumn('transactions', 'promo_discount'), function ($q) {
-                $q->selectRaw('COALESCE(SUM(t.promo_discount),0) as promo_discount');
-            })
-            ->when(Schema::hasColumn('transactions', 'senior_discount'), function ($q) {
-                $q->selectRaw('COALESCE(SUM(t.senior_discount),0) as senior_discount');
-            })
-            ->when(Schema::hasColumn('transactions', 'pwd_discount'), function ($q) {
-                $q->selectRaw('COALESCE(SUM(t.pwd_discount),0) as pwd_discount');
-            })
-            // Add available service charge fields
-            ->when(Schema::hasColumn('transactions', 'service_charge'), function ($q) {
-                $q->selectRaw('COALESCE(SUM(t.service_charge),0) as service_charge');
-            })
-            ->when(Schema::hasColumn('transactions', 'management_service_charge'), function ($q) {
-                $q->selectRaw('COALESCE(SUM(t.management_service_charge),0) as management_service_charge');
-            })
-            // Add available tax fields
-            ->when(Schema::hasColumn('transactions', 'tax_exempt'), function ($q) {
-                $q->selectRaw('COALESCE(SUM(t.tax_exempt),0) as tax_exempt');
-            })
-            ->when(Schema::hasColumn('transactions', 'vatable_sales'), function ($q) {
-                $q->selectRaw('COALESCE(SUM(t.vatable_sales),0) as vatable_sales');
-            })
-            ->when(Schema::hasColumn('transactions', 'sc_vat_exempt_sales'), function ($q) {
-                $q->selectRaw('COALESCE(SUM(t.sc_vat_exempt_sales),0) as sc_vat_exempt_sales');
-            })
-            ->selectRaw('MIN(t.id) as sample_tx_id')
-            ->groupBy('date', 't.tenant_id', 't.terminal_id', 'trade_name', 'term.serial_number', 'term.machine_number')
-            ->orderBy('date', $sortDirection);
+        // Use stored gross_sales as the canonical gross for summary so it matches
+        // the Detailed view and POS Z-reading totals.
+        ->selectRaw('COALESCE(SUM(t.gross_sales),0) as gross_sales')
+        ->selectRaw('COALESCE(SUM(t.net_sales),0) as raw_net_sales')
+        ->selectRaw('COALESCE(SUM(t.vat_amount),0) as raw_vat_amount')
+        ->selectRaw('COALESCE(SUM(t.vatable_sales),0) as raw_vatable_sales')
+        ->selectRaw('COALESCE(SUM(t.sc_vat_exempt_sales),0) as raw_sc_vat_exempt_sales')
+        ->selectRaw('COALESCE(SUM(t.refund_amount),0) as refund')
+
+        // Add granular components for FinanceCalculationService normalization
+        ->selectRaw("COALESCE(SUM(CASE WHEN t.promo_status = 'WITH_APPROVAL' THEN t.promo_discount ELSE 0 END),0) as promo_with_approval")
+        ->selectRaw("COALESCE(SUM(CASE WHEN t.promo_status != 'WITH_APPROVAL' THEN t.promo_discount ELSE 0 END),0) as promo_without_approval")
+        ->selectRaw('COALESCE(SUM(t.senior_discount),0) as senior_discount')
+        ->selectRaw('COALESCE(SUM(t.pwd_discount),0) as pwd_discount')
+        ->selectRaw('COALESCE(SUM(t.employee_discount),0) as employee_discount')
+        ->selectRaw('COALESCE(SUM(t.vip_card_discount),0) as vip_discount')
+        ->selectRaw('COALESCE(SUM(t.discount_total),0) as regular_discount')
+        ->selectRaw('COALESCE(SUM(t.service_charge),0) as service_charge_distributed')
+        ->selectRaw('COALESCE(SUM(t.management_service_charge),0) as service_charge_retained')
+        // other_tax: derived from transactions_taxes relation is complex in a GROUP BY.
+        // We will sum the transaction-level tax_exempt column as a proxy if it exists.
+        ->when(Schema::hasColumn('transactions', 'tax_exempt'), function ($q) {
+            $q->selectRaw('COALESCE(SUM(t.tax_exempt),0) as other_tax');
+        })
+        ->selectRaw('MIN(t.id) as sample_tx_id')
+        ->groupBy('date', 't.tenant_id', 't.terminal_id', 'trade_name', 'term.serial_number', 'term.machine_number')
+        ->orderBy('date', $sortDirection);
 
         // When the schema supports receipt_no, default summary roll-ups to VALID
         // transactions so aggregates align with POS-style unique receipt counts.
@@ -577,6 +607,44 @@ class TransactionLogController extends Controller
         }
 
         $summary = $query->paginate($perPage)->appends($request->all());
+
+        // Standardize the numeric roll-ups using FinanceCalculationService logic.
+        // This ensures the Dashboard Summary matches the Certified PDF reports.
+        $summary->getCollection()->transform(function($row) {
+            $components = [
+                'vatable_sales' => (float)$row->raw_vatable_sales,
+                'sc_vat_exempt_sales' => (float)$row->raw_sc_vat_exempt_sales,
+                'vat_amount' => (float)$row->raw_vat_amount,
+                'promo_with_approval' => (float)$row->promo_with_approval,
+                'promo_without_approval' => (float)$row->promo_without_approval,
+                'employee_discount' => (float)$row->employee_discount,
+                'senior_discount' => (float)$row->senior_discount,
+                'pwd_discount' => (float)$row->pwd_discount,
+                'vip_discount' => (float)$row->vip_discount,
+                'other_tax' => (float)($row->other_tax ?? 0),
+                'service_charge_distributed' => (float)$row->service_charge_distributed,
+                'service_charge_retained' => (float)$row->service_charge_retained,
+                'regular_discount' => (float)$row->regular_discount,
+                'gross_sales' => (float)$row->gross_sales,
+            ];
+
+            $derived = $this->financeService->deriveMetrics($components);
+
+            // Override specific display columns with normalized values
+            $row->gross = $derived['gross_sales'];
+            // The dashboard Net Total matches the CMSR bottom line ($Vatable + VAT + Exempt)
+            $row->net = round($derived['net_sales'] + $derived['sc_vat_exempt_sales'], 2);
+            $row->vat = $derived['vat_amount'];
+            $row->vatable_sales = $derived['vatable_sales'];
+            $row->sc_vat_exempt_sales = $derived['sc_vat_exempt_sales'];
+            $row->tax_exempt = $derived['other_tax'];
+
+            // Map computed aggregate groups for UI display (Discounts column)
+            $row->senior_pwd = $derived['senior_pwd'];
+            $row->promo_discount = $derived['total_promotions'];
+
+            return $row;
+        });
 
         // Fetch one representative transaction per summary row to display full payload details
         $sampleIds = collect($summary->items())->pluck('sample_tx_id')->filter()->unique()->values()->all();
