@@ -122,7 +122,7 @@ class TransactionLogController extends Controller
                 // Eager-load adjustments so the Detailed view can compute discounts
                 // from child rows when denormalized columns are empty.
                 'adjustments:transaction_pk,adjustment_type,amount',
-                'taxes:transaction_id,tax_type,amount'
+                'taxes:transaction_pk,tax_type,amount'
             ])
             // Unified search: allow the primary search box to match by
             // transaction ID, receipt number, tenant trade name, or
