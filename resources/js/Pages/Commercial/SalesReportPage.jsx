@@ -250,7 +250,7 @@ const SalesReportPage = ({ type = 'daily' }) => {
                         <tbody>
                             {reportData.map((row, idx) => (
                                 <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9' }}>
-                                    <td style={{ padding: '12px 20px', fontWeight: 700, color: '#0f172a' }}>{row.date || row.day || row.month || row.label || row.period || idx + 1}</td>
+                                    <td style={{ padding: '12px 20px', fontWeight: 700, color: '#0f172a' }}>{row.hour || row.date || row.day || row.month || row.label || row.period || idx + 1}</td>
                                     <td style={{ padding: '12px 20px', textAlign: 'right', fontWeight: 700, color: '#df1160' }}>₱{fmt(row.gross_sales || row.gross)}</td>
                                     <td style={{ padding: '12px 20px', textAlign: 'right', color: '#475569' }}>₱{fmt(row.net_sales || row.net)}</td>
                                     <td style={{ padding: '12px 20px', textAlign: 'right', color: '#64748b' }}>₱{fmt(row.vat_amount)}</td>

@@ -74,9 +74,42 @@ class DailyReportService
             if (isset($summary['gross_sales_m'])) $summary['gross_sales_m'] = round($summary['gross_sales_m'], 4);
             if (isset($summary['net_sales_m'])) $summary['net_sales_m'] = round($summary['net_sales_m'], 4);
 
+            // 1. Pre-consolidate all terminal data for each hour to avoid duplicates/omissions in the ledger
+            $consolidated = [];
+            foreach ($hours as $h) {
+                $hr = $h['hour'] ?? '00:00';
+                if (!isset($consolidated[$hr])) {
+                    $consolidated[$hr] = $h; // copy entire structure
+                } else {
+                    // Sum up performance metrics
+                    foreach (['gross_sales', 'net_sales', 'transaction_count', 'vat_amount', 'gross_sales_m', 'net_sales_m'] as $key) {
+                        $consolidated[$hr][$key] = ($consolidated[$hr][$key] ?? 0) + ($h[$key] ?? 0);
+                    }
+                }
+            }
+
+            // 2. Pad to exactly 24 records (00:00 to 23:00)
+            $fullHours = [];
+            for ($h = 0; $h < 24; $h++) {
+                $hStr = sprintf('%02d:00', $h);
+                if (isset($consolidated[$hStr])) {
+                    $fullHours[] = $consolidated[$hStr];
+                } else {
+                    $fullHours[] = [
+                        'hour' => $hStr,
+                        'gross_sales' => 0.0,
+                        'net_sales' => 0.0,
+                        'transaction_count' => 0,
+                        'vat_amount' => 0.0,
+                        'gross_sales_m' => 0.0,
+                        'net_sales_m' => 0.0,
+                    ];
+                }
+            }
+
             return [
                 'summary' => $summary,
-                'hours' => $hours,
+                'hours' => $fullHours,
             ];
         } catch (\Throwable $e) {
             Log::warning('DailyReportService failed: ' . $e->getMessage(), ['date' => $date, 'tenant' => $tenantId]);
