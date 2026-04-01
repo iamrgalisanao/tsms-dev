@@ -154,6 +154,9 @@ class TransactionLogController extends Controller
                 });
             })
             ->when(isset($filters['status']), function ($query) use ($filters) {
+                if ($filters['status'] === 'VOIDED') {
+                    return $query->whereNotNull('voided_at');
+                }
                 return $query->where('validation_status', $filters['status']);
             })
             // Default behavior: when the schema supports receipt_no and no
@@ -520,7 +523,11 @@ class TransactionLogController extends Controller
             ->leftJoin('tenants as tn', 'tn.id', '=', 't.tenant_id')
             ->leftJoin('pos_terminals as term', 'term.id', '=', 't.terminal_id')
             ->when(isset($filters['status']), function ($q) use ($filters) {
-                $q->where('t.validation_status', $filters['status']);
+                if ($filters['status'] === 'VOIDED') {
+                    $q->whereNotNull('t.voided_at');
+                } else {
+                    $q->where('t.validation_status', $filters['status']);
+                }
             })
             ->when(isset($filters['date_from']), function ($q) use ($filters, $dateColumn) {
                 // Apply date filtering based on selected date basis.

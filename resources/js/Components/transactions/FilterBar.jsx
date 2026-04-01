@@ -82,6 +82,7 @@ const FilterBar = ({ filters, onFilterChange, onReset }) => {
     const statuses = [
         { value: '', label: 'All Statuses' },
         { value: 'VALID', label: 'Valid' },
+        { value: 'VOIDED', label: 'Voided' },
         { value: 'INVALID', label: 'Invalid' },
         { value: 'PENDING', label: 'Pending' },
         { value: 'WITH_ISSUES', label: 'With Issues' },
