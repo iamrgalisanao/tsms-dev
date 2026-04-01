@@ -75,6 +75,21 @@ const Row = ({ transaction, onViewDetails, getStatusColor, formatCurrency, forma
                         }}>
                             {transaction.transaction_id.slice(0, 18)}...
                         </Typography>
+                        {transaction.is_refunded && (
+                            <Chip 
+                                label="REFUNDED" 
+                                size="small" 
+                                color="warning" 
+                                variant="outlined"
+                                sx={{ 
+                                    height: 16, 
+                                    fontSize: '0.6rem', 
+                                    fontWeight: 900,
+                                    borderRadius: '4px',
+                                    borderWidth: 1.5
+                                }} 
+                            />
+                        )}
                         {transaction.voided_at && (
                             <Tooltip title={`Voided: ${transaction.void_reason || 'No reason provided'}`} arrow>
                                 <Chip 
@@ -115,6 +130,11 @@ const Row = ({ transaction, onViewDetails, getStatusColor, formatCurrency, forma
                         {formatCurrency(transaction.net_sales)}
                     </Typography>
                 </TableCell>
+                <TableCell align="left">
+                    <Typography variant="body2" sx={{ fontWeight: 800, fontFamily: 'monospace', color: 'warning.dark' }}>
+                        {transaction.refund ? formatCurrency(transaction.refund) : '-'}
+                    </Typography>
+                </TableCell>
                 <TableCell align="right" sx={{ color: 'text.secondary', fontSize: '11px' }}>
                     {transaction.promo_discount ? formatCurrency(transaction.promo_discount) : '-'}
                 </TableCell>
@@ -145,6 +165,7 @@ const Row = ({ transaction, onViewDetails, getStatusColor, formatCurrency, forma
                                             <DetailItem label="VAT" value={formatCurrency(transaction.vat)} />
                                             <DetailItem label="Vatable Sales" value={formatCurrency(transaction.vatable_sales)} />
                                             <DetailItem label="SC VAT Exempt Sales" value={formatCurrency(transaction.sc_vat_exempt_sales)} />
+                                            <DetailItem label="Refund Amount" value={transaction.refund ? formatCurrency(transaction.refund) : '-'} />
                                         </Box>
                                         <Box>
                                             <DetailItem label="Tax Exempt" value={formatCurrency(transaction.tax_exempt)} />
@@ -251,6 +272,7 @@ const TransactionTable = ({ transactions, loading, page, rowsPerPage, totalCount
             case 'INVALID': return 'error';
             case 'WITH_ISSUES': return 'warning';
             case 'PENDING': return 'info';
+            case 'REFUNDED': return 'warning';
             case 'DUPLICATE': return 'default';
             default: return 'default';
         }
@@ -289,6 +311,7 @@ const TransactionTable = ({ transactions, loading, page, rowsPerPage, totalCount
                             <TableCell sx={{ ...headerStyles, verticalAlign: 'bottom', pb: 1.5 }} rowSpan={2}>Tenant / Terminal</TableCell>
                             <TableCell align="left" sx={{ ...headerStyles, verticalAlign: 'bottom', pb: 1.5 }} rowSpan={2}>Gross Sales</TableCell>
                             <TableCell align="left" sx={{ ...headerStyles, verticalAlign: 'bottom', pb: 1.5 }} rowSpan={2}>Net Sales</TableCell>
+                            <TableCell align="left" sx={{ ...headerStyles, verticalAlign: 'bottom', pb: 1.5 }} rowSpan={2}>Refund</TableCell>
                             <TableCell align="center" sx={{ ...headerStyles, verticalAlign: 'top', pt: 1.5, pb: 0, borderBottom: '1px solid rgba(0,0,0,0.06)' }} colSpan={5}>Discounts</TableCell>
                             <TableCell align="left" sx={{ ...headerStyles, verticalAlign: 'bottom', pb: 1.5 }} rowSpan={2}>SC (Emp)</TableCell>
                         </TableRow>

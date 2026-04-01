@@ -157,6 +157,9 @@ class TransactionLogController extends Controller
                 if ($filters['status'] === 'VOIDED') {
                     return $query->whereNotNull('voided_at');
                 }
+                if ($filters['status'] === 'REFUNDED') {
+                    return $query->where('is_refunded', true);
+                }
                 return $query->where('validation_status', $filters['status']);
             })
             // Default behavior: when the schema supports receipt_no and no
@@ -238,7 +241,7 @@ class TransactionLogController extends Controller
                 'service_charge_distributed' => (float)($tx->service_charge ?? 0),
                 'service_charge_retained' => (float)($tx->management_service_charge ?? 0),
                 'regular_discount' => (float)($tx->discount_total ?? 0),
-                'gross_sales' => (float)($tx->gross_sales ?? 0),
+                'gross_sales' => (float)($tx->getRawOriginal('amount') ?? $tx->amount ?? 0),
             ];
 
             $derived = $this->financeService->deriveMetrics($components);
@@ -418,10 +421,15 @@ class TransactionLogController extends Controller
             $query->where('transaction_id', 'like', "%{$search}%");
         }
 
-        // Apply status filter only if explicitly requested. We still always
-        // want to count rows with WITH_ISSUES, so callers may omit status.
+        // Apply status filter only if explicitly requested.
         if (isset($filters['status'])) {
-            $query->where('validation_status', $filters['status']);
+            if ($filters['status'] === 'VOIDED') {
+                $query->whereNotNull('voided_at');
+            } elseif ($filters['status'] === 'REFUNDED') {
+                $query->where('is_refunded', true);
+            } else {
+                $query->where('validation_status', $filters['status']);
+            }
         }
 
         // Date filters - mirror logic used in index()/summary()
@@ -525,6 +533,8 @@ class TransactionLogController extends Controller
             ->when(isset($filters['status']), function ($q) use ($filters) {
                 if ($filters['status'] === 'VOIDED') {
                     $q->whereNotNull('t.voided_at');
+                } elseif ($filters['status'] === 'REFUNDED') {
+                    $q->where('t.is_refunded', true);
                 } else {
                     $q->where('t.validation_status', $filters['status']);
                 }

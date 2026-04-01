@@ -148,6 +148,30 @@ const TransactionDetailPanel = ({ open, onClose, transaction }) => {
                     </Box>
                 )}
 
+                {transaction?.is_refunded && (
+                    <Box sx={{ p: 2, bgcolor: 'warning.50', borderRadius: 2, border: '1px solid', borderColor: 'warning.100', mt: 2 }}>
+                        <Typography variant="caption" sx={{ color: 'warning.dark', textTransform: 'uppercase', fontWeight: 900, display: 'block', mb: 1 }}>
+                            Refund Information
+                        </Typography>
+                        <Stack spacing={1.5}>
+                            <Box>
+                                <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700 }}>REFUND AMOUNT</Typography>
+                                <Typography variant="body2" sx={{ fontWeight: 700, color: 'warning.dark' }}>
+                                    {formatCurrency(transaction.refund || transaction.refund_amount)}
+                                </Typography>
+                            </Box>
+                            {transaction.refund_reason && (
+                                <Box>
+                                    <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700 }}>REASON</Typography>
+                                    <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                                        {transaction.refund_reason}
+                                    </Typography>
+                                </Box>
+                            )}
+                        </Stack>
+                    </Box>
+                )}
+
                 <Divider />
 
                 <Box>
