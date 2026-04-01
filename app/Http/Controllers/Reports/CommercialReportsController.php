@@ -643,8 +643,11 @@ class CommercialReportsController extends Controller
 
         $service = new DailyReportService();
         $result = $service->getDailySummary($date, $tenantId, null, true);
-        // Only return the aggregated daily summary to the web UI (no hourly breakdown)
-        $result = ['summary' => $result['summary'] ?? ['gross_sales' => 0.0, 'net_sales' => 0.0, 'transaction_count' => 0, 'guest_count' => 0]];
+        // Include the hourly breakdown but rename the key to 'data' for UI compatibility
+        $result = [
+            'summary' => $result['summary'] ?? ['gross_sales' => 0.0, 'net_sales' => 0.0, 'transaction_count' => 0, 'guest_count' => 0],
+            'data' => $result['hours'] ?? []
+        ];
 
         // Audit the UI action (non-blocking)
         try {
