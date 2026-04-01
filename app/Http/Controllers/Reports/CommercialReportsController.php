@@ -46,14 +46,14 @@ class CommercialReportsController extends Controller
     public function weeklyData(Request $request)
     {
         $request->validate([
-            'date_from' => ['required', 'date'],
-            'date_to' => ['required', 'date'],
+            'date_from' => ['nullable', 'date'],
+            'date_to' => ['nullable', 'date'],
             // tenant_id may be omitted to request "All Tenants" aggregates from the service
             'tenant_id' => ['nullable']
         ]);
 
-        $from = $request->input('date_from');
-        $to = $request->input('date_to');
+        $from = $request->input('date_from') ?: now()->subDays(6)->toDateString();
+        $to = $request->input('date_to') ?: now()->toDateString();
         $tenantId = $request->input('tenant_id');
 
         $service = new WeeklyReportService();
@@ -101,13 +101,13 @@ class CommercialReportsController extends Controller
     public function weekdayData(Request $request)
     {
         $request->validate([
-            'date_from' => ['required', 'date'],
-            'date_to' => ['required', 'date'],
+            'date_from' => ['nullable', 'date'],
+            'date_to' => ['nullable', 'date'],
             'tenant_id' => ['nullable']
         ]);
 
-        $from = $request->input('date_from');
-        $to = $request->input('date_to');
+        $from = $request->input('date_from') ?: now()->subDays(6)->toDateString();
+        $to = $request->input('date_to') ?: now()->toDateString();
         $tenantId = $request->input('tenant_id');
 
         $service = new WeeklyReportService();
@@ -141,13 +141,13 @@ class CommercialReportsController extends Controller
     public function weekendData(Request $request)
     {
         $request->validate([
-            'date_from' => ['required', 'date'],
-            'date_to' => ['required', 'date'],
+            'date_from' => ['nullable', 'date'],
+            'date_to' => ['nullable', 'date'],
             'tenant_id' => ['nullable']
         ]);
 
-        $from = $request->input('date_from');
-        $to = $request->input('date_to');
+        $from = $request->input('date_from') ?: now()->subDays(6)->toDateString();
+        $to = $request->input('date_to') ?: now()->toDateString();
         $tenantId = $request->input('tenant_id');
 
         $service = new WeeklyReportService();
@@ -199,13 +199,29 @@ class CommercialReportsController extends Controller
     public function monthlyData(Request $request)
     {
         $request->validate([
-            'date_from' => ['required', 'date'],
-            'date_to' => ['required', 'date'],
+            'date_from' => ['nullable', 'date'],
+            'date_to' => ['nullable', 'date'],
+            'month' => ['nullable', 'string'],
             'tenant_id' => ['nullable']
         ]);
 
         $from = $request->input('date_from');
         $to = $request->input('date_to');
+
+        // Handle 'month' parameter from the Sales Report page UI (e.g. "2024-04")
+        if ($request->has('month') && !$from) {
+            try {
+                $d = \Carbon\Carbon::parse($request->input('month'));
+                $from = $d->copy()->startOfMonth()->toDateString();
+                $to = $d->copy()->endOfMonth()->toDateString();
+            } catch (\Throwable $e) {
+                // fallback to current month on parse error
+            }
+        }
+
+        // Final defaults
+        $from = $from ?: now()->startOfMonth()->toDateString();
+        $to = $to ?: now()->toDateString();
         $tenantId = $request->input('tenant_id');
 
         $service = new WeeklyReportService();
@@ -258,14 +274,31 @@ class CommercialReportsController extends Controller
     public function yearlyData(Request $request)
     {
         $request->validate([
-            'date_from' => ['required', 'date'],
-            'date_to' => ['required', 'date'],
+            'date_from' => ['nullable', 'date'],
+            'date_to' => ['nullable', 'date'],
+            'year' => ['nullable', 'string'],
             // allow empty tenant_id to request aggregates for all tenants
             'tenant_id' => ['nullable']
         ]);
 
         $from = $request->input('date_from');
         $to = $request->input('date_to');
+
+        // Handle 'year' parameter from the Sales Report page UI (e.g. "2024")
+        if ($request->has('year') && !$from) {
+            try {
+                $yStr = $request->input('year');
+                $startOfYear = \Carbon\Carbon::createFromFormat('Y-m-d', "{$yStr}-01-01");
+                $from = $startOfYear->copy()->startOfYear()->toDateString();
+                $to = $startOfYear->copy()->endOfYear()->toDateString();
+            } catch (\Throwable $e) {
+                // catch parse error
+            }
+        }
+
+        // Final defaults
+        $from = $from ?: now()->startOfYear()->toDateString();
+        $to = $to ?: now()->toDateString();
         $tenantId = $request->input('tenant_id');
 
         $service = new WeeklyReportService();
@@ -560,11 +593,11 @@ class CommercialReportsController extends Controller
     public function hourlyData(Request $request)
     {
         $request->validate([
-            'date' => ['required', 'date'],
+            'date' => ['nullable', 'date'],
             'tenant_id' => ['nullable']
         ]);
 
-        $date = $request->input('date');
+        $date = $request->input('date') ?: now()->toDateString();
         $tenantId = $request->input('tenant_id');
 
         // Use HourlyReportService (direct call) to avoid controller-to-controller calls
@@ -601,11 +634,11 @@ class CommercialReportsController extends Controller
     public function dailyData(Request $request)
     {
         $request->validate([
-            'date' => ['required', 'date'],
+            'date' => ['nullable', 'date'],
             'tenant_id' => ['nullable']
         ]);
 
-        $date = $request->input('date');
+        $date = $request->input('date') ?: now()->toDateString();
         $tenantId = $request->input('tenant_id');
 
         $service = new DailyReportService();

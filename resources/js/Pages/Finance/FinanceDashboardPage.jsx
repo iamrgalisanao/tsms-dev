@@ -45,13 +45,18 @@ const FinanceDashboardPage = () => {
     const fetchData = useCallback(async () => {
         setRefreshing(true);
         try {
+            const todayStr = new Date().toISOString().split('T')[0];
+            const sevenDaysAgoStr = new Date(Date.now() - 6 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+            const monthStartStr = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0];
+            const yearStartStr = new Date(new Date().getFullYear(), 0, 1).toISOString().split('T')[0];
+
             // Fetch from commercial proxy endpoints as they aggregate data for all tenants
             // This matches the current Blade finance dashboard behavior
             const [dailyResp, weeklyResp, monthlyResp, yearlyResp, notificationsResp] = await Promise.all([
-                axios.get('/commercial/reports/transactions/daily'),
-                axios.get('/commercial/reports/transactions/weekly'),
-                axios.get('/commercial/reports/transactions/monthly'),
-                axios.get('/commercial/reports/transactions/yearly'),
+                axios.get('/commercial/reports/transactions/daily', { params: { date: todayStr } }),
+                axios.get('/commercial/reports/transactions/weekly', { params: { date_from: sevenDaysAgoStr, date_to: todayStr } }),
+                axios.get('/commercial/reports/transactions/monthly', { params: { date_from: monthStartStr, date_to: todayStr } }),
+                axios.get('/commercial/reports/transactions/yearly', { params: { date_from: yearStartStr, date_to: todayStr } }),
                 axios.get('/api/dashboard/notifications')
             ]);
 
