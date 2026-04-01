@@ -78,6 +78,8 @@ const TransactionDetailPanel = ({ open, onClose, transaction }) => {
             case 'PENDING':
             case 'PROCESSING':
                 return 'info';
+            case 'VOIDED':
+                return 'error';
             default:
                 return 'default';
         }
@@ -116,13 +118,35 @@ const TransactionDetailPanel = ({ open, onClose, transaction }) => {
                     </Typography>
                     <Box sx={{ mt: 0.5 }}>
                         <Chip
-                            label={transaction?.validation_status || 'PENDING'}
-                            color={getStatusColor(transaction?.validation_status)}
+                            label={transaction?.voided_at ? 'VOIDED' : (transaction?.validation_status || 'PENDING')}
+                            color={getStatusColor(transaction?.voided_at ? 'VOIDED' : transaction?.validation_status)}
                             size="small"
                             sx={{ fontWeight: 'bold' }}
                         />
                     </Box>
                 </Box>
+
+                {transaction?.voided_at && (
+                    <Box sx={{ p: 2, bgcolor: 'error.50', borderRadius: 2, border: '1px solid', borderColor: 'error.100' }}>
+                        <Typography variant="caption" sx={{ color: 'error.main', textTransform: 'uppercase', fontWeight: 900, display: 'block', mb: 1 }}>
+                            Void Information
+                        </Typography>
+                        <Stack spacing={1.5}>
+                            <Box>
+                                <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700 }}>VOIDED AT</Typography>
+                                <Typography variant="body2" sx={{ fontWeight: 700, color: 'error.main' }}>
+                                    {formatDate(transaction.voided_at)}
+                                </Typography>
+                            </Box>
+                            <Box>
+                                <Typography variant="caption" color="text.secondary" sx={{ fontWeight: 700 }}>REASON</Typography>
+                                <Typography variant="body2" sx={{ fontWeight: 600 }}>
+                                    {transaction.void_reason || 'No reason provided'}
+                                </Typography>
+                            </Box>
+                        </Stack>
+                    </Box>
+                )}
 
                 <Divider />
 

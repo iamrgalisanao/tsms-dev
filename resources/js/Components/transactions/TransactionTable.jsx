@@ -39,9 +39,10 @@ const Row = ({ transaction, onViewDetails, getStatusColor, formatCurrency, forma
                 sx={{
                     '& > *': { borderBottom: 'unset' },
                     cursor: 'pointer',
-                    transition: 'background-color 0.2s',
+                    transition: 'background-color 0.2s, opacity 0.2s',
                     '&:hover': { bgcolor: 'rgba(25, 118, 210, 0.02) !important' },
-                    bgcolor: open ? 'rgba(25, 118, 210, 0.04)' : 'inherit'
+                    bgcolor: open ? 'rgba(25, 118, 210, 0.04)' : 'inherit',
+                    opacity: transaction.voided_at ? 0.6 : 1
                 }}
                 onClick={() => setOpen(!open)}
             >
@@ -67,12 +68,28 @@ const Row = ({ transaction, onViewDetails, getStatusColor, formatCurrency, forma
                         <Typography variant="body2" sx={{
                             fontFamily: 'monospace',
                             fontSize: '11px',
-                            color: 'primary.main',
+                            color: transaction.voided_at ? 'error.main' : 'primary.main',
                             fontWeight: 700,
-                            letterSpacing: '0.02em'
+                            letterSpacing: '0.02em',
+                            textDecoration: transaction.voided_at ? 'line-through' : 'none'
                         }}>
                             {transaction.transaction_id.slice(0, 18)}...
                         </Typography>
+                        {transaction.voided_at && (
+                            <Tooltip title={`Voided: ${transaction.void_reason || 'No reason provided'}`} arrow>
+                                <Chip 
+                                    label="VOIDED" 
+                                    size="small" 
+                                    color="error" 
+                                    sx={{ 
+                                        height: 16, 
+                                        fontSize: '0.6rem', 
+                                        fontWeight: 900,
+                                        borderRadius: '4px'
+                                    }} 
+                                />
+                            </Tooltip>
+                        )}
                     </Stack>
                 </TableCell>
                 <TableCell>
@@ -228,6 +245,7 @@ const TransactionTable = ({ transactions, loading, page, rowsPerPage, totalCount
     }
 
     const getStatusColor = (status) => {
+        if (status?.toUpperCase() === 'VOIDED') return 'error'; 
         switch (status?.toUpperCase()) {
             case 'VALID': return 'success';
             case 'INVALID': return 'error';

@@ -82,6 +82,8 @@ class TransactionLogController extends Controller
             'job_attempts',
             'transaction_timestamp',
             'original_payload',
+            'voided_at',
+            'void_reason',
             'created_at',
             'completed_at'
         ];
@@ -289,6 +291,9 @@ class TransactionLogController extends Controller
                     'amount' => (float) $transaction->gross_sales,
                     'net_sales' => (float) $transaction->net_sales,
                     'validation_status' => $transaction->validation_status,
+                    'is_voided' => $transaction->isVoided(),
+                    'voided_at' => $transaction->voided_at,
+                    'void_reason' => $transaction->void_reason,
                     'job_attempts' => (int) $transaction->job_attempts,
                     'created_at' => $transaction->created_at,
                     'completed_at' => $transaction->completed_at,
