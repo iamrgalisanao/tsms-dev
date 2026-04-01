@@ -72,10 +72,10 @@ class TransactionLogController extends Controller
             'transaction_id',
             'terminal_id',
             // canonical stored amounts used across the app/summary
-            'gross_sales as amount',
+            'gross_sales',
             'net_sales',
-            'vat_amount as vat',
-            'refund_amount as refund',
+            'vat_amount',
+            'refund_amount',
             'vatable_sales',
             'sc_vat_exempt_sales',
             'validation_status',
@@ -241,19 +241,22 @@ class TransactionLogController extends Controller
                 'service_charge_distributed' => (float)($tx->service_charge ?? 0),
                 'service_charge_retained' => (float)($tx->management_service_charge ?? 0),
                 'regular_discount' => (float)($tx->discount_total ?? 0),
-                'gross_sales' => (float)($tx->getRawOriginal('amount') ?? $tx->amount ?? 0),
+                'gross_sales' => (float)($tx->gross_sales ?? 0),
             ];
 
             $derived = $this->financeService->deriveMetrics($components);
 
             // Override display values with normalized logic
+            // We map back to 'amount' and 'vat' to maintain UI/test compatibility
             $tx->amount = $derived['gross_sales'];
             // For Detailed View "Net Sales" column, we match the Summary View "Net Total"
             // specifically INCLUDING Exempt sales for user-facing parity.
             $tx->net_sales = round($derived['net_sales'] + $derived['sc_vat_exempt_sales'], 2);
+            $tx->vat = $derived['vat_amount'];
             $tx->vat_amount = $derived['vat_amount'];
             $tx->vatable_sales = $derived['vatable_sales'];
             $tx->sc_vat_exempt_sales = $derived['sc_vat_exempt_sales'];
+            $tx->refund = (float)($tx->refund_amount ?? 0);
 
             return $tx;
         });
