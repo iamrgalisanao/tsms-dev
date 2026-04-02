@@ -133,6 +133,14 @@ return [
             'level' => env('LOG_LEVEL', 'debug'),
         ],
 
+        'rate-limits' => [
+            'driver' => 'daily',
+            'path' => storage_path('logs/rate-limits.log'),
+            'level' => env('LOG_LEVEL', 'debug'),
+            'days' => env('LOG_DAILY_DAYS', 14),
+            'replace_placeholders' => true,
+        ],
+
     ],
 
 ];
