@@ -768,7 +768,10 @@ class TransactionLogController extends Controller
         $logs = collect(); // not needed on summary route
 
         if ($request->wantsJson()) {
-            return response()->json($summary);
+            return response()->json([
+                'summary' => $summary,
+                'grandTotal' => $grandTotal
+            ]);
         }
 
         return view('transactions.logs.index', compact('logs', 'terminals', 'tenants', 'filters', 'activeTab', 'summary', 'sampleTransactions', 'grandTotal'));

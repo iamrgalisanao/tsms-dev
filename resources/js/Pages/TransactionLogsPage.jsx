@@ -39,6 +39,7 @@ const TransactionLogsPage = () => {
 
     const [transactions, setTransactions] = useState([]);
     const [summary, setSummary] = useState([]);
+    const [grandTotal, setGrandTotal] = useState(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
 
@@ -82,8 +83,11 @@ const TransactionLogsPage = () => {
                     page + 1,
                     rowsPerPage
                 );
-                setSummary(response.data || []);
-                setTotalCount(response.total || 0);
+                // Extract summary list and global grand total from structured response
+                const summaryData = response.summary || {};
+                setSummary(summaryData.data || []);
+                setTotalCount(summaryData.total || 0);
+                setGrandTotal(response.grandTotal || null);
             }
         } catch (err) {
             console.error('Error loading data:', err);
@@ -262,6 +266,7 @@ const TransactionLogsPage = () => {
                         ) : (
                             <SummaryTable
                                 summary={summary}
+                                grandTotal={grandTotal}
                                 loading={loading}
                                 page={page}
                                 rowsPerPage={rowsPerPage}
