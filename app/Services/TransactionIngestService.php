@@ -65,6 +65,34 @@ final readonly class TransactionIngestService
                         ->first();
 
                     if (!$existing) {
+                        // Check for business key conflict (terminal/receipt/date)
+                        // Note: transaction_date is a generated column in MySQL/MariaDB
+                        $conflict = DB::table('transactions')
+                            ->where('tenant_id', $parent['tenant_id'])
+                            ->where('terminal_id', $parent['terminal_id'])
+                            ->where('receipt_no', $parent['receipt_no'])
+                            ->where('transaction_date', date('Y-m-d', strtotime((string)$parent['transaction_timestamp'])))
+                            ->first();
+
+                        if ($conflict) {
+                            Log::warning('TransactionIngestService: Business key conflict detected', [
+                                'tenant_id' => $parent['tenant_id'],
+                                'terminal_id' => $parent['terminal_id'],
+                                'receipt_no' => $parent['receipt_no'],
+                                'incoming_tx_id' => $parent['transaction_id'],
+                                'existing_tx_id' => $conflict->transaction_id,
+                            ]);
+
+                            return [
+                                'status' => 'failed',
+                                'id' => null,
+                                'transaction_id' => $parent['transaction_id'],
+                                'terminal_id' => $parent['terminal_id'],
+                                'message' => 'duplicate_receipt_conflict',
+                                'details' => 'Receipt already exists with a different transaction_id',
+                            ];
+                        }
+
                         Log::warning('TransactionIngestService: insertOrIgnore returned 0 but no existing transaction found', $parent);
                         return [
                             'status' => 'failed',
