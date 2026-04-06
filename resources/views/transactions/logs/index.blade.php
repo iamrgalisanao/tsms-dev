@@ -301,6 +301,32 @@ use App\Helpers\FormatHelper;
                 @empty
                 @endforelse
             </tbody>
+            @if(isset($grandTotal))
+            <tfoot class="bg-light font-weight-bold">
+                <tr>
+                    <td colspan="3" class="text-center">GRAND TOTAL (Filtered)</td>
+                    <td class="text-end">{{ number_format($grandTotal->tx_count) }}</td>
+                    <td class="text-end">{{ number_format($grandTotal->unique_receipts) }}</td>
+                    <td class="text-end">₱{{ number_format($grandTotal->gross, 2) }}</td>
+                    <td class="text-end">₱{{ number_format($grandTotal->net, 2) }}</td>
+                    <td class="text-end">₱{{ number_format($grandTotal->refund, 2) }}</td>
+                    
+                    <td class="text-end">₱{{ number_format($grandTotal->promo_discount, 2) }}</td>
+                    <td class="text-end">₱{{ number_format($grandTotal->senior_discount, 2) }}</td>
+                    <td class="text-end">₱{{ number_format($grandTotal->pwd_discount, 2) }}</td>
+                    <td class="text-end">₱{{ number_format($grandTotal->vip_discount, 2) }}</td>
+                    <td class="text-end">₱{{ number_format($grandTotal->employee_discount, 2) }}</td>
+                    <td class="text-end">₱{{ number_format($grandTotal->service_charge, 2) }}</td>
+                    <td class="text-end">₱{{ number_format($grandTotal->management_service_charge, 2) }}</td>
+                    
+                    <td class="text-end">₱{{ number_format($grandTotal->vat, 2) }}</td>
+                    <td class="text-end">₱{{ number_format($grandTotal->vatable_sales, 2) }}</td>
+                    <td class="text-end">₱{{ number_format($grandTotal->sc_vat_exempt_sales, 2) }}</td>
+                    <td class="text-end">₱{{ number_format($grandTotal->tax_exempt, 2) }}</td>
+                    <td class="text-end">₱{{ number_format($grandTotal->other_tax, 2) }}</td>
+                </tr>
+            </tfoot>
+            @endif
         </table>
         @else
         <table id="transactionLogsTable" class="table table-striped table-hover table-head-fixed text-sm">

@@ -636,6 +636,78 @@ class TransactionLogController extends Controller
             $query->where('t.validation_status', '!=', 'DUPLICATE');
         }
 
+        // Clone the query for global grand totals before grouping and pagination.
+        // This provides an overall total for the entire filtered set across all pages.
+        $grandTotalQuery = clone $query;
+        $grandTotalRaw = $grandTotalQuery
+            ->selectRaw('COUNT(*) as tx_count')
+            ->selectRaw('COALESCE(SUM(t.gross_sales),0) as gross_sales')
+            ->selectRaw('COALESCE(SUM(t.net_sales),0) as raw_net_sales')
+            ->selectRaw('COALESCE(SUM(t.vat_amount),0) as raw_vat_amount')
+            ->selectRaw('COALESCE(SUM(t.vatable_sales),0) as raw_vatable_sales')
+            ->selectRaw('COALESCE(SUM(t.sc_vat_exempt_sales),0) as raw_sc_vat_exempt_sales')
+            ->selectRaw('COALESCE(SUM(t.refund_amount),0) as refund')
+            ->selectRaw("COALESCE(SUM(CASE WHEN t.promo_status = 'WITH_APPROVAL' THEN t.promo_discount ELSE 0 END),0) as promo_with_approval")
+            ->selectRaw("COALESCE(SUM(CASE WHEN t.promo_status != 'WITH_APPROVAL' THEN t.promo_discount ELSE 0 END),0) as promo_without_approval")
+            ->selectRaw('COALESCE(SUM(t.senior_discount),0) as senior_discount')
+            ->selectRaw('COALESCE(SUM(t.pwd_discount),0) as pwd_discount')
+            ->selectRaw('COALESCE(SUM(t.discount_total),0) as regular_discount')
+            ->selectRaw('COALESCE(SUM(t.service_charge),0) as service_charge_distributed')
+            ->selectRaw('COALESCE(SUM(t.management_service_charge),0) as service_charge_retained')
+            ->when(Schema::hasColumn('transactions', 'tax_exempt'), function ($q) {
+                $q->selectRaw('COALESCE(SUM(t.tax_exempt),0) as other_tax');
+            })
+            ->when(Schema::hasColumn('transactions', 'employee_discount'), function ($q) {
+                $q->selectRaw('COALESCE(SUM(t.employee_discount),0) as employee_discount');
+            })
+            ->when(Schema::hasColumn('transactions', 'vip_card_discount'), function ($q) {
+                $q->selectRaw('COALESCE(SUM(t.vip_card_discount),0) as vip_discount');
+            })
+            ->when(Schema::hasColumn('transactions', 'receipt_no'), function ($q) {
+                $q->selectRaw("COUNT(DISTINCT NULLIF(t.receipt_no, '')) as unique_receipts");
+            })
+            ->first();
+
+        // Standardize the grand total using FinanceCalculationService logic
+        $gtComponents = [
+            'vatable_sales' => (float)$grandTotalRaw->raw_vatable_sales,
+            'sc_vat_exempt_sales' => (float)$grandTotalRaw->raw_sc_vat_exempt_sales,
+            'vat_amount' => (float)$grandTotalRaw->raw_vat_amount,
+            'promo_with_approval' => (float)$grandTotalRaw->promo_with_approval,
+            'promo_without_approval' => (float)$grandTotalRaw->promo_without_approval,
+            'employee_discount' => (float)($grandTotalRaw->employee_discount ?? 0),
+            'senior_discount' => (float)$grandTotalRaw->senior_discount,
+            'pwd_discount' => (float)$grandTotalRaw->pwd_discount,
+            'vip_discount' => (float)($grandTotalRaw->vip_discount ?? 0),
+            'other_tax' => (float)($grandTotalRaw->other_tax ?? 0),
+            'service_charge_distributed' => (float)$grandTotalRaw->service_charge_distributed,
+            'service_charge_retained' => (float)$grandTotalRaw->service_charge_retained,
+            'regular_discount' => (float)$grandTotalRaw->regular_discount,
+            'gross_sales' => (float)$grandTotalRaw->gross_sales,
+            'net_sales' => (float)$grandTotalRaw->raw_net_sales,
+        ];
+
+        $gtDerived = $this->financeService->deriveMetrics($gtComponents);
+        $grandTotal = (object)[
+            'tx_count' => $grandTotalRaw->tx_count,
+            'unique_receipts' => $grandTotalRaw->unique_receipts ?? 0,
+            'gross' => $gtDerived['gross_sales'],
+            'net' => $gtDerived['net_total'],
+            'refund' => (float)$grandTotalRaw->refund,
+            'promo_discount' => $gtDerived['total_promotions'],
+            'senior_discount' => (float)$grandTotalRaw->senior_discount,
+            'pwd_discount' => (float)$grandTotalRaw->pwd_discount,
+            'vip_discount' => (float)($grandTotalRaw->vip_discount ?? 0),
+            'employee_discount' => (float)($grandTotalRaw->employee_discount ?? 0),
+            'service_charge' => $gtDerived['service_charge_distributed'],
+            'management_service_charge' => $gtDerived['service_charge_retained'],
+            'vat' => $gtDerived['vat_amount'],
+            'vatable_sales' => $gtDerived['vatable_sales'],
+            'sc_vat_exempt_sales' => $gtDerived['sc_vat_exempt_sales'],
+            'tax_exempt' => $gtDerived['other_tax'],
+            'other_tax' => 0, // Placeholder as in row logic
+        ];
+
         $summary = $query->paginate($perPage)->appends($request->all());
 
         // Standardize the numeric roll-ups using FinanceCalculationService logic.
@@ -699,6 +771,6 @@ class TransactionLogController extends Controller
             return response()->json($summary);
         }
 
-        return view('transactions.logs.index', compact('logs', 'terminals', 'tenants', 'filters', 'activeTab', 'summary', 'sampleTransactions'));
+        return view('transactions.logs.index', compact('logs', 'terminals', 'tenants', 'filters', 'activeTab', 'summary', 'sampleTransactions', 'grandTotal'));
     }
 }
