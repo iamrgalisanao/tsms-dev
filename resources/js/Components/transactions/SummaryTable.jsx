@@ -263,33 +263,6 @@ const SummaryTable = ({ summary, grandTotal, loading, page, rowsPerPage, totalCo
                             />
                         ))}
                     </TableBody>
-                    {grandTotal && (
-                        <TableFooter>
-                            <TableRow sx={{ bgcolor: 'rgba(0,0,0,0.03)' }}>
-                                <TableCell colSpan={3} sx={{ ...footerCellStyles, textAlign: 'center', position: 'sticky', left: 0, zIndex: 10 }}>
-                                    GRAND TOTAL (FILTERED)
-                                </TableCell>
-                                <TableCell align="right" sx={footerCellStyles}>
-                                    {grandTotal.tx_count?.toLocaleString()}
-                                </TableCell>
-                                <TableCell align="right" sx={footerCellStyles}>
-                                    {grandTotal.unique_receipts?.toLocaleString()}
-                                </TableCell>
-                                <TableCell align="right" sx={footerCellStyles}>
-                                    {formatCurrency(grandTotal.gross)}
-                                </TableCell>
-                                <TableCell align="right" sx={footerCellStyles}>
-                                    {formatCurrency(grandTotal.net)}
-                                </TableCell>
-                                <TableCell align="right" sx={footerCellStyles}>
-                                    {formatCurrency(grandTotal.refund)}
-                                </TableCell>
-                                <TableCell align="right" sx={footerCellStyles}>
-                                    {formatCurrency(grandTotal.service_charge)}
-                                </TableCell>
-                            </TableRow>
-                        </TableFooter>
-                    )}
                 </Table>
             </TableContainer>
 

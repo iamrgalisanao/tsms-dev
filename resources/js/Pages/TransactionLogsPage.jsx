@@ -8,7 +8,9 @@ import {
     Tab,
     Button,
     Alert,
-    Stack
+    Stack,
+    Grid,
+    Divider
 } from '@mui/material';
 import ReceiptIcon from '@mui/icons-material/Receipt';
 import SummarizeIcon from '@mui/icons-material/Summarize';
@@ -21,6 +23,25 @@ import TransactionTable from '../Components/transactions/TransactionTable';
 import SummaryTable from '../Components/transactions/SummaryTable';
 import TransactionDetailPanel from '../Components/transactions/TransactionDetailPanel';
 import { transactionLogService } from '../services/transactionLogService';
+
+const StatCard = ({ label, value, color }) => (
+    <Box>
+        <Typography variant="caption" sx={{ color: 'text.disabled', fontWeight: 800, display: 'block', fontSize: '0.65rem', textTransform: 'uppercase', letterSpacing: '0.1em', mb: 0.5 }}>
+            {label}
+        </Typography>
+        <Typography variant="h5" sx={{ fontWeight: 950, color: color, letterSpacing: '-0.02em', fontFamily: 'monospace' }}>
+            {value || '-'}
+        </Typography>
+    </Box>
+);
+
+const formatCurrency = (amount) => {
+    if (!amount && amount !== 0) return '-';
+    return '₱' + new Intl.NumberFormat('en-PH', {
+        minimumFractionDigits: 2,
+        maximumFractionDigits: 2
+    }).format(amount);
+};
 
 const TransactionLogsPage = () => {
     const [activeTab, setActiveTab] = useState('detailed');
@@ -264,23 +285,61 @@ const TransactionLogsPage = () => {
                                 }}
                             />
                         ) : (
-                            <SummaryTable
-                                summary={summary}
-                                grandTotal={grandTotal}
-                                loading={loading}
-                                page={page}
-                                rowsPerPage={rowsPerPage}
-                                totalCount={totalCount}
-                                onPageChange={(e, newPage) => setPage(newPage)}
-                                onRowsPerPageChange={(e) => {
-                                    setRowsPerPage(parseInt(e.target.value, 10));
-                                    setPage(0);
-                                }}
-                                sortDirection={sortDirection}
-                                onToggleSortDirection={() =>
-                                    setSortDirection((prev) => (prev === 'asc' ? 'desc' : 'asc'))
-                                }
-                            />
+                            <Box>
+                                {/* Summary Stats Cards */}
+                                {grandTotal && (
+                                    <Box sx={{ p: 4, bgcolor: 'rgba(248, 250, 252, 0.5)', borderBottom: '1px solid', borderColor: 'divider' }}>
+                                        <Grid container spacing={4}>
+                                            <Grid item xs={12} sm={6} md={3}>
+                                                <StatCard 
+                                                    label="Total Gross Sales" 
+                                                    value={formatCurrency(grandTotal.gross)} 
+                                                    color="text.primary"
+                                                />
+                                            </Grid>
+                                            <Grid item xs={12} sm={6} md={3}>
+                                                <StatCard 
+                                                    label="Total Net Sales" 
+                                                    value={formatCurrency(grandTotal.net)} 
+                                                    color="primary.main"
+                                                />
+                                            </Grid>
+                                            <Grid item xs={12} sm={6} md={3}>
+                                                <StatCard 
+                                                    label="Total Refunds" 
+                                                    value={formatCurrency(grandTotal.refund)} 
+                                                    color="error.main"
+                                                />
+                                            </Grid>
+                                            <Grid item xs={12} sm={6} md={3}>
+                                                <StatCard 
+                                                    label="Total Transactions" 
+                                                    value={grandTotal.tx_count?.toLocaleString()} 
+                                                    color="text.secondary"
+                                                />
+                                            </Grid>
+                                        </Grid>
+                                    </Box>
+                                )}
+
+                                <SummaryTable
+                                    summary={summary}
+                                    grandTotal={grandTotal}
+                                    loading={loading}
+                                    page={page}
+                                    rowsPerPage={rowsPerPage}
+                                    totalCount={totalCount}
+                                    onPageChange={(e, newPage) => setPage(newPage)}
+                                    onRowsPerPageChange={(e) => {
+                                        setRowsPerPage(parseInt(e.target.value, 10));
+                                        setPage(0);
+                                    }}
+                                    sortDirection={sortDirection}
+                                    onToggleSortDirection={() =>
+                                        setSortDirection((prev) => (prev === 'asc' ? 'desc' : 'asc'))
+                                    }
+                                />
+                            </Box>
                         )}
                     </Box>
                 </CardContent>
