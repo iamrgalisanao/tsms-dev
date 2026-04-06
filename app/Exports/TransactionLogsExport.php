@@ -29,7 +29,7 @@ class TransactionLogsExport implements FromQuery, WithMapping, WithHeadings, Sho
         return Transaction::query()
             ->select('transactions.*')
             ->distinct()
-            ->with(['terminal', 'tenant'])
+            ->with(['terminal', 'tenant', 'adjustments'])
             // If a status filter is provided, apply it. Otherwise default to
             // exporting only VALID transactions when the schema supports
             // receipt_no (so exports align with POS-style counts). If the
@@ -114,12 +114,12 @@ class TransactionLogsExport implements FromQuery, WithMapping, WithHeadings, Sho
             number_format($transaction->promo_discount ?? 0, 2),
             number_format($transaction->senior_discount ?? 0, 2),
             number_format($transaction->pwd_discount ?? 0, 2),
-            '-', // VIP Card Discount - not available in database
-            '-', // Employee Discount - not available in database  
+            number_format($transaction->adjustments->where('adjustment_type', 'VIP')->sum('amount'), 2),
+            number_format($transaction->adjustments->where('adjustment_type', 'EMPLOYEE')->sum('amount'), 2),
             number_format($transaction->service_charge ?? 0, 2),
             number_format($transaction->management_service_charge ?? 0, 2),
             // Tax Columns
-            number_format($transaction->vat ?? 0, 2),
+            number_format($transaction->vat_amount ?? 0, 2),
             number_format($transaction->vatable_sales ?? 0, 2),
             number_format($transaction->sc_vat_exempt_sales ?? 0, 2),
             number_format($transaction->tax_exempt ?? 0, 2),

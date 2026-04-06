@@ -662,6 +662,7 @@ class TransactionLogController extends Controller
             // Override specific display columns with normalized values
             $row->gross = $derived['gross_sales'];
             // The dashboard Net Total matches the CMSR bottom line ($Vatable + VAT + Exempt)
+            // We use the derived net_sales (which is already Vatable + VAT) and add sc_vat_exempt_sales.
             $row->net = round($derived['net_sales'] + $derived['sc_vat_exempt_sales'], 2);
             $row->vat = $derived['vat_amount'];
             $row->vatable_sales = $derived['vatable_sales'];

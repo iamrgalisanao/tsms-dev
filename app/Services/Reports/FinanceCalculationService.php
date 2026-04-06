@@ -29,6 +29,7 @@ class FinanceCalculationService
             'service_charge_retained' => 0.0,
             'regular_discount' => 0.0,
             'gross_sales' => 0.0,
+            'net_sales' => 0.0,
         ];
 
         foreach ($transactions as $tx) {
@@ -61,11 +62,27 @@ class FinanceCalculationService
                 $c['promo_without_approval'] += $promo;
             }
 
-            // Map columns correctly based on schema
-            $c['employee_discount'] += (float) ($tx->employee_discount ?? 0);
+            // Map columns correctly based on schema. 
+            // In modern TSMS schemas, these are also checked against 
+            // adjustments table if the columns are 0.
+            $txEmployee = (float)($tx->employee_discount ?? 0);
+            $txVip = (float)($tx->vip_card_discount ?? 0);
+
+            if ($txEmployee === 0.0 && method_exists($tx, 'adjustments')) {
+                $txEmployee = (float) $tx->adjustments()
+                    ->where('adjustment_type', 'EMPLOYEE')
+                    ->sum('amount');
+            }
+            if ($txVip === 0.0 && method_exists($tx, 'adjustments')) {
+                $txVip = (float) $tx->adjustments()
+                    ->where('adjustment_type', 'VIP')
+                    ->sum('amount');
+            }
+
+            $c['employee_discount'] += $txEmployee;
+            $c['vip_discount'] += $txVip;
             $c['senior_discount'] += (float) ($tx->senior_discount ?? 0);
             $c['pwd_discount'] += (float) ($tx->pwd_discount ?? 0);
-            $c['vip_discount'] += (float) ($tx->vip_card_discount ?? 0);
 
             // For other_tax, we use the model's relation sum but EXCLUDE VAT components
             // and SC_VAT_EXEMPT_SALES to avoid double counting or misclassification.
@@ -85,6 +102,7 @@ class FinanceCalculationService
             $c['regular_discount'] += (float) ($tx->discount_total ?? 0);
 
             $c['gross_sales'] += (float) ($tx->gross_sales ?? 0);
+            $c['net_sales'] += (float) ($tx->net_sales ?? 0);
         }
 
         return $c;
@@ -134,8 +152,11 @@ class FinanceCalculationService
 
         // 3. Net Sales (Source of Truth: Gross - Non-VAT components)
         // Excel N61: Gross - (Promos + Employee + Senior/PWD + VIP + Exempt + LocalTax + SC)
-        // This effectively leaves (Vatable + VAT)
-        $netSales = round(
+        // This effectively leaves (Vatable + VAT).
+        // If the database has a non-zero recorded net_sales for this transaction/group, we 
+        // calculate a nominal "raw" net to allow validation against the derived one.
+        $rawNetSales = (float)($c['net_sales'] ?? 0);
+        $derivedNetSales = round(
             $gross
             - $promotions
             - ($c['employee_discount'] ?? 0)
@@ -148,9 +169,17 @@ class FinanceCalculationService
             2
         );
 
-        // 4. VAT (Derived from Net)
+        // Prefer raw recorded net_sales if available and positive
+        $netSales = ($rawNetSales > 0) ? round($rawNetSales, 2) : $derivedNetSales;
+
+        // 4. VAT (Source of Truth: Recorded VAT if exists, else Derived from Net)
         // Excel N62: (Net Sales / 1.12) * 0.12
-        $vat = round(($netSales / 1.12) * 0.12, 2);
+        $rawVat = (float)($c['vat_amount'] ?? 0);
+        $derivedVat = round(($netSales / 1.12) * 0.12, 2);
+
+        // IMPORTANT: If raw recorded VAT exists, we MUST use it for the export/summary 
+        // to match the POS system's actual tax calculation.
+        $vat = ($rawVat > 0) ? round($rawVat, 2) : $derivedVat;
 
         // 5. Net Ex-VAT (Equivalent to Vatable Sales after normalization)
         // Excel N64: Net Sales - VAT

@@ -57,9 +57,9 @@ class ReportsController extends Controller
         // to align the finance reports with admin transaction logs and reporting
         // services. Fall back to created_at when transaction_timestamp is missing.
         if (Schema::hasColumn('transactions', 'transaction_timestamp')) {
-            $query->whereYear('transaction_timestamp', $year)
-                ->whereMonth('transaction_timestamp', $month)
-                ->orderBy('transaction_timestamp');
+            $query->whereRaw("YEAR(COALESCE(transaction_timestamp, created_at)) = ?", [$year])
+                ->whereRaw("MONTH(COALESCE(transaction_timestamp, created_at)) = ?", [$month])
+                ->orderByRaw("COALESCE(transaction_timestamp, created_at)");
         } else {
             $query->whereYear('created_at', $year)
                 ->whereMonth('created_at', $month)
