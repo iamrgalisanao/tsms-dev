@@ -169,8 +169,18 @@ class FinanceCalculationService
             2
         );
 
-        // Prefer raw recorded net_sales if available and positive
+        // Priority: Use recorded values from the database if they exist.
+        // We ensure the internal $netSales base is strictly (Vatable + VAT) to remain
+        // compatible with legacy CMSR/Log mappings that add Exempt sales back.
         $netSales = ($rawNetSales > 0) ? round($rawNetSales, 2) : $derivedNetSales;
+
+        // If the raw net_sales already includes Exempt sales (standard POS logic),
+        // we must subtract them to isolate the Vatable + VAT portion for the formulas below.
+        if ($rawNetSales > 0 && ($c['sc_vat_exempt_sales'] ?? 0) > 0) {
+            // We only subtract if the raw value appears to be inclusive of the exempt portion
+            // (e.g. if Net >= Exempt). This prevents double-counting in summaries.
+            $netSales = round($netSales - ($c['sc_vat_exempt_sales'] ?? 0), 2);
+        }
 
         // 4. VAT (Source of Truth: Recorded VAT if exists, else Derived from Net)
         // Excel N62: (Net Sales / 1.12) * 0.12
@@ -206,6 +216,9 @@ class FinanceCalculationService
             'gross_sales' => $gross,
             'net_ex_vat' => $netExVAT,
             'net_subject_to_rent' => $netSubjectToRent,
+            // net_total: The final amount due from the customer (Vatable + VAT + Exempt)
+            // This is the value that should be used for Dashboard "Net Total" summaries.
+            'net_total' => round($netSales + ($c['sc_vat_exempt_sales'] ?? 0), 2),
         ]);
     }
 }

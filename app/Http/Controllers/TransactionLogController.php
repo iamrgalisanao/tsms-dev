@@ -242,6 +242,7 @@ class TransactionLogController extends Controller
                 'service_charge_retained' => (float)($tx->management_service_charge ?? 0),
                 'regular_discount' => (float)($tx->discount_total ?? 0),
                 'gross_sales' => (float)($tx->gross_sales ?? 0),
+                'net_sales' => (float)($tx->net_sales ?? 0),
             ];
 
             $derived = $this->financeService->deriveMetrics($components);
@@ -251,7 +252,7 @@ class TransactionLogController extends Controller
             $tx->amount = $derived['gross_sales'];
             // For Detailed View "Net Sales" column, we match the Summary View "Net Total"
             // specifically INCLUDING Exempt sales for user-facing parity.
-            $tx->net_sales = round($derived['net_sales'] + $derived['sc_vat_exempt_sales'], 2);
+            $tx->net_sales = $derived['net_total'];
             $tx->vat = $derived['vat_amount'];
             $tx->vat_amount = $derived['vat_amount'];
             $tx->vatable_sales = $derived['vatable_sales'];
@@ -655,6 +656,7 @@ class TransactionLogController extends Controller
                 'service_charge_retained' => (float)$row->service_charge_retained,
                 'regular_discount' => (float)$row->regular_discount,
                 'gross_sales' => (float)$row->gross_sales,
+                'net_sales' => (float)$row->raw_net_sales,
             ];
 
             $derived = $this->financeService->deriveMetrics($components);
@@ -662,8 +664,8 @@ class TransactionLogController extends Controller
             // Override specific display columns with normalized values
             $row->gross = $derived['gross_sales'];
             // The dashboard Net Total matches the CMSR bottom line ($Vatable + VAT + Exempt)
-            // We use the derived net_sales (which is already Vatable + VAT) and add sc_vat_exempt_sales.
-            $row->net = round($derived['net_sales'] + $derived['sc_vat_exempt_sales'], 2);
+            // We use the unified net_total from the service to avoid double-counting.
+            $row->net = $derived['net_total'];
             $row->vat = $derived['vat_amount'];
             $row->vatable_sales = $derived['vatable_sales'];
             $row->sc_vat_exempt_sales = $derived['sc_vat_exempt_sales'];
