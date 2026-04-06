@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useState } from 'react';
 import {
     Table,
     TableBody,
@@ -11,9 +11,153 @@ import {
     Box,
     Typography,
     CircularProgress,
-    Stack
+    Stack,
+    IconButton,
+    Collapse,
+    Grid,
+    Divider
 } from '@mui/material';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
+import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
+import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
+
+const Row = ({ row, formatCurrency, cellStyles }) => {
+    const [open, setOpen] = useState(false);
+
+    return (
+        <React.Fragment>
+            <TableRow
+                hover
+                onClick={() => setOpen(!open)}
+                sx={{
+                    '& > *': { borderBottom: 'unset' },
+                    cursor: 'pointer',
+                    transition: 'background-color 0.2s',
+                    '&:hover': { bgcolor: 'rgba(25, 118, 210, 0.02) !important' },
+                    bgcolor: open ? 'rgba(25, 118, 210, 0.04)' : 'inherit'
+                }}
+            >
+                <TableCell sx={{ position: 'sticky', left: 0, zIndex: 5, bgcolor: open ? 'rgba(235, 245, 255, 1)' : 'white' }}>
+                    <Stack direction="row" spacing={1} alignItems="center">
+                        <IconButton
+                            size="small"
+                            onClick={(e) => {
+                                e.stopPropagation();
+                                setOpen(!open);
+                            }}
+                            sx={{
+                                bgcolor: open ? 'primary.main' : 'rgba(0,0,0,0.04)',
+                                color: open ? 'white' : 'inherit',
+                                '&:hover': { bgcolor: open ? 'primary.dark' : 'rgba(0,0,0,0.08)' },
+                                width: 22,
+                                height: 22
+                            }}
+                        >
+                            {open ? <KeyboardArrowUpIcon sx={{ fontSize: 14 }} /> : <KeyboardArrowDownIcon sx={{ fontSize: 14 }} />}
+                        </IconButton>
+                        <Typography variant="body2" sx={{ fontWeight: 800, fontFamily: 'monospace', fontSize: '11px' }}>
+                            {row.date}
+                        </Typography>
+                    </Stack>
+                </TableCell>
+                <TableCell sx={{ position: 'sticky', left: 110, zIndex: 5, bgcolor: open ? 'rgba(235, 245, 255, 1)' : 'white' }}>
+                    <Typography variant="body2" sx={{ fontWeight: 800, color: 'text.primary', fontSize: '0.8125rem', whiteSpace: 'nowrap' }}>
+                        {row.trade_name || 'Unknown'}
+                    </Typography>
+                </TableCell>
+                <TableCell>
+                    <Typography variant="body2" sx={{ fontWeight: 700, fontFamily: 'monospace', fontSize: '11px', whiteSpace: 'nowrap' }}>
+                        {row.serial_number || 'N/A'}
+                    </Typography>
+                </TableCell>
+                <TableCell align="right">
+                    <Typography variant="body2" sx={{ fontWeight: 800, ...cellStyles }}>
+                        {row.tx_count?.toLocaleString()}
+                    </Typography>
+                </TableCell>
+                <TableCell align="right">
+                    <Typography variant="body2" sx={{ fontWeight: 950, color: 'primary.main', ...cellStyles }}>
+                        {row.unique_receipts !== undefined ? row.unique_receipts.toLocaleString() : '-'}
+                    </Typography>
+                </TableCell>
+                <TableCell align="right">
+                    <Typography variant="body2" sx={{ fontWeight: 800, ...cellStyles }}>
+                        {formatCurrency(row.gross)}
+                    </Typography>
+                </TableCell>
+                <TableCell align="right">
+                    <Typography variant="body2" sx={{ fontWeight: 950, color: 'primary.main', ...cellStyles }}>
+                        {formatCurrency(row.net)}
+                    </Typography>
+                </TableCell>
+                <TableCell align="right">
+                    <Typography variant="body2" sx={{ fontWeight: 800, color: row.refund > 0 ? 'error.main' : 'text.secondary', ...cellStyles }}>
+                        {formatCurrency(row.refund)}
+                    </Typography>
+                </TableCell>
+                <TableCell align="right">
+                    <Typography variant="body2" sx={{ fontWeight: 700, color: 'text.secondary', ...cellStyles }}>
+                        {formatCurrency(row.service_charge_distributed)}
+                    </Typography>
+                </TableCell>
+            </TableRow>
+            <TableRow>
+                <TableCell style={{ paddingBottom: 0, paddingTop: 0 }} colSpan={9}>
+                    <Collapse in={open} timeout="auto" unmountOnExit>
+                        <Box sx={{ py: 3, px: 5, bgcolor: 'rgba(248, 250, 252, 0.8)', borderBottom: '1px solid', borderColor: 'divider' }}>
+                            <Typography variant="subtitle2" gutterBottom sx={{ fontWeight: 800, color: 'text.secondary', fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.12em', mb: 2.5 }}>
+                                Extended Financial Breakdown
+                            </Typography>
+                            <Grid container spacing={4}>
+                                <Grid item xs={12} md={4}>
+                                    <Stack spacing={2}>
+                                        <DetailItem label="Vatable Sales" value={formatCurrency(row.vatable_sales)} />
+                                        <DetailItem label="VAT Amount" value={formatCurrency(row.vat)} />
+                                        <DetailItem label="Tax Exempt" value={formatCurrency(row.tax_exempt)} />
+                                        <DetailItem label="Other Tax" value={formatCurrency(row.other_tax)} />
+                                    </Stack>
+                                </Grid>
+                                <Grid item xs={12} md={4}>
+                                    <Stack spacing={2}>
+                                        <DetailItem label="Promo Discounts" value={formatCurrency(row.promo_discount)} />
+                                        <DetailItem label="Senior Citizen" value={formatCurrency(row.senior_discount)} />
+                                        <DetailItem label="PWD Discount" value={formatCurrency(row.pwd_discount)} />
+                                        <DetailItem label="SC VAT Exempt Sales" value={formatCurrency(row.sc_vat_exempt_sales)} />
+                                    </Stack>
+                                </Grid>
+                                <Grid item xs={12} md={4}>
+                                    <Stack spacing={2}>
+                                        <DetailItem label="VIP Discounts" value={formatCurrency(row.vip_discount)} />
+                                        <DetailItem label="Employee Discounts" value={formatCurrency(row.employee_discount)} />
+                                        <DetailItem label="SC (Management)" value={formatCurrency(row.service_charge_retained)} />
+                                        <Box sx={{ pt: 1 }}>
+                                            <Divider sx={{ mb: 1.5, opacity: 0.5 }} />
+                                            <Typography variant="caption" color="text.disabled" sx={{ fontWeight: 700, display: 'block', mb: 0.5 }}>IDENTIFICATION</Typography>
+                                            <Typography variant="body2" sx={{ fontFamily: 'monospace', fontWeight: 700, fontSize: '0.7rem' }}>
+                                                TERMINAL: {row.serial_number} | MACHINE #{row.machine_number || 'N/A'}
+                                            </Typography>
+                                        </Box>
+                                    </Stack>
+                                </Grid>
+                            </Grid>
+                        </Box>
+                    </Collapse>
+                </TableCell>
+            </TableRow>
+        </React.Fragment>
+    );
+};
+
+const DetailItem = ({ label, value }) => (
+    <Box>
+        <Typography variant="caption" sx={{ color: 'text.disabled', fontWeight: 800, display: 'block', fontSize: '0.625rem', textTransform: 'uppercase', letterSpacing: '0.02em' }}>
+            {label}
+        </Typography>
+        <Typography variant="body2" sx={{ fontWeight: 800, color: 'text.primary', fontFamily: 'monospace' }}>
+            {value}
+        </Typography>
+    </Box>
+);
 
 const SummaryTable = ({ summary, grandTotal, loading, page, rowsPerPage, totalCount, onPageChange, onRowsPerPageChange, sortDirection = 'desc', onToggleSortDirection }) => {
     if (loading) {
@@ -47,12 +191,12 @@ const SummaryTable = ({ summary, grandTotal, loading, page, rowsPerPage, totalCo
     };
 
     const headerStyles = {
-        fontWeight: 800,
-        fontSize: '0.65rem',
+        fontWeight: 950,
+        fontSize: '0.68rem',
         textTransform: 'uppercase',
-        letterSpacing: '0.1em',
+        letterSpacing: '0.12em',
         color: '#EB342E',
-        py: 2.5,
+        py: 3,
         bgcolor: 'white',
         borderBottom: '2px solid',
         borderColor: 'divider',
@@ -61,17 +205,18 @@ const SummaryTable = ({ summary, grandTotal, loading, page, rowsPerPage, totalCo
 
     const cellStyles = {
         fontFamily: 'monospace',
-        fontSize: '0.75rem',
+        fontSize: '0.78rem',
         whiteSpace: 'nowrap'
     };
 
     const footerCellStyles = {
         fontWeight: 950,
-        bgcolor: 'rgba(235, 52, 46, 0.04)',
+        bgcolor: 'rgba(235, 52, 46, 0.05)',
         borderTop: '2px solid',
         borderColor: 'primary.main',
         color: 'primary.main',
-        py: 2
+        py: 2.5,
+        fontSize: '0.8rem'
     };
 
     return (
@@ -98,128 +243,29 @@ const SummaryTable = ({ summary, grandTotal, loading, page, rowsPerPage, totalCo
                                     </Typography>
                                 </Stack>
                             </TableCell>
-                            <TableCell sx={{ ...headerStyles, position: 'sticky', left: 100, zIndex: 10, bgcolor: 'white' }}>Tenant</TableCell>
+                            <TableCell sx={{ ...headerStyles, position: 'sticky', left: 110, zIndex: 10, bgcolor: 'white' }}>Tenant</TableCell>
                             <TableCell sx={headerStyles}>Terminal</TableCell>
                             <TableCell align="right" sx={headerStyles}>Tx Count</TableCell>
                             <TableCell align="right" sx={headerStyles}>Unique Receipts</TableCell>
                             <TableCell align="right" sx={headerStyles}>Gross Total</TableCell>
                             <TableCell align="right" sx={headerStyles}>Net Total</TableCell>
                             <TableCell align="right" sx={headerStyles}>Refund</TableCell>
-                            
-                            {/* Adjustment Columns */}
-                            <TableCell align="right" sx={headerStyles}>Promo</TableCell>
-                            <TableCell align="right" sx={headerStyles}>Senior</TableCell>
-                            <TableCell align="right" sx={headerStyles}>PWD</TableCell>
-                            <TableCell align="right" sx={headerStyles}>VIP</TableCell>
-                            <TableCell align="right" sx={headerStyles}>Employee</TableCell>
-                            <TableCell align="right" sx={headerStyles}>SC (Empl)</TableCell>
-                            <TableCell align="right" sx={headerStyles}>SC (Mng)</TableCell>
-                            
-                            {/* Tax Columns */}
-                            <TableCell align="right" sx={headerStyles}>VAT</TableCell>
-                            <TableCell align="right" sx={headerStyles}>Vatable</TableCell>
-                            <TableCell align="right" sx={headerStyles}>Exempt</TableCell>
-                            <TableCell align="right" sx={headerStyles}>Other Tax</TableCell>
+                            <TableCell align="right" sx={headerStyles}>SC (Emp)</TableCell>
                         </TableRow>
                     </TableHead>
                     <TableBody>
                         {summary.map((row, index) => (
-                            <TableRow
+                            <Row
                                 key={index}
-                                hover
-                                sx={{
-                                    transition: 'background-color 0.2s',
-                                    '&:hover': { bgcolor: 'rgba(25, 118, 210, 0.02) !important' }
-                                }}
-                            >
-                                <TableCell sx={{ position: 'sticky', left: 0, zIndex: 5, bgcolor: 'white' }}>
-                                    <Typography variant="body2" sx={{ fontWeight: 800, fontFamily: 'monospace', fontSize: '11px' }}>
-                                        {row.date}
-                                    </Typography>
-                                </TableCell>
-                                <TableCell sx={{ position: 'sticky', left: 100, zIndex: 5, bgcolor: 'white' }}>
-                                    <Typography variant="body2" sx={{ fontWeight: 800, color: 'text.primary', fontSize: '0.8125rem', whiteSpace: 'nowrap' }}>
-                                        {row.trade_name || 'Unknown'}
-                                    </Typography>
-                                </TableCell>
-                                <TableCell>
-                                    <Typography variant="body2" sx={{ fontWeight: 700, fontFamily: 'monospace', fontSize: '11px', whiteSpace: 'nowrap' }}>
-                                        {row.serial_number || 'N/A'}
-                                    </Typography>
-                                    {row.machine_number && (
-                                        <Typography variant="caption" sx={{ color: 'text.disabled', fontWeight: 600 }}>
-                                            #{row.machine_number}
-                                        </Typography>
-                                    )}
-                                </TableCell>
-                                <TableCell align="right">
-                                    <Typography variant="body2" sx={{ fontWeight: 800, ...cellStyles }}>
-                                        {row.tx_count?.toLocaleString()}
-                                    </Typography>
-                                </TableCell>
-                                <TableCell align="right">
-                                    <Typography variant="body2" sx={{ fontWeight: 950, color: 'primary.main', ...cellStyles }}>
-                                        {row.unique_receipts !== undefined ? row.unique_receipts.toLocaleString() : '-'}
-                                    </Typography>
-                                </TableCell>
-                                <TableCell align="right">
-                                    <Typography variant="body2" sx={{ fontWeight: 800, ...cellStyles }}>
-                                        {formatCurrency(row.gross)}
-                                    </Typography>
-                                </TableCell>
-                                <TableCell align="right">
-                                    <Typography variant="body2" sx={{ fontWeight: 950, color: 'primary.main', ...cellStyles }}>
-                                        {formatCurrency(row.net)}
-                                    </Typography>
-                                </TableCell>
-                                <TableCell align="right">
-                                    <Typography variant="body2" sx={{ fontWeight: 800, color: row.refund > 0 ? 'error.main' : 'text.secondary', ...cellStyles }}>
-                                        {formatCurrency(row.refund)}
-                                    </Typography>
-                                </TableCell>
-                                
-                                {/* Adjustment Cells */}
-                                <TableCell align="right">
-                                    <Typography variant="body2" sx={cellStyles}>{formatCurrency(row.promo_discount)}</Typography>
-                                </TableCell>
-                                <TableCell align="right">
-                                    <Typography variant="body2" sx={cellStyles}>{formatCurrency(row.senior_discount)}</Typography>
-                                </TableCell>
-                                <TableCell align="right">
-                                    <Typography variant="body2" sx={cellStyles}>{formatCurrency(row.pwd_discount)}</Typography>
-                                </TableCell>
-                                <TableCell align="right">
-                                    <Typography variant="body2" sx={cellStyles}>{formatCurrency(row.vip_discount)}</Typography>
-                                </TableCell>
-                                <TableCell align="right">
-                                    <Typography variant="body2" sx={cellStyles}>{formatCurrency(row.employee_discount)}</Typography>
-                                </TableCell>
-                                <TableCell align="right">
-                                    <Typography variant="body2" sx={cellStyles}>{formatCurrency(row.service_charge_distributed)}</Typography>
-                                </TableCell>
-                                <TableCell align="right">
-                                    <Typography variant="body2" sx={cellStyles}>{formatCurrency(row.service_charge_retained)}</Typography>
-                                </TableCell>
-                                
-                                {/* Tax Cells */}
-                                <TableCell align="right">
-                                    <Typography variant="body2" sx={cellStyles}>{formatCurrency(row.vat)}</Typography>
-                                </TableCell>
-                                <TableCell align="right">
-                                    <Typography variant="body2" sx={cellStyles}>{formatCurrency(row.vatable_sales)}</Typography>
-                                </TableCell>
-                                <TableCell align="right">
-                                    <Typography variant="body2" sx={cellStyles}>{formatCurrency(row.sc_vat_exempt_sales)}</Typography>
-                                </TableCell>
-                                <TableCell align="right">
-                                    <Typography variant="body2" sx={cellStyles}>{formatCurrency(row.tax_exempt)}</Typography>
-                                </TableCell>
-                            </TableRow>
+                                row={row}
+                                formatCurrency={formatCurrency}
+                                cellStyles={cellStyles}
+                            />
                         ))}
                     </TableBody>
                     {grandTotal && (
                         <TableFooter>
-                            <TableRow sx={{ bgcolor: 'rgba(0,0,0,0.02)' }}>
+                            <TableRow sx={{ bgcolor: 'rgba(0,0,0,0.03)' }}>
                                 <TableCell colSpan={3} sx={{ ...footerCellStyles, textAlign: 'center', position: 'sticky', left: 0, zIndex: 10 }}>
                                     GRAND TOTAL (FILTERED)
                                 </TableCell>
@@ -238,21 +284,9 @@ const SummaryTable = ({ summary, grandTotal, loading, page, rowsPerPage, totalCo
                                 <TableCell align="right" sx={footerCellStyles}>
                                     {formatCurrency(grandTotal.refund)}
                                 </TableCell>
-                                
-                                {/* Adjustment Footer */}
-                                <TableCell align="right" sx={footerCellStyles}>{formatCurrency(grandTotal.promo_discount)}</TableCell>
-                                <TableCell align="right" sx={footerCellStyles}>{formatCurrency(grandTotal.senior_discount)}</TableCell>
-                                <TableCell align="right" sx={footerCellStyles}>{formatCurrency(grandTotal.pwd_discount)}</TableCell>
-                                <TableCell align="right" sx={footerCellStyles}>{formatCurrency(grandTotal.vip_discount)}</TableCell>
-                                <TableCell align="right" sx={footerCellStyles}>{formatCurrency(grandTotal.employee_discount)}</TableCell>
-                                <TableCell align="right" sx={footerCellStyles}>{formatCurrency(grandTotal.service_charge)}</TableCell>
-                                <TableCell align="right" sx={footerCellStyles}>{formatCurrency(grandTotal.management_service_charge)}</TableCell>
-                                
-                                {/* Tax Footer */}
-                                <TableCell align="right" sx={footerCellStyles}>{formatCurrency(grandTotal.vat)}</TableCell>
-                                <TableCell align="right" sx={footerCellStyles}>{formatCurrency(grandTotal.vatable_sales)}</TableCell>
-                                <TableCell align="right" sx={footerCellStyles}>{formatCurrency(grandTotal.sc_vat_exempt_sales)}</TableCell>
-                                <TableCell align="right" sx={footerCellStyles}>{formatCurrency(grandTotal.tax_exempt)}</TableCell>
+                                <TableCell align="right" sx={footerCellStyles}>
+                                    {formatCurrency(grandTotal.service_charge)}
+                                </TableCell>
                             </TableRow>
                         </TableFooter>
                     )}
