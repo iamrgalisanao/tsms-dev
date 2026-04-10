@@ -162,15 +162,10 @@ class TransactionLogController extends Controller
                 }
                 return $query->where('validation_status', $filters['status']);
             })
-            // Default behavior: when the schema supports receipt_no and no
-            // explicit status filter is provided, exclude non-VALID rows
-            // (e.g., DUPLICATE) so UI/reporting matches POS-style unique-receipt
-            // counts by default. If the receipt_no column is not present,
-            // preserve legacy behavior (don't filter).
+            })
+            // [FIX-FINANCE-RECON] Default: Exclude only DUPLICATE sentinel rows by default 
+            // for general detailed view, but keep VOIDED transactions visible for audit.
             ->when(Schema::hasColumn('transactions', 'receipt_no') && !isset($filters['status']), function ($query) {
-                // Exclude only DUPLICATE sentinel rows by default so that
-                // PENDING/ERROR/VALID rows are still visible to operators and
-                // tests while removing duplicates from POS-style counts.
                 return $query->where('validation_status', '!=', 'DUPLICATE');
             })
             ->when(isset($filters['date_from']), function ($query) use ($filters, $dateColumn) {
@@ -629,11 +624,13 @@ class TransactionLogController extends Controller
         ->groupBy('date', 't.tenant_id', 't.terminal_id', 'trade_name', 'term.serial_number', 'term.machine_number')
         ->orderBy('date', $sortDirection);
 
-        // When the schema supports receipt_no, default summary roll-ups to VALID
+        // [FIX-FINANCE-RECON] When the schema supports receipt_no, default summary roll-ups to VALID
         // transactions so aggregates align with POS-style unique receipt counts.
         if (Schema::hasColumn('transactions', 'receipt_no') && !isset($filters['status'])) {
-            // Exclude only DUPLICATE sentinel rows by default for summaries as well.
-            $query->where('t.validation_status', '!=', 'DUPLICATE');
+            // Exclude DUPLICATE rows and VOIDED rows from financial summaries by default
+            // to ensure Z-reading reconciliation matches (which typically subtracts voids).
+            $query->where('t.validation_status', '!=', 'DUPLICATE')
+                  ->whereNull('t.voided_at');
         }
 
         // Clone the query for global grand totals before grouping and pagination.

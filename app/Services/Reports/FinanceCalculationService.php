@@ -31,8 +31,14 @@ class FinanceCalculationService
             'gross_sales' => 0.0,
             'net_sales' => 0.0,
         ];
+        
+        // [FIX-FINANCE-RECON] Added support for excluding voids from high-level aggregations
+        $excludeVoids = config('tsms.reporting.exclude_voids_from_totals', true);
 
         foreach ($transactions as $tx) {
+            if ($excludeVoids && method_exists($tx, 'isVoided') && $tx->isVoided()) {
+                continue;
+            }
             $c['vatable_sales'] += (float) ($tx->vatable_sales ?? 0);
             $c['sc_vat_exempt_sales'] += (float) ($tx->sc_vat_exempt_sales ?? 0);
 

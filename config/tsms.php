@@ -45,4 +45,10 @@ return [
         // Alert logged to SystemLog when failed_jobs count reaches this number
         'alert_threshold' => (int) env('TSMS_DLQ_ALERT_THRESHOLD', 10),
     ],
+
+    'reporting' => [
+        // [FIX-FINANCE-RECON] When true, voided transactions are subtracted from high-level 
+        // dashboard and summary totals to align with POS Z-reading reconciliation.
+        'exclude_voids_from_totals' => (bool) env('TSMS_REPORTING_EXCLUDE_VOIDS', true),
+    ],
 ];
