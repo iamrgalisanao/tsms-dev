@@ -2,6 +2,21 @@
 
 All notable changes to the TSMS project will be documented in this file.
 
+## [Unreleased] - 2026-04-10
+
+### Fixed
+- **Financial Reconciliation**: Resolved mathematical discrepancies in Grand Totals and Summary Views by subtracting `voided_at` transactions from high-level aggregations.
+- **Tenant Filtering Gap**: Implemented resilient filtering in `TransactionLogController` to correctly find transactions via the Terminal relationship even when the direct `tenant_id` is missing.
+- **Missing Tenant Attribution**: Added a "Self-Healing" mechanism in `ProcessTransactionJob` to automatically restore missing `tenant_id` from the Terminal relation during background audit.
+
+### Added
+- **Security Isolation (Terminal-Token Binding)**: Enforced strict validation ensuring each API token is bound to a specific `terminal_id`, blocking impersonation attempts within the same tenant.
+- **Reporting Configuration**: Introduced `reporting.exclude_voids_from_totals` in `config/tsms.php` for environment-driven reconciliation behavior.
+
+### Changed
+- **Reconciled Dashboard Labels**: Renamed transaction summary cards to **"Net (Reconciled)"** and **"Gross (Valid)"** to provide clearer transparency for Finance auditors.
+- **Zero-Value Void Representations**: Forced voided transaction rows to display **₱0.00** in sales columns to eliminate manual sum-up errors in the Detailed View.
+
 ## [Unreleased] - 2026-03-25
 
 ### Added
