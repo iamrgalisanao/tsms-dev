@@ -162,7 +162,6 @@ class TransactionLogController extends Controller
                 }
                 return $query->where('validation_status', $filters['status']);
             })
-            })
             // [FIX-FINANCE-RECON] Default: Exclude only DUPLICATE sentinel rows by default 
             // for general detailed view, but keep VOIDED transactions visible for audit.
             ->when(Schema::hasColumn('transactions', 'receipt_no') && !isset($filters['status']), function ($query) {
