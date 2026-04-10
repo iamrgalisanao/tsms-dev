@@ -204,7 +204,14 @@ class TransactionLogController extends Controller
                 }
             })
             ->when(isset($filters['tenant_id']), function ($query) use ($filters) {
-                return $query->where('tenant_id', $filters['tenant_id']);
+                // [FIX-FINANCE-RECON] Resilient filtering: match by direct tenant_id 
+                // OR by the tenant of the linked terminal.
+                return $query->where(function ($q) use ($filters) {
+                    $q->where('tenant_id', $filters['tenant_id'])
+                      ->orWhereHas('terminal', function ($sub) use ($filters) {
+                          $sub->where('tenant_id', $filters['tenant_id']);
+                      });
+                });
             })
             ->when(isset($filters['terminal_id']), function ($query) use ($filters) {
                 return $query->where('terminal_id', $filters['terminal_id']);
@@ -574,7 +581,11 @@ class TransactionLogController extends Controller
                 }
             })
             ->when(isset($filters['tenant_id']), function ($q) use ($filters) {
-                $q->where('t.tenant_id', $filters['tenant_id']);
+                // [FIX-FINANCE-RECON] Use joined 'term' table for efficient resilient filtering in summary
+                $q->where(function ($sub) use ($filters) {
+                    $sub->where('t.tenant_id', $filters['tenant_id'])
+                        ->orWhere('term.tenant_id', $filters['tenant_id']);
+                });
             })
             ->when(isset($filters['terminal_id']), function ($q) use ($filters) {
                 $q->where('t.terminal_id', $filters['terminal_id']);
