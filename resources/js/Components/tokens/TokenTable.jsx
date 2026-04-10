@@ -177,7 +177,7 @@ const TokenTable = ({
                     <TableHead>
                         <TableRow>
                             <TableCell sx={headerStyles}>Tenant / Entity</TableCell>
-                            <TableCell align="center" sx={headerStyles}>Machine</TableCell>
+                            <TableCell align="center" sx={headerStyles}>Terminal ID</TableCell>
                             <TableCell sx={headerStyles}>Hardware ID (SN)</TableCell>
                             <TableCell sx={headerStyles}>Provisioned</TableCell>
                             <TableCell sx={headerStyles}>Expiry</TableCell>
@@ -217,7 +217,7 @@ const TokenTable = ({
                                     </TableCell>
                                     <TableCell align="center" sx={cellStyles}>
                                         <Typography variant="caption" sx={{ fontWeight: 800, bgcolor: 'grey.100', px: 1, py: 0.2, borderRadius: 1 }}>
-                                            #{terminal.machine_number || terminal.id}
+                                            #{terminal.id}
                                         </Typography>
                                     </TableCell>
                                     <TableCell sx={cellStyles}>
