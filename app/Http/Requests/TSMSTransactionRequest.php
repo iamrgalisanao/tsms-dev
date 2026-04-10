@@ -10,10 +10,32 @@ class TSMSTransactionRequest extends FormRequest
 {
     /**
      * Determine if the user is authorized to make this request.
+     * Enforces strict binding between the API token and the reported terminal_id.
      */
     public function authorize(): bool
     {
+        $authenticatedTerminal = $this->user();
+        
+        // Block if not authenticated or if terminal_id in payload doesn't match the token holder
+        if (!$authenticatedTerminal || (int)$this->input('terminal_id') !== (int)$authenticatedTerminal->id) {
+            return false;
+        }
+
         return true;
+    }
+
+    /**
+     * Handle a failed authorization attempt.
+     */
+    protected function failedAuthorization(): void
+    {
+        throw new HttpResponseException(
+            response()->json([
+                'success' => false,
+                'message' => 'Terminal Identity Mismatch: The terminal_id provided in the payload does not match the identity of the authenticated API token. Token sharing across multiple terminals is strictly prohibited.',
+                'error_code' => 'TERMINAL_TOKEN_MISMATCH'
+            ], 403)
+        );
     }
 
     /**

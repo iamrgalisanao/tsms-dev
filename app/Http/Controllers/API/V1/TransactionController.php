@@ -305,12 +305,12 @@ class TransactionController extends Controller
         $service = $this->getTransactionIngestService();
         foreach ($transactions as $tx) {
             try {
-                // Compose payload for ingest (merge submission-level fields)
+                // Compose payload for ingest (merge authenticated identity instead of trusting payload)
                 $payload = array_merge($tx, [
                     'submission_uuid' => $request->submission_uuid,
                     'submission_timestamp' => $request->submission_timestamp,
-                    'tenant_id' => $request->tenant_id,
-                    'terminal_id' => $request->terminal_id,
+                    'tenant_id' => $request->user()->tenant_id, // Trusted source
+                    'terminal_id' => $request->user()->id,      // Trusted source
                 ]);
                 $result = $service->ingest($payload);
                 
