@@ -106,6 +106,20 @@ class ProcessTransactionJob implements ShouldQueue, ShouldBeUnique
                 return;
             }
 
+            // [FIX-FINANCE-RECON] Self-Healing: If tenant_id is missing, restore it from Terminal
+            // before validation begins. This ensures 'UNKNOWN_TENANT' is resolved during audit.
+            if (empty($transaction->tenant_id) && $transaction->terminal_id) {
+                $terminal = $transaction->terminal;
+                if ($terminal && $terminal->tenant_id) {
+                    $transaction->tenant_id = $terminal->tenant_id;
+                    $transaction->save();
+                    Log::info('Healed missing tenant_id from Terminal relationship during audit', [
+                        'transaction_id' => $transaction->transaction_id,
+                        'healed_tenant_id' => $transaction->tenant_id
+                    ]);
+                }
+            }
+
             Log::debug('Starting transaction processing', [
                 'transaction_pk' => $transaction->id,
                 'transaction_id' => $transaction->transaction_id,
