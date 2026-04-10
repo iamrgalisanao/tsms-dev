@@ -292,14 +292,14 @@ const TransactionLogsPage = () => {
                                         <Grid container spacing={4}>
                                             <Grid item xs={12} sm={6} md={3}>
                                                 <StatCard 
-                                                    label="Total Gross Sales" 
+                                                    label="Gross (Valid)" 
                                                     value={formatCurrency(grandTotal.gross)} 
                                                     color="text.primary"
                                                 />
                                             </Grid>
                                             <Grid item xs={12} sm={6} md={3}>
                                                 <StatCard 
-                                                    label="Total Net Sales" 
+                                                    label="Net (Reconciled)" 
                                                     value={formatCurrency(grandTotal.net)} 
                                                     color="primary.main"
                                                 />

@@ -121,14 +121,28 @@ const Row = ({ transaction, onViewDetails, getStatusColor, formatCurrency, forma
                     </Typography>
                 </TableCell>
                 <TableCell align="left">
-                    <Typography variant="body2" sx={{ fontWeight: 800, fontFamily: 'monospace' }}>
-                        {formatCurrency(transaction.amount)}
-                    </Typography>
+                    <Tooltip title={transaction.voided_at ? "Voided transactions contribute ₱0.00 to reconciled totals" : ""} arrow>
+                        <Typography variant="body2" sx={{ 
+                            fontWeight: 800, 
+                            fontFamily: 'monospace',
+                            textDecoration: transaction.voided_at ? 'line-through' : 'none',
+                            color: transaction.voided_at ? 'error.light' : 'inherit'
+                        }}>
+                            {transaction.voided_at ? formatCurrency(0) : formatCurrency(transaction.amount)}
+                        </Typography>
+                    </Tooltip>
                 </TableCell>
                 <TableCell align="left">
-                    <Typography variant="body2" sx={{ fontWeight: 800, fontFamily: 'monospace', color: 'primary.main' }}>
-                        {formatCurrency(transaction.net_sales)}
-                    </Typography>
+                    <Tooltip title={transaction.voided_at ? "Voided transactions contribute ₱0.00 to reconciled totals" : ""} arrow>
+                        <Typography variant="body2" sx={{ 
+                            fontWeight: 800, 
+                            fontFamily: 'monospace', 
+                            color: transaction.voided_at ? 'error.light' : 'primary.main',
+                            textDecoration: transaction.voided_at ? 'line-through' : 'none'
+                        }}>
+                            {transaction.voided_at ? formatCurrency(0) : formatCurrency(transaction.net_sales)}
+                        </Typography>
+                    </Tooltip>
                 </TableCell>
                 <TableCell align="left">
                     <Typography variant="body2" sx={{ fontWeight: 800, fontFamily: 'monospace', color: 'warning.dark' }}>
