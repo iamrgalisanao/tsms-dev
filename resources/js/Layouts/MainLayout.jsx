@@ -27,7 +27,7 @@ const MainLayout = ({ children }) => {
         // ── Admin / Manager ──────────────────────────────────────────
         { name: 'Dashboard', path: '/dashboard', icon: DashboardIcon, roles: ['admin', 'manager'] },
         { name: 'Transactions', path: '/transactions', icon: ReceiptIcon, roles: ['admin', 'manager'] },
-        { name: 'Terminal Tokens', path: '/terminal-tokens', icon: KeyIcon, roles: ['admin'] },
+        { name: 'Terminal Tokens', path: '/terminal-tokens', icon: KeyIcon, roles: ['admin', 'commercial'] },
         { name: 'User Management', path: '/users', icon: PeopleIcon, roles: ['admin'] },
         { name: 'System Logs', path: '/system-logs', icon: DescriptionIcon, roles: ['admin'] },
         { name: 'Settings', path: '/settings', icon: SettingsIcon, roles: ['admin'] },

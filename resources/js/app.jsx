@@ -25,6 +25,10 @@ import TenantUserManagementPage from './Pages/Commercial/TenantUserManagementPag
 import './bootstrap';
 import '../css/app.css';
 
+import ProtectedRoute from './Components/Auth/ProtectedRoute';
+import UnauthorizedPage from './Pages/Auth/UnauthorizedPage';
+import NotFoundPage from './Pages/Auth/NotFoundPage';
+
 const App = () => {
   return (
     <AuthProvider>
@@ -32,45 +36,139 @@ const App = () => {
         <Routes>
           {/* Public — no layout wrapper */}
           <Route path="/login" element={<Login />} />
+          <Route path="/unauthorized" element={<UnauthorizedPage />} />
 
-          {/* Authenticated — wrapped in MainLayout */}
+          {/* Authenticated — wrapped in MainLayout and ProtectedRoute */}
           <Route
             path="/*"
             element={
-              <MainLayout>
-                <Routes>
-                  <Route path="/" element={<Navigate to="/dashboard" replace />} />
+              <ProtectedRoute>
+                <MainLayout>
+                  <Routes>
+                    <Route path="/" element={<Navigate to="/dashboard" replace />} />
 
-                  {/* Admin / default */}
-                  <Route path="/dashboard" element={<DashboardPage />} />
-                  <Route path="/transactions" element={<TransactionLogsPage />} />
-                  <Route path="/terminal-tokens" element={<TerminalTokenPage />} />
-                  <Route path="/users" element={<UserManagementPage />} />
-                  <Route path="/system-logs" element={<SystemLogsPage />} />
+                    {/* Any Authenticated User */}
+                    <Route path="/dashboard" element={<DashboardPage />} />
+                    <Route path="/transactions" element={<TransactionLogsPage />} />
+                    
+                    {/* Admin / Manager / Commercial */}
+                    <Route 
+                      path="/terminal-tokens" 
+                      element={
+                        <ProtectedRoute roles={['admin', 'manager', 'commercial']}>
+                          <TerminalTokenPage />
+                        </ProtectedRoute>
+                      } 
+                    />
+                    <Route 
+                      path="/users" 
+                      element={
+                        <ProtectedRoute roles={['admin', 'manager']}>
+                          <UserManagementPage />
+                        </ProtectedRoute>
+                      } 
+                    />
+                    <Route 
+                      path="/system-logs" 
+                      element={
+                        <ProtectedRoute roles={['admin', 'manager']}>
+                          <SystemLogsPage />
+                        </ProtectedRoute>
+                      } 
+                    />
 
-                  {/* Finance */}
-                  <Route path="/finance" element={<FinanceDashboardPage />} />
-                  <Route path="/reports" element={<FinanceReportsPage />} />
+                    {/* Finance Access */}
+                    <Route 
+                      path="/finance" 
+                      element={
+                        <ProtectedRoute roles={['admin', 'manager', 'finance']}>
+                          <FinanceDashboardPage />
+                        </ProtectedRoute>
+                      } 
+                    />
+                    <Route 
+                      path="/reports" 
+                      element={
+                        <ProtectedRoute roles={['admin', 'manager', 'finance']}>
+                          <FinanceReportsPage />
+                        </ProtectedRoute>
+                      } 
+                    />
 
-                  {/* Commercial */}
-                  <Route path="/commercial" element={<CommercialDashboardPage />} />
-                  <Route path="/commercial/reports" element={<ReportsOverviewPage />} />
-                  <Route path="/commercial/reports/hourly" element={<HourlyReportPage />} />
-                  <Route path="/commercial/reports/daily" element={<SalesReportPage type="daily" />} />
-                  <Route path="/commercial/reports/weekly" element={<SalesReportPage type="weekly" />} />
-                  <Route path="/commercial/reports/monthly" element={<SalesReportPage type="monthly" />} />
-                  <Route path="/commercial/reports/yearly" element={<SalesReportPage type="yearly" />} />
-                  <Route path="/commercial/reports/weekday" element={<WeekdayReportPage />} />
-                  <Route path="/commercial/reports/weekend" element={<WeekendReportPage />} />
-                  <Route path="/commercial/tenants" element={<TenantDirectoryPage />} />
-                  <Route path="/commercial/tenants/manage" element={<TenantUserManagementPage />} />
-                  <Route path="/commercial/tenants/:id" element={<TenantProfilePage />} />
+                    {/* Commercial Access */}
+                    <Route 
+                      path="/commercial" 
+                      element={
+                        <ProtectedRoute roles={['admin', 'manager', 'finance', 'commercial']}>
+                          <CommercialDashboardPage />
+                        </ProtectedRoute>
+                      } 
+                    />
+                    <Route path="/commercial/reports" element={
+                      <ProtectedRoute roles={['admin', 'manager', 'finance', 'commercial']}>
+                        <ReportsOverviewPage />
+                      </ProtectedRoute>
+                    } />
+                    <Route path="/commercial/reports/hourly" element={
+                      <ProtectedRoute roles={['admin', 'manager', 'finance', 'commercial']}>
+                        <HourlyReportPage />
+                      </ProtectedRoute>
+                    } />
+                    <Route path="/commercial/reports/daily" element={
+                      <ProtectedRoute roles={['admin', 'manager', 'finance', 'commercial']}>
+                        <SalesReportPage type="daily" />
+                      </ProtectedRoute>
+                    } />
+                    <Route path="/commercial/reports/weekly" element={
+                      <ProtectedRoute roles={['admin', 'manager', 'finance', 'commercial']}>
+                        <SalesReportPage type="weekly" />
+                      </ProtectedRoute>
+                    } />
+                    <Route path="/commercial/reports/monthly" element={
+                      <ProtectedRoute roles={['admin', 'manager', 'finance', 'commercial']}>
+                        <SalesReportPage type="monthly" />
+                      </ProtectedRoute>
+                    } />
+                    <Route path="/commercial/reports/yearly" element={
+                      <ProtectedRoute roles={['admin', 'manager', 'finance', 'commercial']}>
+                        <SalesReportPage type="yearly" />
+                      </ProtectedRoute>
+                    } />
+                    <Route path="/commercial/reports/weekday" element={
+                      <ProtectedRoute roles={['admin', 'manager', 'finance', 'commercial']}>
+                        <WeekdayReportPage />
+                      </ProtectedRoute>
+                    } />
+                    <Route path="/commercial/reports/weekend" element={
+                      <ProtectedRoute roles={['admin', 'manager', 'finance', 'commercial']}>
+                        <WeekendReportPage />
+                      </ProtectedRoute>
+                    } />
+                    <Route path="/commercial/tenants" element={
+                      <ProtectedRoute roles={['admin', 'manager', 'finance', 'commercial']}>
+                        <TenantDirectoryPage />
+                      </ProtectedRoute>
+                    } />
+                    <Route path="/commercial/tenants/manage" element={
+                      <ProtectedRoute roles={['admin', 'manager']}>
+                        <TenantUserManagementPage />
+                      </ProtectedRoute>
+                    } />
+                    <Route path="/commercial/tenants/:id" element={
+                      <ProtectedRoute roles={['admin', 'manager', 'finance', 'commercial']}>
+                        <TenantProfilePage />
+                      </ProtectedRoute>
+                    } />
 
-                  <Route path="*" element={<div className="p-8 text-center text-gray-500">Feature coming soon...</div>} />
-                </Routes>
-              </MainLayout>
+                    {/* Catch-all for unknown dashboard sub-routes */}
+                    <Route path="*" element={<NotFoundPage />} />
+                  </Routes>
+                </MainLayout>
+              </ProtectedRoute>
             }
           />
+          {/* Catch-all for top-level unknown routes */}
+          <Route path="*" element={<NotFoundPage />} />
         </Routes>
       </Router>
     </AuthProvider>

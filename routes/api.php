@@ -47,69 +47,72 @@ Route::prefix('auth')->group(function () {
 |
 */
 
-// Dashboard API endpoints (for frontend dashboard) - within API middleware
-Route::middleware(['api'])->group(function () {
-    Route::get('dashboard/metrics', [DashboardController::class, 'apiMetrics']);
-    Route::get('dashboard/charts', [DashboardController::class, 'apiCharts']);
-    Route::get('dashboard/transactions', [DashboardController::class, 'apiTransactions']);
-    Route::get('dashboard/audit-logs', [DashboardController::class, 'apiAuditLogs']);
-    Route::get('dashboard/system-health', [DashboardController::class, 'apiSystemHealth']);
-    Route::get('dashboard/terminal-performance', [DashboardController::class, 'apiTerminalPerformance']);
-    Route::get('dashboard/notifications', [DashboardController::class, 'apiNotifications']);
-    Route::post('dashboard/notifications/dismiss', [DashboardController::class, 'apiDismissNotification']);
-    Route::post('dashboard/forward-transaction/{id}', [DashboardController::class, 'forwardTransaction']);
+// Dashboard API endpoints (for frontend dashboard) - secured with sanctum and roles
+Route::middleware(['auth:sanctum'])->group(function () {
+    
+    // Admin/Manager/Commercial accessible management
+    Route::middleware(['role:admin|manager|commercial'])->group(function () {
+        Route::get('dashboard/system-health', [DashboardController::class, 'apiSystemHealth']);
+        Route::get('dashboard/audit-logs', [DashboardController::class, 'apiAuditLogs']);
+        Route::get('dashboard/notifications', [DashboardController::class, 'apiNotifications']);
+        Route::post('dashboard/notifications/dismiss', [DashboardController::class, 'apiDismissNotification']);
+        Route::post('dashboard/forward-transaction/{id}', [DashboardController::class, 'forwardTransaction']);
 
-    // Transaction Logs API endpoints
-    Route::prefix('transactions/logs')->group(function () {
-        Route::get('/', [\App\Http\Controllers\TransactionLogController::class, 'index']);
-        Route::get('/summary', [\App\Http\Controllers\TransactionLogController::class, 'summary']);
-        Route::get('/issues-count', [\App\Http\Controllers\TransactionLogController::class, 'issuesCount']);
-        Route::get('/export', [\App\Http\Controllers\TransactionLogController::class, 'export']);
-        Route::get('/{id}', [\App\Http\Controllers\TransactionLogController::class, 'show']);
-    });
+        // Terminal Token Management
+        Route::prefix('terminals/tokens')->group(function () {
+            Route::get('/', [TerminalTokenController::class, 'apiIndex']);
+            Route::post('/{terminalId}/regenerate', [TerminalTokenController::class, 'apiRegenerate']);
+            Route::post('/{terminalId}/revoke', [TerminalTokenController::class, 'apiRevoke']);
+        });
 
-    // Terminals and Tenants
-    Route::get('terminals', function () {
-        return \App\Models\PosTerminal::with('tenant:id,trade_name')
-            ->get(['id', 'serial_number', 'tenant_id', 'machine_number']);
-    });
-        Route::post('terminals', [TerminalTokenController::class, 'apiStore']);    
-        // Removed duplicate expiry route; now only under v1 group
-    Route::prefix('v1')->middleware(['auth:sanctum', 'capture.terminal.ip', AttachCorrelationId::class])->group(function () {
-        // ...existing v1 routes...
+        Route::get('terminals', function () {
+            return \App\Models\PosTerminal::with('tenant:id,trade_name')
+                ->get(['id', 'serial_number', 'tenant_id', 'machine_number']);
+        });
+        Route::post('terminals', [TerminalTokenController::class, 'apiStore']);
         Route::put('terminals/{terminal}/expiry', [TerminalTokenController::class, 'updateExpiry']);
-        // ...existing v1 routes...
     });
 
-    // Tenants API
-    Route::get('tenants', [TenantController::class, 'index']);
-    Route::post('tenants', [TenantController::class, 'store']);
-    Route::get('tenants/{tenant}', [TenantController::class, 'show']);
-    Route::put('tenants/{tenant}', [TenantController::class, 'update']);
-    Route::delete('tenants/{tenant}', [TenantController::class, 'destroy']);
+    // Admin/Manager ONLY (Sensitive administration)
+    Route::middleware(['role:admin|manager'])->group(function () {
+        // User Management API Routes
+        Route::prefix('users')->group(function () {
+            Route::get('/', [UserController::class, 'apiIndex']);
+            Route::get('/roles', [UserController::class, 'apiRoles']);
+            Route::post('/', [UserController::class, 'apiStore']);
+            Route::put('/{user}', [UserController::class, 'apiUpdate']);
+            Route::delete('/{user}', [UserController::class, 'apiDestroy']);
+        });
 
-    // Tenant Users
-    Route::get('tenants/{tenant}/users', [TenantUserController::class, 'index']);
-    Route::post('tenants/{tenant}/users', [TenantUserController::class, 'store']);
-    Route::delete('tenants/{tenant}/users/{user}', [TenantUserController::class, 'destroy']);
+        // Tenants API
+        Route::get('tenants', [TenantController::class, 'index']);
+        Route::post('tenants', [TenantController::class, 'store']);
+        Route::get('tenants/{tenant}', [TenantController::class, 'show']);
+        Route::put('tenants/{tenant}', [TenantController::class, 'update']);
+        Route::delete('tenants/{tenant}', [TenantController::class, 'destroy']);
 
-    // Terminal Token Management
-    Route::prefix('terminals/tokens')->group(function () {
-        Route::get('/', [TerminalTokenController::class, 'apiIndex']);
-        Route::post('/{terminalId}/regenerate', [TerminalTokenController::class, 'apiRegenerate']);
-        Route::post('/{terminalId}/revoke', [TerminalTokenController::class, 'apiRevoke']);
+        // Tenant Users
+        Route::get('tenants/{tenant}/users', [TenantUserController::class, 'index']);
+        Route::post('tenants/{tenant}/users', [TenantUserController::class, 'store']);
+        Route::delete('tenants/{tenant}/users/{user}', [TenantUserController::class, 'destroy']);
     });
 
-    // User Management API Routes
-    Route::prefix('users')->group(function () {
-        Route::get('/', [UserController::class, 'apiIndex']);
-        Route::get('/roles', [UserController::class, 'apiRoles']);
-        Route::post('/', [UserController::class, 'apiStore']);
-        Route::put('/{user}', [UserController::class, 'apiUpdate']);
-        Route::delete('/{user}', [UserController::class, 'apiDestroy']);
-    });
+    // Dashboard Data (Authorized roles)
+    Route::middleware(['role:admin|manager|finance|commercial'])->group(function () {
+        Route::get('dashboard/metrics', [DashboardController::class, 'apiMetrics']);
+        Route::get('dashboard/charts', [DashboardController::class, 'apiCharts']);
+        Route::get('dashboard/transactions', [DashboardController::class, 'apiTransactions']);
+        Route::get('dashboard/terminal-performance', [DashboardController::class, 'apiTerminalPerformance']);
 
-    // (P2P MRF/JRF workflow endpoints removed; feature reverted.)
+        // Transaction Logs API endpoints
+        Route::prefix('transactions/logs')->group(function () {
+            Route::get('/', [\App\Http\Controllers\TransactionLogController::class, 'index']);
+            Route::get('/summary', [\App\Http\Controllers\TransactionLogController::class, 'summary']);
+            Route::get('/issues-count', [\App\Http\Controllers\TransactionLogController::class, 'issuesCount']);
+            Route::get('/export', [\App\Http\Controllers\TransactionLogController::class, 'export']);
+            Route::get('/{id}', [\App\Http\Controllers\TransactionLogController::class, 'show']);
+        });
+    });
 });
 
 // Health check endpoint (public)

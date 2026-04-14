@@ -112,8 +112,8 @@ Route::middleware(['auth'])->group(function () {
             return view('app');
         })->name('index');
 
-        // Transaction logs routes (admin/manager/finance)
-        Route::middleware(['role:admin|manager|finance'])->prefix('logs')->name('logs.')->group(function () {
+        // Transaction logs routes (UI serves React SPA)
+        Route::prefix('logs')->name('logs.')->group(function () {
             Route::get('/', function () {
                 return view('app');
             })->name('index');
@@ -209,51 +209,43 @@ Route::middleware(['auth'])->group(function () {
             ->name('system-logs.bulk-soft-delete');
     });
 
-    // Finance Reports (web UI) - finance role only (Serving React SPA)
+    // Finance Reports (web UI) - Protected strictly in React SPA and API
+    Route::get('/reports', function () {
+        return view('app');
+    })->name('reports.index');
+
+    Route::get('/finance', function () {
+        return view('app');
+    })->name('finance.dashboard');
+
+    // Finance API endpoints (finance role only)
     Route::middleware(['role:finance'])->group(function () {
-        Route::get('/reports', function () {
-            return view('app');
-        })->name('reports.index');
-
-        Route::get('/finance', function () {
-            return view('app');
-        })->name('finance.dashboard');
-
         // JSON API endpoint used by the reports dashboard (ajax)
         Route::get('/reports/data', [ReportsController::class, 'data'])->name('finance.reports');
         // Excel export endpoint
         Route::get('/finance/reports/export', [SalesReportExportController::class, 'export'])->name('finance.sales-report.export');
     });
 
-    // Commercial — accessible to commercial and finance roles
+    // Commercial — accessible to commercial and finance roles (UI shell)
+    Route::prefix('commercial')->name('commercial.')->group(function () {
+        // ── SPA page routes (React handles rendering & authorization) ─
+        Route::get('/', function () { return view('app'); })->name('dashboard');
+        Route::get('/reports', function () { return view('app'); })->name('reports');
+        Route::get('/reports/hourly', function () { return view('app'); })->name('reports.hourly');
+        Route::get('/reports/daily', function () { return view('app'); })->name('reports.daily');
+        Route::get('/reports/weekly', function () { return view('app'); })->name('reports.weekly');
+        Route::get('/reports/weekday', function () { return view('app'); })->name('reports.weekday');
+        Route::get('/reports/weekend', function () { return view('app'); })->name('reports.weekend');
+        Route::get('/reports/monthly', function () { return view('app'); })->name('reports.monthly');
+        Route::get('/reports/yearly', function () { return view('app'); })->name('reports.yearly');
+        Route::get('/tenants', function () { return view('app'); })->name('tenants');
+        Route::get('/tenants/{id}', function () { return view('app'); })->name('tenants.show');
+    });
+
+    // Commercial & Finance API data access
     Route::middleware(['role:commercial|finance'])->group(function () {
         Route::prefix('commercial')->name('commercial.')->group(function () {
-
-            // ── SPA page routes (React handles rendering) ─────────────────
-            Route::get('/', function () {
-                return view('app'); })->name('dashboard');
-            Route::get('/reports', function () {
-                return view('app'); })->name('reports');
-            Route::get('/reports/hourly', function () {
-                return view('app'); })->name('reports.hourly');
-            Route::get('/reports/daily', function () {
-                return view('app'); })->name('reports.daily');
-            Route::get('/reports/weekly', function () {
-                return view('app'); })->name('reports.weekly');
-            Route::get('/reports/weekday', function () {
-                return view('app'); })->name('reports.weekday');
-            Route::get('/reports/weekend', function () {
-                return view('app'); })->name('reports.weekend');
-            Route::get('/reports/monthly', function () {
-                return view('app'); })->name('reports.monthly');
-            Route::get('/reports/yearly', function () {
-                return view('app'); })->name('reports.yearly');
-            Route::get('/tenants', function () {
-                return view('app'); })->name('tenants');
-            Route::get('/tenants/{id}', function () {
-                return view('app'); })->name('tenants.show');
-
-            // ── JSON/data API endpoints (controllers) ─────────────────────
+            // ── JSON/data API endpoints (controllers) ─────────────────
             Route::prefix('reports')->name('sales-report.')->group(function () {
                 // Data proxy endpoints used by React pages via axios
                 Route::get('/transactions/hourly', [CommercialReportsController::class, 'hourlyData'])->name('tsms-proxy.transactions.hourly');
@@ -265,9 +257,7 @@ Route::middleware(['auth'])->group(function () {
                 Route::get('/transactions/weekend', [CommercialReportsController::class, 'weekendData'])->name('tsms-proxy.transactions.weekend');
                 // Tenant list JSON (used by autocomplete dropdowns)
                 Route::get('/tenants', [CommercialReportsController::class, 'tenants'])->name('tenants');
-                Route::get('/tenants/export', [CommercialReportsController::class, 'tenantsExport'])
-                    ->name('tenants.export')
-                    ->middleware('role:admin|manager');
+                
                 // Export
                 Route::get('/export', [CommercialReportsController::class, 'exportProxy'])->name('export');
             });
@@ -275,18 +265,21 @@ Route::middleware(['auth'])->group(function () {
             // Tenant JSON detail (AJAX — returns JSON when Accept: application/json)
             Route::get('/reports/tenants/{id}', [CommercialReportsController::class, 'tenantShow'])->name('tenants.detail');
         });
+
+        // Tenant export - admin/manager only
+        Route::get('commercial/reports/tenants/export', [CommercialReportsController::class, 'tenantsExport'])
+            ->name('commercial.sales-report.tenants.export')
+            ->middleware('role:admin|manager');
     });
 
     // Logs export route
     Route::get('/logs/export/{format}', [App\Http\Controllers\LogExportController::class, 'export'])->name('logs.export');
 
-    // User Management Routes - RBAC protected
-    Route::middleware(['role:admin|manager'])->group(function () {
-        Route::get('/users', function () {
-            return view('app');
-        })->name('users.index');
-        Route::resource('users', UserController::class)->except(['index']);
-    });
+    // User Management Routes - Protected strictly in React SPA and API
+    Route::get('/users', function () {
+        return view('app');
+    })->name('users.index');
+    Route::resource('users', UserController::class)->except(['index']);
 
     // Admin System Settings
     Route::middleware(['role:admin'])->prefix('admin')->name('admin.')->group(function () {
@@ -294,6 +287,10 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/settings', [\App\Http\Controllers\Admin\SystemSettingsController::class, 'update'])->name('settings.update');
         // RBAC audit viewer
         Route::get('/rbac-audits', [\App\Http\Controllers\Admin\RbacAuditController::class, 'index'])->name('rbac-audits.index');
+    });
+
+    Route::fallback(function () {
+        return view('app');
     });
 });
 

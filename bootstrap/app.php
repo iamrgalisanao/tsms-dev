@@ -32,13 +32,23 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {
-        // Your custom error reporting logic
-        $exceptions->reportable(function (\Throwable $e) {
-            // Custom reporting logic
-        });
-        
-        $exceptions->renderable(function (\Throwable $e) {
-            // Custom rendering logic 
+        // Catch 404 and 403 web requests to serve the React SPA shell
+        $exceptions->render(function (\Throwable $e, $request) {
+            if ($request->is('api/*')) {
+                return null; // Let Laravel handle API errors as JSON
+            }
+
+            if ($e instanceof \Symfony\Component\HttpKernel\Exception\NotFoundHttpException) {
+                return response()->view('app', [], 404);
+            }
+
+            if ($e instanceof \Symfony\Component\HttpKernel\Exception\AccessDeniedHttpException || 
+                $e instanceof \Spatie\Permission\Exceptions\UnauthorizedException ||
+                $e instanceof \Illuminate\Auth\Access\AuthorizationException) {
+                return response()->view('app', [], 403);
+            }
+
+            return null;
         });
     })
     ->withProviders([
