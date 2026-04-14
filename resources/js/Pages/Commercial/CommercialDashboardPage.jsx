@@ -7,6 +7,14 @@ import RecentTransactionsTable from '../../Components/dashboard/RecentTransactio
 import NotificationToast from '../../Components/dashboard/NotificationToast';
 import { Alert, CircularProgress } from '@mui/material';
 import ListAltIcon from '@mui/icons-material/ListAlt';
+import TodayIcon from '@mui/icons-material/Today';
+import DateRangeIcon from '@mui/icons-material/DateRange';
+import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
+import HistoryIcon from '@mui/icons-material/History';
+import QueryStatsIcon from '@mui/icons-material/QueryStats';
+import TimelineIcon from '@mui/icons-material/Timeline';
+import AnalyticsIcon from '@mui/icons-material/Analytics';
+import SyncIcon from '@mui/icons-material/Sync';
 import api from '../../services/api';
 
 const CommercialDashboardPage = () => {
@@ -123,9 +131,9 @@ const CommercialDashboardPage = () => {
                     <button
                         onClick={() => fetchData(false)}
                         disabled={refreshing}
-                        className="flex items-center gap-2 pitx-gradient text-white px-6 py-3 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg shadow-primary/20 transition-all hover:opacity-90 active:scale-95 disabled:opacity-50"
+                        className="flex items-center gap-2 bg-gradient-to-br from-blue-600 to-blue-800 text-white px-6 py-3 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg shadow-blue-900/20 transition-all hover:opacity-90 active:scale-95 disabled:opacity-50"
                     >
-                        {refreshing ? <CircularProgress size={16} color="inherit" /> : <span className="material-symbols-outlined text-sm">sync</span>}
+                        {refreshing ? <CircularProgress size={16} color="inherit" /> : <SyncIcon sx={{ fontSize: 18 }} />}
                         {refreshing ? 'Syncing Ecosystem...' : 'Force Sync'}
                     </button>
                 </div>
@@ -142,25 +150,25 @@ const CommercialDashboardPage = () => {
                 <MetricCard
                     title="Today's Performance"
                     value={formatCurrency(metrics.today_gross)}
-                    icon="today"
+                    icon={<TodayIcon />}
                     subtitle="Live Gross Sales"
                 />
                 <MetricCard
                     title="Active Week"
                     value={formatCurrency(metrics.this_week_total)}
-                    icon="date_range"
+                    icon={<DateRangeIcon />}
                     subtitle="Weekly Velocity"
                 />
                 <MetricCard
                     title="Current Month"
                     value={formatCurrency(metrics.this_month_total)}
-                    icon="calendar_month"
+                    icon={<CalendarMonthIcon />}
                     subtitle="Target Tracking"
                 />
                 <MetricCard
                     title="Annual Aggregate"
                     value={formatCurrency(metrics.this_year_total)}
-                    icon="history"
+                    icon={<HistoryIcon />}
                     subtitle="Year-to-Date"
                 />
             </div>
@@ -173,13 +181,13 @@ const CommercialDashboardPage = () => {
                             <h4 className="text-xl font-black text-slate-900 tracking-tight">Daily Performance</h4>
                             <p className="text-xs font-bold text-slate-500 uppercase tracking-widest italic opacity-70">24h sales stream</p>
                         </div>
-                        <span className="material-symbols-outlined text-slate-300">query_stats</span>
+                        <QueryStatsIcon sx={{ color: 'grey.300', fontSize: 32 }} />
                     </div>
                     <div className="h-[350px] relative z-10">
                         <TransactionChart data={charts.daily} loading={loading} />
                     </div>
                     <div className="absolute -bottom-10 -right-10 opacity-5 grayscale pointer-events-none">
-                        <span className="material-symbols-outlined text-[200px]">monitoring</span>
+                        <QueryStatsIcon sx={{ fontSize: 240 }} />
                     </div>
                 </div>
 
@@ -189,13 +197,13 @@ const CommercialDashboardPage = () => {
                             <h4 className="text-xl font-black text-slate-900 tracking-tight">Weekly Lifecycle</h4>
                             <p className="text-xs font-bold text-slate-500 uppercase tracking-widest italic opacity-70">7-day traffic trends</p>
                         </div>
-                        <span className="material-symbols-outlined text-slate-300">timeline</span>
+                        <TimelineIcon sx={{ color: 'grey.300', fontSize: 32 }} />
                     </div>
                     <div className="h-[350px] relative z-10">
                         <TransactionChart data={charts.weekly} loading={loading} />
                     </div>
                     <div className="absolute -bottom-10 -right-10 opacity-5 grayscale pointer-events-none">
-                        <span className="material-symbols-outlined text-[200px]">hub</span>
+                        <TimelineIcon sx={{ fontSize: 240 }} />
                     </div>
                 </div>
 
@@ -216,7 +224,7 @@ const CommercialDashboardPage = () => {
                         <TransactionChart data={charts.monthly} loading={loading} />
                     </div>
                     <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 opacity-[0.02] pointer-events-none group-hover:opacity-[0.05] transition-opacity">
-                        <span className="material-symbols-outlined text-[500px]">analytics</span>
+                        <AnalyticsIcon sx={{ fontSize: 500 }} />
                     </div>
                 </div>
             </div>
@@ -224,7 +232,7 @@ const CommercialDashboardPage = () => {
             {/* Section: Actionable Data Tables */}
             <div className="mt-12 space-y-6">
                 <div className="flex items-center gap-3">
-                    <div className="size-10 rounded-xl pitx-gradient flex items-center justify-center text-white shadow-lg shadow-primary/20">
+                    <div className="size-10 rounded-xl bg-gradient-to-br from-blue-600 to-blue-800 flex items-center justify-center text-white shadow-lg shadow-blue-900/20">
                         <ListAltIcon />
                     </div>
                     <h4 className="text-xl font-black text-slate-900 tracking-tight">Recent Live Transactions</h4>

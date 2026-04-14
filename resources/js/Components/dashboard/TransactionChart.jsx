@@ -110,7 +110,10 @@ const TransactionChart = ({ data, loading }) => {
                     display: false,
                 },
                 ticks: {
-                    font: { size: 11 }
+                    font: { size: 11 },
+                    maxRotation: 45,
+                    minRotation: 45,
+                    maxTicksLimit: 12
                 }
             },
         },
