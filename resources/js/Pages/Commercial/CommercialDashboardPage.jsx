@@ -3,6 +3,11 @@ import axios from 'axios';
 import { format, subDays, startOfMonth, startOfYear } from 'date-fns';
 import MetricCard from '../../Components/Commercial/MetricCard';
 import TransactionChart from '../../Components/dashboard/TransactionChart';
+import RecentTransactionsTable from '../../Components/dashboard/RecentTransactionsTable';
+import NotificationToast from '../../Components/dashboard/NotificationToast';
+import { Alert, CircularProgress } from '@mui/material';
+import ListAltIcon from '@mui/icons-material/ListAlt';
+import api from '../../services/api';
 
 const CommercialDashboardPage = () => {
     const [metrics, setMetrics] = useState({
@@ -19,9 +24,15 @@ const CommercialDashboardPage = () => {
     });
     const [loading, setLoading] = useState(true);
     const [refreshing, setRefreshing] = useState(false);
+    const [recentTransactions, setRecentTransactions] = useState([]);
+    const [error, setError] = useState(null);
+    const [notification, setNotification] = useState(null);
+    const [refreshInterval] = useState(300000); // 5 minutes
 
-    const fetchData = useCallback(async () => {
+    const fetchData = useCallback(async (isInitial = false) => {
         setRefreshing(true);
+        if (isInitial) setLoading(true);
+        setError(null);
         try {
             // Define date parameters for the endpoints
             const todayStr = format(new Date(), 'yyyy-MM-dd');
@@ -31,20 +42,18 @@ const CommercialDashboardPage = () => {
 
             // Daily: use hourly endpoint for chart breakdown + daily for summary
             // Weekly/Monthly/Yearly use their respective endpoints
-            const [hourlyResp, dailyResp, weeklyResp, monthlyResp] = await Promise.all([
-                axios.get('/commercial/reports/transactions/hourly', { params: { date: todayStr } }).catch(() => ({ data: { data: [] } })),
-                axios.get('/commercial/reports/transactions/daily', { params: { date: todayStr } }).catch(() => ({ data: { summary: { gross_sales: 0 } } })),
-                axios.get('/commercial/reports/transactions/weekly', { params: { date_from: sevenDaysAgoStr, date_to: todayStr } }).catch(() => ({ data: { days: [] } })),
-                axios.get('/commercial/reports/transactions/monthly', { params: { date_from: monthStartStr, date_to: todayStr } }).catch(() => ({ data: { days: [] } }))
+            const [hourlyResp, dailyResp, weeklyResp, monthlyResp, transactionsRes] = await Promise.all([
+                axios.get('/commercial/reports/transactions/hourly', { params: { date: todayStr } }),
+                axios.get('/commercial/reports/transactions/daily', { params: { date: todayStr } }),
+                axios.get('/commercial/reports/transactions/weekly', { params: { date_from: sevenDaysAgoStr, date_to: todayStr } }),
+                axios.get('/commercial/reports/transactions/monthly', { params: { date_from: monthStartStr, date_to: todayStr } }),
+                api.getTransactions(1, {})
             ]);
 
             const todaySum = dailyResp.data?.summary?.gross_sales || 0;
             const weekTotal = (weeklyResp.data?.days || []).reduce((acc, d) => acc + Number(d.gross_sales || 0), 0);
             const monthTotal = (monthlyResp.data?.days || []).reduce((acc, d) => acc + Number(d.gross_sales || 0), 0);
-
-            // For year total, we might need a separate call or aggregate monthly
-            // For now let's just use the monthly data total as a starting point if yearly is missing
-            const yearTotal = monthTotal; // Placeholder or add yearly call later if needed
+            const yearTotal = monthTotal; // Placeholder
 
             setMetrics({
                 today_gross: Number(todaySum) || 0,
@@ -53,7 +62,6 @@ const CommercialDashboardPage = () => {
                 this_year_total: Number(yearTotal) || 0
             });
 
-            // Map hourly data for daily chart
             const hourlyData = hourlyResp.data?.data || [];
 
             setCharts({
@@ -75,17 +83,27 @@ const CommercialDashboardPage = () => {
                 yearly: { labels: [], sales: [], volume: [] }
             });
 
-        } catch (error) {
-            console.error('Error fetching commercial dashboard data:', error);
+            setRecentTransactions(transactionsRes.data || []);
+
+        } catch (err) {
+            console.error('Error fetching commercial dashboard data:', err);
+            setError('Failed to sync ecosystem vitals. The data shown might be outdated.');
+            setNotification({ message: 'Critical: Failed to synchronize with TSMS core.', type: 'error' });
         } finally {
             setLoading(false);
             setRefreshing(false);
         }
-    }, []);
+    }, [setError]);
 
     useEffect(() => {
-        fetchData();
+        fetchData(true);
     }, [fetchData]);
+
+    useEffect(() => {
+        if (refreshInterval <= 0) return;
+        const timer = setInterval(() => fetchData(false), refreshInterval);
+        return () => clearInterval(timer);
+    }, [fetchData, refreshInterval]);
 
     const formatCurrency = (val) => {
         const num = Number(val);
@@ -103,15 +121,21 @@ const CommercialDashboardPage = () => {
                 </div>
                 <div className="flex items-center gap-3">
                     <button
-                        onClick={fetchData}
+                        onClick={() => fetchData(false)}
                         disabled={refreshing}
                         className="flex items-center gap-2 pitx-gradient text-white px-6 py-3 rounded-2xl font-black text-xs uppercase tracking-widest shadow-lg shadow-primary/20 transition-all hover:opacity-90 active:scale-95 disabled:opacity-50"
                     >
-                        <span className={`material - symbols - outlined text - sm ${refreshing ? 'animate-spin' : ''} `}>sync</span>
+                        {refreshing ? <CircularProgress size={16} color="inherit" /> : <span className="material-symbols-outlined text-sm">sync</span>}
                         {refreshing ? 'Syncing Ecosystem...' : 'Force Sync'}
                     </button>
                 </div>
             </div>
+
+            {error && (
+                <Alert severity="error" variant="filled" sx={{ borderRadius: 3, boxShadow: '0 4px 12px rgba(211, 47, 47, 0.2)' }}>
+                    {error}
+                </Alert>
+            )}
 
             {/* Metrics Grid */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
@@ -196,6 +220,30 @@ const CommercialDashboardPage = () => {
                     </div>
                 </div>
             </div>
+
+            {/* Section: Actionable Data Tables */}
+            <div className="mt-12 space-y-6">
+                <div className="flex items-center gap-3">
+                    <div className="size-10 rounded-xl pitx-gradient flex items-center justify-center text-white shadow-lg shadow-primary/20">
+                        <ListAltIcon />
+                    </div>
+                    <h4 className="text-xl font-black text-slate-900 tracking-tight">Recent Live Transactions</h4>
+                </div>
+                <div className="glass-card rounded-[32px] border border-white/40 shadow-xl overflow-hidden bg-white/50 backdrop-blur-3xl">
+                    <RecentTransactionsTable
+                        transactions={recentTransactions}
+                        loading={loading}
+                    />
+                </div>
+            </div>
+
+            {notification && (
+                <NotificationToast
+                    message={notification.message}
+                    type={notification.type}
+                    onClose={() => setNotification(null)}
+                />
+            )}
         </div>
     );
 };
