@@ -279,7 +279,7 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/users', function () {
         return view('app');
     })->name('users.index');
-    Route::resource('users', UserController::class)->except(['index']);
+    Route::resource('users', UserController::class)->except(['index', 'show']);
 
     // Admin System Settings
     Route::middleware(['role:admin'])->prefix('admin')->name('admin.')->group(function () {
