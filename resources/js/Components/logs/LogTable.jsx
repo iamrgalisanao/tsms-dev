@@ -23,7 +23,7 @@ import {
     DialogActions,
     Button
 } from '@mui/material';
-import { formatDate } from '../../utils/dateFormatter';
+import { formatDate } from '../../utils/dateFormatter'; // Now converts to Asia/Manila
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
 import CodeIcon from '@mui/icons-material/Code';
