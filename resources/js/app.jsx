@@ -154,7 +154,7 @@ const App = () => {
                         <TenantUserManagementPage />
                       </ProtectedRoute>
                     } />
-                    <Route path="/commercial/tenants/:id" element={
+                    <Route path="/commercial/tenants/:uuid" element={
                       <ProtectedRoute roles={['admin', 'manager', 'finance', 'commercial']}>
                         <TenantProfilePage />
                       </ProtectedRoute>

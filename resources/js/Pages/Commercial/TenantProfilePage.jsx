@@ -33,7 +33,7 @@ import {
 import MetricCard from '../../Components/Commercial/MetricCard';
 
 const TenantProfilePage = () => {
-    const { id } = useParams();
+    const { uuid } = useParams();
     const [tenant, setTenant] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
@@ -42,10 +42,7 @@ const TenantProfilePage = () => {
         const fetchTenantDetails = async () => {
             try {
                 setLoading(true);
-                // The show endpoint returns a blade view by default, but we can try to fetch JSON
-                // or use the models we have. For this implementation, we'll assume a JSON response 
-                // is available or we'll wrap it.
-                const response = await axios.get(`/commercial/reports/tenants/${id}`, {
+                const response = await axios.get(`/commercial/reports/tenants/${uuid}`, {
                     headers: { 'Accept': 'application/json' }
                 });
                 setTenant(response.data);
@@ -57,7 +54,7 @@ const TenantProfilePage = () => {
             }
         };
         fetchTenantDetails();
-    }, [id]);
+    }, [uuid]);
 
     const formatCurrency = (val) => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(val || 0);
 

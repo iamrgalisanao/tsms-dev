@@ -29,6 +29,9 @@ class TenantController extends Controller
             'status' => 'required|string|in:Operational,Closed,Pending',
         ]);
 
+        // UUID is generated server-side, do not accept from payload
+        unset($validated['uuid']);
+
         $tenant = Tenant::create($validated);
 
         return response()->json($tenant, 201);

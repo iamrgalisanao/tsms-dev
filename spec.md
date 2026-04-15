@@ -1,4 +1,4 @@
-# TSMS Domain Specification
+# TSMS Domain Specification (V2.2 Final)
 
 ## 1. Introduction
 TSMS (Transaction Management System) is a high-performance, multi-tenant ingestion system designed for PITX terminal operations. It prioritizes absolute data isolation, auditability, and cryptographic integrity to provide a robust platform for transaction management.
@@ -8,8 +8,8 @@ To provide a scalable, secure, and standalone source of truth for transaction da
 
 ### 1.2 Objectives
 - **Multi-tenancy**: Support multiple independent terminal owners on a single platform.
-- **Interoperability**: Adhere to POS V2.1 standards with future readiness for HL7/FHIR clinical data exchange.
-- **Operational Excellence**: Streamline workflows from terminal registration to final validation with sub-second latency.
+- **Interoperability**: Adhere to POS V2.2 Final standards with dual-layer checksum verification.
+- **Operational Excellence**: Streamline workflows from terminal registration to final validation with optimized asynchronous processing.
 - **Auditability**: Ensure all state changes (voids/refunds) are logged and verifiable.
 
 ---
@@ -44,16 +44,23 @@ The system supports cross-tenant auditability for shared administrators (PITX Op
 
 ## 4. Transaction Standards & Integrity
 
-### 4.1 Checksum Verification
-- **Dual-Support**: All ingestion must pass SHA-256 integrity checks.
-- **Fallback Logic**: Systems attempt V2.1 (String-based) validation first, falling back to V2.0 (Float-based) for legacy compatibility.
+### 4.1 Checksum Verification (Dual-Layer)
+- **Layer 1 (Transaction)**: An inner SHA-256 hash of the transaction object.
+- **Layer 2 (Submission)**: An outer SHA-256 hash of the entire submission envelope, including the already-hashed transaction.
+- **Canonicalization**: Strict alphabetical sorting (ksort) and 2-decimal string formatting are required before hashing.
 
-### 4.2 State Machine
-- **Workflow**: `PENDING` → `VALID` / `INVALID` → `COMPLETED`.
-- **Void/Refund**: POS-initiated voids require authenticated Sanctum tokens and must include a documented reason for audit tracking.
+### 4.2 Ingestion Model
+TSMS utilizes a **Synchronous Handshake** followed by an **Asynchronous Completion** model:
+1. **Handshake**: The POS submits the transaction via `POST /transactions/official`. The server verifies the token and checksums synchronously. If valid, the record is persisted in the database and a `200 OK` (ACCEPTED) is returned.
+2. **Asynchronous Validation**: A background worker (`ProcessTransactionJob`) performs computation audits, tax-math reconciliation, and business rule enforcement.
+3. **Polling/Status**: POS systems must poll the `/status` endpoint until a terminal state (`VALID` or `FAILED`) is reached.
 
-### 4.3 Standards Readiness
-While focused on POS data, models are designed for future **HL7 v2** and **FHIR** compatibility, allowing the ingestion engine to evolve into a clinical-ready hub if required.
+### 4.3 State Machine
+- **Workflow**: `PENDING` → `VALID` / `FAILED`.
+- **Void/Refund**: POS-initiated voids and refunds require the original transaction to be successfully ingested. Voids move the transaction to `VOIDED`, while refunds update `is_refunded` and compute `refund_amount`.
+
+### 4.4 Standards Readiness
+While focused on POS V2.2 data, models are designed for future **HL7 v2** and **FHIR** compatibility, allowing the ingestion engine to evolve into a clinical-ready hub if required.
 
 ---
 
@@ -62,26 +69,53 @@ While focused on POS data, models are designed for future **HL7 v2** and **FHIR*
 > [!IMPORTANT]
 > These rules are non-negotiable for all team members.
 
-1. **Cryptographic Gatekeeping**: Never bypass the `PayloadChecksumService`.
-2. **Isolated Authority**: Never build or maintain logic for external WebApp forwarding; the forwarder is **DISABLED**.
-3. **Audit Requirement**: Never allow a transaction to be marked `VALID` without a corresponding record in the `TransactionValidation` table.
-4. **Validation Integrity**: Never mark a clinical-workflow work complete without regression testing.
-5. **Report Fidelity**: Never silently change transaction reports, results, or audit-affecting behavior.
-6. **Documentation First**: Never deploy result-sensitive or treatment-sensitive (financial) changes without documentation updates.
-7. **Audit Priority**: Never let a commercial feature override auditability or privacy rules.
-8. **Compliance Investigation**: Never patch a compliance defect (DPA/NPC) without a root-cause investigation.
-9. **Offline Integrity**: Never allow offline sync to create duplicate or untraceable records or unauthorized data cached on client.
-10. **Persistence Mapping**: Never treat file-based and relational persistence as interchangeable without documented mapping rules.
-11. **Protected Rules**: Never allow sensitive records to bypass protected audit rules during a refund or void action.
-12. **Lawful Basis**: Never process sensitive personal information without a verified lawful basis (Consent or DPA Exception).
-13. **Proportionality**: Never ignore the principle of Proportionality; collect only the minimum data necessary for the purpose.
-14. **Privacy Impact**: Never initiate a major feature or data-flow change without a Privacy Impact Assessment (PIA).
-15. **Composite Uniqueness**: Always use the composite uniqueness of `transaction_id + terminal_id`.
-16. **Server Truth**: Never allow UI-side (ReactJS) calculations to override backend truth (MySQL) for totals or taxes.
+1. **Passive Ingestion**: Always ingest the transaction payload passively without mutation. The database must reflect the "raw truth" as submitted by the POS.
+2. **Cryptographic Gatekeeping**: Never bypass the `PayloadChecksumService`.
+3. **Isolated Authority**: The WebApp forwarding engine (`ForwardTransactionsToWebAppJob`) MUST remain **PERMANENTLY DISABLED**. TSMS is a standalone archive.
+4. **Audit Requirement**: Never allow a transaction to be marked `VALID` without a corresponding record in the `TransactionValidation` table.
+5. **Validation Integrity**: Never mark a clinical-workflow work complete without regression testing.
+6. **Report Fidelity**: Never silently change transaction reports, results, or audit-affecting behavior.
+7. **Documentation First**: Never deploy financial or audit-sensitive changes without documentation updates.
+8. **Audit Priority**: Never let a commercial feature override auditability or privacy rules.
+9. **Uniqueness Authority**: Always use the composite uniqueness of `tenant_id + transaction_id`.
+10. **Idempotency**: Always reuse the original `transaction_id` for retries. If an ID exists but fields differ, return `409 Conflict`.
+11. **Server Truth**: Never allow UI-side calculations to override backend truth (MySQL) for totals or taxes.
+12. **Lawful Basis**: Never process personal information without a verified lawful basis (Consent or DPA Exception).
+12. **Proportionality**: Collect only the minimum data necessary for the purpose.
 
 ---
 
-## 6. Required Project Context System
+## 6. Phase 1 Constraints (Deadlock Prevention)
+
+To ensure system stability during peak hours, TSMS enforces the following technical constraints for Phase 1:
+
+- **Single Transaction Rule**: Every API submission must contain exactly **one** transaction. Batch submissions via the `transactions` array are disabled.
+- **Sequential Submission (FIFO)**: Terminals must submit transactions in chronological order. Subsequent events (voids/refunds) sent before the parent sale is ingested will trigger a `404 Not Found`.
+- **Locking Strategy**: Background jobs are sharded by `tenant_id` (`s0-s7`) to minimize DB lock contention.
+
+---
+
+## 7. Server Response Protocols
+
+TSMS uses standardized HTTP status codes paired with internal machine-readable codes to guide POS integration behavior.
+
+### 7.1 Ingestion Responses (POST /official)
+- **200 OK (`already_processed`)**: The transaction was already successfully ingested. POS should treat this as a success and proceed to the next record.
+- **201 Accepted (`ACCEPTED`)**: The initial handshake is complete. The transaction is persisted and queued for background validation.
+- **409 Conflict (`DUPLICATE_TRANSACTION`)**: The `transaction_id` exists, but the submitted payload (monetary values or metadata) differs from the original.
+- **422 Unprocessable Entity (`BATCH_DISABLED`)**: Payload contains a `transactions` array, which is prohibited in Phase 1.
+
+### 7.2 Operation Responses (Void/Refund)
+- **404 Not Found**: The target `transaction_id` does not exist in TSMS. This typically happens if the POS violates the **Sequential Submission Rule** (e.g., trying to void a sale that hasn't been ingested yet).
+- **403 Forbidden**: Terminal attempted to operate on a transaction belonging to another terminal or tenant.
+
+### 7.3 Status Polling (GET /status)
+- **validation_status**: `PENDING` (Job not started), `VALID` (Audit passed), `FAILED` (Audit failed).
+- **job_status**: `QUEUED`, `PROCESSING`, `COMPLETED`, `FAILED`.
+
+---
+
+## 8. Required Project Context System
 
 To maintain architectural discipline, the following files and directories must exist and be maintained:
 

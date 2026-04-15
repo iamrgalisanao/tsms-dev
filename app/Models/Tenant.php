@@ -39,7 +39,23 @@ class Tenant extends Model
         'accept_with_issues',
         'category',
         'zone',
+        'uuid',
     ];
+
+    protected static function boot()
+    {
+        parent::boot();
+        static::creating(function ($model) {
+            if (empty($model->uuid)) {
+                $model->uuid = (string) \Illuminate\Support\Str::uuid();
+            }
+        });
+    }
+
+    public function getRouteKeyName(): string
+    {
+        return 'uuid';
+    }
 
     protected $casts = [
         'accept_with_issues' => 'boolean',

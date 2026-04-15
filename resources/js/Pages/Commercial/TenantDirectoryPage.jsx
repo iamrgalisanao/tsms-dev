@@ -312,7 +312,7 @@ const TenantDirectoryPage = () => {
                     marginBottom: 24,
                 }}>
                     {paginatedTenants.map(tenant => (
-                        <div key={tenant.id} style={{
+                        <div key={tenant.uuid || tenant.id} style={{
                             background: 'white', borderRadius: 16,
                             border: '1.5px solid #e2e8f0',
                             padding: '20px 20px 16px',
@@ -364,7 +364,7 @@ const TenantDirectoryPage = () => {
                             {/* Actions */}
                             <div style={{ display: 'flex', gap: 8 }}>
                                 <button
-                                    onClick={() => navigate(`/commercial/tenants/${tenant.id}`)}
+                                    onClick={() => navigate(`/commercial/tenants/${tenant.uuid}`)}
                                     style={{
                                         flex: 1, padding: '8px', borderRadius: 10,
                                         border: `1.5px solid ${BLUE}`, background: 'transparent',
@@ -407,7 +407,7 @@ const TenantDirectoryPage = () => {
                         </thead>
                         <tbody>
                             {paginatedTenants.map(tenant => (
-                                <tr key={tenant.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                                <tr key={tenant.uuid || tenant.id} style={{ borderBottom: '1px solid #f1f5f9' }}>
                                     <td style={{ padding: '12px 20px' }}>
                                         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
                                             <div style={{ width: 36, height: 36, borderRadius: 10, background: '#f1f5f9', border: '1px solid #e2e8f0', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', flexShrink: 0 }}>
@@ -428,7 +428,7 @@ const TenantDirectoryPage = () => {
                                     <td style={{ padding: '12px 20px' }}><StatusPill status={tenant.status} /></td>
                                     <td style={{ padding: '12px 20px', textAlign: 'right' }}>
                                         <button
-                                            onClick={() => navigate(`/commercial/tenants/${tenant.id}`)}
+                                            onClick={() => navigate(`/commercial/tenants/${tenant.uuid}`)}
                                             style={{ padding: '6px 14px', borderRadius: 8, border: `1.5px solid ${BLUE}`, background: 'transparent', color: BLUE, fontWeight: 700, fontSize: 12, cursor: 'pointer' }}
                                         >
                                             Profile
