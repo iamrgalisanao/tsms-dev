@@ -23,7 +23,7 @@ import {
     DialogActions,
     Button
 } from '@mui/material';
-import { format } from 'date-fns';
+import { formatDate } from '../../utils/dateFormatter';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
 import CodeIcon from '@mui/icons-material/Code';
@@ -85,7 +85,7 @@ const LogRow = ({ log, type, onShowDetails }) => {
                 </TableCell>
                 <TableCell sx={cellStyles}>
                     <Typography variant="body2" sx={{ fontWeight: 700 }}>
-                        {log.created_at ? format(new Date(log.created_at), 'MMM dd, HH:mm:ss') : '-'}
+                        {log.created_at ? formatDate(log.created_at) : '-'}
                     </Typography>
                 </TableCell>
 
