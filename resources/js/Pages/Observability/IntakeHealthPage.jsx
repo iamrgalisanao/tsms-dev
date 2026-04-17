@@ -250,9 +250,9 @@ const IntakeHealthPage = () => {
                         </Grid>
                     </Grid>
 
-                    {/* Charts & Forensic Feed - Centered row */}
+                    {/* Charts & Forensic Feed - Balanced 50/50 split */}
                     <Grid container spacing={4} sx={{ justifyContent: 'center' }}>
-                        <Grid item xs={12} lg={8}>
+                        <Grid item xs={12} lg={6}>
                             <Paper className="glass-container" sx={{ p: 4, height: 500, overflow: 'hidden' }}>
                                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
                                     <Typography variant="h6" sx={{ fontWeight: 900, letterSpacing: '0.05em' }}>
@@ -266,7 +266,7 @@ const IntakeHealthPage = () => {
                             </Paper>
                         </Grid>
 
-                        <Grid item xs={12} lg={4}>
+                        <Grid item xs={12} lg={6}>
                             <Paper className="glass-container" sx={{ p: 4, height: 500, display: 'flex', flexDirection: 'column' }}>
                                 <Typography variant="h6" sx={{ mb: 3, fontWeight: 900, display: 'flex', alignItems: 'center' }}>
                                     <TerminalIcon sx={{ mr: 1.5, color: '#4cc9f0' }} />
