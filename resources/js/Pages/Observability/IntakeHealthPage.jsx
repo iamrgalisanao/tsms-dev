@@ -3,6 +3,7 @@ import api from '../../services/api';
 import MetricCard from '../../Components/dashboard/MetricCard';
 import {
     Box,
+    Container,
     Typography,
     Grid,
     Paper,
