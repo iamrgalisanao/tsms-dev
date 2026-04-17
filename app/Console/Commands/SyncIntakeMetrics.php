@@ -17,9 +17,8 @@ class SyncIntakeMetrics extends Command
         $this->info('Starting metrics synchronization...');
 
         $processed = TransactionIntake::whereIn('processing_status', [
-            TransactionIntake::PROCESSING_STATUS_COMPLETED,
-            TransactionIntake::PROCESSING_STATUS_DUPLICATE,
-            'processed' // handle legacy label if any
+            TransactionIntake::PROCESSING_STATUS_PROCESSED,
+            TransactionIntake::PROCESSING_STATUS_DUPLICATE
         ])->count();
 
         $failed = TransactionIntake::where('processing_status', TransactionIntake::PROCESSING_STATUS_FAILED_PERMANENT)->count();

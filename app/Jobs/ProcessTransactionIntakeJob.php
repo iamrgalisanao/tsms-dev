@@ -90,7 +90,7 @@ class ProcessTransactionIntakeJob implements ShouldQueue
             if ($status === 'success' || $status === 'accepted' || $status === 'already_processed' || $isDuplicate) {
                 $finalStatus = $isDuplicate 
                     ? TransactionIntake::PROCESSING_STATUS_DUPLICATE 
-                    : TransactionIntake::PROCESSING_STATUS_COMPLETED;
+                    : TransactionIntake::PROCESSING_STATUS_PROCESSED;
 
                 $intake->update([
                     'processing_status' => $finalStatus,
