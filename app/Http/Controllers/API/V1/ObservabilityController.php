@@ -124,6 +124,7 @@ class ObservabilityController extends Controller
                     'id' => $intake->id,
                     'receipt_no' => $intake->payload['receipt_no'] ?? '---',
                     'terminal_id' => $intake->terminal_id,
+                    'payload' => $intake->payload,
                     'processing_status' => strtolower($intake->processing_status ?? 'pending'),
                     'last_error_message' => $intake->last_error_message,
                     'processed_at' => $intake->processed_at,

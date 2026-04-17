@@ -1,40 +1,60 @@
-import React from 'react';
-import { Card, CardContent, Typography, Box, Stack, useTheme } from '@mui/material';
+import React, { memo } from 'react';
+import { Card, CardContent, Typography, Box, Stack } from '@mui/material';
 
-const MetricCard = ({ title, value, icon, color = 'primary', trend, sparkline }) => {
-    const theme = useTheme();
+// Move configuration outside to prevent re-creation on every render
+const COLOR_MAP = {
+    primary: '#00f2ff', // Electric Blue
+    accent: '#feb700',  // Amber
+    success: '#00e676', // Success Green
+    danger: '#ff005c',  // Vibrant Rose
+};
 
-    const colorMap = {
-        primary: theme.palette.primary.main,
-        accent: theme.palette.secondary.main,
-        success: theme.palette.success.main,
-        danger: theme.palette.error.main, // Mapping danger to MUI error palette
+const MetricCard = memo(({ title, value, icon, color = 'primary', trend, sparkline }) => {
+    const activeColor = COLOR_MAP[color] || COLOR_MAP.primary;
+
+    // Robust sparkline path calculation
+    const renderSparkline = () => {
+        if (!sparkline || sparkline.length < 2) {
+            // Return a simple horizontal line if data is insufficient to prevent NaN
+            return "M 0 10 L 100 10";
+        }
+        
+        const max = Math.max(...sparkline, 1);
+        const points = sparkline.map((val, i) => {
+            const x = (i / (sparkline.length - 1)) * 100;
+            const y = 20 - (val / max) * 18;
+            return `${x} ${y}`;
+        });
+        
+        return `M ${points.join(' L ')}`;
     };
-
-    const activeColor = colorMap[color] || theme.palette.primary.main;
 
     return (
         <Card
+            className="glass-container stagger-item"
             sx={{
                 height: '100%',
                 minHeight: 180,
-                borderRadius: '32px',
+                borderRadius: '24px',
                 position: 'relative',
                 overflow: 'hidden',
-                transition: 'all 0.4s ease-in-out',
+                bgcolor: 'rgba(255, 255, 255, 0.6)',
                 '&:hover': {
-                    transform: 'translateY(-10px)',
-                    boxShadow: '0 20px 40px rgba(0,0,0,0.1)',
-                    '& .accent-bar': { width: '100%' }
+                    '& .metric-icon-box': { 
+                        transform: 'scale(1.1) rotate(5deg)',
+                        boxShadow: `0 0 20px ${activeColor}66`
+                    },
+                    '& .sparkline-path': { opacity: 0.8 }
                 }
             }}
         >
             <CardContent sx={{ p: 4, height: '100%', display: 'flex', flexDirection: 'column' }}>
-                <Stack direction="row" justifyContent="space-between" alignItems="flex-start" sx={{ mb: 4 }}>
+                <Stack direction="row" justifyContent="space-between" alignItems="flex-start" sx={{ mb: 3 }}>
                     <Box
+                        className="metric-icon-box"
                         sx={{
-                            width: 56,
-                            height: 56,
+                            width: 52,
+                            height: 52,
                             borderRadius: '16px',
                             bgcolor: activeColor,
                             display: 'flex',
@@ -42,16 +62,14 @@ const MetricCard = ({ title, value, icon, color = 'primary', trend, sparkline })
                             justifyContent: 'center',
                             color: 'white',
                             boxShadow: `0 8px 16px ${activeColor}33`,
-                            transition: 'all 0.4s'
+                            transition: 'all 0.4s cubic-bezier(0.16, 1, 0.3, 1)'
                         }}
                     >
-                        <Box sx={{ display: 'flex' }}>
-                            {typeof icon === 'string' ? (
-                                <Typography sx={{ fontSize: '24px' }}>{icon}</Typography>
-                            ) : (
-                                React.cloneElement(icon, { sx: { fontSize: 28 } })
-                            )}
-                        </Box>
+                        {typeof icon === 'string' ? (
+                            <Typography sx={{ fontSize: '24px' }}>{icon}</Typography>
+                        ) : React.isValidElement(icon) ? (
+                            React.cloneElement(icon, { sx: { fontSize: 26 } })
+                        ) : null}
                     </Box>
 
                     {trend !== undefined && (
@@ -60,40 +78,51 @@ const MetricCard = ({ title, value, icon, color = 'primary', trend, sparkline })
                                 display: 'flex',
                                 alignItems: 'center',
                                 px: 1.5,
-                                py: 0.5,
-                                borderRadius: '100px',
-                                bgcolor: trend >= 0 ? theme.palette.success[50] : theme.palette.error[50],
-                                color: trend >= 0 ? theme.palette.success.main : theme.palette.error.main,
+                                py: 0.75,
+                                borderRadius: '12px',
+                                bgcolor: 'rgba(0,0,0,0.03)',
+                                border: '1px solid rgba(0,0,0,0.05)',
+                                color: trend >= 0 ? '#00c853' : '#ff1744',
                                 fontWeight: 900,
-                                fontSize: '12px'
+                                fontSize: '0.7rem',
+                                letterSpacing: '0.02em'
                             }}
                         >
-                            {trend >= 0 ? '↑' : '↓'} {Math.abs(trend)}%
+                            <span style={{ marginRight: 4 }} aria-hidden="true">{trend >= 0 ? '↑' : '↓'}</span>
+                            {Math.abs(trend)}%
                         </Box>
                     )}
                 </Stack>
 
-                <Box>
+                <Box sx={{ position: 'relative', zIndex: 1 }}>
                     <Typography
                         variant="caption"
+                        noWrap
                         sx={{
-                            fontSize: '14px',
+                            fontSize: '0.7rem',
                             fontWeight: 900,
-                            color: theme.palette.grey[400],
+                            color: 'text.secondary',
                             textTransform: 'uppercase',
-                            letterSpacing: '0.1em',
-                            mb: 1,
-                            display: 'block'
+                            letterSpacing: '0.12em',
+                            mb: 0.5,
+                            display: 'block',
+                            opacity: 0.6,
+                            textOverflow: 'ellipsis'
                         }}
                     >
                         {title}
                     </Typography>
                     <Typography
-                        variant="h4"
+                        variant="h3"
+                        role="status"
+                        aria-live="polite"
+                        noWrap
                         sx={{
-                            fontWeight: 900,
-                            color: theme.palette.primary.main,
-                            letterSpacing: '-0.02em'
+                            fontWeight: 1000,
+                            color: '#101221',
+                            letterSpacing: '-0.04em',
+                            lineHeight: 1,
+                            textOverflow: 'ellipsis'
                         }}
                     >
                         {value}
@@ -101,35 +130,27 @@ const MetricCard = ({ title, value, icon, color = 'primary', trend, sparkline })
                 </Box>
 
                 {sparkline && sparkline.length > 0 && (
-                    <Box sx={{ mt: 'auto', pt: 4, height: 48, opacity: 0.2, transition: 'opacity 0.4s' }}>
+                    <Box sx={{ mt: 'auto', pt: 3, height: 40, transition: 'all 0.4s' }}>
                         <svg viewBox="0 0 100 20" style={{ width: '100%', height: '100%', overflow: 'visible' }}>
                             <path
-                                d={`M ${sparkline.map((val, i) => `${(i / (sparkline.length - 1)) * 100} ${20 - (val / Math.max(...sparkline, 1)) * 18}`).join(' L ')}`}
+                                className="sparkline-path"
+                                d={renderSparkline()}
                                 fill="none"
                                 stroke={activeColor}
-                                strokeWidth="3"
+                                strokeWidth="2.5"
                                 strokeLinecap="round"
                                 strokeLinejoin="round"
+                                style={{ opacity: 0.3, transition: 'opacity 0.4s' }}
                             />
                         </svg>
                     </Box>
                 )}
             </CardContent>
-
-            <Box
-                className="accent-bar"
-                sx={{
-                    position: 'absolute',
-                    bottom: 0,
-                    left: 0,
-                    height: 6,
-                    width: 0,
-                    bgcolor: activeColor,
-                    transition: 'width 0.6s ease'
-                }}
-            />
         </Card>
     );
-};
+});
+
+// Set display name for easier debugging with memo
+MetricCard.displayName = 'MetricCard';
 
 export default MetricCard;
