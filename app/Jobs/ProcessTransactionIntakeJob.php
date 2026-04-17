@@ -61,6 +61,8 @@ class ProcessTransactionIntakeJob implements ShouldQueue
             return;
         }
 
+        $initialStatus = $intake->processing_status;
+
         $intake->update([
             'processing_status' => TransactionIntake::PROCESSING_STATUS_PROCESSING,
             'attempt_count' => $intake->attempt_count + 1,
@@ -120,9 +122,8 @@ class ProcessTransactionIntakeJob implements ShouldQueue
                 Metrics::bucket('intake.processing_lag', (float) $e2eLag);
                 Metrics::incr('intake.processed_count');
 
-                // Self-Correction: If this was previously a hard failure, remove it from failed metrics
-                // We check the 'getOriginal' state to be sure we are reversing a prior 'FAILED_PERMANENT' increment.
-                if ($intake->getOriginal('processing_status') === TransactionIntake::PROCESSING_STATUS_FAILED_PERMANENT) {
+                // Self-Correction: If this was previously a failure, remove it from failed metrics
+                if ($initialStatus === TransactionIntake::PROCESSING_STATUS_FAILED_PERMANENT) {
                     Metrics::decr('intake.failed_count');
                 }
             } else {
