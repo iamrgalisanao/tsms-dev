@@ -68,6 +68,19 @@ const api = {
     deleteTenantUser: async (tenantId, userId) => {
         const response = await axios.delete(`/api/tenants/${tenantId}/users/${userId}`);
         return response.data;
+    },
+    // Observability
+    getIntakeMetrics: async () => {
+        const response = await axios.get('/api/v1/observability/intake');
+        return response.data;
+    },
+    getIntakeHistory: async (metric = 'intake.processing_lag') => {
+        const response = await axios.get('/api/v1/observability/intake/history', { params: { metric } });
+        return response.data;
+    },
+    getTenantIntakeStats: async () => {
+        const response = await axios.get('/api/v1/observability/intake/tenants');
+        return response.data;
     }
 };
 

@@ -9,6 +9,7 @@ use App\Http\Controllers\API\V1\LogViewerController;
 use App\Http\Controllers\API\V1\RetryHistoryController;
 use App\Http\Controllers\API\V1\TestParserController;
 use App\Http\Controllers\API\V1\TerminalAuthController;
+use App\Http\Controllers\API\V1\ObservabilityController;
 use App\Http\Controllers\TerminalTokenController;
 use App\Http\Controllers\UserController;
 use App\Services\TransactionValidationService;
@@ -170,6 +171,13 @@ Route::prefix('v1')->middleware(['auth:sanctum', 'capture.terminal.ip', AttachCo
             Route::post('/retry-all',   [\App\Http\Controllers\API\V1\FailedJobController::class, 'retryAll']);
             Route::post('/{uuid}/retry',[\App\Http\Controllers\API\V1\FailedJobController::class, 'retry']);
             Route::delete('/{uuid}',    [\App\Http\Controllers\API\V1\FailedJobController::class, 'flush']);
+        });
+
+        // Observability Metrics
+        Route::prefix('observability')->group(function () {
+            Route::get('/intake',          [\App\Http\Controllers\API\V1\ObservabilityController::class, 'index']);
+            Route::get('/intake/history',  [\App\Http\Controllers\API\V1\ObservabilityController::class, 'history']);
+            Route::get('/intake/tenants',  [\App\Http\Controllers\API\V1\ObservabilityController::class, 'tenants']);
         });
     });
 
