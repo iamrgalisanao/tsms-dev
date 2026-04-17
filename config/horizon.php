@@ -4,10 +4,10 @@
 // transaction-processing (critical), forwarding (medium), low (housekeeping)
 return [
     'domain' => env('HORIZON_DOMAIN'),
-    'path'   => env('HORIZON_PATH', 'horizon'),
+    'path' => env('HORIZON_PATH', 'horizon'),
     // Ensure Horizon uses the same Redis connection as your queues.
     // Priority: HORIZON_CONNECTION > QUEUE_REDIS_CONNECTION > 'horizon' > 'default'.
-    'use'    => env('HORIZON_CONNECTION', env('QUEUE_REDIS_CONNECTION', env('QUEUE_HORIZON_FALLBACK','horizon'))),
+    'use' => env('HORIZON_CONNECTION', env('QUEUE_REDIS_CONNECTION', env('QUEUE_HORIZON_FALLBACK', 'horizon'))),
     'prefix' => env('HORIZON_PREFIX', 'tsms:horizon:'),
 
     // Optional: CORS headers for Horizon API when served under a subdomain
@@ -22,6 +22,7 @@ return [
 
     // Long wait detection thresholds (seconds)
     'waits' => [
+        'redis:transaction-intake' => 2,
         'redis:transaction-processing' => 5,
         'redis:transaction-processing:s0' => 5,
         'redis:transaction-processing:s1' => 5,
@@ -31,109 +32,149 @@ return [
         'redis:transaction-processing:s5' => 5,
         'redis:transaction-processing:s6' => 5,
         'redis:transaction-processing:s7' => 5,
-        'redis:forwarding'             => 10,
-        'redis:low'                    => 15,
-        'redis:notifications'          => 5,
+        'redis:forwarding' => 10,
+        'redis:low' => 15,
+        'redis:notifications' => 5,
     ],
 
     // Trim windows (minutes)
     'trim' => [
-    'recent'        => (int) env('HORIZON_TRIM_RECENT', 60),
-    'pending'       => (int) env('HORIZON_TRIM_PENDING', 60),
-    'completed'     => (int) env('HORIZON_TRIM_COMPLETED', 120),
-    'recent_failed' => (int) env('HORIZON_TRIM_RECENT_FAILED', 43200), // 30 days
-    'failed'        => (int) env('HORIZON_TRIM_FAILED', 43200),
-    'monitored'     => 43200, // already an int literal
+        'recent' => (int) env('HORIZON_TRIM_RECENT', 60),
+        'pending' => (int) env('HORIZON_TRIM_PENDING', 60),
+        'completed' => (int) env('HORIZON_TRIM_COMPLETED', 120),
+        'recent_failed' => (int) env('HORIZON_TRIM_RECENT_FAILED', 43200), // 30 days
+        'failed' => (int) env('HORIZON_TRIM_FAILED', 43200),
+        'monitored' => 43200, // already an int literal
     ],
 
     'fast_termination' => true,
-    'memory_limit'     => 512, // Increased for higher throughput
+    'memory_limit' => 512, // Increased for higher throughput
 
     'environments' => [
         'production' => [
+            'intake-supervisor' => [
+                'connection' => 'redis',
+                'queue' => ['transaction-intake'],
+                'balance' => 'auto',
+                'processes' => env('HZ_INTAKE_PROCESSES', 8),
+                'tries' => 3,
+                'timeout' => 60,
+                'nice' => 0,
+            ],
             'high-supervisor' => [
                 'connection' => 'redis',
-                'queue'      => [
+                'queue' => [
                     'transaction-processing',
-                    'transaction-processing:s0','transaction-processing:s1','transaction-processing:s2','transaction-processing:s3',
-                    'transaction-processing:s4','transaction-processing:s5','transaction-processing:s6','transaction-processing:s7'
+                    'transaction-processing:s0',
+                    'transaction-processing:s1',
+                    'transaction-processing:s2',
+                    'transaction-processing:s3',
+                    'transaction-processing:s4',
+                    'transaction-processing:s5',
+                    'transaction-processing:s6',
+                    'transaction-processing:s7'
                 ],
-                'balance'    => 'auto',
-                'processes'  => env('HZ_HIGH_PROCESSES', 16), // Increased for more concurrency
-                'tries'      => 5, // More retries for robustness
-                'timeout'    => 60, // Increased timeout for longer jobs
-                'nice'       => 0,
+                'balance' => 'auto',
+                'processes' => env('HZ_HIGH_PROCESSES', 16), // Increased for more concurrency
+                'tries' => 5, // More retries for robustness
+                'timeout' => 60, // Increased timeout for longer jobs
+                'nice' => 0,
             ],
             'reporting-supervisor' => [
                 'connection' => 'redis',
-                'queue'      => ['reporting'],
-                'balance'    => 'auto',
-                'processes'  => env('HZ_REPORTING_PROCESSES', 2),
-                'tries'      => 3,
-                'timeout'    => 300,
-                'nice'       => 5,
+                'queue' => ['reporting'],
+                'balance' => 'auto',
+                'processes' => env('HZ_REPORTING_PROCESSES', 2),
+                'tries' => 3,
+                'timeout' => 300,
+                'nice' => 5,
             ],
             // 'forward-supervisor' disabled
             'low-supervisor' => [
                 'connection' => 'redis',
-                'queue'      => ['low'],
-                'balance'    => 'auto',
-                'processes'  => env('HZ_LOW_PROCESSES', 4), // Increased for background tasks
-                'tries'      => 2,
-                'timeout'    => 120,
-                'nice'       => 5,
+                'queue' => ['low'],
+                'balance' => 'auto',
+                'processes' => env('HZ_LOW_PROCESSES', 4), // Increased for background tasks
+                'tries' => 2,
+                'timeout' => 120,
+                'nice' => 5,
             ],
             'notifications-supervisor' => [
                 'connection' => 'redis',
-                'queue'      => ['notifications'],
-                'balance'    => 'auto', // Use auto for dynamic scaling
-                'processes'  => 4, // Increased for notification throughput
-                'tries'      => 3,
-                'timeout'    => 60, // Increased timeout
-                'nice'       => 0,
+                'queue' => ['notifications'],
+                'balance' => 'auto', // Use auto for dynamic scaling
+                'processes' => 4, // Increased for notification throughput
+                'tries' => 3,
+                'timeout' => 60, // Increased timeout
+                'nice' => 0,
             ],
         ],
         'staging' => [
+            'intake-supervisor' => [
+                'connection' => 'redis',
+                'queue' => ['transaction-intake'],
+                'balance' => 'auto',
+                'processes' => 2,
+                'tries' => 2,
+            ],
             'default' => [
                 'connection' => 'redis',
-                'queue'      => [
+                'queue' => [
+                    'transaction-intake',
                     'transaction-processing',
-                    'transaction-processing:s0','transaction-processing:s1','transaction-processing:s2','transaction-processing:s3',
-                    'transaction-processing:s4','transaction-processing:s5','transaction-processing:s6','transaction-processing:s7',
-                    'forwarding','low','notifications'
+                    'transaction-processing:s0',
+                    'transaction-processing:s1',
+                    'transaction-processing:s2',
+                    'transaction-processing:s3',
+                    'transaction-processing:s4',
+                    'transaction-processing:s5',
+                    'transaction-processing:s6',
+                    'transaction-processing:s7',
+                    'forwarding',
+                    'low',
+                    'notifications'
                 ],
-                'balance'    => 'auto',
-                'processes'  => 4,
-                'tries'      => 2,
+                'balance' => 'auto',
+                'processes' => 4,
+                'tries' => 2,
             ],
             'reporting-supervisor' => [
                 'connection' => 'redis',
-                'queue'      => ['reporting'],
-                'balance'    => 'auto',
-                'processes'  => env('HZ_REPORTING_PROCESSES', 1),
-                'tries'      => 3,
-                'timeout'    => 300,
-                'nice'       => 5,
+                'queue' => ['reporting'],
+                'balance' => 'auto',
+                'processes' => env('HZ_REPORTING_PROCESSES', 1),
+                'tries' => 3,
+                'timeout' => 300,
+                'nice' => 5,
             ],
         ],
         'local' => [
             'default' => [
                 'connection' => 'redis',
                 // Include processing queues locally so Horizon runs workers for them
-                'queue'      => [
+                'queue' => [
                     'transaction-processing',
-                    'transaction-processing:s0','transaction-processing:s1','transaction-processing:s2','transaction-processing:s3',
-                    'transaction-processing:s4','transaction-processing:s5','transaction-processing:s6','transaction-processing:s7',
-                    'forwarding','low','notifications','default'
+                    'transaction-processing:s0',
+                    'transaction-processing:s1',
+                    'transaction-processing:s2',
+                    'transaction-processing:s3',
+                    'transaction-processing:s4',
+                    'transaction-processing:s5',
+                    'transaction-processing:s6',
+                    'transaction-processing:s7',
+                    'forwarding',
+                    'low',
+                    'notifications',
+                    'default'
                 ],
-                'processes'  => 1,
-                'tries'      => 1,
+                'processes' => 1,
+                'tries' => 1,
             ],
             'reporting-supervisor' => [
                 'connection' => 'redis',
-                'queue'      => ['reporting'],
-                'processes'  => 1,
-                'tries'      => 1,
+                'queue' => ['reporting'],
+                'processes' => 1,
+                'tries' => 1,
             ],
         ],
     ],
