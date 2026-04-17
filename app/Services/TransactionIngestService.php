@@ -162,6 +162,8 @@ final readonly class TransactionIngestService
             'customer_code' => $payload['customer_code'],
             'promo_status' => $payload['promo_status'] ?? 'NONE',
             'payload_checksum' => $payload['payload_checksum'],
+            'submission_uuid' => $payload['submission_uuid'] ?? null,
+            'submission_timestamp' => $payload['submission_timestamp'] ?? null,
             'validation_status' => $payload['validation_status'] ?? 'PENDING',
             'created_at' => $payload['created_at'] ?? now(),
             'updated_at' => $payload['updated_at'] ?? now(),
