@@ -97,6 +97,12 @@ class ProcessTransactionIntakeJob implements ShouldQueue
                 Metrics::timing('intake.processing_lag', (float) $e2eLag);
                 Metrics::bucket('intake.processing_lag', (float) $e2eLag);
                 Metrics::incr('intake.processed_count');
+
+                // Self-Correction: If this was previously a hard failure, remove it from failed metrics
+                // We check the 'getOriginal' state to be sure we are reversing a prior 'FAILED_PERMANENT' increment.
+                if ($intake->getOriginal('processing_status') === TransactionIntake::PROCESSING_STATUS_FAILED_PERMANENT) {
+                    Metrics::decr('intake.failed_count');
+                }
             } else {
                 // Persistent failure or business logic error
                 $intake->update([

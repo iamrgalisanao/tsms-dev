@@ -26,6 +26,35 @@ class Metrics
     }
 
     /**
+     * Decrement a metric counter (Atomic).
+     */
+    public static function decr(string $name, int $by = 1): void
+    {
+        $key = self::key($name);
+        try {
+            Cache::decrement($key, $by);
+        } catch (\Throwable $e) {
+            // Swallow
+        }
+    }
+
+    /**
+     * Reset specific metrics to zero.
+     */
+    public static function reset(array $names): void
+    {
+        try {
+            foreach ($names as $name) {
+                Cache::forget(self::key($name));
+                Cache::forget(self::key($name . ':avg'));
+                Cache::forget(self::key($name . ':count'));
+            }
+        } catch (\Throwable $e) {
+            // Swallow
+        }
+    }
+
+    /**
      * Record a timing metric in milliseconds.
      * Keeps a rolling average of the last N samples or uses high-resolution snapshots.
      */
@@ -73,7 +102,9 @@ class Metrics
 
     public static function get(string $name, $default = 0)
     {
-        return Cache::get(self::key($name), $default);
+        $val = Cache::get(self::key($name), $default);
+        // Hardening: Ensure counters never appear negative on dashboards due to over-correction
+        return is_numeric($val) ? max(0, $val) : $val;
     }
 
     public static function snapshot(array $names): array

@@ -214,9 +214,10 @@ const IntakeHealthPage = () => {
                 <Grid item xs={12} md={3}>
                     <MetricCard
                         title="Fail Rate"
-                        value={`${((stats?.metrics?.['intake.failed_count'] / (stats?.metrics?.['intake.processed_count'] || 1)) * 100).toFixed(1)}%`}
+                        value={`${Math.min(100, (stats?.metrics?.['intake.failed_count'] / (stats?.metrics?.['intake.processed_count'] || 1)) * 100).toFixed(1)}%`}
                         icon={<ErrorOutlineIcon />}
                         color={stats?.metrics?.['intake.failed_count'] > 0 ? 'danger' : 'success'}
+                        subtitle={stats?.metrics?.['intake.failed_count'] > 0 ? `${stats.metrics['intake.failed_count'].toLocaleString()} failed records` : 'All systems clear'}
                     />
                 </Grid>
             </Grid>
