@@ -9,7 +9,15 @@ See the detailed development roadmap in [_md/NEXT_DEVELOPMENT_ROADMAP.md](_md/NE
 - [x] Contextual Memory Layer (Fixes, Features, Research)
 - [x] Compliance Audit Logging (findings.md)
 
-## Phase 2: React UI & Dashboards (Planned)
+## Phase 2: TSMS Transaction Intake Refactor (Active)
+- [x] **Phase 1: Design Finalization** - Defined state models and validation boundaries.
+- [x] **Phase 2: Durable Intake** - Implemented `transaction_intake` table and thin controller path.
+- [x] **Phase 3: Async Pipeline** - Implemented background job processing for business logic.
+- [x] **Phase 4: Recovery & DLQ** - Implemented 2-minute reconciliation SLA worker.
+- [ ] **Phase 5: Observability** - Instrument dashboards, alerts for queue lag, and latency metrics.
+- [ ] **Phase 6: Validation & Rollout** - Shadow mode testing, tenant pilot, and full migration.
+
+## Phase 3: React UI & Dashboards (Planned)
 - [ ] Multi-Tenant Dashboard
 - [ ] Real-time Transaction Monitor
 - [ ] Tenant Management UI
