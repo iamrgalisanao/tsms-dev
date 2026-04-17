@@ -65,28 +65,27 @@ final readonly class TransactionIngestService
                         ->first();
 
                     if (!$existing) {
-                        // Broad-Spectrum Conflict Detection:
-                        // We search for ANY record sharing the same Business Key prefix (tenant, terminal, receipt).
-                        // We then verify if it occurred within a 24-hour temporal window of the current payload.
-                        // This bypasses 'transaction_date' generation logic which varies by server timezone.
+                        // Ultra-Aggressive Conflict Detection (The "Ghost Finder"):
+                        // We search for ANY record with this receipt on this terminal.
+                        // We relax the tenant_id check briefly to find cross-tenant ghosts if they exist.
                         $conflict = DB::table('transactions')
-                            ->where('tenant_id', $parent['tenant_id'])
                             ->where('terminal_id', $parent['terminal_id'])
-                            ->where('receipt_no', $parent['receipt_no'])
-                            ->get() // Uses the index prefix
+                            ->where('receipt_no', (string)$parent['receipt_no'])
+                            ->get()
                             ->first(function ($row) use ($parent) {
+                                // Temporal proximity check (±24 hours)
                                 $existingTs = strtotime((string)$row->transaction_timestamp);
                                 $incomingTs = strtotime((string)$parent['transaction_timestamp']);
-                                // A duplicate is defined as the same receipt number on the 
-                                // same calendar day (defined here as +/- 20 hours to handle TZ shifts).
-                                return abs($existingTs - $incomingTs) <= 72000; 
+                                return abs($existingTs - $incomingTs) <= 86400; // Full 24h window
                             });
 
                         if ($conflict) {
-                            Log::warning('TransactionIngestService: Precise conflict detected', [
+                            Log::warning('TransactionIngestService: GHOST CONFLICT IDENTIFIED', [
                                 'receipt_no' => $parent['receipt_no'],
                                 'incoming_tx_id' => $parent['transaction_id'],
                                 'existing_tx_id' => $conflict->transaction_id,
+                                'existing_tenant' => $conflict->tenant_id,
+                                'incoming_tenant' => $parent['tenant_id']
                             ]);
 
                             return [
@@ -95,7 +94,7 @@ final readonly class TransactionIngestService
                                 'transaction_id' => $parent['transaction_id'],
                                 'terminal_id' => $parent['terminal_id'],
                                 'message' => 'duplicate_receipt_conflict',
-                                'details' => 'Receipt already exists with a different transaction_id',
+                                'details' => 'Receipt already exists on this terminal within a 24-hour window',
                             ];
                         }
 
