@@ -85,7 +85,7 @@ class ProcessTransactionIntakeJob implements ShouldQueue
             $result = $ingestService->ingest($payload);
 
             $status = $result['status'] ?? 'failed';
-            $isDuplicate = ($result['message'] ?? '') === 'duplicate_receipt_conflict';
+            $isDuplicate = $status === 'duplicate' || ($result['message'] ?? '') === 'duplicate_receipt_conflict';
 
             if ($status === 'success' || $status === 'accepted' || $status === 'already_processed' || $isDuplicate) {
                 $finalStatus = $isDuplicate 

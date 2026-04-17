@@ -63,6 +63,15 @@ final readonly class TransactionIngestService
                         ->where('tenant_id', $parent['tenant_id'])
                         ->where('transaction_id', $parent['transaction_id'])
                         ->first();
+                    if ($existing) {
+                        return [
+                            'status' => 'already_processed',
+                            'id' => $existing->id,
+                            'transaction_id' => $parent['transaction_id'],
+                            'terminal_id' => $parent['terminal_id'],
+                            'message' => 'already_processed',
+                        ];
+                    }
 
                     if (!$existing) {
                         // Zero-Mutation Smart Conflict Detection (Temporal & Character Agnostic):
@@ -90,8 +99,8 @@ final readonly class TransactionIngestService
                             ]);
 
                             return [
-                                'status' => 'failed',
-                                'id' => null,
+                                'status' => 'duplicate',
+                                'id' => $conflict->id, // Return the existing record ID
                                 'transaction_id' => $parent['transaction_id'],
                                 'terminal_id' => $parent['terminal_id'],
                                 'message' => 'duplicate_receipt_conflict',
@@ -102,9 +111,6 @@ final readonly class TransactionIngestService
                         Log::warning('TransactionIngestService: insertOrIgnore returned 0 but no existing transaction found', $parent);
                         return [
                             'status' => 'failed',
-                            'id' => null,
-                            'transaction_id' => $parent['transaction_id'],
-                            'terminal_id' => $parent['terminal_id'],
                             'message' => 'insert ignored but no existing transaction found',
                         ];
                     }
