@@ -98,4 +98,28 @@ class ObservabilityController extends Controller
             'data' => $topTenants,
         ]);
     }
+
+    /**
+     * Get recent ingestion diagnostic logs.
+     */
+    public function recent(): JsonResponse
+    {
+        $recent = \App\Models\TransactionIntake::select([
+                'id', 
+                'receipt_no', 
+                'terminal_id', 
+                'processing_status', 
+                'last_error_message', 
+                'processed_at', 
+                'received_at'
+            ])
+            ->orderByDesc('id')
+            ->limit(15)
+            ->get();
+
+        return response()->json([
+            'success' => true,
+            'data' => $recent,
+        ]);
+    }
 }
