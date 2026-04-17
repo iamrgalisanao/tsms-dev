@@ -65,18 +65,19 @@ final readonly class TransactionIngestService
                         ->first();
 
                     if (!$existing) {
-                        // Ultra-Aggressive Conflict Detection (The "Ghost Finder"):
-                        // We search for ANY record with this receipt on this terminal.
-                        // We relax the tenant_id check briefly to find cross-tenant ghosts if they exist.
+                        // Fuzzy Ghost Detection:
+                        // We use the LIKE operator for the receipt search. 
+                        // This handles cases where the POS provider sends receipts with hidden whitespace
+                        // that the database index treats as a conflict but a strict '=' match misses.
                         $conflict = DB::table('transactions')
                             ->where('terminal_id', $parent['terminal_id'])
-                            ->where('receipt_no', (string)$parent['receipt_no'])
+                            ->where('receipt_no', 'LIKE', (string)$parent['receipt_no'])
                             ->get()
                             ->first(function ($row) use ($parent) {
                                 // Temporal proximity check (±24 hours)
                                 $existingTs = strtotime((string)$row->transaction_timestamp);
                                 $incomingTs = strtotime((string)$parent['transaction_timestamp']);
-                                return abs($existingTs - $incomingTs) <= 86400; // Full 24h window
+                                return abs($existingTs - $incomingTs) <= 86400; 
                             });
 
                         if ($conflict) {
