@@ -65,16 +65,16 @@ final readonly class TransactionIngestService
                         ->first();
 
                     if (!$existing) {
-                        // Fuzzy Ghost Detection:
-                        // We use the LIKE operator for the receipt search. 
-                        // This handles cases where the POS provider sends receipts with hidden whitespace
-                        // that the database index treats as a conflict but a strict '=' match misses.
+                        // Zero-Mutation Smart Conflict Detection (Temporal & Character Agnostic):
+                        // We search by comparing trimmed receipt numbers to catch "ghost" characters
+                        // without altering the original database record.
+                        $rawReceipt = (string)$parent['receipt_no'];
                         $conflict = DB::table('transactions')
                             ->where('terminal_id', $parent['terminal_id'])
-                            ->where('receipt_no', 'LIKE', (string)$parent['receipt_no'])
+                            ->whereRaw('TRIM(receipt_no) = TRIM(?)', [$rawReceipt])
                             ->get()
                             ->first(function ($row) use ($parent) {
-                                // Temporal proximity check (±24 hours)
+                                // Temporal proximity check (±24 hours) to handle timezone shifts
                                 $existingTs = strtotime((string)$row->transaction_timestamp);
                                 $incomingTs = strtotime((string)$parent['transaction_timestamp']);
                                 return abs($existingTs - $incomingTs) <= 86400; 
