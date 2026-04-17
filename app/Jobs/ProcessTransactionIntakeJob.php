@@ -50,7 +50,6 @@ class ProcessTransactionIntakeJob implements ShouldQueue
         }
 
         if (in_array($intake->processing_status, [
-            TransactionIntake::PROCESSING_STATUS_COMPLETED,
             TransactionIntake::PROCESSING_STATUS_DUPLICATE,
             TransactionIntake::PROCESSING_STATUS_PROCESSED
         ])) {
