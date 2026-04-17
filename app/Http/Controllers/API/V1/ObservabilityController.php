@@ -102,11 +102,14 @@ class ObservabilityController extends Controller
     /**
      * Get recent ingestion diagnostic logs.
      */
+    /**
+     * Get recent ingestion diagnostic logs.
+     */
     public function recent(): JsonResponse
     {
         $recent = \App\Models\TransactionIntake::select([
                 'id', 
-                'receipt_no', 
+                'payload',
                 'terminal_id', 
                 'processing_status', 
                 'last_error_message', 
@@ -115,7 +118,18 @@ class ObservabilityController extends Controller
             ])
             ->orderByDesc('id')
             ->limit(15)
-            ->get();
+            ->get()
+            ->map(function ($intake) {
+                return [
+                    'id' => $intake->id,
+                    'receipt_no' => $intake->payload['receipt_no'] ?? '---',
+                    'terminal_id' => $intake->terminal_id,
+                    'processing_status' => strtolower($intake->processing_status ?? 'pending'),
+                    'last_error_message' => $intake->last_error_message,
+                    'processed_at' => $intake->processed_at,
+                    'received_at' => $intake->received_at,
+                ];
+            });
 
         return response()->json([
             'success' => true,
