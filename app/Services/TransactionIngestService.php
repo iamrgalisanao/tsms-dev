@@ -71,7 +71,7 @@ final readonly class TransactionIngestService
                             ->where('tenant_id', $parent['tenant_id'])
                             ->where('terminal_id', $parent['terminal_id'])
                             ->where('receipt_no', $parent['receipt_no'])
-                            ->where('transaction_date', date('Y-m-d', strtotime((string)$parent['transaction_timestamp'])))
+                            ->whereRaw('transaction_date = DATE(?)', [$parent['transaction_timestamp']])
                             ->first();
 
                         if ($conflict) {
