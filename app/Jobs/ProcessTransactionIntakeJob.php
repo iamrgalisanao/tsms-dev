@@ -4,6 +4,7 @@ namespace App\Jobs;
 
 use App\Models\TransactionIntake;
 use App\Services\TransactionIngestService;
+use App\Support\Metrics;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
@@ -47,6 +48,8 @@ class ProcessTransactionIntakeJob implements ShouldQueue
             'attempt_count' => $intake->attempt_count + 1,
         ]);
 
+        $startTime = microtime(true);
+
         try {
             // Prepare payload for the existing ingest service
             // We include the submission_uuid and other metadata
@@ -82,10 +85,18 @@ class ProcessTransactionIntakeJob implements ShouldQueue
                 }
 
                 Log::info('ProcessTransactionIntakeJob: Success', [
-                    'intake_id' => $this->intakeId,
                     'status' => $status,
                     'transaction_pk' => $result['id'] ?? null
                 ]);
+
+                // Performance: Processing Metrics
+                $workerMs = (microtime(true) - $startTime) * 1000;
+                $e2eLag = $intake->received_at->diffInSeconds(now());
+
+                Metrics::timing('intake.worker_time', $workerMs);
+                Metrics::timing('intake.processing_lag', (float) $e2eLag);
+                Metrics::bucket('intake.processing_lag', (float) $e2eLag);
+                Metrics::incr('intake.processed_count');
             } else {
                 // Persistent failure or business logic error
                 $intake->update([
@@ -95,9 +106,10 @@ class ProcessTransactionIntakeJob implements ShouldQueue
                 ]);
 
                 Log::warning('ProcessTransactionIntakeJob: Permanent failure', [
-                    'intake_id' => $this->intakeId,
                     'message' => $result['message'] ?? 'none'
                 ]);
+
+                Metrics::incr('intake.failed_count');
             }
         } catch (\Throwable $e) {
             Log::error('ProcessTransactionIntakeJob: Exception', [

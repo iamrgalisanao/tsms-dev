@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\TransactionIntake;
+use App\Support\Metrics;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
@@ -44,6 +45,8 @@ class TransactionIntakeService
             ];
         }
 
+        Metrics::incr('intake.received_count');
+
         // 2. Check for duplicate submission_uuid
         $existing = TransactionIntake::where('submission_uuid', $payload['submission_uuid'])->first();
         if ($existing) {
@@ -82,6 +85,13 @@ class TransactionIntakeService
                 'intake_status' => TransactionIntake::INTAKE_STATUS_QUEUED,
                 'queued_at' => now(),
             ]);
+
+            // Performance: Intake Dispatch Latency (Sync path)
+            $latency = now()->diffInMilliseconds($receivedAt);
+            Metrics::timing('intake.dispatch_latency', $latency);
+            Metrics::bucket('intake.dispatch_latency', $latency);
+            Metrics::incr('intake.accepted_count');
+            Metrics::incr("tenant.{$intake->tenant_id}.intake_count");
 
             return [
                 'success' => true,
@@ -128,6 +138,8 @@ class TransactionIntakeService
                     'trace_id' => $traceId,
                     'received_at' => $receivedAt,
                 ]);
+
+                Metrics::incr('intake.rejected_count');
             }
         } catch (\Exception $e) {
             Log::warning('TransactionIntakeService: Failed to persist rejection audit', ['error' => $e->getMessage()]);
