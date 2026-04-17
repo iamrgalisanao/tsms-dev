@@ -23,6 +23,16 @@ Schedule::call(function () {
 })->everyMinute();
 
 // --------------------------------------------------------------------------
+// Intake Reconciliation: scan for and re-dispatch stranded intake records
+// Runs every minute to meet the 2-minute recovery SLA.
+// --------------------------------------------------------------------------
+Schedule::command(\App\Console\Commands\ReconcileStrandedIntake::class)
+    ->everyMinute()
+    ->name('tsms-reconcile-intake')
+    ->withoutOverlapping()
+    ->onOneServer();
+
+// --------------------------------------------------------------------------
 // DLQ Alert: warn when failed_jobs table exceeds configured threshold.
 // Runs every 5 minutes. Threshold controlled by TSMS_DLQ_ALERT_THRESHOLD.
 // --------------------------------------------------------------------------
