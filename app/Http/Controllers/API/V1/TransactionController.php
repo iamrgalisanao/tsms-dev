@@ -229,132 +229,26 @@ class TransactionController extends Controller
      * Supports both single transaction and batch submissions.
      * 
      * @param Request $request
+     * @param \App\Services\TransactionIntakeService $intakeService
      * @return \Illuminate\Http\JsonResponse
      */
-    public function storeOfficial(TSMSTransactionRequest $request, \App\Services\PayloadChecksumService $checksumService)
+    public function storeOfficial(TSMSTransactionRequest $request, \App\Services\TransactionIntakeService $intakeService)
     {
-        Log::info('storeOfficial: Request received', [
-            'submission_uuid' => $request->submission_uuid,
-            'terminal_id' => $request->terminal_id,
-            'tenant_id' => $request->tenant_id,
-        ]);
+        $result = $intakeService->handleIntake($request);
 
-        // Convert request to array for checksum validation
-        $submission = $request->all();
-        $rawJson = json_encode($submission);
-
-        $checksumResult = $checksumService->validateSubmissionChecksumsFromRaw($rawJson);
-        if (!$checksumResult['valid']) {
-            Log::warning('storeOfficial: Checksum validation failed', [
-                'submission_uuid' => $submission['submission_uuid'] ?? null,
-                'errors' => $checksumResult['errors'],
-                'received_submission' => $submission, // Log for deep-dive troubleshooting
-            ]);
-
-            $this->createRejectionAuditEvent(
-                $submission,
-                'CHECKSUM_MISMATCH',
-                ['payload_checksum' => $checksumResult['errors']],
-                $submission['submission_uuid'] ?? null
-            );
-            throw new \Illuminate\Validation\ValidationException(
-                Validator::make([], []),
-                response()->json([
-                    'success' => false,
-                    'message' => 'Validation failed',
-                    'errors' => [
-                        'payload_checksum' => $checksumResult['errors'],
-                    ],
-                ], 422)
-            );
-        }
-
-        $transactions = [];
-        
-        // Block batch submissions (transactions array) for Phase 1
-        if ($request->has('transactions')) {
-            $this->createRejectionAuditEvent(
-                $submission,
-                'BATCH_DISABLED',
-                ['transactions' => 'Batch transaction submission is temporarily disabled. Please use single transaction submission mode.'],
-                $submission['submission_uuid'] ?? null
-            );
+        if (!$result['success']) {
             return response()->json([
                 'success' => false,
-                'message' => 'Validation failed',
-                'errors' => [
-                    'transactions' => 'Batch transaction submission is temporarily disabled. Please use single transaction submission mode.',
-                ],
-            ], 422);
+                'message' => $result['message'],
+                'errors' => $result['errors'] ?? null,
+            ], $result['status']);
         }
 
-        // Only allow single transaction submission
-        if ($request->has('transaction')) {
-            $transactions = [$request->input('transaction')];
-        } else {
-            return response()->json([
-                'success' => false,
-                'message' => 'Validation failed',
-                'errors' => [
-                    'transaction' => 'Single transaction object is required.',
-                ],
-            ], 422);
-        }
-        $processed = [];
-        $failed = [];
-        $service = $this->getTransactionIngestService();
-        foreach ($transactions as $tx) {
-            try {
-                // Compose payload for ingest (merge authenticated identity instead of trusting payload)
-                $payload = array_merge($tx, [
-                    'submission_uuid' => $request->submission_uuid,
-                    'submission_timestamp' => $request->submission_timestamp,
-                    'tenant_id' => $request->user()->tenant_id, // Trusted source
-                    'terminal_id' => $request->user()->id,      // Trusted source
-                ]);
-                $result = $service->ingest($payload);
-                
-                // RESTORED: Real-time job dispatch for seconds-level latency
-                if ($result['status'] === 'accepted' || $result['status'] === 'already_processed') {
-                    if (isset($result['transaction_id'])) {
-                        $transaction = \App\Models\Transaction::where('transaction_id', $result['transaction_id'])->first();
-                        if ($transaction) {
-                            $shard = (int) ($request->tenant_id % 8);
-                            \App\Jobs\ProcessTransactionJob::dispatch($transaction->id)
-                                ->onQueue('transaction-processing:s' . $shard)
-                                ->afterCommit();
-                                
-                            Log::info('storeOfficial: Real-time dispatch successful', [
-                                'transaction_id' => $transaction->transaction_id,
-                                'queue' => 'transaction-processing:s' . $shard
-                            ]);
-                        }
-                    }
-                }
-
-                $processed[] = [
-                    'transaction_id' => $result['transaction_id'],
-                    'status' => $result['status'] === 'accepted' || $result['status'] === 'already_processed' ? 'success' : 'failed',
-                    'message' => $result['message'] ?? 'Transaction processed'
-                ];
-            } catch (\Exception $e) {
-                $failed[] = [
-                    'transaction_id' => $tx['transaction_id'] ?? null,
-                    'status' => 'failed',
-                    'message' => $e->getMessage()
-                ];
-            }
-        }
         return response()->json([
             'success' => true,
-            'message' => 'Submission processed',
-            'data' => [
-                'submission_uuid' => $request->submission_uuid,
-                'processed_count' => count($processed),
-                'failed_count' => count($failed),
-                'transactions' => array_merge($processed, $failed)
-            ]
-        ], 200);
+            'message' => $result['message'],
+            'data' => $result['data'] ?? null
+        ], $result['status']);
     }
     /**
      * @var \App\Services\TransactionIngestService|null
