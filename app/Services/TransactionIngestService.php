@@ -65,19 +65,24 @@ final readonly class TransactionIngestService
                         ->first();
 
                     if (!$existing) {
-                        // Check for business key conflict (terminal/receipt/date)
-                        // Note: transaction_date is a generated column in MySQL/MariaDB
+                        // Timezone-Agnostic Conflict Detection:
+                        // Search for the business key (terminal, receipt) using the index prefix.
+                        // We check for conflicts where the timestamp matches exactly or is within a 1s clock skew,
+                        // bypassing the 'transaction_date' column entirely to avoid calendar rollover gaps.
                         $conflict = DB::table('transactions')
                             ->where('tenant_id', $parent['tenant_id'])
                             ->where('terminal_id', $parent['terminal_id'])
                             ->where('receipt_no', $parent['receipt_no'])
-                            ->whereDate('transaction_date', date('Y-m-d', strtotime((string)$parent['transaction_timestamp'])))
-                            ->first();
+                            ->get() // Prefix index search
+                            ->first(function ($row) use ($parent) {
+                                // Check if timestamp matches within a 1-second tolerance
+                                $existingTs = strtotime($row->transaction_timestamp);
+                                $incomingTs = strtotime((string)$parent['transaction_timestamp']);
+                                return abs($existingTs - $incomingTs) <= 1;
+                            });
 
                         if ($conflict) {
-                            Log::warning('TransactionIngestService: Business key conflict detected', [
-                                'tenant_id' => $parent['tenant_id'],
-                                'terminal_id' => $parent['terminal_id'],
+                            Log::warning('TransactionIngestService: Precise conflict detected', [
                                 'receipt_no' => $parent['receipt_no'],
                                 'incoming_tx_id' => $parent['transaction_id'],
                                 'existing_tx_id' => $conflict->transaction_id,
