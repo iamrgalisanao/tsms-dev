@@ -22,7 +22,7 @@ return [
 
     // Long wait detection thresholds (seconds)
     'waits' => [
-        'redis:transaction-intake' => 2,
+        'redis:transaction-intake' => 1, // Aggressive 1s threshold for intake
         'redis:transaction-processing' => 5,
         'redis:transaction-processing:s0' => 5,
         'redis:transaction-processing:s1' => 5,
@@ -56,7 +56,7 @@ return [
                 'connection' => 'redis',
                 'queue' => ['transaction-intake'],
                 'balance' => 'auto',
-                'processes' => env('HZ_INTAKE_PROCESSES', 8),
+                'processes' => env('HZ_INTAKE_PROCESSES', 32), // High concurrency for raw intake
                 'tries' => 3,
                 'timeout' => 60,
                 'nice' => 0,
@@ -114,7 +114,7 @@ return [
                 'connection' => 'redis',
                 'queue' => ['transaction-intake'],
                 'balance' => 'auto',
-                'processes' => 2,
+                'processes' => 12, // Tripled from previous to clear backlog
                 'tries' => 2,
             ],
             'default' => [
