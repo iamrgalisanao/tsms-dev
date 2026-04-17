@@ -11,6 +11,7 @@ import LogoutIcon from '@mui/icons-material/Logout';
 import MenuIcon from '@mui/icons-material/Menu';
 import KeyIcon from '@mui/icons-material/Key';
 import PeopleIcon from '@mui/icons-material/People';
+import FlashOnIcon from '@mui/icons-material/FlashOn';
 import { useAuth } from '../Contexts/AuthContext';
 
 const MainLayout = ({ children }) => {
@@ -30,6 +31,7 @@ const MainLayout = ({ children }) => {
         { name: 'Terminal Tokens', path: '/terminal-tokens', icon: KeyIcon, roles: ['admin', 'commercial'] },
         { name: 'User Management', path: '/users', icon: PeopleIcon, roles: ['admin'] },
         { name: 'System Logs', path: '/system-logs', icon: DescriptionIcon, roles: ['admin'] },
+        { name: 'Intake Health', path: '/observability/intake', icon: FlashOnIcon, roles: ['admin', 'manager'] },
         { name: 'Settings', path: '/settings', icon: SettingsIcon, roles: ['admin'] },
 
         // ── Finance (exclusive set) ───────────────────────────────────

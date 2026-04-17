@@ -9,6 +9,7 @@ import TransactionLogsPage from './Pages/TransactionLogsPage';
 import TerminalTokenPage from './Pages/TerminalTokenPage';
 import UserManagementPage from './Pages/UserManagementPage';
 import SystemLogsPage from './Pages/SystemLogsPage';
+import IntakeHealthPage from './Pages/Observability/IntakeHealthPage.jsx';
 // Finance
 import FinanceDashboardPage from './Pages/Finance/FinanceDashboardPage.jsx';
 import FinanceReportsPage from './Pages/Finance/FinanceReportsPage.jsx';
@@ -73,6 +74,14 @@ const App = () => {
                       element={
                         <ProtectedRoute roles={['admin', 'manager']}>
                           <SystemLogsPage />
+                        </ProtectedRoute>
+                      } 
+                    />
+                    <Route 
+                      path="/observability/intake" 
+                      element={
+                        <ProtectedRoute roles={['admin', 'manager']}>
+                          <IntakeHealthPage />
                         </ProtectedRoute>
                       } 
                     />
