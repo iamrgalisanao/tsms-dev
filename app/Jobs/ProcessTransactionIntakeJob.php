@@ -11,6 +11,7 @@ use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Queue\Middleware\WithoutOverlapping;
 
 class ProcessTransactionIntakeJob implements ShouldQueue
 {
@@ -27,6 +28,16 @@ class ProcessTransactionIntakeJob implements ShouldQueue
     }
 
     /**
+     * Get the middleware the job should pass through.
+     *
+     * @return array<int, object>
+     */
+    public function middleware(): array
+    {
+        return [(new WithoutOverlapping((string)$this->intakeId))->releaseAfter(10)];
+    }
+
+    /**
      * Execute the job.
      */
     public function handle(TransactionIngestService $ingestService): void
@@ -38,8 +49,15 @@ class ProcessTransactionIntakeJob implements ShouldQueue
             return;
         }
 
-        if ($intake->processing_status === TransactionIntake::PROCESSING_STATUS_PROCESSED) {
-            Log::info('ProcessTransactionIntakeJob: Already processed', ['intake_id' => $this->intakeId]);
+        if (in_array($intake->processing_status, [
+            TransactionIntake::PROCESSING_STATUS_COMPLETED,
+            TransactionIntake::PROCESSING_STATUS_DUPLICATE,
+            TransactionIntake::PROCESSING_STATUS_PROCESSED
+        ])) {
+            Log::info('ProcessTransactionIntakeJob: Already in terminal state', [
+                'intake_id' => $this->intakeId,
+                'status' => $intake->processing_status
+            ]);
             return;
         }
 
@@ -64,16 +82,19 @@ class ProcessTransactionIntakeJob implements ShouldQueue
             // Call the existing ingest service which handles normalization, transactions, adjustments, and taxes.
             $result = $ingestService->ingest($payload);
 
-            if ($result['status'] === 'accepted' || $result['status'] === 'already_processed') {
-                $status = ($result['status'] === 'already_processed') 
+            $status = $result['status'] ?? 'failed';
+            $isDuplicate = ($result['message'] ?? '') === 'duplicate_receipt_conflict';
+
+            if ($status === 'success' || $status === 'accepted' || $status === 'already_processed' || $isDuplicate) {
+                $finalStatus = $isDuplicate 
                     ? TransactionIntake::PROCESSING_STATUS_DUPLICATE 
-                    : TransactionIntake::PROCESSING_STATUS_PROCESSED;
+                    : TransactionIntake::PROCESSING_STATUS_COMPLETED;
 
                 $intake->update([
-                    'processing_status' => $status,
+                    'processing_status' => $finalStatus,
                     'processed_at' => now(),
-                    'last_error_code' => null,
-                    'last_error_message' => null,
+                    'last_error_code' => $isDuplicate ? 'duplicate_receipt_conflict' : null,
+                    'last_error_message' => $isDuplicate ? ($result['details'] ?? 'Duplicate detected') : null,
                 ]);
 
                 // Trigger the second stage: ProcessTransactionJob (Validation/Audit)
@@ -86,6 +107,7 @@ class ProcessTransactionIntakeJob implements ShouldQueue
 
                 Log::info('ProcessTransactionIntakeJob: Success', [
                     'status' => $status,
+                    'is_duplicate' => $isDuplicate,
                     'transaction_pk' => $result['id'] ?? null
                 ]);
 
@@ -104,7 +126,7 @@ class ProcessTransactionIntakeJob implements ShouldQueue
                     Metrics::decr('intake.failed_count');
                 }
             } else {
-                // Persistent failure or business logic error
+                // Genuine business failure (Math mismatch, validation error, etc.)
                 $intake->update([
                     'processing_status' => TransactionIntake::PROCESSING_STATUS_FAILED_PERMANENT,
                     'last_error_code' => $result['message'] ?? 'INGEST_FAILED',
