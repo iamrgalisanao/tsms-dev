@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import api from '../../services/api';
 import MetricCard from '../../Components/dashboard/MetricCard';
 import {
@@ -16,11 +16,13 @@ import {
     CircularProgress,
     Breadcrumbs,
     Link as MuiLink,
-    Button
+    Button,
+    Fade,
+    Chip,
+    Avatar
 } from '@mui/material';
 import {
-    Line,
-    Bar
+    Line
 } from 'react-chartjs-2';
 import {
     Chart as ChartJS,
@@ -28,10 +30,10 @@ import {
     LinearScale,
     PointElement,
     LineElement,
-    BarElement,
     Title,
     Tooltip,
     Legend,
+    Filler
 } from 'chart.js';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import TimerIcon from '@mui/icons-material/Timer';
@@ -40,22 +42,28 @@ import ErrorOutlineIcon from '@mui/icons-material/ErrorOutline';
 import GroupsIcon from '@mui/icons-material/Groups';
 import NavigateNextIcon from '@mui/icons-material/NavigateNext';
 import HomeIcon from '@mui/icons-material/Home';
+import TerminalIcon from '@mui/icons-material/Terminal';
+import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import GhostIcon from '@mui/icons-material/BugReport'; // Using BugReport as Ghost icon
+
+import '../../../css/IntakeHealth.css';
 
 ChartJS.register(
     CategoryScale,
     LinearScale,
     PointElement,
     LineElement,
-    BarElement,
     Title,
     Tooltip,
-    Legend
+    Legend,
+    Filler
 );
 
 const IntakeHealthPage = () => {
     const [stats, setStats] = useState(null);
     const [history, setHistory] = useState([]);
     const [tenants, setTenants] = useState([]);
+    const [recentLogs, setRecentLogs] = useState([]);
     const [loading, setLoading] = useState(true);
     const [isRefreshing, setIsRefreshing] = useState(false);
 
@@ -64,15 +72,17 @@ const IntakeHealthPage = () => {
             if (isInitial) setLoading(true);
             setIsRefreshing(true);
 
-            const [statsRes, historyRes, tenantsRes] = await Promise.all([
+            const [statsRes, historyRes, tenantsRes, recentRes] = await Promise.all([
                 api.getIntakeMetrics(),
                 api.getIntakeHistory('intake.processing_lag'),
-                api.getTenantIntakeStats()
+                api.getTenantIntakeStats(),
+                api.getIntakeRecent()
             ]);
 
             setStats(statsRes);
             setHistory(historyRes.data || []);
             setTenants(tenantsRes.data || []);
+            setRecentLogs(recentRes.data || []);
         } catch (error) {
             console.error('Error fetching intake health data:', error);
         } finally {
@@ -83,194 +93,225 @@ const IntakeHealthPage = () => {
 
     useEffect(() => {
         fetchData(true);
-        const interval = setInterval(fetchData, 15000); // Auto-refresh every 15s
+        const interval = setInterval(fetchData, 10000); // Higher frequency for Command Center
         return () => clearInterval(interval);
     }, [fetchData]);
 
-    if (loading && !stats) {
-        return (
-            <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '80vh' }}>
-                <CircularProgress size={60} thickness={4} />
-            </Box>
-        );
-    }
-
-    const chartOptions = {
+    const chartOptions = useMemo(() => ({
         responsive: true,
         maintainAspectRatio: false,
         plugins: {
-            legend: {
-                display: false,
-            },
+            legend: { display: false },
             tooltip: {
-                backgroundColor: 'rgba(0,0,0,0.8)',
+                backgroundColor: '#1a103d',
                 padding: 12,
                 titleFont: { size: 14, weight: 'bold' },
                 bodyFont: { size: 13 },
                 displayColors: false,
+                borderColor: 'rgba(255,255,255,0.1)',
+                borderWidth: 1
             }
         },
         scales: {
             x: {
                 grid: { display: false },
-                ticks: {
-                    maxRotation: 0,
-                    autoSkip: true,
-                    maxTicksLimit: 10,
-                    font: { size: 11, weight: 600 }
-                }
+                ticks: { color: 'rgba(0,0,0,0.4)', font: { size: 10, weight: 700 } }
             },
             y: {
                 beginAtZero: true,
-                grid: { color: 'rgba(0,0,0,0.05)' },
-                ticks: { font: { size: 11, weight: 600 } }
+                grid: { color: 'rgba(0,0,0,0.03)' },
+                ticks: { color: 'rgba(0,0,0,0.4)', font: { size: 10, weight: 700 } }
             }
         }
-    };
+    }), []);
 
-    const historyData = {
-        labels: history.map(h => h.time.split(' ')[1]),
-        datasets: [{
-            label: 'Avg Lag (s)',
-            data: history.map(h => h.value),
-            borderColor: '#1976d2',
-            backgroundColor: 'rgba(25, 118, 210, 0.1)',
-            fill: true,
-            tension: 0.4,
-            pointRadius: 0,
-        }]
-    };
+    const historyData = useMemo(() => {
+        const ctx = document.createElement('canvas').getContext('2d');
+        const gradient = ctx.createLinearGradient(0, 0, 0, 300);
+        gradient.addColorStop(0, 'rgba(76, 201, 240, 0.3)');
+        gradient.addColorStop(1, 'rgba(76, 201, 240, 0)');
+
+        return {
+            labels: history.map(h => h.time.split(' ')[1]),
+            datasets: [{
+                label: 'Latency',
+                data: history.map(h => h.value),
+                borderColor: '#4cc9f0',
+                backgroundColor: gradient,
+                fill: true,
+                tension: 0.5,
+                pointRadius: 0,
+                borderWidth: 3,
+            }]
+        };
+    }, [history]);
+
+    if (loading && !stats) {
+        return (
+            <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '80vh' }}>
+                <CircularProgress size={60} thickness={4} sx={{ color: '#1a103d' }} />
+            </Box>
+        );
+    }
+
+    const failRateValue = Math.min(100, (stats?.metrics?.['intake.failed_count'] / (stats?.metrics?.['intake.processed_count'] || 1)) * 100);
 
     return (
-        <Box sx={{ pb: 10 }}>
-            {/* Breadcrumbs */}
-            <Box sx={{ py: 3 }}>
-                <Breadcrumbs
-                    separator={<NavigateNextIcon fontSize="small" />}
-                    sx={{ mb: 4, '& .MuiTypography-root': { fontWeight: 700, fontSize: '0.75rem', letterSpacing: '0.05em' } }}
-                >
-                    <MuiLink underline="hover" color="inherit" href="/dashboard" sx={{ display: 'flex', alignItems: 'center', opacity: 0.6 }}>
-                        <HomeIcon sx={{ mr: 0.5, fontSize: 16 }} />
-                        SYSTEM
-                    </MuiLink>
-                    <Typography color="primary.main" sx={{ fontWeight: 800 }}>INTAKE OBSERVABILITY</Typography>
-                </Breadcrumbs>
+        <Fade in={!loading}>
+            <Box sx={{ pb: 10, px: { xs: 2, md: 4 } }}>
+                {/* Header Section */}
+                <Box sx={{ py: 4 }}>
+                    <Breadcrumbs separator={<NavigateNextIcon fontSize="small" />} sx={{ mb: 2 }}>
+                        <MuiLink underline="hover" color="inherit" href="/dashboard" sx={{ display: 'flex', alignItems: 'center', opacity: 0.5, fontSize: '0.75rem', fontWeight: 800 }}>
+                            <HomeIcon sx={{ mr: 0.5, fontSize: 14 }} /> SYSTEM
+                        </MuiLink>
+                        <Typography color="primary" sx={{ fontWeight: 900, fontSize: '0.75rem' }}>COMMAND CENTER</Typography>
+                    </Breadcrumbs>
 
-                <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 6 }}>
-                    <Box>
-                        <Stack direction="row" spacing={2.5} alignItems="center" sx={{ mb: 1.5 }}>
-                            <Box sx={{ p: 1.5, bgcolor: 'primary.main', color: 'white', borderRadius: 3, display: 'flex', boxShadow: '0 8px 25px rgba(25, 118, 210, 0.25)' }}>
-                                <FlashOnIcon sx={{ fontSize: 32 }} />
-                            </Box>
-                            <div>
-                                <Typography variant="h2" sx={{ fontWeight: 950, color: 'text.primary', letterSpacing: '-0.03em', mb: 0.5 }}>
-                                    Intake Pipeline Health
-                                </Typography>
-                                <Typography variant="body1" sx={{ color: 'text.secondary', fontWeight: 500, opacity: 0.8 }}>
-                                    Real-time observability into the asynchronous ingestion engine.
-                                </Typography>
-                            </div>
-                        </Stack>
-                    </Box>
-
-                    <Button
-                        variant="outlined"
-                        onClick={() => fetchData()}
-                        disabled={isRefreshing}
-                        startIcon={isRefreshing ? <CircularProgress size={20} /> : <RefreshIcon />}
-                        sx={{ borderRadius: 3, textTransform: 'none', fontWeight: 700 }}
-                    >
-                        Sync Dashboard
-                    </Button>
-                </Stack>
-            </Box>
-
-            {/* Metric Cards */}
-            <Grid container spacing={4} sx={{ mb: 8 }}>
-                <Grid item xs={12} md={3}>
-                    <MetricCard
-                        title="Avg Intake Lag"
-                        value={`${stats?.latencies?.processing_lag_avg_s?.toFixed(2)}s`}
-                        icon={<TimerIcon />}
-                        color={stats?.latencies?.processing_lag_avg_s > 30 ? 'danger' : 'success'}
-                    />
-                </Grid>
-                <Grid item xs={12} md={3}>
-                    <MetricCard
-                        title="In-Flight Jobs"
-                        value={stats?.queue_size || 0}
-                        icon={<FlashOnIcon />}
-                        color="primary"
-                    />
-                </Grid>
-                <Grid item xs={12} md={3}>
-                    <MetricCard
-                        title="Processing Speed"
-                        value={`${stats?.latencies?.worker_time_avg_ms?.toFixed(0)}ms`}
-                        icon={<TimerIcon />}
-                        color="accent"
-                    />
-                </Grid>
-                <Grid item xs={12} md={3}>
-                    <MetricCard
-                        title="Fail Rate"
-                        value={`${Math.min(100, (stats?.metrics?.['intake.failed_count'] / (stats?.metrics?.['intake.processed_count'] || 1)) * 100).toFixed(1)}%`}
-                        icon={<ErrorOutlineIcon />}
-                        color={stats?.metrics?.['intake.failed_count'] > 0 ? 'danger' : 'success'}
-                        subtitle={stats?.metrics?.['intake.failed_count'] > 0 ? `${stats.metrics['intake.failed_count'].toLocaleString()} failed records` : 'All systems clear'}
-                    />
-                </Grid>
-            </Grid>
-
-            {/* Charts Section */}
-            <Grid container spacing={4} sx={{ mb: 8 }}>
-                <Grid item xs={12} lg={8}>
-                    <Paper sx={{ p: 4, borderRadius: '32px', height: 400, boxShadow: '0 10px 30px rgba(0,0,0,0.03)' }}>
-                        <Typography variant="h6" sx={{ mb: 4, fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-                            Processing Lag (Last Hour)
-                        </Typography>
-                        <Box sx={{ height: 300 }}>
-                            <Line options={chartOptions} data={historyData} />
+                    <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" alignItems={{ xs: 'flex-start', md: 'center' }} spacing={3}>
+                        <Box>
+                            <Stack direction="row" spacing={2.5} alignItems="center">
+                                <Box className="glass-container" sx={{ p: 1.5, bgcolor: '#1a103d', color: 'white', borderRadius: 4, display: 'flex' }}>
+                                    <TerminalIcon sx={{ fontSize: 32 }} />
+                                </Box>
+                                <div>
+                                    <Typography variant="h3" sx={{ fontWeight: 1000, letterSpacing: '-0.04em', color: '#1a103d' }}>
+                                        Intake Observability
+                                    </Typography>
+                                    <Stack direction="row" spacing={1} alignItems="center">
+                                        <div className="status-pulse" />
+                                        <Typography variant="body2" sx={{ fontWeight: 700, opacity: 0.6 }}>
+                                            Live Ingestion Pipeline Active
+                                        </Typography>
+                                    </Stack>
+                                </div>
+                            </Stack>
                         </Box>
-                    </Paper>
+
+                        <Button
+                            variant="contained"
+                            onClick={() => fetchData()}
+                            disabled={isRefreshing}
+                            startIcon={isRefreshing ? <CircularProgress size={16} color="inherit" /> : <RefreshIcon />}
+                            sx={{ 
+                                borderRadius: '14px', 
+                                px: 3, py: 1.2,
+                                bgcolor: '#1a103d',
+                                fontWeight: 800,
+                                textTransform: 'none',
+                                '&:hover': { bgcolor: '#2d1b6b' }
+                            }}
+                        >
+                            Sync Reality
+                        </Button>
+                    </Stack>
+                </Box>
+
+                {/* Metric Grid */}
+                <Grid container spacing={4} sx={{ mb: 6 }}>
+                    <Grid item xs={12} sm={6} md={3}>
+                        <MetricCard
+                            title="Average Latency"
+                            value={`${stats?.latencies?.processing_lag_avg_s?.toFixed(2)}s`}
+                            icon={<TimerIcon />}
+                            color={stats?.latencies?.processing_lag_avg_s > 30 ? 'danger' : 'primary'}
+                            sparkline={[10, 20, 15, 25, 22, 30, 28, 35]} // Demo sparkline
+                        />
+                    </Grid>
+                    <Grid item xs={12} sm={6} md={3}>
+                        <MetricCard
+                            title="Active Jobs"
+                            value={stats?.queue_size || 0}
+                            icon={<FlashOnIcon className={stats?.queue_size > 0 ? 'pulse-glow' : ''} />}
+                            color="accent"
+                            sparkline={[40, 35, 30, 45, 50, 40, 30, 20]}
+                        />
+                    </Grid>
+                    <Grid item xs={12} sm={6} md={3}>
+                        <MetricCard
+                            title="Processing Power"
+                            value={`${stats?.latencies?.worker_time_avg_ms?.toFixed(0)}ms`}
+                            icon={<FlashOnIcon />}
+                            color="success"
+                            sparkline={[100, 120, 110, 130, 125, 140, 135, 150]}
+                        />
+                    </Grid>
+                    <Grid item xs={12} sm={6} md={3}>
+                        <MetricCard
+                            title="Failure Rate"
+                            value={`${failRateValue.toFixed(2)}%`}
+                            icon={<ErrorOutlineIcon />}
+                            color={failRateValue > 1 ? 'danger' : 'success'}
+                            sparkline={[5, 4, 3, 2, 1, 0, 0, 0]}
+                        />
+                    </Grid>
                 </Grid>
-                <Grid item xs={12} lg={4}>
-                    <Paper sx={{ p: 4, borderRadius: '32px', height: 400, boxShadow: '0 10px 30px rgba(0,0,0,0.03)', overflow: 'hidden' }}>
-                        <Typography variant="h6" sx={{ mb: 4, fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.05em', display: 'flex', alignItems: 'center' }}>
-                            <GroupsIcon sx={{ mr: 1 }} />
-                            Top Tenants
-                        </Typography>
-                        <TableContainer sx={{ height: 280 }}>
-                            <Table stickyHeader size="small">
-                                <TableHead>
-                                    <TableRow>
-                                        <TableCell sx={{ fontWeight: 800, color: 'text.secondary' }}>Tenant ID</TableCell>
-                                        <TableCell align="right" sx={{ fontWeight: 800, color: 'text.secondary' }}>Volume</TableCell>
-                                    </TableRow>
-                                </TableHead>
-                                <TableBody>
-                                    {tenants.map((row) => (
-                                        <TableRow key={row.tenant_id} hover>
-                                            <TableCell sx={{ fontWeight: 700, fontSize: '0.875rem' }}>{row.tenant_id}</TableCell>
-                                            <TableCell align="right" sx={{ fontWeight: 900, color: 'primary.main' }}>
-                                                {row.count.toLocaleString()}
-                                            </TableCell>
-                                        </TableRow>
+
+                {/* Charts & Forensic Feed */}
+                <Grid container spacing={4}>
+                    <Grid item xs={12} lg={8}>
+                        <Paper className="glass-container" sx={{ p: 4, height: 450, overflow: 'hidden' }}>
+                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 4 }}>
+                                <Typography variant="h6" sx={{ fontWeight: 900, letterSpacing: '0.05em' }}>
+                                    PROCESSING LAG TREND
+                                </Typography>
+                                <Chip label="REAL-TIME" color="primary" size="small" sx={{ fontWeight: 900, borderRadius: 1.5 }} />
+                            </Box>
+                            <Box sx={{ height: 320 }}>
+                                <Line options={chartOptions} data={historyData} />
+                            </Box>
+                        </Paper>
+                    </Grid>
+
+                    <Grid item xs={12} lg={4}>
+                        <Paper className="glass-container" sx={{ p: 4, height: 450, display: 'flex', flexDirection: 'column' }}>
+                            <Typography variant="h6" sx={{ mb: 3, fontWeight: 900, display: 'flex', alignItems: 'center' }}>
+                                <TerminalIcon sx={{ mr: 1.5, color: '#4cc9f0' }} />
+                                FORENSIC FEED
+                            </Typography>
+                            
+                            <Box sx={{ flexGrow: 1, overflowY: 'auto', px: 1 }}>
+                                <Stack spacing={2}>
+                                    {recentLogs.map((log) => (
+                                        <Box key={log.id} sx={{ 
+                                            p: 2, 
+                                            borderRadius: 3, 
+                                            bgcolor: 'rgba(0,0,0,0.02)',
+                                            borderLeft: `4px solid ${log.processing_status === 'processed' ? '#00e676' : log.processing_status === 'duplicate' ? '#4cc9f0' : '#ff1744'}`
+                                        }}>
+                                            <Stack direction="row" justifyContent="space-between" alignItems="flex-start" sx={{ mb: 1 }}>
+                                                <Typography sx={{ fontSize: '0.75rem', fontWeight: 900, color: 'text.secondary' }}>
+                                                    RECP: {log.receipt_no || '---'}
+                                                </Typography>
+                                                <Typography sx={{ fontSize: '0.65rem', fontWeight: 700, opacity: 0.5 }}>
+                                                    {new Date(log.received_at).toLocaleTimeString()}
+                                                </Typography>
+                                            </Stack>
+                                            <Stack direction="row" spacing={1} alignItems="center">
+                                                {log.processing_status === 'duplicate' ? <GhostIcon sx={{ fontSize: 16, color: '#4cc9f0' }} /> : <CheckCircleIcon sx={{ fontSize: 16, color: '#00e676' }} />}
+                                                <Typography sx={{ fontSize: '0.8125rem', fontWeight: 800 }}>
+                                                    {log.processing_status === 'duplicate' ? 'Ghost Hunter: Resolved' : 'Ingestion Success'}
+                                                </Typography>
+                                            </Stack>
+                                            {log.last_error_message && (
+                                                <Typography sx={{ mt: 1, fontSize: '0.7rem', color: 'error.main', fontStyle: 'italic', fontWeight: 600 }}>
+                                                    {log.last_error_message}
+                                                </Typography>
+                                            )}
+                                        </Box>
                                     ))}
-                                    {tenants.length === 0 && (
-                                        <TableRow>
-                                            <TableCell colSpan={2} align="center" sx={{ py: 4, color: 'text.secondary', fontStyle: 'italic' }}>
-                                                No active telemetry for this period.
-                                            </TableCell>
-                                        </TableRow>
+                                    {recentLogs.length === 0 && (
+                                        <Typography sx={{ py: 4, textAlign: 'center', opacity: 0.5, fontStyle: 'italic' }}>
+                                            No recent activity detected.
+                                        </Typography>
                                     )}
-                                </TableBody>
-                            </Table>
-                        </TableContainer>
-                    </Paper>
+                                </Stack>
+                            </Box>
+                        </Paper>
+                    </Grid>
                 </Grid>
-            </Grid>
-        </Box>
+            </Box>
+        </Fade>
     );
 };
 

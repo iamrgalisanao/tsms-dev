@@ -81,6 +81,10 @@ const api = {
     getTenantIntakeStats: async () => {
         const response = await axios.get('/api/v1/observability/intake/tenants');
         return response.data;
+    },
+    getIntakeRecent: async () => {
+        const response = await axios.get('/api/v1/observability/intake/recent');
+        return response.data;
     }
 };
 
