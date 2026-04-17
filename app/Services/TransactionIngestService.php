@@ -65,16 +65,22 @@ final readonly class TransactionIngestService
                         ->first();
 
                     if (!$existing) {
-                        // Database-Aligned Conflict Detection:
-                        // The unique index is (tenant, terminal, receipt, transaction_date).
-                        // We must use the database's DATE() function to find the collision
-                        // exactly as the database sees it.
+                        // Broad-Spectrum Conflict Detection:
+                        // We search for ANY record sharing the same Business Key prefix (tenant, terminal, receipt).
+                        // We then verify if it occurred within a 24-hour temporal window of the current payload.
+                        // This bypasses 'transaction_date' generation logic which varies by server timezone.
                         $conflict = DB::table('transactions')
                             ->where('tenant_id', $parent['tenant_id'])
                             ->where('terminal_id', $parent['terminal_id'])
                             ->where('receipt_no', $parent['receipt_no'])
-                            ->whereRaw('transaction_date = DATE(?)', [$parent['transaction_timestamp']])
-                            ->first();
+                            ->get() // Uses the index prefix
+                            ->first(function ($row) use ($parent) {
+                                $existingTs = strtotime((string)$row->transaction_timestamp);
+                                $incomingTs = strtotime((string)$parent['transaction_timestamp']);
+                                // A duplicate is defined as the same receipt number on the 
+                                // same calendar day (defined here as +/- 20 hours to handle TZ shifts).
+                                return abs($existingTs - $incomingTs) <= 72000; 
+                            });
 
                         if ($conflict) {
                             Log::warning('TransactionIngestService: Precise conflict detected', [
