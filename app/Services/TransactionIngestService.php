@@ -65,21 +65,16 @@ final readonly class TransactionIngestService
                         ->first();
 
                     if (!$existing) {
-                        // Timezone-Agnostic Conflict Detection:
-                        // Search for the business key (terminal, receipt) using the index prefix.
-                        // We check for conflicts where the timestamp matches exactly or is within a 1s clock skew,
-                        // bypassing the 'transaction_date' column entirely to avoid calendar rollover gaps.
+                        // Database-Aligned Conflict Detection:
+                        // The unique index is (tenant, terminal, receipt, transaction_date).
+                        // We must use the database's DATE() function to find the collision
+                        // exactly as the database sees it.
                         $conflict = DB::table('transactions')
                             ->where('tenant_id', $parent['tenant_id'])
                             ->where('terminal_id', $parent['terminal_id'])
                             ->where('receipt_no', $parent['receipt_no'])
-                            ->get() // Prefix index search
-                            ->first(function ($row) use ($parent) {
-                                // Check if timestamp matches within a 1-second tolerance
-                                $existingTs = strtotime($row->transaction_timestamp);
-                                $incomingTs = strtotime((string)$parent['transaction_timestamp']);
-                                return abs($existingTs - $incomingTs) <= 1;
-                            });
+                            ->whereRaw('transaction_date = DATE(?)', [$parent['transaction_timestamp']])
+                            ->first();
 
                         if ($conflict) {
                             Log::warning('TransactionIngestService: Precise conflict detected', [
