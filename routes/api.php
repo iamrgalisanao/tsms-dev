@@ -194,31 +194,31 @@ Route::prefix('v1')->middleware(['auth:sanctum', 'throttle:30,1'])->group(functi
 
 // Machine-to-machine read-only webapp API (directly registered here for test/dev)
 Route::prefix('v1/webapp')->middleware(['auth:sanctum', 'ensure.webapp.token', 'throttle:webapp'])->group(function () {
-    Route::get('/transactions', [\App\Http\Controllers\Api\Webapp\TransactionController::class, 'index']);
-    Route::get('/transactions/count', [\App\Http\Controllers\Api\Webapp\TransactionController::class, 'count']);
-    Route::get('/transactions/{id}', [\App\Http\Controllers\Api\Webapp\TransactionController::class, 'show']);
+    Route::get('/transactions', [\App\Http\Controllers\API\Webapp\TransactionController::class, 'index']);
+    Route::get('/transactions/count', [\App\Http\Controllers\API\Webapp\TransactionController::class, 'count']);
+    Route::get('/transactions/{id}', [\App\Http\Controllers\API\Webapp\TransactionController::class, 'show']);
     // Hourly transactions contract endpoint
-    Route::get('/transactions/hourly', [\App\Http\Controllers\Api\Webapp\HourlyTransactionsController::class, 'index']);
+    Route::get('/transactions/hourly', [\App\Http\Controllers\API\Webapp\HourlyTransactionsController::class, 'index']);
     // Reporting endpoints (summary/aggregates for the Webapp)
-    Route::get('/reports/sales', [\App\Http\Controllers\Api\Webapp\ReportsController::class, 'sales']);
-    Route::get('/reports/sales/drilldown', [\App\Http\Controllers\Api\Webapp\ReportsController::class, 'drilldown']);
-    Route::get('/reports/summary', [\App\Http\Controllers\Api\Webapp\ReportsController::class, 'summary']);
+    Route::get('/reports/sales', [\App\Http\Controllers\API\Webapp\ReportsController::class, 'sales']);
+    Route::get('/reports/sales/drilldown', [\App\Http\Controllers\API\Webapp\ReportsController::class, 'drilldown']);
+    Route::get('/reports/summary', [\App\Http\Controllers\API\Webapp\ReportsController::class, 'summary']);
 });
 
 // Also register explicit full-path routes so they are discoverable without relying on prefix grouping
-Route::get('/v1/webapp/transactions', [\App\Http\Controllers\Api\Webapp\TransactionController::class, 'index'])
+Route::get('/v1/webapp/transactions', [\App\Http\Controllers\API\Webapp\TransactionController::class, 'index'])
     ->middleware(['auth:sanctum', 'ensure.webapp.token', 'throttle:webapp']);
-Route::get('/v1/webapp/transactions/count', [\App\Http\Controllers\Api\Webapp\TransactionController::class, 'count'])
+Route::get('/v1/webapp/transactions/count', [\App\Http\Controllers\API\Webapp\TransactionController::class, 'count'])
     ->middleware(['auth:sanctum', 'ensure.webapp.token', 'throttle:webapp']);
-Route::get('/v1/webapp/transactions/{id}', [\App\Http\Controllers\Api\Webapp\TransactionController::class, 'show'])
+Route::get('/v1/webapp/transactions/{id}', [\App\Http\Controllers\API\Webapp\TransactionController::class, 'show'])
     ->middleware(['auth:sanctum', 'ensure.webapp.token', 'throttle:webapp']);
 
 // Explicit reporting routes for discovery
-Route::get('/v1/webapp/reports/sales', [\App\Http\Controllers\Api\Webapp\ReportsController::class, 'sales'])
+Route::get('/v1/webapp/reports/sales', [\App\Http\Controllers\API\Webapp\ReportsController::class, 'sales'])
     ->middleware(['auth:sanctum', 'ensure.webapp.token', 'throttle:webapp']);
-Route::get('/v1/webapp/reports/sales/drilldown', [\App\Http\Controllers\Api\Webapp\ReportsController::class, 'drilldown'])
+Route::get('/v1/webapp/reports/sales/drilldown', [\App\Http\Controllers\API\Webapp\ReportsController::class, 'drilldown'])
     ->middleware(['auth:sanctum', 'ensure.webapp.token', 'throttle:webapp']);
-Route::get('/v1/webapp/reports/summary', [\App\Http\Controllers\Api\Webapp\ReportsController::class, 'summary'])
+Route::get('/v1/webapp/reports/summary', [\App\Http\Controllers\API\Webapp\ReportsController::class, 'summary'])
     ->middleware(['auth:sanctum', 'ensure.webapp.token', 'throttle:webapp']);
 
 // Legacy V1 API Routes with rate limiting (for backward compatibility)
