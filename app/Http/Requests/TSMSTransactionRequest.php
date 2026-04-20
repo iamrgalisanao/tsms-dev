@@ -2,6 +2,9 @@
 
 namespace App\Http\Requests;
 
+use App\Http\Requests\TSMSTransactionRequest;
+use App\Rules\UuidV4;
+use App\Rules\ReceiptNumber;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Http\Exceptions\HttpResponseException;
@@ -45,12 +48,13 @@ class TSMSTransactionRequest extends FormRequest
     {
         // Basic structure validation only - detailed validation moved to controller
         return [
-            'submission_uuid' => 'required|string|uuid',
+            'submission_uuid' => ['required', 'string', new UuidV4()],
             'tenant_id' => 'required|integer',
             'terminal_id' => 'required|integer|exists:pos_terminals,id',
             'submission_timestamp' => ['required', 'string', 'regex:/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z?$/'],
             'transaction_count' => 'required|integer|min:1',
-            'payload_checksum' => 'required|string|min:64|max:64',
+            'payload_checksum' => 'required|string|min:64|max:64|regex:/^[0-9a-f]{64}$/i',
+            'transaction.receipt_no' => ['required', new ReceiptNumber()],
         ];
     }
 

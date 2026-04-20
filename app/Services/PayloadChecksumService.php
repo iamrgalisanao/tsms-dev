@@ -139,6 +139,7 @@ class PayloadChecksumService
 
     /**
      * Recursively canonicalize data according to strict version-specific rules.
+     * This method is non-mutating; it returns a new array/value.
      * 
      * @param mixed $data
      * @return mixed
@@ -146,26 +147,29 @@ class PayloadChecksumService
     private function canonicalize($data)
     {
         if (is_array($data)) {
-            if ($this->isAssoc($data)) {
-                ksort($data);
+            $sorted = $data;
+            if ($this->isAssoc($sorted)) {
+                ksort($sorted);
             }
 
-            foreach ($data as $key => &$value) {
-                $value = $this->canonicalize($value);
+            foreach ($sorted as $key => $value) {
+                $processedValue = $this->canonicalize($value);
 
                 if ($this->currentVersion === 'v2.1') {
                     if (in_array($key, ['gross_sales', 'net_sales', 'amount'], true)) {
-                        if (is_numeric($value)) {
-                            $value = number_format((float) $value, 2, '.', '');
+                        if (is_numeric($processedValue)) {
+                            $processedValue = number_format((float) $processedValue, 2, '.', '');
                         }
                     }
                 } elseif ($this->currentVersion === 'v2.0') {
                     if (in_array($key, ['gross_sales', 'net_sales', 'amount'], true)) {
-                        $value = (float) $value;
-                        // PHP json_encode will strip trailing zeros for floats
+                        $processedValue = (float) $processedValue;
                     }
                 }
+                
+                $sorted[$key] = $processedValue;
             }
+            return $sorted;
         }
 
         return $data;
