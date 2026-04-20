@@ -153,6 +153,7 @@ return [
                 'connection' => 'redis',
                 // Include processing queues locally so Horizon runs workers for them
                 'queue' => [
+                    'transaction-intake',
                     'transaction-processing',
                     'transaction-processing:s0',
                     'transaction-processing:s1',
