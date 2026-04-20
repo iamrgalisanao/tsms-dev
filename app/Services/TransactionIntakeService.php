@@ -6,7 +6,6 @@ use App\Models\TransactionIntake;
 use App\Rules\UuidV4;
 use App\Rules\ReceiptNumber;
 use App\Support\Metrics;
-use App\Services\PayloadChecksumService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;

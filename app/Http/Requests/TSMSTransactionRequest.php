@@ -1,8 +1,6 @@
 <?php
 
 namespace App\Http\Requests;
-
-use App\Http\Requests\TSMSTransactionRequest;
 use App\Rules\UuidV4;
 use App\Rules\ReceiptNumber;
 use Illuminate\Foundation\Http\FormRequest;
