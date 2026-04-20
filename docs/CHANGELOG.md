@@ -2,6 +2,12 @@
 
 All notable changes to the TSMS project will be documented in this file.
 
+## [Unreleased] - 2026-04-20
+
+### Added
+- **Governance Hardening**: Initialized mandatory rule files (`04-tool-governance.md`, `06-security-compliance.md`) and operational guard rails (`task-ledger.md`, `stage-gates.md`, `risk-register.md`) to prevent context degradation and silent failures.
+- **SDLC Workflows**: Formalized procedural workflows for Project Intake, Delivery Planning, and Task Implementation to ensure reproducible standards.
+
 ## [Unreleased] - 2026-04-10
 
 ### Fixed
@@ -21,7 +27,7 @@ All notable changes to the TSMS project will be documented in this file.
 
 ### Added
 - **Sanctum Authorizable Check**: Implemented `Authorizable` interface and trait in `PosTerminal` model, resolving `TypeError` when checking permissions via Spatie/Laravel Gate.
-- **Resilient Audit Logging**: Implemented "Safe Logging" in `TransactionService` to prevent API failures when the `transaction_histories` table is missing (automatic fallback to `Log::info`).
+- **Resilient Logging**: Implemented "Safe Logging" in `TransactionService` to prevent API failures when the `transaction_histories` table is missing (automatic fallback to `Log::info`).
 - **Transaction Authorization**: Implemented `TransactionPolicy` to strictly enforce terminal-level ownership and tenant-level visibility, replacing manual controller checks.
 - **Refund Validation**: Created `RefundTransactionRequest` for structured, decoupled validation of POS-initiated refund payloads.
 - **Model Binding**: Configured the `Transaction` model and `api.php` routes for Route Model Binding via `transaction_id` (UUID), reducing manual lookup boilerplate by 30+ lines.

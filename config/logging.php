@@ -141,6 +141,12 @@ return [
             'replace_placeholders' => true,
         ],
 
+        'shadow_audit' => [
+            'driver' => 'single',
+            'path' => storage_path('logs/shadow-audit.log'),
+            'level' => 'info',
+        ],
+
     ],
 
 ];

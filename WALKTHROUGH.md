@@ -12,3 +12,6 @@ High-performance ingestion with dual-layer checksum verification. Validates payl
 - **Architecture**: Standards and SOPs in `docs/`.
 - **Navigation**: Tenant-aware routing and middleware.
 - **Tools**: Verification and diagnostic scripts in `tools/`.
+
+## 4. Governance Guardrails
+Durable operating model using Rule-based behavioral constraints (`.agents/rules/`), Procedural SDLC workflows (`.agents/workflows/`), and an Operational Task Ledger for context preservation.

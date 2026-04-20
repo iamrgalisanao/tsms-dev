@@ -15,7 +15,8 @@ See the detailed development roadmap in [_md/NEXT_DEVELOPMENT_ROADMAP.md](_md/NE
 - [x] **Phase 3: Async Pipeline** - Implemented background job processing for business logic.
 - [x] **Phase 4: Recovery & DLQ** - Implemented 2-minute reconciliation SLA worker.
 - [x] **Phase 5: Observability** - Instrument dashboards, alerts for queue lag, and latency metrics.
-- [ ] **Phase 6: Validation & Rollout** - Shadow mode testing, tenant pilot, and full migration.
+- [x] **Phase 6: Governance Alignment** - Hardened rule sets and initialized operational ledger/stage-gates.
+- [ ] **Phase 7: Validation & Rollout** - Shadow mode testing, tenant pilot, and full migration.
 
 ## Phase 3: React UI & Dashboards (Planned)
 - [ ] Multi-Tenant Dashboard

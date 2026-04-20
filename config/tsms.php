@@ -51,4 +51,9 @@ return [
         // dashboard and summary totals to align with POS Z-reading reconciliation.
         'exclude_voids_from_totals' => (bool) env('TSMS_REPORTING_EXCLUDE_VOIDS', true),
     ],
+
+    'rollout' => [
+        // List of tenant IDs that are permitted to use the Asynchronous intake path.
+        'pilot_tenants' => array_filter(explode(',', env('TSMS_PILOT_TENANTS', ''))),
+    ],
 ];

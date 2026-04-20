@@ -71,7 +71,6 @@ class ProcessTransactionIntakeJob implements ShouldQueue
 
         try {
             // Prepare payload for the existing ingest service
-            // We include the submission_uuid and other metadata
             $payload = array_merge($intake->payload['transaction'], [
                 'submission_uuid' => $intake->submission_uuid,
                 'submission_timestamp' => $intake->payload['submission_timestamp'],
@@ -80,10 +79,30 @@ class ProcessTransactionIntakeJob implements ShouldQueue
                 'payload_checksum' => $intake->payload_checksum,
             ]);
 
-            // Call the existing ingest service which handles normalization, transactions, adjustments, and taxes.
-            $result = $ingestService->ingest($payload);
+            $isShadowMode = config('tsms.testing.capture_only') === true;
+            $result = null;
 
-            $status = $result['status'] ?? 'failed';
+            if ($isShadowMode) {
+                \Illuminate\Support\Facades\DB::beginTransaction();
+                $result = $ingestService->ingest($payload);
+                
+                // Shadow Audit Logging
+                Log::channel('shadow_audit')->info('SHADOW_MODE_RESULT', [
+                    'intake_id' => $this->intakeId,
+                    'submission_uuid' => $intake->submission_uuid,
+                    'result' => $result
+                ]);
+                
+                \Illuminate\Support\Facades\DB::rollBack();
+                
+                // For Shadow Mode, we treat valid outcomes as "PROCESSED" in the intake table
+                // but we don't actually persist the business rows.
+                $status = $result['status'] ?? 'failed';
+            } else {
+                $result = $ingestService->ingest($payload);
+                $status = $result['status'] ?? 'failed';
+            }
+
             $isDuplicate = $status === 'duplicate' || ($result['message'] ?? '') === 'duplicate_receipt_conflict';
 
             if ($status === 'success' || $status === 'accepted' || $status === 'already_processed' || $isDuplicate) {
@@ -95,11 +114,11 @@ class ProcessTransactionIntakeJob implements ShouldQueue
                     'processing_status' => $finalStatus,
                     'processed_at' => now(),
                     'last_error_code' => $isDuplicate ? 'duplicate_receipt_conflict' : null,
-                    'last_error_message' => $isDuplicate ? ($result['details'] ?? 'Duplicate detected') : null,
+                    'last_error_message' => $isDuplicate ? ($result['details'] ?? 'Duplicate detected') : ($isShadowMode ? 'SHADOW_MODE_SUCCESS' : null),
                 ]);
 
-                // Trigger the second stage: ProcessTransactionJob (Validation/Audit)
-                if (isset($result['id'])) {
+                // Trigger second stage ONLY if not in shadow mode
+                if (!$isShadowMode && isset($result['id'])) {
                     $shard = (int) ($intake->tenant_id % 8);
                     ProcessTransactionJob::dispatch($result['id'])
                         ->onQueue('transaction-processing:s' . $shard)

@@ -98,15 +98,35 @@ class TransactionIntakeService
                 'received_at' => $receivedAt,
             ]);
 
-            // Dispatch processing job
-            \App\Jobs\ProcessTransactionIntakeJob::dispatch($intake->id)
-                ->onQueue('transaction-intake')
-                ->afterCommit();
+            $pilotTenants = config('tsms.rollout.pilot_tenants', []);
+            $isPilot = in_array($intake->tenant_id, $pilotTenants);
 
-            $intake->update([
-                'intake_status' => TransactionIntake::INTAKE_STATUS_QUEUED,
-                'queued_at' => now(),
-            ]);
+            if ($isPilot) {
+                // Dispatch processing job (Async Path)
+                \App\Jobs\ProcessTransactionIntakeJob::dispatch($intake->id)
+                    ->onQueue('transaction-intake')
+                    ->afterCommit();
+
+                $intake->update([
+                    'intake_status' => TransactionIntake::INTAKE_STATUS_QUEUED,
+                    'queued_at' => now(),
+                ]);
+
+                Log::info('TransactionIntakeService: Async path (Pilot)', [
+                    'tenant_id' => $intake->tenant_id,
+                    'submission_uuid' => $intake->submission_uuid
+                ]);
+            } else {
+                // Synchronous Path (Legacy Behavior Mock)
+                Log::info('TransactionIntakeService: Sync path (Non-pilot fallthrough)', [
+                    'tenant_id' => $intake->tenant_id,
+                    'submission_uuid' => $intake->submission_uuid
+                ]);
+                
+                // Manually invoke the job logic synchronously
+                // Passing false for dryRun/Shadow (Stage 7 is for real pilots)
+                (new \App\Jobs\ProcessTransactionIntakeJob($intake->id))->handle(app(TransactionIngestService::class));
+            }
 
             // Performance: Intake Dispatch Latency (Sync path)
             $latency = now()->diffInMilliseconds($receivedAt);
