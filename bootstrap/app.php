@@ -29,6 +29,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'transform.text.format' => \App\Http\Middleware\TransformTextFormat::class,
             'rate.limit' => \App\Http\Middleware\RateLimitMiddleware::class,
             'role' => \Spatie\Permission\Middleware\RoleMiddleware::class,
+            'circuit.breaker' => \App\Http\Middleware\CircuitBreakerMiddleware::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {

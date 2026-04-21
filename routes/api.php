@@ -143,8 +143,10 @@ Route::prefix('v1')->middleware(['auth:sanctum', 'capture.terminal.ip', AttachCo
     Route::middleware(['abilities:transaction:create', 'api.limit:api'])->group(function () {
         // Legacy basic ingestion endpoint disabled (use /v1/transactions/official)
         // Route::post('/transactions', [TransactionController::class, 'store']);
-        Route::post('/transactions/batch', [TransactionController::class, 'batchStore']);
-        Route::post('/transactions/official', [TransactionController::class, 'storeOfficial']);
+        Route::post('/transactions/batch', [TransactionController::class, 'batchStore'])
+            ->middleware('circuit.breaker:transaction-intake');
+        Route::post('/transactions/official', [TransactionController::class, 'storeOfficial'])
+            ->middleware('circuit.breaker:transaction-intake');
         Route::post('/transactions/{transaction}/refund', [TransactionController::class, 'refund']);
         Route::post('/transactions/{transaction}/void', [TransactionController::class, 'voidFromPOS']);
     });

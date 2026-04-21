@@ -1,32 +1,32 @@
 {
-  "_bootstrap-eaa9b53a.js": {
-    "file": "assets/bootstrap-eaa9b53a.js"
+  "_bootstrap-e5368084.js": {
+    "file": "assets/bootstrap-e5368084.js"
   },
   "resources/css/app.css": {
-    "file": "assets/app-9b89ad69.css",
+    "file": "assets/app-3680fd97.css",
     "isEntry": true,
     "src": "resources/css/app.css"
   },
   "resources/js/app.css": {
-    "file": "assets/app-b34b5886.css",
+    "file": "assets/app-ed23befb.css",
     "src": "resources/js/app.css"
   },
   "resources/js/app.js": {
-    "file": "assets/app-b430618f.js",
+    "file": "assets/app-8ff2d794.js",
     "imports": [
-      "_bootstrap-eaa9b53a.js"
+      "_bootstrap-e5368084.js"
     ],
     "isEntry": true,
     "src": "resources/js/app.js"
   },
   "resources/js/app.jsx": {
     "css": [
-      "assets/app-b34b5886.css",
-      "assets/app-9b89ad69.css"
+      "assets/app-ed23befb.css",
+      "assets/app-3680fd97.css"
     ],
-    "file": "assets/app-f630c533.js",
+    "file": "assets/app-39bcb6f8.js",
     "imports": [
-      "_bootstrap-eaa9b53a.js"
+      "_bootstrap-e5368084.js"
     ],
     "isEntry": true,
     "src": "resources/js/app.jsx"

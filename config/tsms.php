@@ -56,4 +56,13 @@ return [
         // List of tenant IDs that are permitted to use the Asynchronous intake path.
         'pilot_tenants' => array_filter(explode(',', env('TSMS_PILOT_TENANTS', ''))),
     ],
+
+    'intake' => [
+        'backpressure' => [
+            // When enabled, the system will reject new intakes if the queue depth exceeds the threshold.
+            'enabled' => (bool) env('TSMS_INTAKE_BACKPRESSURE_ENABLED', true),
+            // The maximum number of jobs allowed in the 'transaction-intake' queue before rejection.
+            'max_queue_depth' => (int) env('TSMS_INTAKE_MAX_QUEUE_DEPTH', 5000),
+        ],
+    ],
 ];

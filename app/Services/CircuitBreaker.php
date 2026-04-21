@@ -3,15 +3,14 @@
 namespace App\Services;
 
 use Illuminate\Support\Facades\Log;
-use Illuminate\Filesystem\Filesystem;
+use Illuminate\Support\Facades\Cache;
 
 class CircuitBreaker
 {
     protected string $serviceKey;
-    protected string $storagePath;
     protected int $failureThreshold = 5;
     protected int $resetTimeout = 60; // seconds
-    protected Filesystem $filesystem;
+    protected string $cachePrefix = 'circuit_breaker:';
     
     /**
      * Create a new CircuitBreaker instance.
@@ -19,13 +18,6 @@ class CircuitBreaker
     public function __construct(string $serviceKey)
     {
         $this->serviceKey = $serviceKey;
-        $this->filesystem = new Filesystem();
-        $this->storagePath = storage_path('framework/circuit-breakers');
-        
-        // Ensure the storage directory exists
-        if (!$this->filesystem->exists($this->storagePath)) {
-            $this->filesystem->makeDirectory($this->storagePath, 0755, true);
-        }
     }
     
     /**
@@ -75,6 +67,7 @@ class CircuitBreaker
         
         if ($failureCount >= $this->failureThreshold) {
             $this->setState('open');
+            Log::warning("CircuitBreaker [{$this->serviceKey}]: Circuit opened due to multiple failures.");
         }
     }
     
@@ -89,11 +82,11 @@ class CircuitBreaker
     }
     
     /**
-     * Get the file path for a specific property
+     * Get the cache key for a specific property
      */
-    protected function getFilePath(string $property): string
+    protected function getCacheKey(string $property): string
     {
-        return $this->storagePath . '/' . $this->serviceKey . '_' . $property . '.txt';
+        return $this->cachePrefix . $this->serviceKey . ':' . $property;
     }
     
     /**
@@ -101,15 +94,7 @@ class CircuitBreaker
      */
     protected function getState(): string
     {
-        try {
-            $path = $this->getFilePath('state');
-            if ($this->filesystem->exists($path)) {
-                return trim($this->filesystem->get($path));
-            }
-        } catch (\Exception $e) {
-            Log::error('Circuit breaker error', ['error' => $e->getMessage()]);
-        }
-        return 'closed';
+        return Cache::get($this->getCacheKey('state'), 'closed');
     }
     
     /**
@@ -117,12 +102,7 @@ class CircuitBreaker
      */
     protected function setState(string $state): void
     {
-        try {
-            $path = $this->getFilePath('state');
-            $this->filesystem->put($path, $state);
-        } catch (\Exception $e) {
-            Log::error('Circuit breaker error', ['error' => $e->getMessage()]);
-        }
+        Cache::put($this->getCacheKey('state'), $state, now()->addDays(1));
     }
     
     /**
@@ -130,15 +110,7 @@ class CircuitBreaker
      */
     protected function getFailureCount(): int
     {
-        try {
-            $path = $this->getFilePath('failure_count');
-            if ($this->filesystem->exists($path)) {
-                return (int) trim($this->filesystem->get($path));
-            }
-        } catch (\Exception $e) {
-            Log::error('Circuit breaker error', ['error' => $e->getMessage()]);
-        }
-        return 0;
+        return (int) Cache::get($this->getCacheKey('failure_count'), 0);
     }
     
     /**
@@ -146,12 +118,7 @@ class CircuitBreaker
      */
     protected function setFailureCount(int $count): void
     {
-        try {
-            $path = $this->getFilePath('failure_count');
-            $this->filesystem->put($path, (string) $count);
-        } catch (\Exception $e) {
-            Log::error('Circuit breaker error', ['error' => $e->getMessage()]);
-        }
+        Cache::put($this->getCacheKey('failure_count'), $count, now()->addDays(1));
     }
     
     /**
@@ -159,15 +126,8 @@ class CircuitBreaker
      */
     protected function getLastFailureTime(): ?int
     {
-        try {
-            $path = $this->getFilePath('last_failure_time');
-            if ($this->filesystem->exists($path)) {
-                return (int) trim($this->filesystem->get($path));
-            }
-        } catch (\Exception $e) {
-            Log::error('Circuit breaker error', ['error' => $e->getMessage()]);
-        }
-        return null;
+        $time = Cache::get($this->getCacheKey('last_failure_time'));
+        return $time ? (int) $time : null;
     }
     
     /**
@@ -175,17 +135,10 @@ class CircuitBreaker
      */
     protected function setLastFailureTime(?int $time): void
     {
-        try {
-            $path = $this->getFilePath('last_failure_time');
-            if ($time === null) {
-                if ($this->filesystem->exists($path)) {
-                    $this->filesystem->delete($path);
-                }
-            } else {
-                $this->filesystem->put($path, (string) $time);
-            }
-        } catch (\Exception $e) {
-            Log::error('Circuit breaker error', ['error' => $e->getMessage()]);
+        if ($time === null) {
+            Cache::forget($this->getCacheKey('last_failure_time'));
+        } else {
+            Cache::put($this->getCacheKey('last_failure_time'), $time, now()->addDays(1));
         }
     }
 }

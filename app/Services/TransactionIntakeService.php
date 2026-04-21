@@ -69,7 +69,16 @@ class TransactionIntakeService
 
         Metrics::incr('intake.received_count');
 
-        // 2. Check for duplicate submission_uuid
+        // 3. Proactive Backpressure Check (Fail-Fast before DB)
+        if ($this->isSystemOverloaded()) {
+            return [
+                'success' => false,
+                'status' => 429,
+                'message' => 'System is currently experiencing high load. Please retry in a few minutes.',
+            ];
+        }
+
+        // 4. Check for duplicate submission_uuid
         $existing = TransactionIntake::where('submission_uuid', $payload['submission_uuid'])->first();
         if ($existing) {
             return [
@@ -149,9 +158,6 @@ class TransactionIntakeService
         }
     }
 
-    /**
-     * Persist a rejected intake attempt for auditability.
-     */
     protected function persistRejection(array $payload, array $errors, string $sourceIp, string $traceId, \Carbon\Carbon $receivedAt, string $errorCode = 'LAYER_A_VALIDATION_FAILURE'): void
     {
         try {
@@ -177,5 +183,36 @@ class TransactionIntakeService
         } catch (\Exception $e) {
             Log::warning('TransactionIntakeService: Failed to persist rejection audit', ['error' => $e->getMessage()]);
         }
+    }
+
+    /**
+     * Determine if the system is currently under excessive load.
+     * This checks the depth of the ingestion queue in Redis.
+     */
+    protected function isSystemOverloaded(): bool
+    {
+        if (!config('tsms.intake.backpressure.enabled', true)) {
+            return false;
+        }
+
+        try {
+            $threshold = config('tsms.intake.backpressure.max_queue_depth', 5000);
+            
+            // We use the 'horizon' connection specifically to check queue health
+            $queueName = 'queues:transaction-intake';
+            $currentDepth = \Illuminate\Support\Facades\Redis::connection('horizon')->llen($queueName);
+
+            if ($currentDepth >= $threshold) {
+                Log::warning('TransactionIntakeService: Backpressure triggered due to queue depth', [
+                    'current_depth' => $currentDepth,
+                    'threshold' => $threshold
+                ]);
+                return true;
+            }
+        } catch (\Exception $e) {
+            Log::error('TransactionIntakeService: Failed to check queue depth for backpressure', ['error' => $e->getMessage()]);
+        }
+
+        return false;
     }
 }
