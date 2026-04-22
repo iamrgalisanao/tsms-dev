@@ -31,6 +31,8 @@ class TransactionIntakeService
         $sourceIp = $request->ip();
         $traceId = $request->header('X-Correlation-ID') ?? Str::uuid()->toString();
         $receivedAt = now();
+        $tenantId = $request->user()->tenant_id ?? 0;
+        $shardQueue = $this->getShardQueue($tenantId);
 
         // 1. Stage 1: Structural & Format Validation (Gatekeeping)
         $validator = Validator::make($payload, [
@@ -69,8 +71,8 @@ class TransactionIntakeService
 
         Metrics::incr('intake.received_count');
 
-        // 3. Proactive Backpressure Check (Fail-Fast before DB)
-        if ($this->isSystemOverloaded()) {
+        // 3. Proactive Backpressure Check (Shard-Aware Fail-Fast)
+        if ($this->isSystemOverloaded($shardQueue)) {
             return [
                 'success' => false,
                 'status' => 429,
@@ -83,7 +85,7 @@ class TransactionIntakeService
         if ($existing) {
             return [
                 'success' => true,
-                'status' => 202,
+                'status' => 200,
                 'message' => 'Submission already accepted',
                 'data' => [
                     'submission_uuid' => $existing->submission_uuid,
@@ -110,9 +112,7 @@ class TransactionIntakeService
             $pilotTenants = config('tsms.rollout.pilot_tenants', []);
             $isPilot = in_array($intake->tenant_id, $pilotTenants);
 
-            // Dispatch processing job (Async Path)
-            // Even if not a pilot, we use the queue to prevent API timeouts 
-            // and resource exhaustion during high volume.
+            // Dispatch processing job (Legacy Async Path for Zero-Impact fix)
             \App\Jobs\ProcessTransactionIntakeJob::dispatch($intake->id)
                 ->onQueue('transaction-intake')
                 ->afterCommit();
@@ -137,7 +137,7 @@ class TransactionIntakeService
 
             return [
                 'success' => true,
-                'status' => 202,
+                'status' => 200,
                 'message' => 'Submission accepted',
                 'data' => [
                     'submission_uuid' => $intake->submission_uuid,
@@ -186,10 +186,10 @@ class TransactionIntakeService
     }
 
     /**
-     * Determine if the system is currently under excessive load.
-     * This checks the depth of the ingestion queue in Redis.
+     * Determine if the system is currently under excessive load for a specific shard.
+     * This checks the depth of the specific shard's ingestion queue in Redis.
      */
-    protected function isSystemOverloaded(): bool
+    protected function isSystemOverloaded(string $queueName): bool
     {
         if (!config('tsms.intake.backpressure.enabled', true)) {
             return false;
@@ -198,12 +198,13 @@ class TransactionIntakeService
         try {
             $threshold = config('tsms.intake.backpressure.max_queue_depth', 5000);
             
-            // We use the 'horizon' connection specifically to check queue health
-            $queueName = 'queues:transaction-intake';
-            $currentDepth = \Illuminate\Support\Facades\Redis::connection('horizon')->llen($queueName);
+            // Laravel's Redis queue prefix is usually 'queues:'
+            $fullQueueName = 'queues:' . $queueName;
+            $currentDepth = \Illuminate\Support\Facades\Redis::connection('horizon')->llen($fullQueueName);
 
             if ($currentDepth >= $threshold) {
-                Log::warning('TransactionIntakeService: Backpressure triggered due to queue depth', [
+                Log::warning('TransactionIntakeService: Backpressure triggered on shard', [
+                    'queue' => $queueName,
                     'current_depth' => $currentDepth,
                     'threshold' => $threshold
                 ]);
@@ -214,5 +215,23 @@ class TransactionIntakeService
         }
 
         return false;
+    }
+
+    /**
+     * Determine the correct shard queue for a given tenant.
+     * Pilot tenants go to the VIP lane; others are hashed into balanced shards.
+     */
+    protected function getShardQueue(int $tenantId): string
+    {
+        $pilotTenants = config('tsms.rollout.pilot_tenants', []);
+        
+        if (in_array($tenantId, $pilotTenants)) {
+            return 'transaction-intake:s-' . config('tsms.intake.vip_shard', 'vip');
+        }
+
+        $shardCount = config('tsms.intake.shard_count', 8);
+        $shardIndex = crc32((string) $tenantId) % $shardCount;
+
+        return "transaction-intake:s{$shardIndex}";
     }
 }
