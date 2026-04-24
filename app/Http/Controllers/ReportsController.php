@@ -82,7 +82,7 @@ class ReportsController extends Controller
 
         // 2. Fetch Adjustments Aggregates (Daily)
         $adjQuery = \DB::table('transaction_adjustments')
-            ->join('transactions', 'transaction_adjustments.transaction_id', '=', 'transactions.id')
+            ->join('transactions', 'transaction_adjustments.transaction_pk', '=', 'transactions.id')
             ->selectRaw("
                 transactions.transaction_date,
                 SUM(IF(transaction_adjustments.adjustment_type = 'EMPLOYEE', transaction_adjustments.amount, 0)) as employee_discount,
@@ -100,7 +100,7 @@ class ReportsController extends Controller
 
         // 3. Fetch Taxes Aggregates (Daily)
         $taxQuery = \DB::table('transaction_taxes')
-            ->join('transactions', 'transaction_taxes.transaction_id', '=', 'transactions.id')
+            ->join('transactions', 'transaction_taxes.transaction_pk', '=', 'transactions.id')
             ->selectRaw("
                 transactions.transaction_date,
                 SUM(IF(transaction_taxes.tax_type IN ('SC_VAT_EXEMPT_SALES', 'VAT_EXEMPT_SALES', 'VATEXEMPT_SALES', 'VAT-EXEMPT', 'EXEMPT', 'VATEXEMPT'), transaction_taxes.amount, 0)) as sc_vat_exempt_fallback,
