@@ -387,6 +387,7 @@ class NotificationService
                 ->whereIn('id', $silentTenantIds)
                 ->get();
 
+            $notifiableTenants = [];
             foreach ($silentTenants as $tenant) {
                 $rateKey = sprintf('alerts:tenant-inactivity:%d', $tenant->id);
 
@@ -412,20 +413,21 @@ class NotificationService
                         return $terminal->isActiveAndValid();
                     });
 
-                $data = [
+                $notifiableTenants[] = [
                     'tenant_id' => $tenant->id,
-                    'tenant_name' => $tenant->trade_name,
+                    'name' => $tenant->trade_name,
+                    'customer_code' => $tenant->customer_code,
                     'inactive_minutes' => $thresholdMinutes,
                     'last_transaction_at' => $lastTxn?->created_at?->toDateTimeString(),
                     'active_terminal_count' => $activeTerminals->count(),
                 ];
 
-                $notification = new TenantInactivityAlert($data);
-                $this->sendToAdminsAndFinance($notification);
+                Log::warning('Tenant inactivity event added to batch', [
+                    'tenant_id' => $tenant->id,
+                    'name' => $tenant->trade_name
+                ]);
 
-                Log::warning('Tenant inactivity alert sent', $data);
-
-                // Log alert into SystemLog for telemetry visibility
+                // Log into SystemLog for telemetry visibility
                 try {
                     SystemLog::create([
                         'type' => 'tenant_inactivity',
@@ -433,13 +435,32 @@ class NotificationService
                         'severity' => 'warning',
                         'terminal_uid' => 'scheduler',
                         'transaction_id' => null,
-                        'message' => 'Tenant inactivity alert dispatched',
-                        'context' => $data,
+                        'message' => "Tenant inactivity detected: {$tenant->trade_name}",
+                        'context' => array_merge($notifiableTenants[count($notifiableTenants)-1], ['source' => 'batch']),
                     ]);
                 } catch (\Throwable $e) {
                     Log::error('Failed to write tenant inactivity alert SystemLog', [
                         'tenant_id' => $tenant->id,
                         'error' => $e->getMessage(),
+                    ]);
+                }
+            }
+
+            if (!empty($notifiableTenants)) {
+                $notification = new TenantInactivityAlert($notifiableTenants);
+                
+                // Send to Admins (DB + Global Admin Email)
+                $this->sendToAdminsAndFinance($notification);
+
+                // Send to specific helpdesk emails
+                $helpdeskEmails = config('notifications.tenant_inactivity_emails');
+                if (!empty($helpdeskEmails)) {
+                    \Illuminate\Support\Facades\Notification::route('mail', $helpdeskEmails)
+                        ->notify($notification);
+                    
+                    Log::info('Consolidated tenant inactivity alert routed to helpdesk', [
+                        'count' => count($notifiableTenants),
+                        'recipients' => $helpdeskEmails
                     ]);
                 }
             }

@@ -6,6 +6,7 @@ use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;
+use Illuminate\Support\Carbon;
 
 class TenantInactivityAlert extends Notification implements ShouldQueue
 {
@@ -17,11 +18,15 @@ class TenantInactivityAlert extends Notification implements ShouldQueue
     public $connection = null; // use default
     public $queue = null; // mapped via viaQueues()
 
-    private array $data;
+    /**
+     * Data containing an array of inactive tenants
+     * Each element: ['name', 'customer_code', 'inactive_minutes', 'last_transaction_at', 'active_terminal_count']
+     */
+    private array $inactiveTenants;
 
-    public function __construct(array $data)
+    public function __construct(array $inactiveTenants)
     {
-        $this->data = $data;
+        $this->inactiveTenants = $inactiveTenants;
 
         if (method_exists($this, 'afterCommit')) {
             $this->afterCommit();
@@ -30,14 +35,17 @@ class TenantInactivityAlert extends Notification implements ShouldQueue
 
     /**
      * Get the notification's delivery channels.
-     *
-     * For tenant inactivity we only use the database channel so that
-     * alerts appear in the TSMS dashboards (Admin/Finance) and no
-     * emails are sent.
      */
     public function via(object $notifiable): array
     {
-        return ['database'];
+        $channels = ['database'];
+
+        // If the notifiable is a route or has an email, include mail
+        if (config('mail.default') !== 'array') {
+            $channels[] = 'mail';
+        }
+
+        return $channels;
     }
 
     /**
@@ -48,6 +56,7 @@ class TenantInactivityAlert extends Notification implements ShouldQueue
         $queue = config('notifications.notification_queue', 'notifications');
 
         return [
+            'mail' => $queue,
             'database' => $queue,
         ];
     }
@@ -63,22 +72,52 @@ class TenantInactivityAlert extends Notification implements ShouldQueue
     /**
      * Get the mail representation of the notification.
      */
-    // No mail channel is used for this notification (dashboard-only).
+    public function toMail(object $notifiable): MailMessage
+    {
+        $count = count($this->inactiveTenants);
+        $subject = $count > 1 
+            ? "TSMS Alert: Consolidated Tenant Inactivity Report ({$count} Tenants)"
+            : "TSMS Alert: Tenant Inactivity Detected - " . $this->inactiveTenants[0]['name'];
+
+        $message = (new MailMessage)
+            ->subject($subject)
+            ->priority(1) // High priority
+            ->greeting('Consolidated Tenant Inactivity Alert')
+            ->line('The following tenants have not sent any transactions within the configured monitoring window.')
+            ->line(''); // Spacer
+
+        // Add tenants as lines/table-like structure
+        // Note: Standard MailMessage doesn't have native tables easily, but we can format with lines.
+        // For a better experience, we'll use a clean list format.
+        foreach ($this->inactiveTenants as $tenant) {
+            $message->line("**{$tenant['name']}**")
+                ->line("- Customer Code: `{$tenant['customer_code']}`")
+                ->line("- Inactivity: {$tenant['inactive_minutes']} minutes")
+                ->line("- Last Transaction: " . ($tenant['last_transaction_at'] ?: 'N/A'))
+                ->line("- Active Terminals: {$tenant['active_terminal_count']}")
+                ->line(''); // Spacer
+        }
+
+        return $message
+            ->action('View Inactive Tenants Dashboard', url('/admin/tenants'))
+            ->line('Please verify the terminal connectivity or network status for these tenants.')
+            ->line('This is an automated consolidated alert from the Terminal Sales Monitoring System (TSMS).');
+    }
 
     /**
      * Get the database representation of the notification.
      */
     public function toDatabase(object $notifiable): array
     {
+        $count = count($this->inactiveTenants);
+        
         return [
             'type' => 'tenant_inactivity_alert',
-            'title' => 'Tenant Inactivity Detected',
-            'message' => "No transactions received in the last " . ($this->data['inactive_minutes'] ?? 60) . " minutes.",
-            'tenant_id' => $this->data['tenant_id'] ?? null,
-            'tenant_name' => $this->data['tenant_name'] ?? null,
-            'inactive_minutes' => $this->data['inactive_minutes'] ?? 60,
-            'last_transaction_at' => $this->data['last_transaction_at'] ?? null,
-            'active_terminal_count' => $this->data['active_terminal_count'] ?? null,
+            'title' => $count > 1 ? "{$count} Tenants Inactive" : "Tenant Inactive: " . $this->inactiveTenants[0]['name'],
+            'message' => $count > 1 
+                ? "Multiple tenants have been inactive for over " . $this->inactiveTenants[0]['inactive_minutes'] . " minutes."
+                : "Tenant {$this->inactiveTenants[0]['name']} has been inactive for " . $this->inactiveTenants[0]['inactive_minutes'] . " minutes.",
+            'tenants' => $this->inactiveTenants,
             'severity' => 'medium',
             'created_at' => now(),
         ];

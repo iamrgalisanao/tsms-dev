@@ -141,4 +141,14 @@ return [
 
     'retention_days' => env('NOTIFICATION_RETENTION_DAYS', 90),
 
+    /*
+    |--------------------------------------------------------------------------
+    | Tenant Inactivity Recipients
+    |--------------------------------------------------------------------------
+    |
+    | Specific email addresses for tenant inactivity alerts.
+    |
+    */
+    'tenant_inactivity_emails' => array_filter(explode(',', env('NOTIFICATION_TENANT_INACTIVITY_EMAILS', ''))),
+
 ];
