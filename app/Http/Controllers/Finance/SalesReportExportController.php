@@ -151,33 +151,34 @@ class SalesReportExportController extends Controller
 
 
         // 5) Load template & (optional) embed logo
+        Log::info('Export process: Starting template preparation', ['tenant' => $tenantId, 'month' => $month]);
+        
         $tpl = storage_path('app/templates/monthly_sales_template.xlsx');
 
         // Guard: ensure PhpSpreadsheet is available
         if (!class_exists(\PhpOffice\PhpSpreadsheet\IOFactory::class)) {
-            Log::error('PhpSpreadsheet IOFactory class not found. Please install phpoffice/phpspreadsheet via composer.');
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Export failed: server is missing the phpoffice/phpspreadsheet package. Run "composer require phpoffice/phpspreadsheet" on the server.'
-            ], 500);
+            Log::error('PhpSpreadsheet IOFactory missing on server');
+            return response()->json(['status' => 'error', 'message' => 'PhpSpreadsheet not installed'], 500);
+        }
+
+        // Guard: ensure zip extension is available (required for Xlsx)
+        if (!extension_loaded('zip')) {
+            Log::error('PHP zip extension missing on server');
+            return response()->json(['status' => 'error', 'message' => 'Server missing php-zip extension'], 500);
         }
 
         if (!file_exists($tpl)) {
             Log::error("Spreadsheet template not found: {$tpl}");
-            return response()->json([
-                'status' => 'error',
-                'message' => "Export failed: template not found ({$tpl})."
-            ], 500);
+            return response()->json(['status' => 'error', 'message' => "Template not found: monthly_sales_template.xlsx"], 500);
         }
 
         try {
+            Log::info('Export process: Loading template file', ['path' => $tpl]);
             $spreadsheet = IOFactory::load($tpl);
+            Log::info('Export process: Template loaded successfully');
         } catch (\Throwable $e) {
-            Log::error('Failed to load spreadsheet template: ' . $e->getMessage());
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Export failed: unable to load spreadsheet template.'
-            ], 500);
+            Log::error('Export process: Failed to load spreadsheet template: ' . $e->getMessage());
+            return response()->json(['status' => 'error', 'message' => 'Template load error: ' . $e->getMessage()], 500);
         }
 
         $sheet = $spreadsheet->getActiveSheet();
@@ -248,6 +249,8 @@ class SalesReportExportController extends Controller
         foreach (range('B', 'N') as $col) {
             $sheet->getColumnDimension($col)->setWidth(12);
         }
+
+        Log::info('Export process: Spreadsheet populated and ready for streaming');
         $sheet->getColumnDimension('A')->setWidth(6);
 
         // 7) “Total” row at 49
