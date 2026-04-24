@@ -35,32 +35,119 @@ class SalesReportExportController extends Controller
             $tenantName = $tenantRecord ? $tenantRecord->trade_name : 'Unknown Tenant';
         }
 
-        // Use COALESCE(transaction_timestamp, completed_at, created_at) as the canonical
-        // transaction time for reporting consistency with dashboard.
-        $query->whereRaw("YEAR(COALESCE(transaction_timestamp, completed_at, created_at)) = ?", [$year])
-            ->whereRaw("MONTH(COALESCE(transaction_timestamp, completed_at, created_at)) = ?", [$month])
-            ->orderByRaw("COALESCE(transaction_timestamp, completed_at, created_at)");
-        $transactions = $query->get();
+        $monthDate = Carbon::create($year, (int)$month, 1);
+        $startDate = $monthDate->copy()->startOfMonth()->toDateString();
+        $endDate = $monthDate->copy()->endOfMonth()->toDateString();
+        $excludeVoids = config('tsms.reporting.exclude_voids_from_totals', true);
+
+        // 1. Optimized Main Transaction Aggregation
+        $mainQuery = Transaction::query()
+            ->selectRaw("
+                transaction_date,
+                SUM(gross_sales) as gross_sales,
+                SUM(net_sales) as net_sales,
+                SUM(vatable_sales) as vatable_sales,
+                SUM(sc_vat_exempt_sales) as sc_vat_exempt_sales,
+                SUM(vat_amount) as vat_amount,
+                SUM(promo_discount) as promo_discount,
+                SUM(senior_discount) as senior_discount,
+                SUM(pwd_discount) as pwd_discount,
+                SUM(discount_total) as regular_discount,
+                SUM(service_charge) as service_charge_distributed,
+                SUM(management_service_charge) as service_charge_retained,
+                SUM(IF(promo_status = 'WITH_APPROVAL', promo_discount, 0)) as promo_with_approval,
+                SUM(IF(promo_status != 'WITH_APPROVAL', promo_discount, 0)) as promo_without_approval
+            ")
+            ->whereBetween('transaction_date', [$startDate, $endDate]);
+
+        if ($tenant && $tenant !== 'all') {
+            $mainQuery->where('tenant_id', $tenant);
+        }
+        if ($excludeVoids) {
+            $mainQuery->where('transaction_type', '!=', 'VOID')->whereNull('voided_at');
+        }
+        $dailyMain = $mainQuery->groupBy('transaction_date')->get()->keyBy('transaction_date');
+
+        // 2. Optimized Adjustments Aggregation (Daily)
+        $adjQuery = \DB::table('transaction_adjustments')
+            ->join('transactions', 'transaction_adjustments.transaction_pk', '=', 'transactions.id')
+            ->selectRaw("
+                transactions.transaction_date,
+                SUM(IF(transaction_adjustments.adjustment_type = 'EMPLOYEE', transaction_adjustments.amount, 0)) as employee_discount,
+                SUM(IF(transaction_adjustments.adjustment_type = 'VIP', transaction_adjustments.amount, 0)) as vip_discount
+            ")
+            ->whereBetween('transactions.transaction_date', [$startDate, $endDate]);
+
+        if ($tenant && $tenant !== 'all') {
+            $adjQuery->where('transactions.tenant_id', $tenant);
+        }
+        if ($excludeVoids) {
+            $adjQuery->where('transactions.transaction_type', '!=', 'VOID')->whereNull('transactions.voided_at');
+        }
+        $dailyAdj = $adjQuery->groupBy('transactions.transaction_date')->get()->keyBy('transaction_date');
+
+        // 3. Optimized Taxes Aggregation (Daily)
+        $taxQuery = \DB::table('transaction_taxes')
+            ->join('transactions', 'transaction_taxes.transaction_pk', '=', 'transactions.id')
+            ->selectRaw("
+                transactions.transaction_date,
+                SUM(IF(transaction_taxes.tax_type IN ('SC_VAT_EXEMPT_SALES', 'VAT_EXEMPT_SALES', 'VATEXEMPT_SALES', 'VAT-EXEMPT', 'EXEMPT', 'VATEXEMPT'), transaction_taxes.amount, 0)) as sc_vat_exempt_fallback,
+                SUM(IF(transaction_taxes.tax_type IN ('OTHER_TAX', 'OTHER-TAX'), transaction_taxes.amount, 0)) as other_tax_basis
+            ")
+            ->whereBetween('transactions.transaction_date', [$startDate, $endDate]);
+
+        if ($tenant && $tenant !== 'all') {
+            $taxQuery->where('transactions.tenant_id', $tenant);
+        }
+        if ($excludeVoids) {
+            $taxQuery->where('transactions.transaction_type', '!=', 'VOID')->whereNull('transactions.voided_at');
+        }
+        $dailyTax = $taxQuery->groupBy('transactions.transaction_date')->get()->keyBy('transaction_date');
 
         $service = app(\App\Services\Reports\FinanceCalculationService::class);
 
-        // 3) Group by date and compute daily aggregates using the shared service
-        $byDate = $transactions
-            ->groupBy(function ($tx) {
-                $ts = $tx->transaction_timestamp ?? $tx->completed_at ?? $tx->created_at;
-                return
-                    $ts instanceof \Carbon\Carbon
-                    ? $ts->format('Y-m-d')
-                    : \Carbon\Carbon::parse($ts)->format('Y-m-d');
-            })
-            ->map(function ($group) use ($service) {
-                $components = $service->aggregateComponents($group);
-                return $service->deriveMetrics($components);
-            })
-            ->toArray();
+        // Merge components per day
+        $byDate = [];
+        $allComponents = [];
+        $allDates = $dailyMain->keys()->union($dailyAdj->keys())->union($dailyTax->keys())->sort();
 
-        // 4) Compute full-month totals using the shared service
-        $totals = $service->deriveMetrics($service->aggregateComponents($transactions));
+        foreach ($allDates as $date) {
+            $tx = $dailyMain->get($date);
+            $adj = $dailyAdj->get($date);
+            $tax = $dailyTax->get($date);
+
+            $components = [
+                'vatable_sales' => (float)($tx->vatable_sales ?? 0),
+                'sc_vat_exempt_sales' => (float)($tx->sc_vat_exempt_sales ?? 0),
+                'vat_amount' => (float)($tx->vat_amount ?? 0),
+                'promo_with_approval' => (float)($tx->promo_with_approval ?? 0),
+                'promo_without_approval' => (float)($tx->promo_without_approval ?? 0),
+                'employee_discount' => (float)($adj->employee_discount ?? 0),
+                'senior_discount' => (float)($tx->senior_discount ?? 0),
+                'pwd_discount' => (float)($tx->pwd_discount ?? 0),
+                'vip_discount' => (float)($adj->vip_discount ?? 0),
+                'other_tax' => (float)($tax->other_tax_basis ?? 0),
+                'service_charge_distributed' => (float)($tx->service_charge_distributed ?? 0),
+                'service_charge_retained' => (float)($tx->service_charge_retained ?? 0),
+                'regular_discount' => (float)($tx->regular_discount ?? 0),
+                'gross_sales' => (float)($tx->gross_sales ?? 0),
+                'net_sales' => (float)($tx->net_sales ?? 0),
+            ];
+
+            // Parity Check: Use tax fallback if main sc_vat_exempt is 0
+            if ($components['sc_vat_exempt_sales'] === 0.0 && isset($tax->sc_vat_exempt_fallback)) {
+                $components['sc_vat_exempt_sales'] = (float)$tax->sc_vat_exempt_fallback;
+            }
+
+            foreach ($components as $key => $val) {
+                $allComponents[$key] = ($allComponents[$key] ?? 0) + $val;
+            }
+
+            $byDate[$date] = $service->deriveMetrics($components);
+        }
+
+        // 4) Compute full-month totals
+        $totals = $service->deriveMetrics($allComponents);
 
 
         // 5) Load template & (optional) embed logo
