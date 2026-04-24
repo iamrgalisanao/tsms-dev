@@ -18,6 +18,7 @@ import {
 import '../../../css/TenantDirectory.css';
 import { Button } from '@mui/material';
 import { useRole } from '../../Hooks/useRole';
+import { useAuth } from '../../Contexts/AuthContext';
 
 // ── PITX brand ────────────────────────────────────────────────────────────────
 const BLUE = '#1D439B';
