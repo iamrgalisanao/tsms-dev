@@ -151,7 +151,7 @@ class SalesReportExportController extends Controller
 
 
         // 5) Load template & (optional) embed logo
-        Log::info('Export process: Starting template preparation', ['tenant' => $tenantId, 'month' => $month]);
+        Log::info('Export process: Starting template preparation', ['tenant' => $tenant, 'month' => $month]);
         
         $tpl = storage_path('app/templates/monthly_sales_template.xlsx');
 
