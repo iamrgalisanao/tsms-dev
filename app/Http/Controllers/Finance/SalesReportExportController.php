@@ -323,11 +323,16 @@ class SalesReportExportController extends Controller
         Log::info('Sales report exported', ['filename' => $filename, 'user_id' => auth()->id(), 'tenant' => $tenant ?? 'all']);
 
         // 14) Stream download
+        // Clear any previous output buffers to avoid corruption
+        if (ob_get_level()) ob_end_clean();
+
         return response()->streamDownload(function () use ($spreadsheet) {
-            IOFactory::createWriter($spreadsheet, 'Xlsx')->save('php://output');
+            $writer = IOFactory::createWriter($spreadsheet, 'Xlsx');
+            $writer->save('php://output');
         }, $filename, [
-            'Content-Type' =>
-                'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'Content-Disposition' => 'attachment; filename="' . $filename . '"',
+            'Cache-Control' => 'max-age=0',
         ]);
     }
 }
