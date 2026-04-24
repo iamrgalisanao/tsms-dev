@@ -2,6 +2,19 @@
 
 // Streamlined Horizon configuration aligned with standardized queue naming:
 // transaction-processing (critical), forwarding (medium), low (housekeeping)
+
+// --- Phase 2: Dynamic Intake Sharding ---
+$shardCount = (int) env('TSMS_INTAKE_SHARD_COUNT', 8);
+$vipShardSuffix = env('TSMS_INTAKE_VIP_SHARD', 'vip');
+
+// Generate the list of intake shards s0-s7 (or more) plus the VIP lane.
+// We also include the legacy 'transaction-intake' for graceful drainage.
+$intakeQueues = array_merge(
+    ['transaction-intake'], 
+    ['transaction-intake:s-' . $vipShardSuffix],
+    array_map(fn($i) => "transaction-intake:s$i", range(0, $shardCount - 1))
+);
+
 return [
     'domain' => env('HORIZON_DOMAIN'),
     'path' => env('HORIZON_PATH', 'horizon'),
@@ -54,7 +67,7 @@ return [
         'production' => [
             'intake-supervisor' => [
                 'connection' => 'redis',
-                'queue' => ['transaction-intake'],
+                'queue' => $intakeQueues,
                 'balance' => 'auto',
                 'processes' => env('HZ_INTAKE_PROCESSES', 32), // High concurrency for raw intake
                 'tries' => 3,
@@ -112,15 +125,14 @@ return [
         'staging' => [
             'intake-supervisor' => [
                 'connection' => 'redis',
-                'queue' => ['transaction-intake'],
+                'queue' => $intakeQueues,
                 'balance' => 'auto',
                 'processes' => 12, // Tripled from previous to clear backlog
                 'tries' => 2,
             ],
             'default' => [
                 'connection' => 'redis',
-                'queue' => [
-                    'transaction-intake',
+                'queue' => array_merge($intakeQueues, [
                     'transaction-processing',
                     'transaction-processing:s0',
                     'transaction-processing:s1',
@@ -133,7 +145,7 @@ return [
                     'forwarding',
                     'low',
                     'notifications'
-                ],
+                ]),
                 'balance' => 'auto',
                 'processes' => 4,
                 'tries' => 2,
@@ -152,8 +164,7 @@ return [
             'default' => [
                 'connection' => 'redis',
                 // Include processing queues locally so Horizon runs workers for them
-                'queue' => [
-                    'transaction-intake',
+                'queue' => array_merge($intakeQueues, [
                     'transaction-processing',
                     'transaction-processing:s0',
                     'transaction-processing:s1',
@@ -167,7 +178,7 @@ return [
                     'low',
                     'notifications',
                     'default'
-                ],
+                ]),
                 'processes' => 1,
                 'tries' => 1,
             ],

@@ -61,8 +61,12 @@ return [
         'backpressure' => [
             // When enabled, the system will reject new intakes if the queue depth exceeds the threshold.
             'enabled' => (bool) env('TSMS_INTAKE_BACKPRESSURE_ENABLED', true),
-            // The maximum number of jobs allowed in the 'transaction-intake' queue before rejection.
+            // The maximum number of jobs allowed in a single shard before rejection.
             'max_queue_depth' => (int) env('TSMS_INTAKE_MAX_QUEUE_DEPTH', 5000),
         ],
+        // The number of standard shards to split the intake traffic into.
+        'shard_count' => (int) env('TSMS_INTAKE_SHARD_COUNT', 8),
+        // The suffix for the VIP express lane shard.
+        'vip_shard' => env('TSMS_INTAKE_VIP_SHARD', 'vip'),
     ],
 ];

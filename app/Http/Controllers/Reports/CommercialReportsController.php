@@ -391,10 +391,11 @@ class CommercialReportsController extends Controller
     {
         // JSON payload used by AJAX dropdowns and the Tenant Directory (profile data)
         $jsonTenants = Tenant::orderBy('trade_name')
-            ->get(['id', 'trade_name', 'customer_code', 'category', 'status', 'location', 'unit_no'])
+            ->get(['id', 'uuid', 'trade_name', 'customer_code', 'category', 'status', 'location', 'unit_no'])
             ->map(function ($t) {
                 return [
                     'id' => $t->id,
+                    'uuid' => $t->uuid,
                     'trade_name' => $t->trade_name,
                     'customer_code' => $t->customer_code ?? '',
                     'category' => match ($t->category) {
@@ -440,7 +441,11 @@ class CommercialReportsController extends Controller
      */
     public function tenantShow(Request $request, $id)
     {
-        $tenant = Tenant::with(['posTerminals', 'company'])->findOrFail($id);
+        // Support finding by UUID (new) or ID (legacy)
+        $tenant = Tenant::with(['posTerminals', 'company'])
+            ->where('uuid', $id)
+            ->orWhere('id', $id)
+            ->firstOrFail();
 
         if ($request->wantsJson()) {
             try {

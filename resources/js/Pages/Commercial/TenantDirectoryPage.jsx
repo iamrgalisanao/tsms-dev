@@ -180,7 +180,9 @@ const TenantDirectoryPage = () => {
         <div style={{ padding: 24, background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 12, color: '#b91c1c' }}>{error}</div>
     );
 
-    const isAuthorized = typeof useRole === 'function' ? useRole() : true; // fallback if not exported
+    const { user } = useAuth();
+    const userRole = user?.role?.toUpperCase() || (user?.roles?.[0]?.name || user?.roles?.[0] || '').toUpperCase();
+    const canManageTenants = userRole === 'ADMIN' || userRole === 'MANAGER';
 
     return (
         <div style={{ paddingBottom: 48 }}>
@@ -206,7 +208,7 @@ const TenantDirectoryPage = () => {
                     <TrendingUpIcon style={{ fontSize: 14, color: BLUE }} />
                     <span style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#64748b' }}>Live Data View</span>
                 </div>
-                {isAuthorized && (
+                {canManageTenants && (
                     <Button
                         variant="contained"
                         color="primary"
