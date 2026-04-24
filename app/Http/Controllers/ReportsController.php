@@ -33,71 +33,142 @@ class ReportsController extends Controller
      */
     public function data(Request $request)
     {
-        // Accept either 'tenant' or legacy 'trade' parameter from the JS
-        $tenant = $request->query('tenant', $request->query('trade', null));
+        $tenantId = $request->query('tenant', $request->query('trade', null));
+        $rawMonth = $request->query('month', now()->format('Y-m'));
 
-        // Accept month as either 'MM' or 'YYYY-MM' (the UI uses <input type="month">)
-        $rawMonth = $request->query('month', now()->format('m'));
-        $year = (int) $request->query('year', now()->year);
-        $month = null;
-        if (is_string($rawMonth) && str_contains($rawMonth, '-')) {
-            // format: YYYY-MM
-            [$y, $m] = explode('-', $rawMonth) + [null, null];
-            $year = (int) ($y ?? $year);
-            $month = str_pad(($m ?? now()->format('m')), 2, '0', STR_PAD_LEFT);
-        } else {
-            $month = str_pad($rawMonth, 2, '0', STR_PAD_LEFT);
+        try {
+            $monthDate = Carbon::parse($rawMonth . '-01');
+        } catch (\Throwable $e) {
+            $monthDate = now()->startOfMonth();
         }
 
-        $query = Transaction::query();
-        if ($tenant && $tenant !== 'all') {
-            $query->where('tenant_id', $tenant);
-        }
-        // Prefer filtering by canonical transaction_timestamp when the column exists
-        // to align the finance reports with admin transaction logs and reporting
-        // services. Fall back to created_at when transaction_timestamp is missing.
-        if (Schema::hasColumn('transactions', 'transaction_timestamp')) {
-            $query->whereRaw("YEAR(COALESCE(transaction_timestamp, created_at)) = ?", [$year])
-                ->whereRaw("MONTH(COALESCE(transaction_timestamp, created_at)) = ?", [$month])
-                ->orderByRaw("COALESCE(transaction_timestamp, created_at)");
-        } else {
-            $query->whereYear('created_at', $year)
-                ->whereMonth('created_at', $month)
-                ->orderBy('created_at');
+        $startDate = $monthDate->copy()->startOfMonth()->toDateString();
+        $endDate = $monthDate->copy()->endOfMonth()->toDateString();
+        $year = $monthDate->year;
+        $month = $monthDate->format('m');
+
+        $excludeVoids = config('tsms.reporting.exclude_voids_from_totals', true);
+
+        // 1. Optimized Main Transaction Aggregation
+        $query = Transaction::query()
+            ->selectRaw("
+                transaction_date,
+                SUM(gross_sales) as gross_sales,
+                SUM(net_sales) as net_sales,
+                SUM(vatable_sales) as vatable_sales,
+                SUM(sc_vat_exempt_sales) as sc_vat_exempt_sales,
+                SUM(vat_amount) as vat_amount,
+                SUM(promo_discount) as promo_discount,
+                SUM(senior_discount) as senior_discount,
+                SUM(pwd_discount) as pwd_discount,
+                SUM(discount_total) as regular_discount,
+                SUM(service_charge) as service_charge_distributed,
+                SUM(management_service_charge) as service_charge_retained,
+                SUM(IF(promo_status = 'WITH_APPROVAL', promo_discount, 0)) as promo_with_approval,
+                SUM(IF(promo_status != 'WITH_APPROVAL', promo_discount, 0)) as promo_without_approval
+            ")
+            ->whereBetween('transaction_date', [$startDate, $endDate]);
+
+        if ($tenantId && $tenantId !== 'all') {
+            $query->where('tenant_id', $tenantId);
         }
 
-        $transactions = $query->get();
+        if ($excludeVoids) {
+            $query->where('transaction_type', '!=', 'VOID')
+                  ->whereNull('voided_at');
+        }
+
+        $dailyMain = $query->groupBy('transaction_date')->get()->keyBy('transaction_date');
+
+        // 2. Fetch Adjustments Aggregates (Daily)
+        $adjQuery = \DB::table('transaction_adjustments')
+            ->join('transactions', 'transaction_adjustments.transaction_id', '=', 'transactions.id')
+            ->selectRaw("
+                transactions.transaction_date,
+                SUM(IF(transaction_adjustments.adjustment_type = 'EMPLOYEE', transaction_adjustments.amount, 0)) as employee_discount,
+                SUM(IF(transaction_adjustments.adjustment_type = 'VIP', transaction_adjustments.amount, 0)) as vip_discount
+            ")
+            ->whereBetween('transactions.transaction_date', [$startDate, $endDate]);
+
+        if ($tenantId && $tenantId !== 'all') {
+            $adjQuery->where('transactions.tenant_id', $tenantId);
+        }
+        if ($excludeVoids) {
+            $adjQuery->where('transactions.transaction_type', '!=', 'VOID')->whereNull('transactions.voided_at');
+        }
+        $dailyAdj = $adjQuery->groupBy('transactions.transaction_date')->get()->keyBy('transaction_date');
+
+        // 3. Fetch Taxes Aggregates (Daily)
+        $taxQuery = \DB::table('transaction_taxes')
+            ->join('transactions', 'transaction_taxes.transaction_id', '=', 'transactions.id')
+            ->selectRaw("
+                transactions.transaction_date,
+                SUM(IF(transaction_taxes.tax_type IN ('SC_VAT_EXEMPT_SALES', 'VAT_EXEMPT_SALES', 'VATEXEMPT_SALES', 'VAT-EXEMPT', 'EXEMPT', 'VATEXEMPT'), transaction_taxes.amount, 0)) as sc_vat_exempt_fallback,
+                SUM(IF(transaction_taxes.tax_type IN ('OTHER_TAX', 'OTHER-TAX'), transaction_taxes.amount, 0)) as other_tax_basis
+            ")
+            ->whereBetween('transactions.transaction_date', [$startDate, $endDate]);
+
+        if ($tenantId && $tenantId !== 'all') {
+            $taxQuery->where('transactions.tenant_id', $tenantId);
+        }
+        if ($excludeVoids) {
+            $taxQuery->where('transactions.transaction_type', '!=', 'VOID')->whereNull('transactions.voided_at');
+        }
+        $dailyTax = $taxQuery->groupBy('transactions.transaction_date')->get()->keyBy('transaction_date');
 
         $service = app(\App\Services\Reports\FinanceCalculationService::class);
 
-        // Group transactions by the canonical date (transaction_timestamp if present,
-        // otherwise completed_at/created_at) to ensure daily buckets align with
-        // the reporting services (which use COALESCE(transaction_timestamp, completed_at, created_at)).
-        $byDate = $transactions
-            ->groupBy(function ($tx) {
-                $ts = $tx->transaction_timestamp ?? $tx->completed_at ?? $tx->created_at;
-                try {
-                    return Carbon::parse($ts)->format('Y-m-d');
-                } catch (\Throwable $_) {
-                    // if parsing fails, fall back to created_at string format
-                    return optional($tx->created_at)->format('Y-m-d') ?? date('Y-m-d');
-                }
-            })
-            ->map(function ($group) use ($service) {
-                $components = $service->aggregateComponents($group);
-                return $service->deriveMetrics($components);
-            })
-            ->toArray();
+        // Convert the SQL objects back to basic arrays for consistent processing
+        $dailyTotals = [];
+        $allComponents = [];
 
-        // build totals
-        $totals = $service->deriveMetrics($service->aggregateComponents($transactions));
+        // We use the union of all dates present in the results
+        $allDates = $dailyMain->keys()->union($dailyAdj->keys())->union($dailyTax->keys())->sort();
 
+        foreach ($allDates as $date) {
+            $tx = $dailyMain->get($date);
+            $adj = $dailyAdj->get($date);
+            $tax = $dailyTax->get($date);
+
+            $components = [
+                'vatable_sales' => (float)($tx->vatable_sales ?? 0),
+                'sc_vat_exempt_sales' => (float)($tx->sc_vat_exempt_sales ?? 0),
+                'vat_amount' => (float)($tx->vat_amount ?? 0),
+                'promo_with_approval' => (float)($tx->promo_with_approval ?? 0),
+                'promo_without_approval' => (float)($tx->promo_without_approval ?? 0),
+                'employee_discount' => (float)($adj->employee_discount ?? 0),
+                'senior_discount' => (float)($tx->senior_discount ?? 0),
+                'pwd_discount' => (float)($tx->pwd_discount ?? 0),
+                'vip_discount' => (float)($adj->vip_discount ?? 0),
+                'other_tax' => (float)($tax->other_tax_basis ?? 0),
+                'service_charge_distributed' => (float)($tx->service_charge_distributed ?? 0),
+                'service_charge_retained' => (float)($tx->service_charge_retained ?? 0),
+                'regular_discount' => (float)($tx->regular_discount ?? 0),
+                'gross_sales' => (float)($tx->gross_sales ?? 0),
+                'net_sales' => (float)($tx->net_sales ?? 0),
+            ];
+
+            // Parity Check: If main column sc_vat_exempt_sales is 0, use the tax fallback
+            if ($components['sc_vat_exempt_sales'] === 0.0 && isset($tax->sc_vat_exempt_fallback)) {
+                $components['sc_vat_exempt_sales'] = (float)$tax->sc_vat_exempt_fallback;
+            }
+
+            // Add to month-wide aggregate components
+            foreach ($components as $key => $val) {
+                $allComponents[$key] = ($allComponents[$key] ?? 0) + $val;
+            }
+
+            $dailyTotals[$date] = $service->deriveMetrics($components);
+        }
+
+        // Build total month metrics
+        $totals = $service->deriveMetrics($allComponents);
 
         return response()->json([
             'status' => 'success',
-            'year' => $year,
+            'year' => (int)$year,
             'month' => $month,
-            'daily_totals' => $byDate,
+            'daily_totals' => $dailyTotals,
             'totals' => $totals,
         ]);
     }
