@@ -16,7 +16,7 @@ class TenantInactivityAlert extends Notification implements ShouldQueue
      * Data containing an array of inactive tenants
      * Each element: ['name', 'customer_code', 'inactive_minutes', 'last_transaction_at', 'active_terminal_count']
      */
-    public array $inactiveTenants;
+    public array $inactiveTenants = [];
 
     /**
      * Create a new notification instance.
