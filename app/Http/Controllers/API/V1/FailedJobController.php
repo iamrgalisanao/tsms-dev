@@ -117,8 +117,9 @@ class FailedJobController extends Controller
                 'type'           => 'queue',
                 'log_type'       => 'DLQ_JOB_RETRIED',
                 'severity'       => 'info',
-                'terminal_uid'   => null,
+                'terminal_uid'   => 'SYSTEM',
                 'transaction_id' => null,
+                'user_id'        => auth()->id(),
                 'message'        => 'Failed job manually retried from DLQ',
                 'context'        => [
                     'uuid'       => $uuid,
@@ -158,8 +159,9 @@ class FailedJobController extends Controller
                 'type'           => 'queue',
                 'log_type'       => 'DLQ_ALL_RETRIED',
                 'severity'       => 'warning',
-                'terminal_uid'   => null,
+                'terminal_uid'   => 'SYSTEM',
                 'transaction_id' => null,
+                'user_id'        => auth()->id(),
                 'message'        => "All {$count} failed DLQ jobs triggered for retry",
                 'context'        => [
                     'count'      => $count,
@@ -188,8 +190,9 @@ class FailedJobController extends Controller
             'type'           => 'queue',
             'log_type'       => 'DLQ_JOB_FLUSHED',
             'severity'       => 'warning',
-            'terminal_uid'   => null,
+            'terminal_uid'   => 'SYSTEM',
             'transaction_id' => null,
+            'user_id'        => auth()->id(),
             'message'        => 'Failed job permanently deleted from DLQ',
             'context'        => ['uuid' => $uuid, 'flushed_by' => optional(auth())->id()],
         ]);
