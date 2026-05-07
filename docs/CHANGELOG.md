@@ -2,6 +2,14 @@
 
 All notable changes to the TSMS project will be documented in this file.
 
+## [Unreleased] - 2026-05-07
+
+### Fixed
+- **POS API Redirection**: Hardened the authentication layer to force 401 JSON responses instead of 302 redirects for `/api/v1/` routes. This prevents machine-to-machine integration failures for POS terminals that do not send explicit `Accept` headers.
+
+### Changed
+- **Exception Rendering**: Centralized `AuthenticationException` rendering in `bootstrap/app.php` with detailed resolution metadata (`TSMS_AUTH_001`) to assist developers in troubleshooting token and header issues.
+
 ## [Unreleased] - 2026-04-20
 
 ### Added

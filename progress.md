@@ -1,12 +1,12 @@
 # Project Progress: TSMS
 
-**Overall Progress: 87%**
+**Overall Progress: 88%**
 
 ## Phase 1: Core Ingestion (95%)
 - Ingestion Engine: 100%
 - Checksum Validation: 100%
 - Tenant Isolation: 100%
-- RBAC / Audit: 80%
+- RBAC / Audit: 85%
 - Governance Hardening: 100%
 
 ## Phase 2: React Frontend (10%)

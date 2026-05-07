@@ -15,3 +15,7 @@ High-performance ingestion with dual-layer checksum verification. Validates payl
 
 ## 4. Governance Guardrails
 Durable operating model using Rule-based behavioral constraints (`.agents/rules/`), Procedural SDLC workflows (`.agents/workflows/`), and an Operational Task Ledger for context preservation.
+
+## 5. API Authentication Hardening
+Hardened the POS API authentication layer to return bit-perfect 401 JSON responses instead of 302 redirects. Includes the `TSMS_AUTH_001` error protocol for automated terminal troubleshooting and machine-to-machine compatibility.
+
