@@ -43,6 +43,24 @@ return Application::configure(basePath: dirname(__DIR__))
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {
+        // Handle unauthenticated API requests with detailed JSON
+        $exceptions->render(function (\Illuminate\Auth\AuthenticationException $e, $request) {
+            if ($request->is('api/*') || $request->is('v1/*')) {
+                return response()->json([
+                    'success' => false,
+                    'error_code' => 'TSMS_AUTH_001',
+                    'message' => 'Authentication failed or token missing.',
+                    'resolution' => [
+                        'step_1' => 'Ensure the "Accept: application/json" header is present in your request.',
+                        'step_2' => 'Provide a valid "Authorization: Bearer <TOKEN>" header.',
+                        'step_3' => 'Verify that your "hardware_id" matches the Serial Number of the authenticated terminal.',
+                        'docs' => 'https://stagingtsms.pitx.com.ph/docs/POS_V2.1_Integration_Addendum.md'
+                    ]
+                ], 401);
+            }
+            return null;
+        });
+
         // Catch 404 and 403 web requests to serve the React SPA shell
         $exceptions->render(function (\Throwable $e, $request) {
             if ($request->is('api/*')) {

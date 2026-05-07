@@ -28,9 +28,11 @@ This document is managed by the **TSMS Compliance Scanner** and **Architectural 
 
 ## 🔵 Informational
 - **Audit Trace**: Sanctum `pos_api` guard validation successfully applied to `PosTerminal` model.
+- **Auth Hardening**: Implemented 401 JSON force-rendering for `/v1/` and `/api/` namespaces (2026-05-07).
 - **Project Structure**: High-discipline A.N.T. and Contextual Memory directories verified.
 - **Policy Check**: System users (`tenant_id = null`) correctly bypass the `TenantScope` for cross-tenant visibility.
 - **Model Hygiene**: Applied `BelongsToTenant` to 12+ critical models (Transactions, security, integration logs).
 
 ---
-*Last scanned: 2026-03-20*
+*Last scanned: 2026-05-07*
+
