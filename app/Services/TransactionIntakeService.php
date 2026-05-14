@@ -55,7 +55,13 @@ class TransactionIntakeService
             ];
         }
 
-        // 2. Stage 2: Cryptographic Integrity (Synchronous Checksum)
+        // 2. Idempotency check: report the stored outcome for an existing submission_uuid.
+        $existing = TransactionIntake::where('submission_uuid', $payload['submission_uuid'])->first();
+        if ($existing) {
+            return $this->existingSubmissionResponse($existing, $payload);
+        }
+
+        // 3. Stage 2: Cryptographic Integrity (Synchronous Checksum)
         $checksumResult = $this->checksumService->validateSubmissionChecksums($payload);
         if (!$checksumResult['valid']) {
             $this->persistRejection($payload, $checksumResult['errors'], $sourceIp, $traceId, $receivedAt, 'CRYPTOGRAPHIC_INTEGRITY_FAILURE');
@@ -71,7 +77,7 @@ class TransactionIntakeService
 
         Metrics::incr('intake.received_count');
 
-        // 3. Proactive Backpressure Check (Shard-Aware Fail-Fast)
+        // 4. Proactive Backpressure Check (Shard-Aware Fail-Fast)
         if ($this->isSystemOverloaded($shardQueue)) {
             return [
                 'success' => false,
@@ -80,21 +86,7 @@ class TransactionIntakeService
             ];
         }
 
-        // 4. Check for duplicate submission_uuid
-        $existing = TransactionIntake::where('submission_uuid', $payload['submission_uuid'])->first();
-        if ($existing) {
-            return [
-                'success' => true,
-                'status' => 200,
-                'message' => 'Submission already accepted',
-                'data' => [
-                    'submission_uuid' => $existing->submission_uuid,
-                    'intake_id' => $existing->id,
-                ],
-            ];
-        }
-
-        // 3. Persist raw intake
+        // 5. Persist raw intake
         try {
             $intake = TransactionIntake::create([
                 'submission_uuid' => $payload['submission_uuid'],
@@ -183,6 +175,57 @@ class TransactionIntakeService
         } catch (\Exception $e) {
             Log::warning('TransactionIntakeService: Failed to persist rejection audit', ['error' => $e->getMessage()]);
         }
+    }
+
+    protected function existingSubmissionResponse(TransactionIntake $existing, array $payload): array
+    {
+        $data = [
+            'submission_uuid' => $existing->submission_uuid,
+            'intake_id' => $existing->id,
+            'intake_status' => $existing->intake_status,
+            'processing_status' => $existing->processing_status,
+            'last_error_code' => $existing->last_error_code,
+            'received_at' => optional($existing->received_at)->toISOString(),
+        ];
+
+        if ($existing->payload_checksum !== ($payload['payload_checksum'] ?? null)) {
+            return [
+                'success' => false,
+                'status' => 409,
+                'message' => 'Submission UUID already exists with a different payload_checksum. Correct the payload and resend with a new submission_uuid.',
+                'error_code' => 'SUBMISSION_UUID_CONFLICT',
+                'data' => $data,
+            ];
+        }
+
+        if ($existing->intake_status === TransactionIntake::INTAKE_STATUS_REJECTED) {
+            return [
+                'success' => false,
+                'status' => 422,
+                'message' => 'Submission was already rejected. Correct the payload and resend with a new submission_uuid.',
+                'error_code' => $existing->last_error_code ?? 'SUBMISSION_ALREADY_REJECTED',
+                'errors' => $this->decodeStoredErrors($existing->last_error_message),
+                'data' => $data,
+            ];
+        }
+
+        return [
+            'success' => true,
+            'status' => 200,
+            'message' => 'Submission already accepted',
+            'data' => $data,
+        ];
+    }
+
+    protected function decodeStoredErrors(?string $storedErrors): ?array
+    {
+        if ($storedErrors === null || $storedErrors === '') {
+            return null;
+        }
+
+        $decoded = json_decode($storedErrors, true);
+
+        return json_last_error() === JSON_ERROR_NONE ? $decoded : [$storedErrors];
     }
 
     /**

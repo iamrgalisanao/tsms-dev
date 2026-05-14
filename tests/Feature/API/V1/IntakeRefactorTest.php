@@ -22,6 +22,8 @@ class IntakeRefactorTest extends TestCase
     {
         parent::setUp();
 
+        config(['tsms.intake.backpressure.enabled' => false]);
+
         // Use the seeded tenant (id=1) instead of creating one, to avoid duplicate key errors
         $tenant = Tenant::find(1) ?? Tenant::factory()->create(['id' => 1]);
         $this->terminal = PosTerminal::factory()->create([
@@ -40,7 +42,6 @@ class IntakeRefactorTest extends TestCase
         $payload = [
             'submission_uuid' => $submissionUuid,
             'submission_timestamp' => now()->toISOString(),
-            'payload_checksum' => str_repeat('a', 64),
             'tenant_id' => $this->terminal->tenant_id,
             'terminal_id' => $this->terminal->id,
             'transaction_count' => 1,
@@ -53,12 +54,15 @@ class IntakeRefactorTest extends TestCase
                 'hardware_id' => 'HW-01',
             ],
         ];
+        $checksumService = app(\App\Services\PayloadChecksumService::class);
+        $payload['transaction']['payload_checksum'] = $checksumService->computeChecksum($payload['transaction']);
+        $payload['payload_checksum'] = $checksumService->computeChecksum($payload);
 
         Sanctum::actingAs($this->terminal, ['transaction:create']);
         
         $response = $this->postJson('/api/v1/transactions/official', $payload);
 
-        $response->assertStatus(202);
+        $response->assertStatus(200);
         $response->assertJson([
             'success' => true,
             'message' => 'Submission accepted',
@@ -105,13 +109,14 @@ class IntakeRefactorTest extends TestCase
     public function test_handles_duplicate_submission_uuid_gracefully()
     {
         $submissionUuid = (string) \Illuminate\Support\Str::uuid();
+        $payloadChecksum = str_repeat('d', 64);
         
         // Create an existing intake record
         TransactionIntake::create([
             'submission_uuid' => $submissionUuid,
             'tenant_id' => $this->terminal->tenant_id,
             'terminal_id' => $this->terminal->id,
-            'payload_checksum' => 'existing',
+            'payload_checksum' => $payloadChecksum,
             'payload' => [],
             'payload_size_bytes' => 100,
             'intake_status' => TransactionIntake::INTAKE_STATUS_QUEUED,
@@ -122,12 +127,13 @@ class IntakeRefactorTest extends TestCase
         $payload = [
             'submission_uuid' => $submissionUuid,
             'submission_timestamp' => now()->toISOString(),
-            'payload_checksum' => str_repeat('d', 64),
+            'payload_checksum' => $payloadChecksum,
             'tenant_id' => $this->terminal->tenant_id,
             'terminal_id' => $this->terminal->id,
             'transaction_count' => 1,
             'transaction' => [
                 'transaction_id' => 'TX-DUP',
+                'receipt_no' => 'REC-DUP',
             ],
         ];
 
@@ -135,8 +141,57 @@ class IntakeRefactorTest extends TestCase
 
         $response = $this->postJson('/api/v1/transactions/official', $payload);
 
-        $response->assertStatus(202);
+        $response->assertStatus(200);
         $response->assertJsonFragment(['message' => 'Submission already accepted']);
+    }
+
+    /** @test */
+    public function test_duplicate_rejected_submission_returns_rejection_status()
+    {
+        $submissionUuid = (string) \Illuminate\Support\Str::uuid();
+
+        TransactionIntake::create([
+            'submission_uuid' => $submissionUuid,
+            'tenant_id' => $this->terminal->tenant_id,
+            'terminal_id' => $this->terminal->id,
+            'payload_checksum' => str_repeat('e', 64),
+            'payload' => [],
+            'payload_size_bytes' => 100,
+            'intake_status' => TransactionIntake::INTAKE_STATUS_REJECTED,
+            'last_error_code' => 'CRYPTOGRAPHIC_INTEGRITY_FAILURE',
+            'last_error_message' => json_encode(['Invalid payload_checksum']),
+            'trace_id' => 'trace-rejected',
+            'received_at' => now(),
+        ]);
+
+        $payload = [
+            'submission_uuid' => $submissionUuid,
+            'submission_timestamp' => now()->toISOString(),
+            'payload_checksum' => str_repeat('e', 64),
+            'tenant_id' => $this->terminal->tenant_id,
+            'terminal_id' => $this->terminal->id,
+            'transaction_count' => 1,
+            'transaction' => [
+                'transaction_id' => 'TX-REJECTED-DUP',
+                'receipt_no' => 'REC-REJECTED-DUP',
+            ],
+        ];
+
+        Sanctum::actingAs($this->terminal, ['transaction:create']);
+
+        $response = $this->postJson('/api/v1/transactions/official', $payload);
+
+        $response->assertStatus(422);
+        $response->assertJson([
+            'success' => false,
+            'message' => 'Submission was already rejected. Correct the payload and resend with a new submission_uuid.',
+            'error_code' => 'CRYPTOGRAPHIC_INTEGRITY_FAILURE',
+            'errors' => ['Invalid payload_checksum'],
+            'data' => [
+                'submission_uuid' => $submissionUuid,
+                'intake_status' => TransactionIntake::INTAKE_STATUS_REJECTED,
+            ],
+        ]);
     }
 
     /** @test */

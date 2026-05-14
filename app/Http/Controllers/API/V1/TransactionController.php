@@ -240,7 +240,9 @@ class TransactionController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => $result['message'],
+                'error_code' => $result['error_code'] ?? null,
                 'errors' => $result['errors'] ?? null,
+                'data' => $result['data'] ?? null,
             ], $result['status']);
         }
 
@@ -1022,4 +1024,3 @@ class TransactionController extends Controller
         ]);
     }
 }
-
