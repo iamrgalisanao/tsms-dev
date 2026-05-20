@@ -10,6 +10,7 @@ import TerminalTokenPage from './Pages/TerminalTokenPage';
 import UserManagementPage from './Pages/UserManagementPage';
 import SystemLogsPage from './Pages/SystemLogsPage';
 import IntakeHealthPage from './Pages/Observability/IntakeHealthPage.jsx';
+import PayloadSandboxPage from './Pages/PayloadSandboxPage.jsx';
 // Finance
 import FinanceDashboardPage from './Pages/Finance/FinanceDashboardPage.jsx';
 import FinanceReportsPage from './Pages/Finance/FinanceReportsPage.jsx';
@@ -38,6 +39,7 @@ const App = () => {
           {/* Public — no layout wrapper */}
           <Route path="/login" element={<Login />} />
           <Route path="/unauthorized" element={<UnauthorizedPage />} />
+          <Route path="/sandbox/payload" element={<PayloadSandboxPage />} />
 
           {/* Authenticated — wrapped in MainLayout and ProtectedRoute */}
           <Route
@@ -85,7 +87,6 @@ const App = () => {
                         </ProtectedRoute>
                       } 
                     />
-
                     {/* Finance Access */}
                     <Route 
                       path="/finance" 

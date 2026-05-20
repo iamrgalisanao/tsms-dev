@@ -63,6 +63,12 @@ Route::middleware('guest')->group(function () {
     Route::post('/login', [LoginController::class, 'login']);
 });
 
+// Public POS provider sandbox UI. The page is intentionally unauthenticated so
+// providers can validate payloads before receiving production access.
+Route::get('/sandbox/payload', function () {
+    return view('app');
+})->name('sandbox.payload');
+
 Route::middleware(['auth'])->group(function () {
     // Main Dashboard Route (React SPA) - accessible to any authenticated user.
     // Role-based content/redirect is handled client-side by React Router.

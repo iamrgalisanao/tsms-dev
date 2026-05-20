@@ -189,7 +189,13 @@ Route::prefix('v1')->middleware(['auth:sanctum', 'capture.terminal.ip', AttachCo
         ->middleware('throttle:30,1');
 });
 
-// Checksum sandbox (tenant-authenticated; rate-limited)
+// Public POS provider payload validator. This is rate-limited and diagnostic
+// only; it does not persist or submit transactions.
+Route::prefix('v1')->middleware(['throttle:30,1'])->group(function () {
+    Route::post('/sandbox/payload/validate', [ChecksumSandboxController::class, 'validatePayload']);
+});
+
+// Checksum sandbox utility (tenant-authenticated; rate-limited)
 Route::prefix('v1')->middleware(['auth:sanctum', 'throttle:30,1'])->group(function () {
     Route::post('/checksum/sandbox', [ChecksumSandboxController::class, 'compute']);
 });
