@@ -128,11 +128,31 @@ class FinanceCalculationService
         $serviceCharge = round(($c['service_charge_distributed'] ?? 0) + ($c['service_charge_retained'] ?? 0), 2);
         $seniorPwd = round(($c['senior_discount'] ?? 0) + ($c['pwd_discount'] ?? 0), 2);
 
+        $rawNetSales = (float)($c['net_sales'] ?? 0);
+        $rawVat = (float)($c['vat_amount'] ?? 0);
+
+        // Some providers store vatable_sales as VAT-inclusive (Vatable + VAT).
+        // For CSMR gross component math, normalize it to ex-VAT using recorded net/vat
+        // when the pattern clearly indicates VAT-inclusive storage.
+        $vatableForGross = (float)($c['vatable_sales'] ?? 0);
+        if ($rawNetSales > 0 && $rawVat > 0) {
+            $netBase = $rawNetSales;
+            if (($c['sc_vat_exempt_sales'] ?? 0) > 0 && $netBase >= ($c['sc_vat_exempt_sales'] ?? 0)) {
+                $netBase = round($netBase - ($c['sc_vat_exempt_sales'] ?? 0), 2);
+            }
+
+            $candidateExVat = round($netBase - $rawVat, 2);
+            $rawLooksVatInclusive = abs($vatableForGross - round($candidateExVat + $rawVat, 2)) <= 0.05;
+            if ($candidateExVat >= 0 && $rawLooksVatInclusive) {
+                $vatableForGross = $candidateExVat;
+            }
+        }
+
         // 2. Gross Sales (Source of Truth)
         // We prefer the Nominal Gross (sum of column) to absorb minor component-level rounding errors.
         // If nominal is unavailable or mismatched significantly, we fall back to component sum.
         $componentSum = round(
-            ($c['vatable_sales'] ?? 0)
+            $vatableForGross
             + ($c['sc_vat_exempt_sales'] ?? 0)
             + ($c['vat_amount'] ?? 0)
             + ($c['promo_with_approval'] ?? 0)
@@ -161,7 +181,6 @@ class FinanceCalculationService
         // This effectively leaves (Vatable + VAT).
         // If the database has a non-zero recorded net_sales for this transaction/group, we 
         // calculate a nominal "raw" net to allow validation against the derived one.
-        $rawNetSales = (float)($c['net_sales'] ?? 0);
         $derivedNetSales = round(
             $gross
             - $promotions
@@ -190,7 +209,6 @@ class FinanceCalculationService
 
         // 4. VAT (Source of Truth: Recorded VAT if exists, else Derived from Net)
         // Excel N62: (Net Sales / 1.12) * 0.12
-        $rawVat = (float)($c['vat_amount'] ?? 0);
         $derivedVat = round(($netSales / 1.12) * 0.12, 2);
 
         // IMPORTANT: If raw recorded VAT exists, we MUST use it for the export/summary 

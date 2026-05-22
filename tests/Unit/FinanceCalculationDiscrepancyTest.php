@@ -104,4 +104,36 @@ class FinanceCalculationDiscrepancyTest extends TestCase
         $expectedVat = round(($metrics['net_sales'] / 1.12) * 0.12, 2);
         $this->assertEquals($expectedVat, $metrics['vat_amount'], "VAT must be derived accurately from Net Sales.");
     }
+
+    public function test_gross_sales_does_not_double_count_vat_when_vatable_is_vat_inclusive()
+    {
+        $service = new FinanceCalculationService();
+
+        $components = [
+            // Upstream raw payload style: vatable already includes VAT here.
+            'vatable_sales' => 81133.59,
+            'sc_vat_exempt_sales' => 3936.03,
+            'vat_amount' => 8692.94,
+            'promo_with_approval' => 0.0,
+            'promo_without_approval' => 0.0,
+            'employee_discount' => 0.0,
+            'senior_discount' => 430.86,
+            'pwd_discount' => 553.12,
+            'vip_discount' => 0.0,
+            'other_tax' => 0.0,
+            'service_charge_distributed' => 0.0,
+            'service_charge_retained' => 0.0,
+            'regular_discount' => 0.0,
+            // Nominal source contains the VAT-inclusive discrepancy.
+            'gross_sales' => 94746.54,
+            // Raw net from POS commonly includes exempt + VAT; service normalizes this.
+            'net_sales' => 85069.62,
+        ];
+
+        $metrics = $service->deriveMetrics($components);
+
+        // Expected gross = normalized vatable(ex-VAT) + exempt + VAT + discounts/service charge.
+        $this->assertEquals(86053.60, $metrics['gross_sales']);
+        $this->assertEquals(72440.65, $metrics['vatable_sales']);
+    }
 }
