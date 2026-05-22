@@ -160,11 +160,43 @@ class ReportsController extends Controller
                 $allComponents[$key] = ($allComponents[$key] ?? 0) + $val;
             }
 
-            $dailyTotals[$date] = $service->deriveMetrics($components);
+            $derived = $service->deriveMetrics($components);
+            $derived['gross_sales'] = round(
+                ($derived['vatable_sales'] ?? 0)
+                + ($derived['sc_vat_exempt_sales'] ?? 0)
+                + ($derived['vat_amount'] ?? 0)
+                + ($derived['promo_with_approval'] ?? 0)
+                + ($derived['promo_without_approval'] ?? 0)
+                + ($derived['employee_discount'] ?? 0)
+                + ($derived['senior_discount'] ?? 0)
+                + ($derived['pwd_discount'] ?? 0)
+                + ($derived['vip_discount'] ?? 0)
+                + ($derived['other_tax'] ?? 0)
+                + ($derived['service_charge_distributed'] ?? 0)
+                + ($derived['service_charge_retained'] ?? 0),
+                2
+            );
+
+            $dailyTotals[$date] = $derived;
         }
 
         // Build total month metrics
         $totals = $service->deriveMetrics($allComponents);
+        $totals['gross_sales'] = round(
+            ($totals['vatable_sales'] ?? 0)
+            + ($totals['sc_vat_exempt_sales'] ?? 0)
+            + ($totals['vat_amount'] ?? 0)
+            + ($totals['promo_with_approval'] ?? 0)
+            + ($totals['promo_without_approval'] ?? 0)
+            + ($totals['employee_discount'] ?? 0)
+            + ($totals['senior_discount'] ?? 0)
+            + ($totals['pwd_discount'] ?? 0)
+            + ($totals['vip_discount'] ?? 0)
+            + ($totals['other_tax'] ?? 0)
+            + ($totals['service_charge_distributed'] ?? 0)
+            + ($totals['service_charge_retained'] ?? 0),
+            2
+        );
 
         return response()->json([
             'status' => 'success',
