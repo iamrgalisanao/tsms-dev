@@ -137,7 +137,10 @@ class SalesReportExportController extends Controller
                 'other_tax' => (float)($tax->other_tax_basis ?? 0),
                 'service_charge_distributed' => (float)($tx->service_charge_distributed ?? 0),
                 'service_charge_retained' => (float)($tx->service_charge_retained ?? 0),
-                'regular_discount' => (float)($tx->regular_discount ?? 0),
+                // CSMR does not expose a standalone "regular discount" column.
+                // Excluding discount_total here keeps Gross Sales aligned with
+                // visible CSMR columns and avoids discount double-counting.
+                'regular_discount' => 0.0,
                 'gross_sales' => (float)($tx->gross_sales ?? 0),
                 'net_sales' => (float)($tx->net_sales ?? 0),
             ];
