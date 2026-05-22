@@ -55,8 +55,6 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::middleware(['role:admin|manager|commercial'])->group(function () {
         Route::get('dashboard/system-health', [DashboardController::class, 'apiSystemHealth']);
         Route::get('dashboard/audit-logs', [DashboardController::class, 'apiAuditLogs']);
-        Route::get('dashboard/notifications', [DashboardController::class, 'apiNotifications']);
-        Route::post('dashboard/notifications/dismiss', [DashboardController::class, 'apiDismissNotification']);
         Route::post('dashboard/forward-transaction/{id}', [DashboardController::class, 'forwardTransaction']);
 
         // Terminal Token Management
@@ -72,6 +70,12 @@ Route::middleware(['auth:sanctum'])->group(function () {
         });
         Route::post('terminals', [TerminalTokenController::class, 'apiStore']);
         Route::put('terminals/{terminal}/expiry', [TerminalTokenController::class, 'updateExpiry']);
+    });
+
+    // Finance dashboards also consume notifications; include finance role.
+    Route::middleware(['role:admin|manager|commercial|finance'])->group(function () {
+        Route::get('dashboard/notifications', [DashboardController::class, 'apiNotifications']);
+        Route::post('dashboard/notifications/dismiss', [DashboardController::class, 'apiDismissNotification']);
     });
 
     // Admin/Manager ONLY (Sensitive administration)
