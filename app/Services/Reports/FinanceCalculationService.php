@@ -162,7 +162,6 @@ class FinanceCalculationService
             + ($c['pwd_discount'] ?? 0)
             + ($c['other_tax'] ?? 0)
             + ($c['vip_discount'] ?? 0)
-            + ($c['regular_discount'] ?? 0)
             + ($c['service_charge_distributed'] ?? 0)
             + ($c['service_charge_retained'] ?? 0),
             2
@@ -187,7 +186,6 @@ class FinanceCalculationService
             - ($c['employee_discount'] ?? 0)
             - $seniorPwd
             - ($c['vip_discount'] ?? 0)
-            - ($c['regular_discount'] ?? 0)
             - ($c['sc_vat_exempt_sales'] ?? 0)
             - ($c['other_tax'] ?? 0)
             - $serviceCharge,
