@@ -358,6 +358,9 @@ const PayloadSandboxPage = () => {
                         </Box>
 
                         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1} alignItems={{ xs: 'stretch', sm: 'center' }}>
+                            <Button href="/docs/pos-provider/api-testing" variant="outlined" size="small" sx={{ bgcolor: '#fff', fontWeight: 900 }}>
+                                API Docs
+                            </Button>
                             <Chip icon={<LanIcon />} label="Public sandbox" variant="outlined" sx={{ bgcolor: '#fff', fontWeight: 800 }} />
                             <Chip icon={<ShieldOutlinedIcon />} label="No transaction submission" variant="outlined" sx={{ bgcolor: '#fff', fontWeight: 800 }} />
                             {report && (

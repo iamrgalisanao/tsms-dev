@@ -194,6 +194,10 @@ Route::middleware(['auth'])->group(function () {
         return response()->json(['status' => 'online']);
     });
 
+    Route::get('/monitoring/activity', function () {
+        return view('app');
+    })->name('monitoring.activity');
+
     // Keep terminal test route at the bottom
     Route::get('/terminal-test', function () {
         return view('app');

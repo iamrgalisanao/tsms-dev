@@ -85,6 +85,32 @@ const api = {
     getIntakeRecent: async () => {
         const response = await axios.get('/api/v1/observability/intake/recent');
         return response.data;
+    },
+    getProviderTenantActivity: async (thresholdMinutes = null) => {
+        const params = thresholdMinutes ? { threshold_minutes: thresholdMinutes } : {};
+        const response = await axios.get('/api/v1/monitoring/tenants/activity', { params });
+        return response.data;
+    },
+    getProviderTerminalActivity: async (thresholdMinutes = null) => {
+        const params = thresholdMinutes ? { threshold_minutes: thresholdMinutes } : {};
+        const response = await axios.get('/api/v1/monitoring/terminals/activity', { params });
+        return response.data;
+    },
+    getProviderDailyHeartbeatReport: async (date = null, thresholdMinutes = null) => {
+        const params = {
+            ...(date ? { date } : {}),
+            ...(thresholdMinutes ? { threshold_minutes: thresholdMinutes } : {})
+        };
+        const response = await axios.get('/api/monitoring/activity/daily-report', { params });
+        return response.data;
+    },
+    updateTenantMonitoringConfig: async (tenantId, data) => {
+        const response = await axios.put(`/api/monitoring/tenants/${tenantId}/config`, data);
+        return response.data;
+    },
+    updateTerminalMonitoringConfig: async (terminalId, data) => {
+        const response = await axios.put(`/api/monitoring/terminals/${terminalId}/config`, data);
+        return response.data;
     }
 };
 

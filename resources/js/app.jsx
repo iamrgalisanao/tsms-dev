@@ -10,9 +10,10 @@ import TerminalTokenPage from './Pages/TerminalTokenPage';
 import UserManagementPage from './Pages/UserManagementPage';
 import SystemLogsPage from './Pages/SystemLogsPage';
 import IntakeHealthPage from './Pages/Observability/IntakeHealthPage.jsx';
+import ProviderActivityPage from './Pages/Monitoring/ProviderActivityPage.jsx';
 import PayloadSandboxPage from './Pages/PayloadSandboxPage.jsx';
-// Finance
 import ProviderApiDocsPage from './Pages/ProviderApiDocsPage.jsx';
+// Finance
 import FinanceDashboardPage from './Pages/Finance/FinanceDashboardPage.jsx';
 import FinanceReportsPage from './Pages/Finance/FinanceReportsPage.jsx';
 // Commercial
@@ -41,8 +42,8 @@ const App = () => {
           <Route path="/login" element={<Login />} />
           <Route path="/unauthorized" element={<UnauthorizedPage />} />
           <Route path="/sandbox/payload" element={<PayloadSandboxPage />} />
-
           <Route path="/docs/pos-provider/api-testing" element={<ProviderApiDocsPage />} />
+
           {/* Authenticated — wrapped in MainLayout and ProtectedRoute */}
           <Route
             path="/*"
@@ -88,6 +89,14 @@ const App = () => {
                           <IntakeHealthPage />
                         </ProtectedRoute>
                       } 
+                    />
+                    <Route
+                      path="/monitoring/activity"
+                      element={
+                        <ProtectedRoute roles={['admin', 'manager']}>
+                          <ProviderActivityPage />
+                        </ProtectedRoute>
+                      }
                     />
                     {/* Finance Access */}
                     <Route 

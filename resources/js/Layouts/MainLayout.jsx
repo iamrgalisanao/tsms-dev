@@ -13,6 +13,7 @@ import KeyIcon from '@mui/icons-material/Key';
 import PeopleIcon from '@mui/icons-material/People';
 import FlashOnIcon from '@mui/icons-material/FlashOn';
 import FactCheckIcon from '@mui/icons-material/FactCheck';
+import QueryStatsIcon from '@mui/icons-material/QueryStats';
 import { useAuth } from '../Contexts/AuthContext';
 
 const MainLayout = ({ children }) => {
@@ -33,6 +34,7 @@ const MainLayout = ({ children }) => {
         { name: 'User Management', path: '/users', icon: PeopleIcon, roles: ['admin'] },
         { name: 'System Logs', path: '/system-logs', icon: DescriptionIcon, roles: ['admin'] },
         { name: 'Intake Health', path: '/observability/intake', icon: FlashOnIcon, roles: ['admin', 'manager'] },
+        { name: 'Provider Activity', path: '/monitoring/activity', icon: QueryStatsIcon, roles: ['admin', 'manager'] },
         { name: 'Payload Sandbox', path: '/sandbox/payload', icon: FactCheckIcon, roles: ['admin', 'manager'] },
         { name: 'Settings', path: '/settings', icon: SettingsIcon, roles: ['admin'] },
 
@@ -60,7 +62,13 @@ const MainLayout = ({ children }) => {
             <CssBaseline />
             <div className="h-screen bg-gray-50 flex overflow-hidden">
                 {/* Sidebar */}
-                <aside className={`bg-brand-primary border-r border-brand-primary/10 flex-shrink-0 flex flex-col h-full relative z-20 ${isSidebarOpen ? 'w-64' : 'w-20'} transition-all duration-300 font-sans`}>
+                <aside
+                    className={`border-r border-white/10 flex-shrink-0 flex flex-col h-full relative z-20 ${isSidebarOpen ? 'w-64' : 'w-20'} transition-all duration-300 font-sans`}
+                    style={{
+                        background: 'linear-gradient(180deg, rgba(29,67,155,0.96) 0%, rgba(23,48,111,0.98) 100%)',
+                        boxShadow: '16px 0 40px rgba(15, 23, 42, 0.08)'
+                    }}
+                >
                     <div className="h-24 flex items-center justify-center p-1 bg-white flex-shrink-0">
                         {isSidebarOpen ? (
                             <img
@@ -77,7 +85,7 @@ const MainLayout = ({ children }) => {
                         )}
                     </div>
 
-                    <nav className="flex-1 mt-6 px-4 space-y-1 overflow-y-auto no-scrollbar">
+                    <nav className="flex-1 mt-6 px-4 space-y-2 overflow-y-auto no-scrollbar">
                         {filteredItems.map((item) => {
                             const isActive = location.pathname === item.path;
                             const IconComponent = item.icon;
@@ -86,8 +94,8 @@ const MainLayout = ({ children }) => {
                                     key={item.name}
                                     to={item.path}
                                     className={`flex items-center p-3 rounded-lg transition-all duration-200 group ${isActive
-                                        ? 'bg-white/10 text-white shadow-sm'
-                                        : 'text-white/60 hover:bg-white/5 hover:text-white'
+                                        ? 'bg-white/15 text-white shadow-sm'
+                                        : 'text-white/70 hover:bg-white/10 hover:text-white'
                                         }`}
                                 >
                                     <IconComponent
@@ -98,7 +106,7 @@ const MainLayout = ({ children }) => {
                                             '.group:hover &': { transform: 'scale(1.1)' }
                                         }}
                                     />
-                                    {isSidebarOpen && <span className={`ml-3 text-[18px] ${isActive ? 'font-bold' : 'font-medium'}`}>{item.name}</span>}
+                                    {isSidebarOpen && <span className={`ml-3 text-[17px] ${isActive ? 'font-bold' : 'font-medium'}`}>{item.name}</span>}
                                     {isActive && isSidebarOpen && <div className="ml-auto w-1.5 h-1.5 rounded-full bg-brand-accent animate-pulse"></div>}
                                 </Link>
                             );
@@ -122,7 +130,7 @@ const MainLayout = ({ children }) => {
                 {/* Main Content Area */}
                 <div className="flex-1 flex flex-col min-w-0 h-full relative">
                     {/* Navbar */}
-                    <header className="h-20 bg-white border-b border-gray-200 flex items-center justify-between px-8 z-10 sticky top-0">
+                    <header className="h-20 bg-white/95 border-b border-gray-200 flex items-center justify-between px-8 z-10 sticky top-0 backdrop-blur">
                         <button
                             onClick={() => setIsSidebarOpen(!isSidebarOpen)}
                             className="p-2 rounded-lg hover:bg-gray-100 text-gray-400 transition-colors"

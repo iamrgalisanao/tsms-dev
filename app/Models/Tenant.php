@@ -37,6 +37,13 @@ class Tenant extends Model
         'floor_area',
         'status',
         'accept_with_issues',
+        'activity_monitoring_enabled',
+        'activity_threshold_minutes',
+        'activity_monitoring_notes',
+        'activity_suppressed_until',
+        'activity_suppression_reason',
+        'activity_suppressed_by',
+        'activity_suppressed_at',
         'category',
         'zone',
         'uuid',
@@ -59,6 +66,10 @@ class Tenant extends Model
 
     protected $casts = [
         'accept_with_issues' => 'boolean',
+        'activity_monitoring_enabled' => 'boolean',
+        'activity_threshold_minutes' => 'integer',
+        'activity_suppressed_until' => 'datetime',
+        'activity_suppressed_at' => 'datetime',
     ];
 
 

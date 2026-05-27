@@ -16,6 +16,8 @@ use App\Services\TransactionValidationService;
 use App\Http\Controllers\API\V1\TransactionController as ApiTransactionController;
 use App\Http\Controllers\API\V1\SubmissionEventController;
 use App\Http\Controllers\API\V1\SubmissionEventItemsController;
+use App\Http\Controllers\API\V1\SubmissionStatusController;
+use App\Http\Controllers\API\V1\ProviderActivityMonitoringController;
 use App\Http\Controllers\API\V1\IncidentController;
 use App\Http\Controllers\API\V1\ChecksumSandboxController;
 use App\Http\Middleware\AttachCorrelationId;
@@ -108,6 +110,12 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::get('dashboard/charts', [DashboardController::class, 'apiCharts']);
         Route::get('dashboard/transactions', [DashboardController::class, 'apiTransactions']);
         Route::get('dashboard/terminal-performance', [DashboardController::class, 'apiTerminalPerformance']);
+        Route::get('monitoring/activity/daily-report', [ProviderActivityMonitoringController::class, 'dailyReport'])
+            ->middleware('role:admin|manager');
+        Route::put('monitoring/tenants/{tenant}/config', [ProviderActivityMonitoringController::class, 'updateTenantConfig'])
+            ->middleware('role:admin|manager');
+        Route::put('monitoring/terminals/{terminal}/config', [ProviderActivityMonitoringController::class, 'updateTerminalConfig'])
+            ->middleware('role:admin|manager');
 
         // Transaction Logs API endpoints
         Route::prefix('transactions/logs')->group(function () {
@@ -156,7 +164,14 @@ Route::prefix('v1')->middleware(['auth:sanctum', 'capture.terminal.ip', AttachCo
     });
 
     Route::middleware(['abilities:transaction:read', 'api.limit:api'])->group(function () {
+        // Read-only provider testing/support lookup. This route does not mutate intake or processing state.
+        Route::get('/submissions/{submission_uuid}', [SubmissionStatusController::class, 'show'])
+            ->middleware('abilities:provider:testing');
         Route::get('/transactions/{transaction}/status', [TransactionController::class, 'status']);
+        Route::get('/monitoring/tenants/activity', [ProviderActivityMonitoringController::class, 'tenants'])
+            ->middleware('abilities:provider:testing');
+        Route::get('/monitoring/terminals/activity', [ProviderActivityMonitoringController::class, 'terminals'])
+            ->middleware('abilities:provider:testing');
         Route::get('/submission-events', [SubmissionEventController::class, 'index']);
         Route::get('/submission-events/{submission_uuid}/items', [SubmissionEventItemsController::class, 'index']);
         Route::get('/incidents', [IncidentController::class, 'index']);

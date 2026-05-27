@@ -51,6 +51,7 @@ class TransactionIntakeService
                 'success' => false,
                 'status' => 422,
                 'message' => 'Structural validation failed',
+                'error_code' => 'STRUCTURAL_VALIDATION_FAILURE',
                 'errors' => $validator->errors()->toArray(),
             ];
         }
@@ -70,6 +71,7 @@ class TransactionIntakeService
                 'success' => false,
                 'status' => 422,
                 'message' => 'Cryptographic integrity check failed. Payload may have been tampered with or canonicalization logic is incorrect.',
+                'error_code' => 'CRYPTOGRAPHIC_INTEGRITY_FAILURE',
                 'errors' => $checksumResult['errors'],
                 'hint' => 'Ensure you are using the V2.1/V2.2 canonicalization strategy (ksort + 2-decimal strings).'
             ];

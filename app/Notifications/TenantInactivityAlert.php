@@ -17,13 +17,15 @@ class TenantInactivityAlert extends Notification implements ShouldQueue
      * Each element: ['name', 'customer_code', 'inactive_minutes', 'last_transaction_at', 'active_terminal_count']
      */
     public array $inactiveTenants = [];
+    public array $inactiveTerminals = [];
 
     /**
      * Create a new notification instance.
      */
-    public function __construct(array $inactiveTenants)
+    public function __construct(array $inactiveTenants, array $inactiveTerminals = [])
     {
         $this->inactiveTenants = $inactiveTenants;
+        $this->inactiveTerminals = $inactiveTerminals;
         
         // Ensure this is only processed after DB commit
         if (property_exists($this, 'afterCommit')) {
@@ -72,29 +74,43 @@ class TenantInactivityAlert extends Notification implements ShouldQueue
      */
     public function toMail($notifiable): MailMessage
     {
-        $count = count($this->inactiveTenants);
-        $subject = $count > 1 
-            ? "TSMS Alert: Consolidated Tenant Inactivity Report ({$count} Tenants)"
-            : "TSMS Alert: Tenant Inactivity Detected - " . ($this->inactiveTenants[0]['name'] ?? 'Unknown');
+        $tenantCount = count($this->inactiveTenants);
+        $terminalCount = count($this->inactiveTerminals);
+        $subject = "TSMS Alert: Inactivity Report ({$tenantCount} Tenants, {$terminalCount} Terminals)";
 
         $message = (new MailMessage)
             ->subject($subject)
             ->priority(1) // High priority
-            ->greeting('Consolidated Tenant Inactivity Alert')
-            ->line('The following tenants have not sent any transactions within the configured monitoring window.')
+            ->greeting('Consolidated Activity Inactivity Alert')
+            ->line('The following monitored tenants or terminals have not sent transactions within their configured monitoring windows.')
             ->line('');
 
-        foreach ($this->inactiveTenants as $tenant) {
-            $message->line("**" . ($tenant['name'] ?? 'N/A') . "**")
-                ->line("- Customer Code: `{$tenant['customer_code']}`")
-                ->line("- Inactivity: {$tenant['inactive_minutes']} minutes")
-                ->line("- Last Transaction: " . ($tenant['last_transaction_at'] ?: 'N/A'))
-                ->line("- Active Terminals: {$tenant['active_terminal_count']}")
-                ->line('');
+        if ($tenantCount > 0) {
+            $message->line('Tenant alerts:');
+            foreach ($this->inactiveTenants as $tenant) {
+                $message->line("**" . ($tenant['name'] ?? 'N/A') . "**")
+                    ->line("- Customer Code: `{$tenant['customer_code']}`")
+                    ->line("- Inactivity threshold: {$tenant['inactive_minutes']} minutes")
+                    ->line("- Last Transaction: " . ($tenant['last_transaction_at'] ?: 'N/A'))
+                    ->line("- Active Terminals: {$tenant['active_terminal_count']}")
+                    ->line('');
+            }
+        }
+
+        if ($terminalCount > 0) {
+            $message->line('Terminal alerts:');
+            foreach ($this->inactiveTerminals as $terminal) {
+                $message->line("**" . ($terminal['tenant_name'] ?? 'N/A') . " / " . ($terminal['serial_number'] ?? 'Terminal ' . ($terminal['terminal_id'] ?? 'N/A')) . "**")
+                    ->line("- Customer Code: `{$terminal['customer_code']}`")
+                    ->line("- Machine Number: " . ($terminal['machine_number'] ?: 'N/A'))
+                    ->line("- Inactivity threshold: {$terminal['inactive_minutes']} minutes")
+                    ->line("- Last Transaction: " . ($terminal['last_transaction_at'] ?: 'N/A'))
+                    ->line('');
+            }
         }
 
         return $message
-            ->action('View Inactive Tenants Dashboard', url('/admin/tenants'))
+            ->action('View Provider Activity Dashboard', url('/monitoring/activity'))
             ->line('Please verify the terminal connectivity or network status for these tenants.')
             ->line('This is an automated consolidated alert from the Terminal Sales Monitoring System (TSMS).');
     }
@@ -104,15 +120,17 @@ class TenantInactivityAlert extends Notification implements ShouldQueue
      */
     public function toDatabase($notifiable): array
     {
-        $count = count($this->inactiveTenants);
+        $tenantCount = count($this->inactiveTenants);
+        $terminalCount = count($this->inactiveTerminals);
         
         return [
             'type' => 'tenant_inactivity_alert',
-            'title' => $count > 1 ? "{$count} Tenants Inactive" : "Tenant Inactive: " . ($this->inactiveTenants[0]['name'] ?? 'N/A'),
-            'message' => $count > 1 
-                ? "Multiple tenants have been inactive for over " . ($this->inactiveTenants[0]['inactive_minutes'] ?? 'N/A') . " minutes."
-                : "Tenant " . ($this->inactiveTenants[0]['name'] ?? 'N/A') . " has been inactive for " . ($this->inactiveTenants[0]['inactive_minutes'] ?? 'N/A') . " minutes.",
+            'title' => "Activity inactivity: {$tenantCount} tenants, {$terminalCount} terminals",
+            'message' => "Monitored activity alerts detected for {$tenantCount} tenants and {$terminalCount} terminals.",
             'tenants' => $this->inactiveTenants,
+            'terminals' => $this->inactiveTerminals,
+            'tenant_count' => $tenantCount,
+            'terminal_count' => $terminalCount,
             'severity' => 'medium',
             'created_at' => now(),
         ];
@@ -126,4 +144,3 @@ class TenantInactivityAlert extends Notification implements ShouldQueue
         return $this->toDatabase($notifiable);
     }
 }
-

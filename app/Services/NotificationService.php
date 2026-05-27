@@ -6,6 +6,7 @@ use App\Models\Transaction;
 use App\Models\Tenant;
 use App\Models\User;
 use App\Models\SystemLog;
+use App\Models\PosTerminal;
 use App\Notifications\TransactionFailureThresholdExceeded;
 use App\Notifications\BatchProcessingFailure;
 use App\Notifications\SecurityAuditAlert;
@@ -15,6 +16,7 @@ use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\RateLimiter;
+use Illuminate\Support\Facades\Schema;
 
 class NotificationService
 {
@@ -321,81 +323,156 @@ class NotificationService
                 return;
             }
 
-            $thresholdMinutes = (int) ($this->config['tenant_inactivity_threshold_minutes'] ?? 60);
+            $defaultThresholdMinutes = (int) ($this->config['tenant_inactivity_threshold_minutes'] ?? 60);
             $cooldownMinutes = (int) ($this->config['tenant_inactivity_cooldown_minutes'] ?? 60);
-            $cutoffTime = Carbon::now()->subMinutes($thresholdMinutes);
+            $now = Carbon::now();
+            $hasTenantMonitoringColumns = $this->hasActivityMonitoringColumns('tenants');
+            $hasTerminalMonitoringColumns = $this->hasActivityMonitoringColumns('pos_terminals');
+            $hasTenantSuppressionColumns = $this->hasActivitySuppressionColumns('tenants');
+            $hasTerminalSuppressionColumns = $this->hasActivitySuppressionColumns('pos_terminals');
 
-            // Tenants with at least one active & valid POS terminal
-            $activeTenantIds = Tenant::whereHas('posTerminals', function ($q) {
-                $q->where('is_active', true)
-                    ->where('status_id', 1)
-                    ->where(function ($q2) {
-                        $q2->whereNull('expires_at')
-                            ->orWhere('expires_at', '>', Carbon::now());
-                    });
-            })->pluck('id');
+            $tenantColumns = $this->existingColumns('tenants', [
+                'id',
+                'trade_name',
+                'customer_code',
+                'status',
+                'activity_monitoring_enabled',
+                'activity_threshold_minutes',
+                'activity_suppressed_until',
+                'activity_suppression_reason',
+            ]);
 
-            if ($activeTenantIds->isEmpty()) {
+            $terminalColumns = $this->existingColumns('pos_terminals', [
+                'id',
+                'tenant_id',
+                'serial_number',
+                'machine_number',
+                'is_active',
+                'status_id',
+                'expires_at',
+                'activity_monitoring_enabled',
+                'activity_threshold_minutes',
+                'activity_suppressed_until',
+                'activity_suppression_reason',
+            ]);
+
+            $activeTenants = Tenant::query()
+                ->with(['posTerminals' => fn ($query) => $query->select($terminalColumns)])
+                ->whereHas('posTerminals', function ($q) {
+                    $q->where('is_active', true)
+                        ->where('status_id', 1)
+                        ->where(function ($q2) {
+                            $q2->whereNull('expires_at')
+                                ->orWhere('expires_at', '>', Carbon::now());
+                        });
+                })
+                ->when($hasTenantMonitoringColumns, fn ($query) => $query->where('activity_monitoring_enabled', true))
+                ->where(function ($query) {
+                    $query->whereNull('status')
+                        ->orWhereRaw('LOWER(status) = ?', ['operational']);
+                })
+                ->get($tenantColumns);
+
+            if ($activeTenants->isEmpty()) {
                 Log::info('Tenant inactivity check: no active tenants found');
                 return;
             }
 
-            // Tenants that have activity within the window
-            $recentTenantIds = Transaction::whereIn('tenant_id', $activeTenantIds)
-                ->where('created_at', '>=', $cutoffTime)
-                ->distinct()
-                ->pluck('tenant_id');
-
-            $silentTenantIds = $activeTenantIds->diff($recentTenantIds);
-
-            Log::info('Tenant inactivity check', [
-                'threshold_minutes' => $thresholdMinutes,
-                'cutoff_time' => $cutoffTime,
-                'active_tenants' => $activeTenantIds->values(),
-                'recent_tenants' => $recentTenantIds->values(),
-                'silent_tenants' => $silentTenantIds->values(),
-            ]);
-
-            // Mirror summary into SystemLog so it appears in System Telemetry Archive
-            try {
-                SystemLog::create([
-                    'type' => 'tenant_inactivity',
-                    'log_type' => 'TENANT_INACTIVITY_SUMMARY',
-                    'severity' => $silentTenantIds->isEmpty() ? 'info' : 'warning',
-                    'terminal_uid' => 'scheduler',
-                    'transaction_id' => null,
-                    'message' => 'Tenant inactivity check summary',
-                    'context' => [
-                        'threshold_minutes' => $thresholdMinutes,
-                        'cutoff_time' => $cutoffTime->toIso8601String(),
-                        'active_tenants' => $activeTenantIds->values(),
-                        'recent_tenants' => $recentTenantIds->values(),
-                        'silent_tenants' => $silentTenantIds->values(),
-                    ],
-                ]);
-            } catch (\Throwable $e) {
-                Log::error('Failed to write tenant inactivity SystemLog summary', [
-                    'error' => $e->getMessage(),
-                ]);
-            }
-
-            if ($silentTenantIds->isEmpty()) {
-                return;
-            }
-
-            $silentTenants = Tenant::with('posTerminals')
-                ->whereIn('id', $silentTenantIds)
-                ->get();
-
+            $activeTenantIds = $activeTenants->pluck('id');
+            $silentTenantIds = collect();
             $notifiableTenants = [];
-            foreach ($silentTenants as $tenant) {
+            $notifiableTerminals = [];
+            $suppressedTenants = [];
+            $suppressedTerminals = [];
+
+            foreach ($activeTenants as $tenant) {
+                $tenantThreshold = (int) (($hasTenantMonitoringColumns ? $tenant->activity_threshold_minutes : null) ?: $defaultThresholdMinutes);
+                $tenantCutoff = $now->copy()->subMinutes($tenantThreshold);
+                $tenantSuppressed = $hasTenantSuppressionColumns && $this->isAlertSuppressed($tenant->activity_suppressed_until ?? null, $now);
+
+                if ($tenantSuppressed) {
+                    $suppressedTenants[] = $tenant->id;
+                }
+
+                $lastTenantTransactionAt = $this->lastTransactionTimestamp($tenant->id);
+                $tenantIsSilent = ! $lastTenantTransactionAt || $lastTenantTransactionAt->lt($tenantCutoff);
+
+                if ($tenantIsSilent) {
+                    $silentTenantIds->push($tenant->id);
+                }
+
+                $activeTerminals = $tenant->posTerminals
+                    ->filter(fn (PosTerminal $terminal) => $terminal->isActiveAndValid())
+                    ->filter(fn (PosTerminal $terminal) => ! $hasTerminalMonitoringColumns || ($terminal->activity_monitoring_enabled ?? true));
+
+                foreach ($activeTerminals as $terminal) {
+                    $terminalThreshold = (int) (($hasTerminalMonitoringColumns ? $terminal->activity_threshold_minutes : null) ?: $tenantThreshold);
+                    $terminalCutoff = $now->copy()->subMinutes($terminalThreshold);
+                    $terminalSuppressed = $tenantSuppressed
+                        || ($hasTerminalSuppressionColumns && $this->isAlertSuppressed($terminal->activity_suppressed_until ?? null, $now));
+
+                    if ($terminalSuppressed) {
+                        $suppressedTerminals[] = $terminal->id;
+                        continue;
+                    }
+
+                    $lastTerminalTransactionAt = $this->lastTransactionTimestamp($tenant->id, $terminal->id);
+
+                    if ($lastTerminalTransactionAt && $lastTerminalTransactionAt->gte($terminalCutoff)) {
+                        continue;
+                    }
+
+                    $terminalRateKey = sprintf('alerts:terminal-inactivity:%d', $terminal->id);
+                    $terminalAllowed = RateLimiter::attempt($terminalRateKey, 1, fn () => true, $cooldownMinutes * 60);
+
+                    if (! $terminalAllowed) {
+                        Log::info('Terminal inactivity alert suppressed due to cooldown', [
+                            'tenant_id' => $tenant->id,
+                            'terminal_id' => $terminal->id,
+                            'rate_key' => $terminalRateKey,
+                            'cooldown_minutes' => $cooldownMinutes,
+                        ]);
+                        continue;
+                    }
+
+                    $notifiableTerminals[] = [
+                        'tenant_id' => $tenant->id,
+                        'tenant_name' => $tenant->trade_name,
+                        'customer_code' => $tenant->customer_code,
+                        'terminal_id' => $terminal->id,
+                        'serial_number' => $terminal->serial_number,
+                        'machine_number' => $terminal->machine_number,
+                        'inactive_minutes' => $terminalThreshold,
+                        'last_transaction_at' => $lastTerminalTransactionAt?->toDateTimeString(),
+                    ];
+
+                    try {
+                        SystemLog::create([
+                            'type' => 'tenant_inactivity',
+                            'log_type' => 'TERMINAL_INACTIVITY_ALERT',
+                            'severity' => 'warning',
+                            'terminal_uid' => $terminal->serial_number ?? (string) $terminal->id,
+                            'transaction_id' => null,
+                            'message' => "Terminal inactivity detected: {$tenant->trade_name} / {$terminal->serial_number}",
+                            'context' => array_merge($notifiableTerminals[count($notifiableTerminals)-1], ['source' => 'batch']),
+                        ]);
+                    } catch (\Throwable $e) {
+                        Log::error('Failed to write terminal inactivity alert SystemLog', [
+                            'tenant_id' => $tenant->id,
+                            'terminal_id' => $terminal->id,
+                            'error' => $e->getMessage(),
+                        ]);
+                    }
+                }
+
+                if (! $tenantIsSilent || $tenantSuppressed) {
+                    continue;
+                }
+
                 $rateKey = sprintf('alerts:tenant-inactivity:%d', $tenant->id);
+                $allowed = RateLimiter::attempt($rateKey, 1, fn () => true, $cooldownMinutes * 60);
 
-                $allowed = RateLimiter::attempt($rateKey, 1, function () {
-                    return true;
-                }, $cooldownMinutes * 60);
-
-                if (!$allowed) {
+                if (! $allowed) {
                     Log::info('Tenant inactivity alert suppressed due to cooldown', [
                         'tenant_id' => $tenant->id,
                         'rate_key' => $rateKey,
@@ -404,30 +481,20 @@ class NotificationService
                     continue;
                 }
 
-                $lastTxn = Transaction::where('tenant_id', $tenant->id)
-                    ->orderByDesc('created_at')
-                    ->first();
-
-                $activeTerminals = $tenant->posTerminals
-                    ->filter(function ($terminal) {
-                        return $terminal->isActiveAndValid();
-                    });
-
                 $notifiableTenants[] = [
                     'tenant_id' => $tenant->id,
                     'name' => $tenant->trade_name,
                     'customer_code' => $tenant->customer_code,
-                    'inactive_minutes' => $thresholdMinutes,
-                    'last_transaction_at' => $lastTxn?->created_at?->toDateTimeString(),
+                    'inactive_minutes' => $tenantThreshold,
+                    'last_transaction_at' => $lastTenantTransactionAt?->toDateTimeString(),
                     'active_terminal_count' => $activeTerminals->count(),
                 ];
 
                 Log::warning('Tenant inactivity event added to batch', [
                     'tenant_id' => $tenant->id,
-                    'name' => $tenant->trade_name
+                    'name' => $tenant->trade_name,
                 ]);
 
-                // Log into SystemLog for telemetry visibility
                 try {
                     SystemLog::create([
                         'type' => 'tenant_inactivity',
@@ -446,8 +513,48 @@ class NotificationService
                 }
             }
 
-            if (!empty($notifiableTenants)) {
-                $notification = new TenantInactivityAlert($notifiableTenants);
+            Log::info('Tenant inactivity check', [
+                'default_threshold_minutes' => $defaultThresholdMinutes,
+                'active_tenants' => $activeTenantIds->values(),
+                'silent_tenants' => $silentTenantIds->values(),
+                'notifiable_tenants' => collect($notifiableTenants)->pluck('tenant_id')->values(),
+                'notifiable_terminals' => collect($notifiableTerminals)->pluck('terminal_id')->values(),
+                'suppressed_tenants' => $suppressedTenants,
+                'suppressed_terminals' => $suppressedTerminals,
+            ]);
+
+            // Mirror summary into SystemLog so it appears in System Telemetry Archive
+            try {
+                SystemLog::create([
+                    'type' => 'tenant_inactivity',
+                    'log_type' => 'TENANT_INACTIVITY_SUMMARY',
+                    'severity' => $silentTenantIds->isEmpty() ? 'info' : 'warning',
+                    'terminal_uid' => 'scheduler',
+                    'transaction_id' => null,
+                    'message' => 'Tenant inactivity check summary',
+                    'context' => [
+                        'threshold_minutes' => $defaultThresholdMinutes,
+                        'checked_at' => $now->toIso8601String(),
+                        'active_tenants' => $activeTenantIds->values(),
+                        'silent_tenants' => $silentTenantIds->values(),
+                        'notifiable_tenants' => collect($notifiableTenants)->pluck('tenant_id')->values(),
+                        'notifiable_terminals' => collect($notifiableTerminals)->pluck('terminal_id')->values(),
+                        'suppressed_tenants' => $suppressedTenants,
+                        'suppressed_terminals' => $suppressedTerminals,
+                    ],
+                ]);
+            } catch (\Throwable $e) {
+                Log::error('Failed to write tenant inactivity SystemLog summary', [
+                    'error' => $e->getMessage(),
+                ]);
+            }
+
+            if ($silentTenantIds->isEmpty() && empty($notifiableTerminals)) {
+                return;
+            }
+
+            if (!empty($notifiableTenants) || !empty($notifiableTerminals)) {
+                $notification = new TenantInactivityAlert($notifiableTenants, $notifiableTerminals);
                 
                 // Send to Admins (DB + Global Admin Email)
                 $this->sendToAdminsAndFinance($notification);
@@ -459,7 +566,8 @@ class NotificationService
                         ->notify($notification);
                     
                     Log::info('Consolidated tenant inactivity alert routed to helpdesk', [
-                        'count' => count($notifiableTenants),
+                        'tenant_count' => count($notifiableTenants),
+                        'terminal_count' => count($notifiableTerminals),
                         'recipients' => $helpdeskEmails
                     ]);
                 }
@@ -469,5 +577,40 @@ class NotificationService
                 'error' => $e->getMessage(),
             ]);
         }
+    }
+
+    private function lastTransactionTimestamp(int $tenantId, ?int $terminalId = null): ?Carbon
+    {
+        $value = Transaction::query()
+            ->where('tenant_id', $tenantId)
+            ->when($terminalId, fn ($query) => $query->where('terminal_id', $terminalId))
+            ->max('transaction_timestamp');
+
+        return $value ? Carbon::parse($value) : null;
+    }
+
+    private function isAlertSuppressed($suppressedUntil, Carbon $now): bool
+    {
+        return $suppressedUntil && Carbon::parse($suppressedUntil)->greaterThan($now);
+    }
+
+    private function existingColumns(string $table, array $columns): array
+    {
+        return array_values(array_filter(
+            $columns,
+            fn (string $column) => Schema::hasColumn($table, $column)
+        ));
+    }
+
+    private function hasActivityMonitoringColumns(string $table): bool
+    {
+        return Schema::hasColumn($table, 'activity_monitoring_enabled')
+            && Schema::hasColumn($table, 'activity_threshold_minutes');
+    }
+
+    private function hasActivitySuppressionColumns(string $table): bool
+    {
+        return Schema::hasColumn($table, 'activity_suppressed_until')
+            && Schema::hasColumn($table, 'activity_suppression_reason');
     }
 }
