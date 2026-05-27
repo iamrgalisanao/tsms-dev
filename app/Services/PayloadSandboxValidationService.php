@@ -70,6 +70,7 @@ class PayloadSandboxValidationService
                 'schema' => $this->hasAnyErrorWithCodes($errors, [
                     'MISSING_REQUIRED_FIELD',
                     'INVALID_FIELD_TYPE',
+                    'INVALID_UUID_FORMAT',
                     'INVALID_AMOUNT_FORMAT',
                     'INVALID_CHECKSUM_FORMAT',
                     'BATCH_NOT_SUPPORTED',
@@ -156,6 +157,20 @@ class PayloadSandboxValidationService
             if ($type !== 'money' && !$this->matchesType($transaction[$field], $type)) {
                 $errors[] = $this->error('INVALID_FIELD_TYPE', '/transaction/' . $field, "transaction.{$field} must be {$type}.", $type, gettype($transaction[$field]));
             }
+        }
+
+        if (
+            isset($transaction['transaction_id']) &&
+            is_string($transaction['transaction_id']) &&
+            !$this->isUuidV4($transaction['transaction_id'])
+        ) {
+            $errors[] = $this->error(
+                'INVALID_UUID_FORMAT',
+                '/transaction/transaction_id',
+                'transaction.transaction_id must be a valid UUID v4.',
+                'UUID v4 string',
+                $transaction['transaction_id']
+            );
         }
 
         $this->validateChecksumFormat($transaction['payload_checksum'] ?? null, '/transaction/payload_checksum', $errors);
@@ -367,6 +382,11 @@ class PayloadSandboxValidationService
     private function isMoneyString(mixed $value): bool
     {
         return is_string($value) && preg_match('/^\d+\.\d{2}$/', $value) === 1;
+    }
+
+    private function isUuidV4(string $value): bool
+    {
+        return preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i', $value) === 1;
     }
 
     private function matchesType(mixed $value, string $type): bool

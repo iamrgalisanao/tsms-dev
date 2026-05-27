@@ -40,7 +40,7 @@ class TransactionIntakeService
             'submission_timestamp' => ['required', 'string', 'regex:/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z?$/'],
             'payload_checksum' => 'required|string|min:64|max:64|regex:/^[0-9a-f]{64}$/i',
             'transaction' => 'required|array',
-            'transaction.transaction_id' => 'required|string',
+            'transaction.transaction_id' => ['required', 'string', new UuidV4()],
             'transaction.receipt_no' => ['required', new ReceiptNumber()],
         ]);
 

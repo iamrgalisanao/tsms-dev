@@ -106,6 +106,29 @@ class PayloadValidationSandboxTest extends TestCase
             ->assertJsonPath('errors.0.code', 'INVALID_JSON');
     }
 
+    public function test_transaction_id_must_be_uuid_but_can_differ_from_submission_uuid(): void
+    {
+        $this->seedTerminal(16, 97);
+
+        $payload = $this->validPayload();
+        $this->assertNotSame($payload['submission_uuid'], $payload['transaction']['transaction_id']);
+
+        $payload['transaction']['transaction_id'] = 'POS-TXN-000001';
+
+        $response = $this->postJson('/api/v1/sandbox/payload/validate', $payload);
+
+        $response->assertOk()
+            ->assertJsonPath('valid', false)
+            ->assertJsonPath('checks.schema', 'failed');
+
+        $errors = collect($response->json('errors'));
+        $this->assertTrue(
+            $errors->contains(fn (array $error) => ($error['code'] ?? null) === 'INVALID_UUID_FORMAT'
+                && ($error['pointer'] ?? null) === '/transaction/transaction_id'),
+            'Sandbox should report transaction.transaction_id as an invalid UUID.'
+        );
+    }
+
     private function seedTerminal(int $tenantId, int $terminalId): PosTerminal
     {
         $tenant = Tenant::find($tenantId) ?? Tenant::factory()->create(['id' => $tenantId]);
