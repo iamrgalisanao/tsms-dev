@@ -1,0 +1,152 @@
+{
+  "info": {
+    "name": "TSMS POS Provider Testing API",
+    "description": "Provider-facing collection for TSMS payload validation, official transaction submission, submission status lookup, void, and refund testing.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "base_url", "value": "https://stagingtsms.pitx.com.ph/api/v1" },
+    { "key": "provider_testing_token", "value": "" },
+    { "key": "transaction_create_token", "value": "" },
+    { "key": "submission_uuid", "value": "f8c1a35a-90db-41ab-8c05-1b27cc7a40a9" },
+    { "key": "transaction_id", "value": "f9c5dd6a-2d71-40b8-903c-df0a02b417ed" }
+  ],
+  "item": [
+    {
+      "name": "Payload Sandbox - Validate",
+      "request": {
+        "method": "POST",
+        "header": [
+          { "key": "Accept", "value": "application/json" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "url": {
+          "raw": "{{base_url}}/sandbox/payload/validate?include_debug=true",
+          "host": ["{{base_url}}"],
+          "path": ["sandbox", "payload", "validate"],
+          "query": [{ "key": "include_debug", "value": "true" }]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"submission_uuid\": \"{{submission_uuid}}\",\n  \"tenant_id\": 16,\n  \"terminal_id\": 97,\n  \"submission_timestamp\": \"2026-05-14T08:59:28Z\",\n  \"transaction_count\": 1,\n  \"transaction\": {\n    \"hardware_id\": \"BUI-XTM80213\",\n    \"receipt_no\": \"000001072840\",\n    \"transaction_id\": \"{{transaction_id}}\",\n    \"transaction_timestamp\": \"2026-05-14T08:59:28Z\",\n    \"gross_sales\": \"140.00\",\n    \"net_sales\": \"125.00\",\n    \"promo_status\": \"WITHOUT_APPROVAL\",\n    \"customer_code\": \"C-B1028\",\n    \"adjustments\": [\n      { \"adjustment_type\": \"promo_discount\", \"amount\": \"0.00\" },\n      { \"adjustment_type\": \"senior_discount\", \"amount\": \"0.00\" },\n      { \"adjustment_type\": \"pwd_discount\", \"amount\": \"0.00\" },\n      { \"adjustment_type\": \"vip_card_discount\", \"amount\": \"0.00\" },\n      { \"adjustment_type\": \"service_charge_distributed_to_employees\", \"amount\": \"0.00\" },\n      { \"adjustment_type\": \"service_charge_retained_by_management\", \"amount\": \"0.00\" },\n      { \"adjustment_type\": \"employee_discount\", \"amount\": \"0.00\" }\n    ],\n    \"taxes\": [\n      { \"tax_type\": \"VAT\", \"amount\": \"15.00\" },\n      { \"tax_type\": \"VATABLE_SALES\", \"amount\": \"125.00\" },\n      { \"tax_type\": \"SC_VAT_EXEMPT_SALES\", \"amount\": \"0.00\" },\n      { \"tax_type\": \"OTHER_TAX\", \"amount\": \"0.00\" }\n    ],\n    \"payload_checksum\": \"afe7b98146c54ba0c80e18d6db0e3976b3204bb046dbd495b03b28152e19ae5f\"\n  },\n  \"payload_checksum\": \"30cf6eeb6513ca6f31e9d091e7bbd8a519f5d3264a128cc715fee6d61b684154\"\n}"
+        }
+      }
+    },
+    {
+      "name": "Official Transaction - Submit",
+      "request": {
+        "method": "POST",
+        "auth": {
+          "type": "bearer",
+          "bearer": [{ "key": "token", "value": "{{transaction_create_token}}", "type": "string" }]
+        },
+        "header": [
+          { "key": "Accept", "value": "application/json" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "url": {
+          "raw": "{{base_url}}/transactions/official",
+          "host": ["{{base_url}}"],
+          "path": ["transactions", "official"]
+        },
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"submission_uuid\": \"{{submission_uuid}}\",\n  \"tenant_id\": 16,\n  \"terminal_id\": 97,\n  \"submission_timestamp\": \"2026-05-14T08:59:28Z\",\n  \"transaction_count\": 1,\n  \"transaction\": {\n    \"hardware_id\": \"BUI-XTM80213\",\n    \"receipt_no\": \"000001072840\",\n    \"transaction_id\": \"{{transaction_id}}\",\n    \"transaction_timestamp\": \"2026-05-14T08:59:28Z\",\n    \"gross_sales\": \"140.00\",\n    \"net_sales\": \"125.00\",\n    \"promo_status\": \"WITHOUT_APPROVAL\",\n    \"customer_code\": \"C-B1028\",\n    \"adjustments\": [\n      { \"adjustment_type\": \"promo_discount\", \"amount\": \"0.00\" }\n    ],\n    \"taxes\": [\n      { \"tax_type\": \"VAT\", \"amount\": \"15.00\" },\n      { \"tax_type\": \"VATABLE_SALES\", \"amount\": \"125.00\" }\n    ],\n    \"payload_checksum\": \"afe7b98146c54ba0c80e18d6db0e3976b3204bb046dbd495b03b28152e19ae5f\"\n  },\n  \"payload_checksum\": \"30cf6eeb6513ca6f31e9d091e7bbd8a519f5d3264a128cc715fee6d61b684154\"\n}"
+        }
+      }
+    },
+    {
+      "name": "Official Transaction - Duplicate Replay",
+      "request": {
+        "method": "POST",
+        "auth": {
+          "type": "bearer",
+          "bearer": [{ "key": "token", "value": "{{transaction_create_token}}", "type": "string" }]
+        },
+        "header": [
+          { "key": "Accept", "value": "application/json" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "url": "{{base_url}}/transactions/official",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"submission_uuid\": \"{{submission_uuid}}\",\n  \"tenant_id\": 16,\n  \"terminal_id\": 97,\n  \"submission_timestamp\": \"2026-05-14T08:59:28Z\",\n  \"transaction_count\": 1,\n  \"transaction\": {\n    \"hardware_id\": \"BUI-XTM80213\",\n    \"receipt_no\": \"000001072840\",\n    \"transaction_id\": \"{{transaction_id}}\",\n    \"transaction_timestamp\": \"2026-05-14T08:59:28Z\",\n    \"gross_sales\": \"140.00\",\n    \"net_sales\": \"125.00\",\n    \"promo_status\": \"WITHOUT_APPROVAL\",\n    \"adjustments\": [{ \"adjustment_type\": \"promo_discount\", \"amount\": \"0.00\" }],\n    \"taxes\": [{ \"tax_type\": \"VAT\", \"amount\": \"15.00\" }],\n    \"payload_checksum\": \"afe7b98146c54ba0c80e18d6db0e3976b3204bb046dbd495b03b28152e19ae5f\"\n  },\n  \"payload_checksum\": \"30cf6eeb6513ca6f31e9d091e7bbd8a519f5d3264a128cc715fee6d61b684154\"\n}"
+        }
+      }
+    },
+    {
+      "name": "Submission Status - Lookup",
+      "request": {
+        "method": "GET",
+        "auth": {
+          "type": "bearer",
+          "bearer": [{ "key": "token", "value": "{{provider_testing_token}}", "type": "string" }]
+        },
+        "header": [{ "key": "Accept", "value": "application/json" }],
+        "url": "{{base_url}}/submissions/{{submission_uuid}}"
+      }
+    },
+    {
+      "name": "Transaction - Void",
+      "request": {
+        "method": "POST",
+        "auth": {
+          "type": "bearer",
+          "bearer": [{ "key": "token", "value": "{{transaction_create_token}}", "type": "string" }]
+        },
+        "header": [
+          { "key": "Accept", "value": "application/json" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "url": "{{base_url}}/transactions/{{transaction_id}}/void",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"transaction_id\": \"{{transaction_id}}\",\n  \"void_reason\": \"POS transaction voided by cashier\"\n}"
+        }
+      }
+    },
+    {
+      "name": "Transaction - Refund",
+      "request": {
+        "method": "POST",
+        "auth": {
+          "type": "bearer",
+          "bearer": [{ "key": "token", "value": "{{transaction_create_token}}", "type": "string" }]
+        },
+        "header": [
+          { "key": "Accept", "value": "application/json" },
+          { "key": "Content-Type", "value": "application/json" }
+        ],
+        "url": "{{base_url}}/transactions/{{transaction_id}}/refund",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"refund_amount\": 140.00,\n  \"refund_reason\": \"Customer refund\",\n  \"refund_reference\": \"RF-000001\"\n}"
+        }
+      }
+    },
+    {
+      "name": "Monitoring - Tenant Activity",
+      "request": {
+        "method": "GET",
+        "auth": {
+          "type": "bearer",
+          "bearer": [{ "key": "token", "value": "{{provider_testing_token}}", "type": "string" }]
+        },
+        "header": [{ "key": "Accept", "value": "application/json" }],
+        "url": "{{base_url}}/monitoring/tenants/activity?threshold_minutes=1440"
+      }
+    },
+    {
+      "name": "Monitoring - Terminal Activity",
+      "request": {
+        "method": "GET",
+        "auth": {
+          "type": "bearer",
+          "bearer": [{ "key": "token", "value": "{{provider_testing_token}}", "type": "string" }]
+        },
+        "header": [{ "key": "Accept", "value": "application/json" }],
+        "url": "{{base_url}}/monitoring/terminals/activity?threshold_minutes=1440"
+      }
+    }
+  ]
+}

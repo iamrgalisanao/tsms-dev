@@ -69,6 +69,11 @@ Route::get('/sandbox/payload', function () {
     return view('app');
 })->name('sandbox.payload');
 
+// Public POS provider API documentation for testing/support-only endpoints.
+Route::get('/docs/pos-provider/api-testing', function () {
+    return view('app');
+})->name('docs.pos-provider.api-testing');
+
 Route::middleware(['auth'])->group(function () {
     // Main Dashboard Route (React SPA) - accessible to any authenticated user.
     // Role-based content/redirect is handled client-side by React Router.

@@ -1,0 +1,1001 @@
+openapi: 3.0.3
+info:
+  title: TSMS POS Provider Testing API
+  version: 1.0.0
+  description: >
+    Provider-facing TSMS API contract for payload validation, official transaction
+    ingestion, submission status lookup, voids, refunds, and support diagnostics.
+    Testing/support endpoints are documented separately from production ingestion
+    behavior.
+servers:
+  - url: https://stagingtsms.pitx.com.ph/api/v1
+    description: Staging
+  - url: https://tsms.pitx.com.ph/api/v1
+    description: Production
+security:
+  - bearerAuth: []
+tags:
+  - name: Validation
+  - name: Transactions
+  - name: Submissions
+  - name: Adjustments
+  - name: Monitoring
+paths:
+  /sandbox/payload/validate:
+    post:
+      tags: [Validation]
+      summary: Validate a POS payload without ingestion
+      description: Public sandbox endpoint. It validates JSON structure, required fields, checksums, tenant-terminal ownership, taxes, adjustments, and reconciliation rules. It does not create transactions or dispatch queue jobs.
+      security: []
+      parameters:
+        - in: query
+          name: include_debug
+          schema:
+            type: boolean
+          description: Include canonical JSON used for checksum computation.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OfficialTransactionSubmission'
+            example:
+              submission_uuid: f8c1a35a-90db-41ab-8c05-1b27cc7a40a9
+              tenant_id: 16
+              terminal_id: 97
+              submission_timestamp: '2026-05-14T08:59:28Z'
+              transaction_count: 1
+              transaction:
+                hardware_id: BUI-XTM80213
+                receipt_no: '000001072840'
+                transaction_id: f9c5dd6a-2d71-40b8-903c-df0a02b417ed
+                transaction_timestamp: '2026-05-14T08:59:28Z'
+                gross_sales: '140.00'
+                net_sales: '125.00'
+                promo_status: WITHOUT_APPROVAL
+                customer_code: C-B1028
+                adjustments:
+                  - adjustment_type: promo_discount
+                    amount: '0.00'
+                taxes:
+                  - tax_type: VAT
+                    amount: '15.00'
+                  - tax_type: VATABLE_SALES
+                    amount: '125.00'
+                payload_checksum: afe7b98146c54ba0c80e18d6db0e3976b3204bb046dbd495b03b28152e19ae5f
+              payload_checksum: 30cf6eeb6513ca6f31e9d091e7bbd8a519f5d3264a128cc715fee6d61b684154
+      responses:
+        '200':
+          description: Validation report.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PayloadValidationReport'
+        '400':
+          description: Malformed JSON.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SandboxValidationErrorReport'
+              example:
+                success: false
+                valid: false
+                validation_id: val_01HX6Z4D3J7Q2BM6BM30MJVZ0M
+                errors:
+                  - code: INVALID_JSON
+                    severity: error
+                    pointer: /
+                    message: Request body must be valid JSON object.
+                    detail: Syntax error
+        '415':
+          description: Unsupported Content-Type.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SandboxValidationErrorReport'
+              example:
+                success: false
+                valid: false
+                validation_id: val_01HX6Z4D3J7Q2BM6BM30MJVZ0M
+                errors:
+                  - code: UNSUPPORTED_CONTENT_TYPE
+                    severity: error
+                    pointer: /
+                    message: Content-Type must be application/json.
+  /transactions/official:
+    post:
+      tags: [Transactions]
+      summary: Submit an official POS transaction
+      description: Accepts a single official transaction payload for asynchronous TSMS intake and processing. Duplicate submission UUIDs are treated idempotently.
+      security:
+        - bearerAuth: ['transaction:create']
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OfficialTransactionSubmission'
+      responses:
+        '200':
+          description: Submission accepted or already accepted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubmissionAccepted'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          description: Submission UUID conflict.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TsmsErrorEnvelope'
+              example:
+                success: false
+                message: Submission UUID already exists with a different payload_checksum. Correct the payload and resend with a new submission_uuid.
+                error_code: SUBMISSION_UUID_CONFLICT
+                data:
+                  submission_uuid: f8c1a35a-90db-41ab-8c05-1b27cc7a40a9
+                  intake_id: 1113191
+                  provider_status: processed
+                  intake_status: QUEUED
+                  processing_status: PROCESSED
+                  last_error_code: null
+                  received_at: '2026-05-26T05:48:33.000000Z'
+        '422':
+          description: Validation or Integrity check failed, or submission was already rejected.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/RequestValidationErrorEnvelope'
+                  - $ref: '#/components/schemas/TsmsErrorEnvelope'
+              examples:
+                RequestValidation:
+                  summary: Request-level validation failed (e.g. missing fields)
+                  value:
+                    success: false
+                    message: Validation failed
+                    errors:
+                      submission_uuid:
+                        - The submission uuid field is required.
+                    structure_hint: Ensure payload follows standard TSMS structure with payload_checksum positioned correctly
+                StructuralValidation:
+                  summary: Intake structural validation failed
+                  value:
+                    success: false
+                    message: Structural validation failed
+                    error_code: STRUCTURAL_VALIDATION_FAILURE
+                    errors:
+                      submission_uuid:
+                        - The submission uuid field is required.
+                CryptographicIntegrity:
+                  summary: Cryptographic integrity check failed
+                  value:
+                    success: false
+                    message: Cryptographic integrity check failed. Payload may have been tampered with or canonicalization logic is incorrect.
+                    error_code: CRYPTOGRAPHIC_INTEGRITY_FAILURE
+                    errors:
+                      transaction:
+                        matches: false
+                        provided: afe7b9...
+                        computed: 30cf6e...
+                AlreadyRejected:
+                  summary: Submission already rejected
+                  value:
+                    success: false
+                    message: Submission was already rejected. Correct the payload and resend with a new submission_uuid.
+                    error_code: SUBMISSION_ALREADY_REJECTED
+                    data:
+                      submission_uuid: f8c1a35a-90db-41ab-8c05-1b27cc7a40a9
+                      intake_id: 1113191
+        '429':
+          description: System is currently experiencing high load.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, message]
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+                    example: System is currently experiencing high load. Please retry in a few minutes.
+        '503':
+          description: Ingestion persistence layer or database is unavailable.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [success, message]
+                properties:
+                  success:
+                    type: boolean
+                    example: false
+                  message:
+                    type: string
+                    example: System unavailable
+  /submissions/{submission_uuid}:
+    get:
+      tags: [Submissions]
+      summary: Lookup submission status
+      description: Read-only provider testing/support lookup. Requires transaction:read and provider:testing token abilities. Terminal tokens can only access their own tenant and terminal submissions.
+      security:
+        - bearerAuth: ['transaction:read', 'provider:testing']
+      parameters:
+        - in: path
+          name: submission_uuid
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Submission status.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubmissionStatusResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/SubmissionNotFound'
+        '422':
+          $ref: '#/components/responses/InvalidSubmissionUuid'
+  /transactions/{transaction}/status:
+    get:
+      tags: [Transactions]
+      summary: Lookup transaction status
+      security:
+        - bearerAuth: ['transaction:read']
+      parameters:
+        - in: path
+          name: transaction
+          required: true
+          schema:
+            type: string
+          description: TSMS transaction identifier.
+      responses:
+        '200':
+          description: Transaction status response.
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /transactions/{transaction}/void:
+    post:
+      tags: [Adjustments]
+      summary: Void an existing transaction
+      description: Marks an existing transaction as voided. This is a status marker; it is not submitted as a negative sale computation.
+      security:
+        - bearerAuth: ['transaction:create']
+      parameters:
+        - in: path
+          name: transaction
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [transaction_id, void_reason, payload_checksum]
+              properties:
+                transaction_id:
+                  type: string
+                  format: uuid
+                void_reason:
+                  type: string
+                  maxLength: 255
+                payload_checksum:
+                  type: string
+                  minLength: 64
+                  maxLength: 64
+            example:
+              transaction_id: f9c5dd6a-2d71-40b8-903c-df0a02b417ed
+              void_reason: POS transaction voided by cashier
+              payload_checksum: e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+      responses:
+        '200':
+          description: Transaction voided successfully by POS.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                    example: true
+                  message:
+                    type: string
+                    example: Transaction voided successfully by POS
+                  transaction_id:
+                    type: string
+                    format: uuid
+                  voided_at:
+                    type: string
+                    format: date-time
+                  void_reason:
+                    type: string
+              example:
+                success: true
+                message: Transaction voided successfully by POS
+                transaction_id: f9c5dd6a-2d71-40b8-903c-df0a02b417ed
+                voided_at: '2026-05-14T08:59:28Z'
+                void_reason: POS transaction voided by cashier
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          description: Conflict (already voided or processing).
+          content:
+            application/json:
+              schema:
+                type: object
+              examples:
+                AlreadyVoided:
+                  summary: Transaction already voided
+                  value:
+                    success: false
+                    message: Transaction already voided
+                    voided_at: '2026-05-14T08:59:28Z'
+                    void_reason: POS transaction voided by cashier
+                ProcessingState:
+                  summary: Cannot void transaction currently being processed
+                  value:
+                    success: false
+                    message: Cannot void transaction currently being processed
+        '422':
+          description: Validation or checksum failure.
+          content:
+            application/json:
+              schema:
+                type: object
+              examples:
+                TransactionIdMismatch:
+                  summary: Transaction ID mismatch
+                  value:
+                    success: false
+                    message: Transaction ID mismatch
+                    errors:
+                      transaction_id:
+                        - Request transaction_id must match the transaction being voided
+                InvalidChecksum:
+                  summary: Invalid payload checksum
+                  value:
+                    success: false
+                    message: Invalid payload checksum
+                    errors:
+                      payload_checksum:
+                        - Checksum validation failed
+        '500':
+          description: Void failure on system error.
+          content:
+            application/json:
+              schema:
+                type: object
+              example:
+                success: false
+                message: "Failed to void transaction: DB connection error"
+                timestamp: "2026-05-27T08:14:07Z"
+  /transactions/{transaction}/refund:
+    post:
+      tags: [Adjustments]
+      summary: Refund an existing transaction
+      security:
+        - bearerAuth: ['transaction:create']
+      parameters:
+        - in: path
+          name: transaction
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [refund_amount, refund_reason]
+              properties:
+                refund_amount:
+                  type: number
+                  format: float
+                refund_reason:
+                  type: string
+                refund_reference:
+                  type: string
+            example:
+              refund_amount: 140.00
+              refund_reason: Customer refund
+              refund_reference: RF-000001
+      responses:
+        '200':
+          description: Refund processed successfully.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: success
+                  message:
+                    type: string
+                    example: Refund processed successfully
+                  data:
+                    type: object
+                    properties:
+                      transaction_id:
+                        type: string
+                        format: uuid
+                      is_refunded:
+                        type: boolean
+                      refund_amount:
+                        type: number
+                      refund_reference:
+                        type: string
+              example:
+                status: success
+                message: Refund processed successfully
+                data:
+                  transaction_id: f9c5dd6a-2d71-40b8-903c-df0a02b417ed
+                  is_refunded: true
+                  refund_amount: 140.00
+                  refund_reference: RF-000001
+        '400':
+          description: Refund processing failed.
+          content:
+            application/json:
+              schema:
+                type: object
+              example:
+                status: error
+                message: "Refund failed: Staging provider API offline"
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          description: Refund same-day restriction.
+          content:
+            application/json:
+              schema:
+                type: object
+              example:
+                status: error
+                message: Refunds are only permitted on the same business day
+        '422':
+          description: Validation failure (Laravel default validation shape).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ValidationErrorEnvelope'
+              example:
+                message: The refund amount field is required.
+                errors:
+                  refund_amount:
+                    - The refund amount field is required.
+  /monitoring/tenants/activity:
+    get:
+      tags: [Monitoring]
+      summary: List tenant transaction activity
+      description: Read-only activity report for daily monitoring and silent-tenant detection. Results are scoped to the authenticated actor.
+      security:
+        - bearerAuth: ['transaction:read', 'provider:testing']
+      parameters:
+        - in: query
+          name: threshold_minutes
+          schema:
+            type: integer
+            minimum: 5
+            maximum: 10080
+            default: 1440
+          description: Minutes after which a tenant with prior transactions is considered silent.
+      responses:
+        '200':
+          description: Tenant activity rows.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TenantActivityResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /monitoring/terminals/activity:
+    get:
+      tags: [Monitoring]
+      summary: List terminal transaction activity
+      description: Read-only activity report for daily terminal monitoring. Results are scoped to the authenticated actor.
+      security:
+        - bearerAuth: ['transaction:read', 'provider:testing']
+      parameters:
+        - in: query
+          name: threshold_minutes
+          schema:
+            type: integer
+            minimum: 5
+            maximum: 10080
+            default: 1440
+      responses:
+        '200':
+          description: Terminal activity rows.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TerminalActivityResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: Sanctum
+  responses:
+    Unauthorized:
+      description: Missing, malformed, expired, or revoked bearer token.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/MessageEnvelope'
+          example:
+            message: Unauthenticated.
+    Forbidden:
+      description: Token is valid but missing a required ability, or terminal ID in payload does not match token terminal identity.
+      content:
+        application/json:
+          schema:
+            oneOf:
+              - $ref: '#/components/schemas/MessageEnvelope'
+              - $ref: '#/components/schemas/TsmsErrorEnvelope'
+          examples:
+            MissingAbility:
+              summary: Missing Sanctum Ability
+              value:
+                message: Invalid ability provided.
+            TerminalMismatch:
+              summary: Terminal Identity Mismatch
+              value:
+                success: false
+                message: "Terminal Identity Mismatch: The terminal_id provided in the payload does not match the identity of the authenticated API token. Token sharing across multiple terminals is strictly prohibited."
+                error_code: TERMINAL_TOKEN_MISMATCH
+    SubmissionNotFound:
+      description: Submission does not exist or is outside the caller scope.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/TsmsErrorEnvelope'
+          example:
+            success: false
+            message: Submission not found.
+            error_code: SUBMISSION_NOT_FOUND
+    InvalidSubmissionUuid:
+      description: Submission UUID path parameter is invalid.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/TsmsErrorEnvelope'
+          example:
+            success: false
+            message: Invalid submission UUID.
+            error_code: INVALID_SUBMISSION_UUID
+  schemas:
+    TsmsErrorEnvelope:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        message:
+          type: string
+        error_code:
+          type: string
+          nullable: true
+        errors:
+          type: object
+          nullable: true
+        data:
+          type: object
+          nullable: true
+    RequestValidationErrorEnvelope:
+      type: object
+      required:
+        - success
+        - message
+        - errors
+        - structure_hint
+      properties:
+        success:
+          type: boolean
+          example: false
+        message:
+          type: string
+          example: Validation failed
+        errors:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+        structure_hint:
+          type: string
+          example: Ensure payload follows standard TSMS structure with payload_checksum positioned correctly
+    SandboxValidationErrorReport:
+      type: object
+      required:
+        - success
+        - valid
+        - validation_id
+        - errors
+      properties:
+        success:
+          type: boolean
+          example: false
+        valid:
+          type: boolean
+          example: false
+        validation_id:
+          type: string
+          example: val_01HX6Z4D3J7Q2BM6BM30MJVZ0M
+        errors:
+          type: array
+          items:
+            $ref: '#/components/schemas/Diagnostic'
+    OfficialTransactionSubmission:
+      type: object
+      required:
+        - payload_checksum
+        - submission_timestamp
+        - submission_uuid
+        - tenant_id
+        - terminal_id
+        - transaction
+        - transaction_count
+      properties:
+        payload_checksum:
+          type: string
+          minLength: 64
+          maxLength: 64
+        submission_timestamp:
+          type: string
+          format: date-time
+        submission_uuid:
+          type: string
+          format: uuid
+        tenant_id:
+          type: integer
+        terminal_id:
+          type: integer
+        transaction_count:
+          type: integer
+          example: 1
+        transaction:
+          $ref: '#/components/schemas/TransactionPayload'
+    TransactionPayload:
+      type: object
+      required:
+        - hardware_id
+        - receipt_no
+        - transaction_id
+        - transaction_timestamp
+        - gross_sales
+        - net_sales
+        - promo_status
+        - adjustments
+        - taxes
+        - payload_checksum
+      properties:
+        hardware_id:
+          type: string
+        receipt_no:
+          type: string
+          description: Required. Preserve leading zeroes.
+        transaction_id:
+          type: string
+          format: uuid
+          description: Unique POS transaction UUID. This is independent from submission_uuid and should not be reused as the submission identifier.
+        transaction_timestamp:
+          type: string
+          format: date-time
+          description: Original POS business transaction timestamp.
+        gross_sales:
+          type: string
+          example: '140.00'
+        net_sales:
+          type: string
+          example: '125.00'
+        promo_status:
+          type: string
+          example: WITHOUT_APPROVAL
+        customer_code:
+          type: string
+          nullable: true
+          description: Tenant/customer code when available. Providers should send it when present in POS data.
+        adjustments:
+          type: array
+          items:
+            $ref: '#/components/schemas/Adjustment'
+        taxes:
+          type: array
+          items:
+            $ref: '#/components/schemas/Tax'
+        payload_checksum:
+          type: string
+          minLength: 64
+          maxLength: 64
+    Adjustment:
+      type: object
+      required: [adjustment_type, amount]
+      properties:
+        adjustment_type:
+          type: string
+          example: promo_discount
+        amount:
+          type: string
+          example: '0.00'
+    Tax:
+      type: object
+      required: [tax_type, amount]
+      properties:
+        tax_type:
+          type: string
+          example: VAT
+        amount:
+          type: string
+          example: '15.00'
+    SubmissionAccepted:
+      type: object
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+          example: Submission accepted
+        data:
+          type: object
+          properties:
+            submission_uuid:
+              type: string
+              format: uuid
+            intake_id:
+              type: integer
+            intake_status:
+              type: string
+            processing_status:
+              type: string
+              nullable: true
+            last_error_code:
+              type: string
+              nullable: true
+            received_at:
+              type: string
+              format: date-time
+    SubmissionStatusResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+          properties:
+            submission_uuid:
+              type: string
+              format: uuid
+            intake_id:
+              type: integer
+            provider_status:
+              type: string
+              enum: [accepted, queued, processing, processed, failed_retryable, failed_permanent, rejected, duplicate, unknown]
+            intake_status:
+              type: string
+            processing_status:
+              type: string
+              nullable: true
+            last_error_code:
+              type: string
+              nullable: true
+            last_error_message:
+              nullable: true
+            received_at:
+              type: string
+              format: date-time
+            queued_at:
+              type: string
+              format: date-time
+              nullable: true
+            processed_at:
+              type: string
+              format: date-time
+              nullable: true
+            tenant_id:
+              type: integer
+            terminal_id:
+              type: integer
+            transaction:
+              type: object
+              nullable: true
+    PayloadValidationReport:
+      type: object
+      properties:
+        success:
+          type: boolean
+        valid:
+          type: boolean
+        validation_id:
+          type: string
+        summary:
+          type: object
+        checks:
+          type: object
+        checksums:
+          type: object
+        errors:
+          type: array
+          items:
+            $ref: '#/components/schemas/Diagnostic'
+        warnings:
+          type: array
+          items:
+            $ref: '#/components/schemas/Diagnostic'
+        debug:
+          type: object
+    Diagnostic:
+      type: object
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        pointer:
+          type: string
+          nullable: true
+        severity:
+          type: string
+          enum: [error, warning]
+        detail:
+          type: string
+          nullable: true
+        expected:
+          nullable: true
+        actual:
+          nullable: true
+    ErrorEnvelope:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        error:
+          type: object
+          properties:
+            code:
+              type: string
+            message:
+              type: string
+    ValidationErrorEnvelope:
+      type: object
+      properties:
+        message:
+          type: string
+        errors:
+          type: object
+          additionalProperties:
+            type: array
+            items:
+              type: string
+    MessageEnvelope:
+      type: object
+      properties:
+        message:
+          type: string
+    TenantActivityResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/TenantActivity'
+        meta:
+          $ref: '#/components/schemas/MonitoringMeta'
+    TerminalActivityResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: array
+          items:
+            $ref: '#/components/schemas/TerminalActivity'
+        meta:
+          $ref: '#/components/schemas/MonitoringMeta'
+    TenantActivity:
+      type: object
+      properties:
+        tenant_id:
+          type: integer
+        tenant_name:
+          type: string
+        customer_code:
+          type: string
+          nullable: true
+        transactions_today:
+          type: integer
+        transactions_yesterday:
+          type: integer
+        last_received_at:
+          type: string
+          format: date-time
+          nullable: true
+        last_transaction_timestamp:
+          type: string
+          format: date-time
+          nullable: true
+        active_terminals_today:
+          type: integer
+        silent_terminals:
+          type: integer
+        minutes_since_last_transaction:
+          type: integer
+          nullable: true
+        threshold_minutes:
+          type: integer
+        monitoring_enabled:
+          type: boolean
+        monitoring_notes:
+          type: string
+          nullable: true
+        status:
+          type: string
+          enum: [active, silent, no_submission_today, inactive_configured]
+    TerminalActivity:
+      allOf:
+        - $ref: '#/components/schemas/TenantActivity'
+        - type: object
+          properties:
+            terminal_id:
+              type: integer
+            serial_number:
+              type: string
+              nullable: true
+            machine_number:
+              type: string
+              nullable: true
+            last_seen_at:
+              type: string
+              format: date-time
+              nullable: true
+            last_sale_at:
+              type: string
+              format: date-time
+              nullable: true
+    MonitoringMeta:
+      type: object
+      properties:
+        threshold_minutes:
+          type: integer
+        timezone:
+          type: string
+        generated_at:
+          type: string
+          format: date-time

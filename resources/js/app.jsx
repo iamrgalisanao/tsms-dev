@@ -12,6 +12,7 @@ import SystemLogsPage from './Pages/SystemLogsPage';
 import IntakeHealthPage from './Pages/Observability/IntakeHealthPage.jsx';
 import PayloadSandboxPage from './Pages/PayloadSandboxPage.jsx';
 // Finance
+import ProviderApiDocsPage from './Pages/ProviderApiDocsPage.jsx';
 import FinanceDashboardPage from './Pages/Finance/FinanceDashboardPage.jsx';
 import FinanceReportsPage from './Pages/Finance/FinanceReportsPage.jsx';
 // Commercial
@@ -41,6 +42,7 @@ const App = () => {
           <Route path="/unauthorized" element={<UnauthorizedPage />} />
           <Route path="/sandbox/payload" element={<PayloadSandboxPage />} />
 
+          <Route path="/docs/pos-provider/api-testing" element={<ProviderApiDocsPage />} />
           {/* Authenticated — wrapped in MainLayout and ProtectedRoute */}
           <Route
             path="/*"
