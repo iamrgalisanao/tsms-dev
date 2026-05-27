@@ -14,8 +14,8 @@ import {
     X
 } from 'lucide-react';
 import api from '../../services/api';
-import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
+import { Button } from '@/Components/ui/button';
+import { Card } from '@/Components/ui/card';
 
 function cn(...classes) {
     return classes.filter(Boolean).join(' ');
