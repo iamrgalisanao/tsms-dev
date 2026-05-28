@@ -46,17 +46,20 @@ class AuthServiceProvider extends ServiceProvider
             return ($user->role ?? null) === 'admin';
         });
 
-        // Gate for exporting transaction logs (admin or manager)
+        // Gate for exporting transaction logs. Keep this aligned with the
+        // transaction logs API route roles so users who can view logs can export them.
         Gate::define('export-transaction-logs', function ($user = null) {
             if (!$user) {
                 return false;
             }
 
+            $allowedRoles = ['admin', 'manager', 'finance', 'commercial'];
+
             if (method_exists($user, 'hasRole')) {
-                return $user->hasRole('admin') || $user->hasRole('manager');
+                return $user->hasAnyRole($allowedRoles);
             }
 
-            return in_array($user->role ?? null, ['admin', 'manager'], true);
+            return in_array($user->role ?? null, $allowedRoles, true);
         });
 
         // Gate for retrying transactions (admin or manager)
