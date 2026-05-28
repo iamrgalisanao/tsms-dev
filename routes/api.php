@@ -66,10 +66,6 @@ Route::middleware(['auth:sanctum'])->group(function () {
             Route::post('/{terminalId}/revoke', [TerminalTokenController::class, 'apiRevoke']);
         });
 
-        Route::get('terminals', function () {
-            return \App\Models\PosTerminal::with('tenant:id,trade_name')
-                ->get(['id', 'serial_number', 'tenant_id', 'machine_number']);
-        });
         Route::post('terminals', [TerminalTokenController::class, 'apiStore']);
         Route::put('terminals/{terminal}/expiry', [TerminalTokenController::class, 'updateExpiry']);
     });
@@ -92,7 +88,6 @@ Route::middleware(['auth:sanctum'])->group(function () {
         });
 
         // Tenants API
-        Route::get('tenants', [TenantController::class, 'index']);
         Route::post('tenants', [TenantController::class, 'store']);
         Route::get('tenants/{tenant}', [TenantController::class, 'show']);
         Route::put('tenants/{tenant}', [TenantController::class, 'update']);
@@ -106,6 +101,13 @@ Route::middleware(['auth:sanctum'])->group(function () {
 
     // Dashboard Data (Authorized roles)
     Route::middleware(['role:admin|manager|finance|commercial'])->group(function () {
+        // Read-only access to tenants and terminals for filtering
+        Route::get('tenants', [TenantController::class, 'index']);
+        Route::get('terminals', function () {
+            return \App\Models\PosTerminal::with('tenant:id,trade_name')
+                ->get(['id', 'serial_number', 'tenant_id', 'machine_number']);
+        });
+
         Route::get('dashboard/metrics', [DashboardController::class, 'apiMetrics']);
         Route::get('dashboard/charts', [DashboardController::class, 'apiCharts']);
         Route::get('dashboard/transactions', [DashboardController::class, 'apiTransactions']);
