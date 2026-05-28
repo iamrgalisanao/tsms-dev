@@ -8,6 +8,8 @@ use Maatwebsite\Excel\Concerns\WithMapping;
 use Maatwebsite\Excel\Concerns\WithHeadings;
 use Maatwebsite\Excel\Concerns\ShouldAutoSize;
 use Maatwebsite\Excel\Concerns\WithChunkReading;
+use Carbon\CarbonInterface;
+use Illuminate\Support\Carbon;
 
 class TransactionLogsExport implements FromQuery, WithMapping, WithHeadings, ShouldAutoSize, WithChunkReading
 {
@@ -101,7 +103,9 @@ class TransactionLogsExport implements FromQuery, WithMapping, WithHeadings, Sho
         $machine = optional($transaction->terminal)->machine_number ?? 'N/A';
         $tenantTerminal = "{$tenantName} • SN: {$serial} • Machine: {$machine}";
         
-        // Transaction timestamp with fallback like display logic
+        // Transaction timestamp with fallback like display logic. Some deployed
+        // schemas/casts return transaction_timestamp as a raw string, so avoid
+        // assuming every date-like value is already a Carbon instance.
         $txTime = $transaction->transaction_timestamp ?? $transaction->created_at;
         
         return [
@@ -128,9 +132,26 @@ class TransactionLogsExport implements FromQuery, WithMapping, WithHeadings, Sho
             $transaction->validation_status,
             $transaction->job_status ?? $transaction->latest_job_status ?? 'N/A',
             $transaction->job_attempts ?? 0,
-            $txTime ? $txTime->format('Y-m-d H:i:s') : null,
-            $transaction->created_at->format('Y-m-d H:i:s')
+            $this->formatDateTime($txTime),
+            $this->formatDateTime($transaction->created_at)
         ];
+    }
+
+    private function formatDateTime(mixed $value): ?string
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        if ($value instanceof CarbonInterface) {
+            return $value->format('Y-m-d H:i:s');
+        }
+
+        try {
+            return Carbon::parse($value)->format('Y-m-d H:i:s');
+        } catch (\Throwable) {
+            return (string) $value;
+        }
     }
 
     /**
