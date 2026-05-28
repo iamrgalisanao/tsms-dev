@@ -10,6 +10,7 @@ use Maatwebsite\Excel\Concerns\ShouldAutoSize;
 use Maatwebsite\Excel\Concerns\WithChunkReading;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Schema;
 
 class TransactionLogsExport implements FromQuery, WithMapping, WithHeadings, ShouldAutoSize, WithChunkReading
 {
@@ -31,15 +32,25 @@ class TransactionLogsExport implements FromQuery, WithMapping, WithHeadings, Sho
         return Transaction::query()
             ->select('transactions.*')
             ->distinct()
-            ->with(['terminal', 'tenant', 'adjustments'])
+            ->with(['terminal.tenant', 'tenant', 'adjustments'])
             // If a status filter is provided, apply it. Otherwise default to
             // exporting only VALID transactions when the schema supports
             // receipt_no (so exports align with POS-style counts). If the
             // receipt_no column is absent, preserve legacy behavior.
             ->when(isset($this->filters['status']), function($query) {
+                if ($this->filters['status'] === 'VOIDED') {
+                    $query->whereNotNull('voided_at');
+                    return;
+                }
+
+                if ($this->filters['status'] === 'REFUNDED') {
+                    $query->where('is_refunded', true);
+                    return;
+                }
+
                 $query->where('validation_status', $this->filters['status']);
             }, function($query) {
-                if (\Illuminate\Support\Facades\Schema::hasColumn('transactions', 'receipt_no')) {
+                if (Schema::hasColumn('transactions', 'receipt_no')) {
                     // Default exporter excludes DUPLICATE rows by default so
                     // exported counts better match POS-style unique receipt
                     // counts while still including PENDING/ERROR rows.
@@ -53,14 +64,42 @@ class TransactionLogsExport implements FromQuery, WithMapping, WithHeadings, Sho
                 $this->applyDateToFilter($query, $dateColumn);
             })
             ->when($this->filters['tenant_id'] ?? null, function($query, $tenantId) {
-                $query->where('tenant_id', $tenantId);
+                $query->where(function ($q) use ($tenantId) {
+                    $q->where('tenant_id', $tenantId)
+                        ->orWhereHas('terminal', function ($terminalQuery) use ($tenantId) {
+                            $terminalQuery->where('tenant_id', $tenantId);
+                        });
+                });
             })
             ->when($this->filters['terminal_id'] ?? null, function($query, $terminalId) {
                 $query->where('terminal_id', $terminalId);
             })
             ->when($this->filters['transaction_id'] ?? null, function($query, $transactionId) {
-                $search = str_replace('TX-', '', $transactionId);
-                $query->where('transaction_id', 'like', "%{$search}%");
+                $search = str_replace('TX-', '', trim($transactionId));
+
+                $query->where(function ($q) use ($search) {
+                    $q->where('transaction_id', 'like', "%{$search}%");
+
+                    if (Schema::hasColumn('transactions', 'receipt_no')) {
+                        $q->orWhere('receipt_no', 'like', "%{$search}%");
+                    }
+
+                    $q->orWhereHas('terminal', function ($terminalQuery) use ($search) {
+                        $terminalQuery
+                            ->where('serial_number', 'like', "%{$search}%")
+                            ->orWhere('machine_number', 'like', "%{$search}%");
+                    });
+
+                    $q->orWhereHas('tenant', function ($tenantQuery) use ($search) {
+                        $tenantQuery->where('trade_name', 'like', "%{$search}%");
+                    });
+                });
+            })
+            ->when($this->filters['amount_min'] ?? null, function($query, $amountMin) {
+                $query->where('gross_sales', '>=', $amountMin);
+            })
+            ->when($this->filters['amount_max'] ?? null, function($query, $amountMax) {
+                $query->where('gross_sales', '<=', $amountMax);
             });
     }
 
