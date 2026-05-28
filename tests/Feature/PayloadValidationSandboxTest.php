@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\PosTerminal;
 use App\Models\Tenant;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Config;
 use Tests\TestCase;
 
 class PayloadValidationSandboxTest extends TestCase
@@ -13,6 +14,7 @@ class PayloadValidationSandboxTest extends TestCase
 
     public function test_valid_payload_returns_diagnostic_success(): void
     {
+        Config::set('tsms.validation.net_includes_vat', false);
         $this->seedTerminal(16, 97);
 
         $response = $this->postJson('/api/v1/sandbox/payload/validate', $this->validPayload());
@@ -48,6 +50,7 @@ class PayloadValidationSandboxTest extends TestCase
 
     public function test_invalid_payload_returns_actionable_diagnostics(): void
     {
+        Config::set('tsms.validation.net_includes_vat', false);
         $this->seedTerminal(16, 97);
 
         $response = $this->postJson('/api/v1/sandbox/payload/validate', $this->invalidPayload());
@@ -88,6 +91,7 @@ class PayloadValidationSandboxTest extends TestCase
 
     public function test_include_debug_returns_canonical_json(): void
     {
+        Config::set('tsms.validation.net_includes_vat', false);
         $this->seedTerminal(16, 97);
 
         $response = $this->postJson('/api/v1/sandbox/payload/validate?include_debug=true', $this->validPayload());
@@ -127,6 +131,57 @@ class PayloadValidationSandboxTest extends TestCase
                 && ($error['pointer'] ?? null) === '/transaction/transaction_id'),
             'Sandbox should report transaction.transaction_id as an invalid UUID.'
         );
+    }
+
+    public function test_vat_inclusive_provider_payload_does_not_raise_amount_reconciliation_errors(): void
+    {
+        Config::set('tsms.validation.net_includes_vat', true);
+        $this->seedTerminal(16, 97);
+
+        $response = $this->postJson('/api/v1/sandbox/payload/validate', [
+            'submission_uuid' => '11111111-1111-4111-8111-111111111111',
+            'tenant_id' => 16,
+            'terminal_id' => 97,
+            'submission_timestamp' => '2026-05-14T12:14:05Z',
+            'transaction_count' => 1,
+            'transaction' => [
+                'hardware_id' => 'BUI-XTM80213',
+                'receipt_no' => '21165',
+                'transaction_id' => '22222222-2222-4222-8222-222222222222',
+                'transaction_timestamp' => '2026-05-14T12:14:05Z',
+                'gross_sales' => '90.00',
+                'net_sales' => '90.00',
+                'promo_status' => 'WITH_APPROVAL',
+                'customer_code' => 'C-B1028',
+                'adjustments' => [
+                    ['adjustment_type' => 'promo_discount', 'amount' => '0.00'],
+                    ['adjustment_type' => 'senior_discount', 'amount' => '0.00'],
+                    ['adjustment_type' => 'pwd_discount', 'amount' => '0.00'],
+                    ['adjustment_type' => 'vip_card_discount', 'amount' => '0.00'],
+                    ['adjustment_type' => 'service_charge_distributed_to_employees', 'amount' => '0.00'],
+                    ['adjustment_type' => 'service_charge_retained_by_management', 'amount' => '0.00'],
+                    ['adjustment_type' => 'employee_discount', 'amount' => '0.00'],
+                ],
+                'taxes' => [
+                    ['tax_type' => 'VAT', 'amount' => '9.64'],
+                    ['tax_type' => 'VATABLE_SALES', 'amount' => '80.36'],
+                    ['tax_type' => 'SC_VAT_EXEMPT_SALES', 'amount' => '0.00'],
+                    ['tax_type' => 'OTHER_TAX', 'amount' => '0.00'],
+                ],
+                'payload_checksum' => '3197f710669c1ce24f5109d5182582183024f77ba947c5dfa4e13e2a743cc26f',
+            ],
+            'payload_checksum' => 'c925156df7ffa814fae4df5fd11efb97929062f3f4d5f050d578832a62f93341',
+        ]);
+
+        $response->assertOk()
+            ->assertJsonPath('valid', true)
+            ->assertJsonPath('checks.business_rules', 'passed');
+
+        $codes = collect($response->json('errors'))->pluck('code')
+            ->merge(collect($response->json('warnings'))->pluck('code'));
+
+        $this->assertFalse($codes->contains('AMOUNT_RECONCILIATION_FAILED'));
+        $this->assertFalse($codes->contains('GROSS_RECONCILIATION_WARNING'));
     }
 
     private function seedTerminal(int $tenantId, int $terminalId): PosTerminal

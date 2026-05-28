@@ -236,41 +236,63 @@ class PayloadSandboxValidationService
         $vatable = $taxes['VATABLE_SALES'] ?? 0.0;
         $exempt = $taxes['SC_VAT_EXEMPT_SALES'] ?? 0.0;
         $otherTax = $taxes['OTHER_TAX'] ?? 0.0;
+        $netIncludesVat = (bool) config('tsms.validation.net_includes_vat', true);
+        $strictComputation = (bool) config('tsms.validation.enable_computation_validation', false);
 
         if ($vat > 0.0 && $vatable <= 0.0) {
-            $errors[] = [
+            $this->addReconciliationFinding($errors, $warnings, $strictComputation, [
                 'code' => 'VAT_RECONCILIATION_FAILED',
-                'severity' => 'error',
                 'pointer' => '/transaction/taxes',
                 'message' => 'VAT is greater than zero but VATABLE_SALES is zero.',
                 'expected' => ['VATABLE_SALES' => number_format(max($net - $vat - $exempt, 0), 2, '.', '')],
                 'actual' => ['VATABLE_SALES' => number_format($vatable, 2, '.', '')],
-            ];
+            ]);
         }
 
-        $expectedNet = round($vatable + $exempt, 2);
+        $expectedNet = $netIncludesVat
+            ? round($vatable + $exempt + $vat, 2)
+            : round($vatable + $exempt, 2);
+
         if (($vatable > 0.0 || $exempt > 0.0 || $vat > 0.0) && abs($net - $expectedNet) > 0.01) {
-            $errors[] = [
+            $this->addReconciliationFinding($errors, $warnings, $strictComputation, [
                 'code' => 'AMOUNT_RECONCILIATION_FAILED',
-                'severity' => 'error',
                 'pointer' => '/transaction/net_sales',
-                'message' => 'net_sales does not reconcile with VATABLE_SALES and SC_VAT_EXEMPT_SALES.',
+                'message' => $netIncludesVat
+                    ? 'net_sales does not reconcile with VATABLE_SALES, SC_VAT_EXEMPT_SALES, and VAT.'
+                    : 'net_sales does not reconcile with VATABLE_SALES and SC_VAT_EXEMPT_SALES.',
                 'expected' => number_format($expectedNet, 2, '.', ''),
                 'actual' => number_format($net, 2, '.', ''),
-            ];
+            ]);
         }
 
-        $expectedGross = round($net + $vat + $adjustmentSum + $otherTax, 2);
+        $expectedGross = $netIncludesVat
+            ? round($net + $adjustmentSum + $otherTax, 2)
+            : round($net + $vat + $adjustmentSum + $otherTax, 2);
+
         if (abs($gross - $expectedGross) > 0.01) {
             $warnings[] = [
                 'code' => 'GROSS_RECONCILIATION_WARNING',
                 'severity' => 'warning',
                 'pointer' => '/transaction/gross_sales',
-                'message' => 'gross_sales does not equal net_sales plus VAT, adjustments, and OTHER_TAX under the sandbox reconciliation formula.',
+                'message' => $netIncludesVat
+                    ? 'gross_sales does not equal net_sales plus adjustments and OTHER_TAX under the sandbox reconciliation formula.'
+                    : 'gross_sales does not equal net_sales plus VAT, adjustments, and OTHER_TAX under the sandbox reconciliation formula.',
                 'expected' => number_format($expectedGross, 2, '.', ''),
                 'actual' => number_format($gross, 2, '.', ''),
             ];
         }
+    }
+
+    private function addReconciliationFinding(array &$errors, array &$warnings, bool $strict, array $finding): void
+    {
+        $finding['severity'] = $strict ? 'error' : 'warning';
+
+        if ($strict) {
+            $errors[] = $finding;
+            return;
+        }
+
+        $warnings[] = $finding;
     }
 
     private function checksumDiagnostics(array $payload): array
