@@ -132,7 +132,7 @@ return [
             ],
             'default' => [
                 'connection' => 'redis',
-                'queue' => array_merge($intakeQueues, [
+                'queue' => [
                     'transaction-processing',
                     'transaction-processing:s0',
                     'transaction-processing:s1',
@@ -145,7 +145,7 @@ return [
                     'forwarding',
                     'low',
                     'notifications'
-                ]),
+                ],
                 'balance' => 'auto',
                 'processes' => 4,
                 'tries' => 2,
