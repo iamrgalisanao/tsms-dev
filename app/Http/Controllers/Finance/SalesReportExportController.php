@@ -101,8 +101,8 @@ class SalesReportExportController extends Controller
             ->join('transactions', 'transaction_taxes.transaction_pk', '=', 'transactions.id')
             ->selectRaw("
                 transactions.transaction_date,
-                SUM(IF(transaction_taxes.tax_type IN ('SC_VAT_EXEMPT_SALES', 'VAT_EXEMPT_SALES', 'VATEXEMPT_SALES'), transaction_taxes.amount, 0)) as sc_vat_exempt_fallback,
-                SUM(IF(transaction_taxes.tax_type IN ('OTHER_TAX', 'OTHER-TAX'), transaction_taxes.amount, 0)) as other_tax_basis
+                SUM(IF(transaction_taxes.tax_type IN ('SC_VAT_EXEMPT_SALES', 'VAT_EXEMPT_SALES', 'VATEXEMPT_SALES', 'VAT-EXEMPT', 'EXEMPT', 'VATEXEMPT'), transaction_taxes.amount, 0)) as sc_vat_exempt_fallback,
+                SUM(IF(transaction_taxes.tax_type NOT IN ('VAT', 'VAT_AMOUNT', 'VATABLE_SALES', 'SC_VAT_EXEMPT_SALES', 'VAT-EXEMPT', 'EXEMPT', 'VATEXEMPT', 'VATEXEMPT_SALES', 'VAT_EXEMPT_SALES', 'ZERO_RATED', 'NON-VAT', 'NON_VAT', 'ZERO-RATED'), transaction_taxes.amount, 0)) as other_tax_basis
             ")
             ->whereBetween('transactions.transaction_date', [$startDate, $endDate]);
 

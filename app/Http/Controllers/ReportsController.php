@@ -104,7 +104,7 @@ class ReportsController extends Controller
             ->selectRaw("
                 transactions.transaction_date,
                 SUM(IF(transaction_taxes.tax_type IN ('SC_VAT_EXEMPT_SALES', 'VAT_EXEMPT_SALES', 'VATEXEMPT_SALES', 'VAT-EXEMPT', 'EXEMPT', 'VATEXEMPT'), transaction_taxes.amount, 0)) as sc_vat_exempt_fallback,
-                SUM(IF(transaction_taxes.tax_type IN ('OTHER_TAX', 'OTHER-TAX'), transaction_taxes.amount, 0)) as other_tax_basis
+                SUM(IF(transaction_taxes.tax_type NOT IN ('VAT', 'VAT_AMOUNT', 'VATABLE_SALES', 'SC_VAT_EXEMPT_SALES', 'VAT-EXEMPT', 'EXEMPT', 'VATEXEMPT', 'VATEXEMPT_SALES', 'VAT_EXEMPT_SALES', 'ZERO_RATED', 'NON-VAT', 'NON_VAT', 'ZERO-RATED'), transaction_taxes.amount, 0)) as other_tax_basis
             ")
             ->whereBetween('transactions.transaction_date', [$startDate, $endDate]);
 
@@ -161,42 +161,11 @@ class ReportsController extends Controller
             }
 
             $derived = $service->deriveMetrics($components);
-            $derived['gross_sales'] = round(
-                ($derived['vatable_sales'] ?? 0)
-                + ($derived['sc_vat_exempt_sales'] ?? 0)
-                + ($derived['vat_amount'] ?? 0)
-                + ($derived['promo_with_approval'] ?? 0)
-                + ($derived['promo_without_approval'] ?? 0)
-                + ($derived['employee_discount'] ?? 0)
-                + ($derived['senior_discount'] ?? 0)
-                + ($derived['pwd_discount'] ?? 0)
-                + ($derived['vip_discount'] ?? 0)
-                + ($derived['other_tax'] ?? 0)
-                + ($derived['service_charge_distributed'] ?? 0)
-                + ($derived['service_charge_retained'] ?? 0),
-                2
-            );
-
             $dailyTotals[$date] = $derived;
         }
 
         // Build total month metrics
         $totals = $service->deriveMetrics($allComponents);
-        $totals['gross_sales'] = round(
-            ($totals['vatable_sales'] ?? 0)
-            + ($totals['sc_vat_exempt_sales'] ?? 0)
-            + ($totals['vat_amount'] ?? 0)
-            + ($totals['promo_with_approval'] ?? 0)
-            + ($totals['promo_without_approval'] ?? 0)
-            + ($totals['employee_discount'] ?? 0)
-            + ($totals['senior_discount'] ?? 0)
-            + ($totals['pwd_discount'] ?? 0)
-            + ($totals['vip_discount'] ?? 0)
-            + ($totals['other_tax'] ?? 0)
-            + ($totals['service_charge_distributed'] ?? 0)
-            + ($totals['service_charge_retained'] ?? 0),
-            2
-        );
 
         return response()->json([
             'status' => 'success',

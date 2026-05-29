@@ -59,9 +59,7 @@ class FinanceReportConsistencyTest extends TestCase
         $this->actingAs($user);
         $response = $this->getJson(route('finance.reports', [
             'trade' => $tenant->id,
-
-            'year' => 2025,
-            'month' => 1
+            'month' => '2025-01'
         ]));
 
         $response->assertStatus(200);

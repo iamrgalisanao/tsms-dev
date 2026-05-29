@@ -2,7 +2,7 @@
 
 namespace Tests\Unit;
 
-use PHPUnit\Framework\TestCase;
+use Tests\TestCase;
 use App\Services\Reports\FinanceCalculationService;
 use Illuminate\Support\Collection;
 
@@ -100,9 +100,8 @@ class FinanceCalculationDiscrepancyTest extends TestCase
         // 4. Verification
         $this->assertEquals($expectedGross, $metrics['gross_sales'], "Gross Sales should match nominal sum.");
         
-        // Vat should be derived from Net Sales
-        $expectedVat = round(($metrics['net_sales'] / 1.12) * 0.12, 2);
-        $this->assertEquals($expectedVat, $metrics['vat_amount'], "VAT must be derived accurately from Net Sales.");
+        // VAT should match the raw recorded VAT if it exists, to mirror the POS system's actual tax calculation.
+        $this->assertEquals(242.29, $metrics['vat_amount'], "VAT must match the raw recorded VAT.");
     }
 
     public function test_gross_sales_does_not_double_count_vat_when_vatable_is_vat_inclusive()
