@@ -135,4 +135,45 @@ class FinanceCalculationDiscrepancyTest extends TestCase
         $this->assertEquals(86053.60, $metrics['gross_sales']);
         $this->assertEquals(72440.65, $metrics['vatable_sales']);
     }
+
+    public function test_finance_calculation_handles_vat_exclusive_net_sales_correctly()
+    {
+        $service = new FinanceCalculationService();
+
+        // Wendy's Serial #R70866 Z-reading replica
+        $components = [
+            'vatable_sales' => 49660.21,
+            'sc_vat_exempt_sales' => 9313.72,
+            'vat_amount' => 5959.23,
+            'promo_with_approval' => 131.85,
+            'promo_without_approval' => 0.0,
+            'employee_discount' => 0.0,
+            'senior_discount' => 2328.43,
+            'pwd_discount' => 0.0,
+            'vip_discount' => 0.0,
+            'other_tax' => 0.0,
+            'service_charge_distributed' => 523.32,
+            'service_charge_retained' => 0.0,
+            'regular_discount' => 0.0,
+            'gross_sales' => 67925.28,
+            'net_sales' => 58973.95, // VAT-exclusive net sales
+        ];
+
+        $metrics = $service->deriveMetrics($components);
+
+        // Expected gross matches nominal gross within 1% threshold
+        $this->assertEquals(67925.28, $metrics['gross_sales']);
+        
+        // Vatable sales should match the raw ex-VAT vatable sales (allowing for the 0.02 centavo rounding)
+        $this->assertEquals(49660.23, $metrics['vatable_sales']);
+        
+        // VAT amount should match raw vat
+        $this->assertEquals(5959.23, $metrics['vat_amount']);
+        
+        // Net sales internally should be Vatable + VAT (49660.23 + 5959.23 = 55619.46)
+        $this->assertEquals(55619.46, $metrics['net_sales']);
+        
+        // Net total (Vatable + VAT + Exempt) should match Adjusted Gross (55619.46 + 9313.72 = 64933.18)
+        $this->assertEquals(64933.18, $metrics['net_total']);
+    }
 }

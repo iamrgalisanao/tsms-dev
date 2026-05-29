@@ -144,7 +144,11 @@ class FinanceCalculationService
             $candidateExVat = round($netBase - $rawVat, 2);
             $rawLooksVatInclusive = abs($vatableForGross - round($candidateExVat + $rawVat, 2)) <= 0.05;
             if ($candidateExVat >= 0 && $rawLooksVatInclusive) {
-                $vatableForGross = $candidateExVat;
+                // If it already matches the 12% VAT ratio as-is, then it's NOT VAT-inclusive!
+                $alreadyExVat = abs($rawVat - round($vatableForGross * 0.12, 2)) <= 0.10;
+                if (!$alreadyExVat) {
+                    $vatableForGross = $candidateExVat;
+                }
             }
         }
 
@@ -203,6 +207,15 @@ class FinanceCalculationService
             // We only subtract if the raw value appears to be inclusive of the exempt portion
             // (e.g. if Net >= Exempt). This prevents double-counting in summaries.
             $netSales = round($netSales - ($c['sc_vat_exempt_sales'] ?? 0), 2);
+
+            // If the raw net_sales was VAT-exclusive (i.e. it did NOT include VAT),
+            // then subtracting Exempt sales leaves just Vatable sales (ex-VAT).
+            // Since the rest of the CSMR logic expects $netSales to be (Vatable + VAT),
+            // we must add the VAT amount back to $netSales if it was exclusive.
+            $rawNetSalesIncludesVat = abs($rawNetSales - round($vatableForGross + ($c['sc_vat_exempt_sales'] ?? 0) + $rawVat, 2)) <= 0.10;
+            if (!$rawNetSalesIncludesVat && $rawVat > 0) {
+                $netSales = round($netSales + $rawVat, 2);
+            }
         }
 
         // 4. VAT (Source of Truth: Recorded VAT if exists, else Derived from Net)
