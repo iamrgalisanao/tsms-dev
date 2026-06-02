@@ -226,9 +226,10 @@ class FinanceCalculationService
         // to match the POS system's actual tax calculation.
         $vat = ($rawVat > 0) ? round($rawVat, 2) : $derivedVat;
 
-        // 5. Net Ex-VAT (Equivalent to Vatable Sales after normalization)
+        // 5. Net Ex-VAT (derived support metric)
         // Excel N64: Net Sales - VAT
         $netExVAT = round($netSales - $vat, 2);
+        $reportedVatableSales = round((float)($c['vatable_sales'] ?? 0), 2);
 
         // 6. Net Subject to Rent
         // Excel N71: Net ex-VAT + SC Exempt + Promo (Without Approval) + Other Tax + SC Retained
@@ -247,7 +248,7 @@ class FinanceCalculationService
             'senior_pwd' => $seniorPwd,
             'net_sales' => $netSales,
             'vat_amount' => $vat,
-            'vatable_sales' => $netExVAT,
+            'vatable_sales' => $reportedVatableSales,
             'gross_sales' => $gross,
             'net_ex_vat' => $netExVAT,
             'net_subject_to_rent' => $netSubjectToRent,
