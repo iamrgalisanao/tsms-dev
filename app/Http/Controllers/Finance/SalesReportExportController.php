@@ -90,8 +90,8 @@ class SalesReportExportController extends Controller
             ->join('transactions', 'transaction_adjustments.transaction_pk', '=', 'transactions.id')
             ->selectRaw("
                 {$joinedReportDateExpr} as report_date,
-                SUM(IF(transaction_adjustments.adjustment_type = 'EMPLOYEE', transaction_adjustments.amount, 0)) as employee_discount,
-                SUM(IF(transaction_adjustments.adjustment_type = 'VIP', transaction_adjustments.amount, 0)) as vip_discount
+                SUM(IF(transaction_adjustments.adjustment_type IN ('employee_discount', 'EMPLOYEE'), transaction_adjustments.amount, 0)) as employee_discount,
+                SUM(IF(transaction_adjustments.adjustment_type IN ('vip_card_discount', 'VIP'), transaction_adjustments.amount, 0)) as vip_discount
             ")
             ->whereRaw("{$joinedReportDateExpr} BETWEEN ? AND ?", [$startDate, $endDate]);
 

@@ -158,8 +158,12 @@ const Row = ({ transaction, onViewDetails, getStatusColor, formatCurrency, forma
                 <TableCell align="right" sx={{ color: 'text.secondary', fontSize: '11px' }}>
                     {transaction.pwd_discount ? formatCurrency(transaction.pwd_discount) : '-'}
                 </TableCell>
-                <TableCell align="right" sx={{ color: 'text.secondary', fontSize: '11px' }}>-</TableCell>
-                <TableCell align="right" sx={{ color: 'text.secondary', fontSize: '11px' }}>-</TableCell>
+                <TableCell align="right" sx={{ color: 'text.secondary', fontSize: '11px' }}>
+                    {transaction.vip_discount ? formatCurrency(transaction.vip_discount) : '-'}
+                </TableCell>
+                <TableCell align="right" sx={{ color: 'text.secondary', fontSize: '11px' }}>
+                    {transaction.employee_discount ? formatCurrency(transaction.employee_discount) : '-'}
+                </TableCell>
                 <TableCell align="left" sx={{ color: 'text.secondary', fontSize: '11px' }}>
                     {transaction.service_charge ? formatCurrency(transaction.service_charge) : '-'}
                 </TableCell>

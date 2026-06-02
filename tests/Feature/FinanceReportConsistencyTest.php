@@ -6,9 +6,11 @@ use Tests\TestCase;
 use App\Models\User;
 use App\Models\Tenant;
 use App\Models\Transaction;
+use App\Models\TransactionAdjustment;
 use App\Services\Reports\FinanceCalculationService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Schema;
+use Laravel\Sanctum\Sanctum;
 
 class FinanceReportConsistencyTest extends TestCase
 {
@@ -150,5 +152,70 @@ class FinanceReportConsistencyTest extends TestCase
         $this->assertEquals($expectedTotals['gross_sales'], $response->json('totals.gross_sales'));
         $this->assertArrayHasKey('2026-05-31', $response->json('daily_totals'));
         $this->assertArrayNotHasKey('2026-06-01', $response->json('daily_totals'));
+    }
+
+    public function test_canonical_employee_discount_adjustments_are_reported_in_csmr_and_transaction_logs()
+    {
+        $this->seed(\Database\Seeders\RoleSeeder::class);
+        $tenant = Tenant::factory()->create();
+        $terminal = \App\Models\PosTerminal::factory()->create([
+            'tenant_id' => $tenant->id,
+        ]);
+        $user = User::factory()->create();
+        $user->assignRole('admin');
+        $user->assignRole('finance');
+
+        $tx = Transaction::factory()->create([
+            'tenant_id' => $tenant->id,
+            'terminal_id' => $terminal->id,
+            'transaction_timestamp' => '2026-05-31 14:11:31',
+            'completed_at' => '2026-05-31 14:12:00',
+            'gross_sales' => 255.00,
+            'net_sales' => 0.00,
+            'vatable_sales' => 0.00,
+            'vat_amount' => 0.00,
+            'sc_vat_exempt_sales' => 0.00,
+            'payload_checksum' => 'employee-discount-subway',
+            'customer_code' => 'TEST',
+            'validation_status' => 'VALID',
+        ]);
+
+        TransactionAdjustment::create([
+            'transaction_pk' => $tx->id,
+            'adjustment_type' => 'employee_discount',
+            'amount' => 255.00,
+        ]);
+
+        $this->actingAs($user);
+        $financeResponse = $this->getJson(route('finance.reports', [
+            'trade' => $tenant->id,
+            'month' => '2026-05',
+        ]));
+
+        $financeResponse->assertStatus(200);
+        $this->assertSame(255.0, (float) $financeResponse->json('totals.employee_discount'));
+        $this->assertSame(255.0, (float) $financeResponse->json('daily_totals.2026-05-31.employee_discount'));
+
+        $summaryResponse = $this->getJson(route('transactions.logs.summary', [
+            'tenant_id' => $tenant->id,
+            'date_from' => '2026-05-31',
+            'date_to' => '2026-05-31',
+            'date_basis' => 'completed',
+        ]));
+
+        $summaryResponse->assertStatus(200);
+        $this->assertSame(255.0, (float) $summaryResponse->json('grandTotal.employee_discount'));
+        $this->assertSame(255.0, (float) $summaryResponse->json('summary.data.0.employee_discount'));
+
+        Sanctum::actingAs($user, ['*']);
+        $logsResponse = $this->getJson('/api/transactions/logs?' . http_build_query([
+            'tenant_id' => $tenant->id,
+            'date_from' => '2026-05-31',
+            'date_to' => '2026-05-31',
+            'date_basis' => 'completed',
+        ]));
+
+        $logsResponse->assertStatus(200);
+        $this->assertSame(255.0, (float) $logsResponse->json('data.0.employee_discount'));
     }
 }

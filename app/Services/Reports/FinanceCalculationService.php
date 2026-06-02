@@ -76,12 +76,12 @@ class FinanceCalculationService
 
             if ($txEmployee === 0.0 && method_exists($tx, 'adjustments')) {
                 $txEmployee = (float) $tx->adjustments()
-                    ->where('adjustment_type', 'EMPLOYEE')
+                    ->whereIn('adjustment_type', ['employee_discount', 'EMPLOYEE'])
                     ->sum('amount');
             }
             if ($txVip === 0.0 && method_exists($tx, 'adjustments')) {
                 $txVip = (float) $tx->adjustments()
-                    ->where('adjustment_type', 'VIP')
+                    ->whereIn('adjustment_type', ['vip_card_discount', 'VIP'])
                     ->sum('amount');
             }
 

@@ -228,16 +228,30 @@ class TransactionLogController extends Controller
 
         // Normalize metrics for each individual transaction in the Detailed View
         $logs->getCollection()->transform(function($tx) {
+            $employeeDiscount = (float)($tx->employee_discount ?? 0);
+            if ($employeeDiscount === 0.0 && $tx->relationLoaded('adjustments')) {
+                $employeeDiscount = (float) $tx->adjustments
+                    ->whereIn('adjustment_type', ['employee_discount', 'EMPLOYEE'])
+                    ->sum('amount');
+            }
+
+            $vipDiscount = (float)($tx->vip_card_discount ?? 0);
+            if ($vipDiscount === 0.0 && $tx->relationLoaded('adjustments')) {
+                $vipDiscount = (float) $tx->adjustments
+                    ->whereIn('adjustment_type', ['vip_card_discount', 'VIP'])
+                    ->sum('amount');
+            }
+
             $components = [
                 'vatable_sales' => (float)($tx->vatable_sales ?? 0),
                 'sc_vat_exempt_sales' => (float)($tx->sc_vat_exempt_sales ?? 0),
                 'vat_amount' => (float)($tx->vat_amount ?? 0),
                 'promo_with_approval' => $tx->promo_status === 'WITH_APPROVAL' ? (float)($tx->promo_discount ?? 0) : 0,
                 'promo_without_approval' => $tx->promo_status !== 'WITH_APPROVAL' ? (float)($tx->promo_discount ?? 0) : 0,
-                'employee_discount' => (float)($tx->employee_discount ?? 0),
+                'employee_discount' => $employeeDiscount,
                 'senior_discount' => (float)($tx->senior_discount ?? 0),
                 'pwd_discount' => (float)($tx->pwd_discount ?? 0),
-                'vip_discount' => (float)($tx->vip_card_discount ?? 0),
+                'vip_discount' => $vipDiscount,
                 'other_tax' => (float)($tx->tax_exempt ?? 0),
                 'service_charge_distributed' => (float)($tx->service_charge ?? 0),
                 'service_charge_retained' => (float)($tx->management_service_charge ?? 0),
@@ -259,6 +273,8 @@ class TransactionLogController extends Controller
             $tx->vatable_sales = $derived['vatable_sales'];
             $tx->sc_vat_exempt_sales = $derived['sc_vat_exempt_sales'];
             $tx->refund = (float)($tx->refund_amount ?? 0);
+            $tx->employee_discount = $employeeDiscount;
+            $tx->vip_discount = $vipDiscount;
 
             return $tx;
         });
@@ -538,6 +554,26 @@ class TransactionLogController extends Controller
         $hasTaxExempt = Schema::hasColumn('transactions', 'tax_exempt');
         $hasEmployeeDiscount = Schema::hasColumn('transactions', 'employee_discount');
         $hasVipCardDiscount = Schema::hasColumn('transactions', 'vip_card_discount');
+        $hasAdjustmentAggregates = Schema::hasTable('transaction_adjustments')
+            && Schema::hasColumn('transaction_adjustments', 'transaction_pk');
+
+        $employeeDiscountExpression = $hasAdjustmentAggregates
+            ? 'COALESCE(SUM(COALESCE(adj_totals.employee_discount, 0)),0)'
+            : '0';
+        $vipDiscountExpression = $hasAdjustmentAggregates
+            ? 'COALESCE(SUM(COALESCE(adj_totals.vip_discount, 0)),0)'
+            : '0';
+
+        if ($hasEmployeeDiscount) {
+            $employeeDiscountExpression = $hasAdjustmentAggregates
+                ? 'COALESCE(SUM(CASE WHEN COALESCE(t.employee_discount,0) <> 0 THEN t.employee_discount ELSE COALESCE(adj_totals.employee_discount,0) END),0)'
+                : 'COALESCE(SUM(t.employee_discount),0)';
+        }
+        if ($hasVipCardDiscount) {
+            $vipDiscountExpression = $hasAdjustmentAggregates
+                ? 'COALESCE(SUM(CASE WHEN COALESCE(t.vip_card_discount,0) <> 0 THEN t.vip_card_discount ELSE COALESCE(adj_totals.vip_discount,0) END),0)'
+                : 'COALESCE(SUM(t.vip_card_discount),0)';
+        }
 
         // Build the filtered transaction set once, then clone it for grouped
         // pagination and ungrouped grand totals. Cloning after GROUP BY causes
@@ -601,6 +637,18 @@ class TransactionLogController extends Controller
             ->when(isset($filters['terminal_id']), function ($q) use ($filters) {
                 $q->where('t.terminal_id', $filters['terminal_id']);
             });
+
+        if ($hasAdjustmentAggregates) {
+            $adjustmentTotals = \DB::table('transaction_adjustments')
+                ->selectRaw('transaction_pk')
+                ->selectRaw("SUM(CASE WHEN adjustment_type IN ('employee_discount', 'EMPLOYEE') THEN amount ELSE 0 END) as employee_discount")
+                ->selectRaw("SUM(CASE WHEN adjustment_type IN ('vip_card_discount', 'VIP') THEN amount ELSE 0 END) as vip_discount")
+                ->groupBy('transaction_pk');
+
+            $baseQuery->leftJoinSub($adjustmentTotals, 'adj_totals', function ($join) {
+                $join->on('adj_totals.transaction_pk', '=', 't.id');
+            });
+        }
 
         // [FIX-FINANCE-RECON] When the schema supports receipt_no, default summary roll-ups to VALID
         // transactions so aggregates align with POS-style unique receipt counts.
@@ -732,12 +780,8 @@ class TransactionLogController extends Controller
         ->when($hasTaxExempt, function ($q) {
             $q->selectRaw('COALESCE(SUM(t.tax_exempt),0) as other_tax');
         })
-        ->when($hasEmployeeDiscount, function ($q) {
-            $q->selectRaw('COALESCE(SUM(t.employee_discount),0) as employee_discount');
-        })
-        ->when($hasVipCardDiscount, function ($q) {
-            $q->selectRaw('COALESCE(SUM(t.vip_card_discount),0) as vip_discount');
-        })
+        ->selectRaw($employeeDiscountExpression . ' as employee_discount')
+        ->selectRaw($vipDiscountExpression . ' as vip_discount')
         ->selectRaw('MIN(t.id) as sample_tx_id')
         ->groupBy('date', 't.tenant_id', 't.terminal_id', 'trade_name', 'term.serial_number', 'term.machine_number')
         ->orderBy('date', $sortDirection);
@@ -763,12 +807,8 @@ class TransactionLogController extends Controller
             ->when($hasTaxExempt, function ($q) {
                 $q->selectRaw('COALESCE(SUM(t.tax_exempt),0) as other_tax');
             })
-            ->when($hasEmployeeDiscount, function ($q) {
-                $q->selectRaw('COALESCE(SUM(t.employee_discount),0) as employee_discount');
-            })
-            ->when($hasVipCardDiscount, function ($q) {
-                $q->selectRaw('COALESCE(SUM(t.vip_card_discount),0) as vip_discount');
-            })
+            ->selectRaw($employeeDiscountExpression . ' as employee_discount')
+            ->selectRaw($vipDiscountExpression . ' as vip_discount')
             ->when($hasReceiptNo, function ($q) {
                 $q->selectRaw("COUNT(DISTINCT NULLIF(t.receipt_no, '')) as unique_receipts");
             })
