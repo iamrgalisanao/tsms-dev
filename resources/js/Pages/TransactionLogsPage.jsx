@@ -24,6 +24,8 @@ import SummaryTable from '../Components/transactions/SummaryTable';
 import TransactionDetailPanel from '../Components/transactions/TransactionDetailPanel';
 import { transactionLogService } from '../services/transactionLogService';
 
+const REPORTING_BASIS_STORAGE_KEY = 'transaction_logs_reporting_basis';
+
 const StatCard = ({ label, value, color }) => (
     <Box>
         <Typography variant="caption" sx={{ color: 'text.disabled', fontWeight: 800, display: 'block', fontSize: '0.65rem', textTransform: 'uppercase', letterSpacing: '0.1em', mb: 0.5 }}>
@@ -45,6 +47,11 @@ const formatCurrency = (amount) => {
 
 const TransactionLogsPage = () => {
     const [activeTab, setActiveTab] = useState('detailed');
+    const getInitialReportingBasis = () => {
+        const savedBasis = window.localStorage?.getItem(REPORTING_BASIS_STORAGE_KEY);
+        return ['completed', 'transaction', 'created'].includes(savedBasis) ? savedBasis : 'completed';
+    };
+
     const [filters, setFilters] = useState({
         status: '',
         terminal_id: '',
@@ -52,7 +59,7 @@ const TransactionLogsPage = () => {
         date_from: '',
         date_to: '',
         transaction_id: '',
-        date_basis: 'completed'
+        date_basis: getInitialReportingBasis()
     });
 
     // Shared sort direction for date-based ordering (detailed & summary)
@@ -61,6 +68,7 @@ const TransactionLogsPage = () => {
     const [transactions, setTransactions] = useState([]);
     const [summary, setSummary] = useState([]);
     const [grandTotal, setGrandTotal] = useState(null);
+    const [dateBasisDiscrepancy, setDateBasisDiscrepancy] = useState(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
 
@@ -98,6 +106,7 @@ const TransactionLogsPage = () => {
                 );
                 setTransactions(response.data || []);
                 setTotalCount(response.total || 0);
+                setDateBasisDiscrepancy(null);
             } else {
                 const response = await transactionLogService.getSummary(
                     cleanFilters,
@@ -109,6 +118,7 @@ const TransactionLogsPage = () => {
                 setSummary(summaryData.data || []);
                 setTotalCount(summaryData.total || 0);
                 setGrandTotal(response.grandTotal || null);
+                setDateBasisDiscrepancy(response.dateBasisDiscrepancy || null);
             }
         } catch (err) {
             console.error('Error loading data:', err);
@@ -119,6 +129,9 @@ const TransactionLogsPage = () => {
     };
 
     const handleFilterChange = (newFilters) => {
+        if (newFilters.date_basis) {
+            window.localStorage?.setItem(REPORTING_BASIS_STORAGE_KEY, newFilters.date_basis);
+        }
         setFilters(newFilters);
         setPage(0);
     };
@@ -133,6 +146,7 @@ const TransactionLogsPage = () => {
             transaction_id: '',
             date_basis: 'completed'
         });
+        window.localStorage?.setItem(REPORTING_BASIS_STORAGE_KEY, 'completed');
         setSortDirection('desc');
         setPage(0);
     };
@@ -145,7 +159,10 @@ const TransactionLogsPage = () => {
     const handleExport = async () => {
         try {
             const cleanFilters = Object.fromEntries(
-                Object.entries(filters).filter(([_, value]) => value !== '')
+                Object.entries({
+                    ...filters,
+                    date_basis: filters.date_basis || 'completed'
+                }).filter(([_, value]) => value !== '')
             );
             await transactionLogService.exportToExcel(cleanFilters);
         } catch (err) {
@@ -218,6 +235,25 @@ const TransactionLogsPage = () => {
             {error && (
                 <Alert severity="error" sx={{ mb: 3, borderRadius: '12px' }} onClose={() => setError(null)}>
                     {error}
+                </Alert>
+            )}
+
+            {activeTab === 'summary' && filters.date_basis === 'transaction' && dateBasisDiscrepancy && (
+                <Alert
+                    severity={dateBasisDiscrepancy.excluded_due_to_completion_outside_range > 0 ? 'warning' : 'info'}
+                    sx={{ mb: 3, borderRadius: '12px' }}
+                    action={
+                        <Button
+                            color="inherit"
+                            size="small"
+                            onClick={() => handleFilterChange({ ...filters, date_basis: 'completed' })}
+                            sx={{ fontWeight: 800, whiteSpace: 'nowrap' }}
+                        >
+                            Switch to Completed Date
+                        </Button>
+                    }
+                >
+                    Included: {dateBasisDiscrepancy.included?.toLocaleString() || 0} transactions. Excluded due to completion outside range: {dateBasisDiscrepancy.excluded_due_to_completion_outside_range?.toLocaleString() || 0}.
                 </Alert>
             )}
 

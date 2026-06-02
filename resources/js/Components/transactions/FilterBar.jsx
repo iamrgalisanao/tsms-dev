@@ -13,13 +13,12 @@ import {
     Typography,
     Paper,
     InputAdornment,
-    Divider
+    Tooltip
 } from '@mui/material';
 import SearchIcon from '@mui/icons-material/Search';
 import RestartAltIcon from '@mui/icons-material/RestartAlt';
-import TodayIcon from '@mui/icons-material/Today';
-import CalendarMonthIcon from '@mui/icons-material/CalendarMonth';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import { transactionLogService } from '../../services/transactionLogService';
 
 const FilterBar = ({ filters, onFilterChange, onReset }) => {
@@ -91,8 +90,8 @@ const FilterBar = ({ filters, onFilterChange, onReset }) => {
     ];
 
     const dateBasisOptions = [
-        { value: 'completed', label: 'Completed Date' },
-        { value: 'transaction', label: 'Transaction Date' },
+        { value: 'completed', label: 'Completed Date (Finalized)' },
+        { value: 'transaction', label: 'Transaction Date (Event Time)' },
         { value: 'created', label: 'Created Date' }
     ];
 
@@ -154,10 +153,10 @@ const FilterBar = ({ filters, onFilterChange, onReset }) => {
                         </Select>
                     </FormControl>
                     <FormControl sx={{ flex: 2, minWidth: 180 }}>
-                        <InputLabel>Date Basis</InputLabel>
+                        <InputLabel>Reporting Basis</InputLabel>
                         <Select
                             value={filters.date_basis || 'completed'}
-                            label="Date Basis"
+                            label="Reporting Basis"
                             onChange={(e) => handleChange('date_basis', e.target.value)}
                             sx={{ borderRadius: 2 }}
                             size="small"
@@ -166,6 +165,21 @@ const FilterBar = ({ filters, onFilterChange, onReset }) => {
                                 <MenuItem key={option.value} value={option.value}>{option.label}</MenuItem>
                             ))}
                         </Select>
+                        <Tooltip
+                            arrow
+                            title="Completed Date is recommended for reconciliation because it uses finalized records. Transaction Date uses the sale event time and may omit late-completed records."
+                        >
+                            <InfoOutlinedIcon
+                                sx={{
+                                    position: 'absolute',
+                                    right: 32,
+                                    top: 10,
+                                    color: 'text.disabled',
+                                    fontSize: 18,
+                                    pointerEvents: 'auto'
+                                }}
+                            />
+                        </Tooltip>
                     </FormControl>
                     <TextField
                         sx={{ flex: 1.5, minWidth: 160 }}

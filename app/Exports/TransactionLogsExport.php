@@ -130,7 +130,9 @@ class TransactionLogsExport implements FromQuery, WithMapping, WithHeadings, Sho
             'Job Status',
             'Attempts',
             'Transaction Time',
-            'Created At'
+            'Created At',
+            'Completed At',
+            'Reporting Basis',
         ];
     }
 
@@ -172,7 +174,9 @@ class TransactionLogsExport implements FromQuery, WithMapping, WithHeadings, Sho
             $transaction->job_status ?? $transaction->latest_job_status ?? 'N/A',
             $transaction->job_attempts ?? 0,
             $this->formatDateTime($txTime),
-            $this->formatDateTime($transaction->created_at)
+            $this->formatDateTime($transaction->created_at),
+            $this->formatDateTime($transaction->completed_at),
+            $this->getDateBasisLabel(),
         ];
     }
 
@@ -212,6 +216,15 @@ class TransactionLogsExport implements FromQuery, WithMapping, WithHeadings, Sho
             'created' => 'created_at',
             'transaction' => 'transaction_timestamp', 
             default => 'completed_at'
+        };
+    }
+
+    private function getDateBasisLabel(): string
+    {
+        return match ($this->getDateBasis()) {
+            'created' => 'Created Date',
+            'transaction' => 'Transaction Date (Event Time)',
+            default => 'Completed Date (Finalized)',
         };
     }
 

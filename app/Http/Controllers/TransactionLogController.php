@@ -369,7 +369,10 @@ class TransactionLogController extends Controller
                 'path' => $request->path(),
             ]);
 
-            $filename = 'transaction-logs-' . now()->format('Y-m-d') . '.xlsx';
+            $basis = in_array($filters['date_basis'] ?? null, ['created', 'completed', 'transaction'])
+                ? $filters['date_basis']
+                : 'completed';
+            $filename = 'transaction-logs-' . $basis . '-date-' . now()->format('Y-m-d') . '.xlsx';
 
             return Excel::download(new TransactionLogsExport($filters), $filename);
         } catch (\Throwable $e) {
@@ -608,6 +611,28 @@ class TransactionLogController extends Controller
                 ->whereNull('t.voided_at');
         }
 
+        $dateBasisDiscrepancy = null;
+        if ($basis === 'transaction' && (isset($filters['date_from']) || isset($filters['date_to']))) {
+            $excludedQuery = clone $baseQuery;
+            $excludedQuery->where(function ($q) use ($filters) {
+                $q->whereNull('t.completed_at');
+
+                if (isset($filters['date_from'])) {
+                    $q->orWhere('t.completed_at', '<', $filters['date_from'] . ' 00:00:00');
+                }
+
+                if (isset($filters['date_to'])) {
+                    $q->orWhere('t.completed_at', '>', $filters['date_to'] . ' 23:59:59');
+                }
+            });
+
+            $dateBasisDiscrepancy = [
+                'basis' => 'transaction',
+                'included' => (int) (clone $baseQuery)->count(),
+                'excluded_due_to_completion_outside_range' => (int) $excludedQuery->count(),
+            ];
+        }
+
         // For summary roll-ups allow grouping/filters by transaction_timestamp as well
         $query = (clone $baseQuery)
             ->selectRaw('DATE(' . $dateExpr . ') as date')
@@ -771,7 +796,8 @@ class TransactionLogController extends Controller
         if ($request->wantsJson()) {
             return response()->json([
                 'summary' => $summary,
-                'grandTotal' => $grandTotal
+                'grandTotal' => $grandTotal,
+                'dateBasisDiscrepancy' => $dateBasisDiscrepancy,
             ]);
         }
 
