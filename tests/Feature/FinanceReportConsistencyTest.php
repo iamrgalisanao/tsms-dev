@@ -33,6 +33,7 @@ class FinanceReportConsistencyTest extends TestCase
             'tenant_id' => $tenant->id,
             'terminal_id' => $terminal->id,
             'transaction_timestamp' => $date,
+            'completed_at' => $date,
             'vatable_sales' => 1000.00,
             'sc_vat_exempt_sales' => 500.00,
             'vat_amount' => 120.00,
@@ -80,5 +81,74 @@ class FinanceReportConsistencyTest extends TestCase
         // Verify key formulas
         $this->assertEquals(150.00, $uiTotals['total_promotions']);
         $this->assertEquals(50.00, $uiTotals['total_service_charge']);
+    }
+
+    public function test_csmr_report_uses_completed_date_for_reporting_month()
+    {
+        $this->seed(\Database\Seeders\RoleSeeder::class);
+        $tenant = Tenant::factory()->create();
+        $terminal = \App\Models\PosTerminal::factory()->create([
+            'tenant_id' => $tenant->id
+        ]);
+        $user = User::factory()->create();
+        $user->assignRole('finance');
+
+        Transaction::factory()->create([
+            'tenant_id' => $tenant->id,
+            'terminal_id' => $terminal->id,
+            'transaction_timestamp' => '2026-05-31 23:59:00',
+            'completed_at' => '2026-06-01 00:01:00',
+            'gross_sales' => 100.00,
+            'net_sales' => 90.00,
+            'vatable_sales' => 80.00,
+            'vat_amount' => 9.60,
+            'payload_checksum' => 'completed-june',
+            'customer_code' => 'TEST',
+            'validation_status' => 'VALID',
+        ]);
+
+        Transaction::factory()->create([
+            'tenant_id' => $tenant->id,
+            'terminal_id' => $terminal->id,
+            'transaction_timestamp' => '2026-04-30 23:59:00',
+            'completed_at' => '2026-05-31 00:01:00',
+            'gross_sales' => 200.00,
+            'net_sales' => 180.00,
+            'vatable_sales' => 160.00,
+            'vat_amount' => 19.20,
+            'payload_checksum' => 'completed-may',
+            'customer_code' => 'TEST',
+            'validation_status' => 'VALID',
+        ]);
+
+        $this->actingAs($user);
+        $response = $this->getJson(route('finance.reports', [
+            'trade' => $tenant->id,
+            'month' => '2026-05',
+        ]));
+
+        $response->assertStatus(200);
+        $service = new FinanceCalculationService();
+        $expectedTotals = $service->deriveMetrics([
+            'vatable_sales' => 160.00,
+            'sc_vat_exempt_sales' => 0.00,
+            'vat_amount' => 19.20,
+            'promo_with_approval' => 0.00,
+            'promo_without_approval' => 0.00,
+            'employee_discount' => 0.00,
+            'senior_discount' => 0.00,
+            'pwd_discount' => 0.00,
+            'vip_discount' => 0.00,
+            'other_tax' => 0.00,
+            'service_charge_distributed' => 0.00,
+            'service_charge_retained' => 0.00,
+            'regular_discount' => 0.00,
+            'gross_sales' => 200.00,
+            'net_sales' => 180.00,
+        ]);
+
+        $this->assertEquals($expectedTotals['gross_sales'], $response->json('totals.gross_sales'));
+        $this->assertArrayHasKey('2026-05-31', $response->json('daily_totals'));
+        $this->assertArrayNotHasKey('2026-06-01', $response->json('daily_totals'));
     }
 }

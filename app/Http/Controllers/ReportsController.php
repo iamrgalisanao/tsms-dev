@@ -48,11 +48,17 @@ class ReportsController extends Controller
         $month = $monthDate->format('m');
 
         $excludeVoids = config('tsms.reporting.exclude_voids_from_totals', true);
+        $reportDateExpr = Schema::hasColumn('transactions', 'completed_at')
+            ? 'DATE(completed_at)'
+            : 'transaction_date';
+        $joinedReportDateExpr = Schema::hasColumn('transactions', 'completed_at')
+            ? 'DATE(transactions.completed_at)'
+            : 'transactions.transaction_date';
 
         // 1. Optimized Main Transaction Aggregation
         $query = Transaction::query()
             ->selectRaw("
-                transaction_date,
+                {$reportDateExpr} as report_date,
                 SUM(gross_sales) as gross_sales,
                 SUM(net_sales) as net_sales,
                 SUM(vatable_sales) as vatable_sales,
@@ -67,7 +73,7 @@ class ReportsController extends Controller
                 SUM(IF(promo_status = 'WITH_APPROVAL', promo_discount, 0)) as promo_with_approval,
                 SUM(IF(promo_status != 'WITH_APPROVAL', promo_discount, 0)) as promo_without_approval
             ")
-            ->whereBetween('transaction_date', [$startDate, $endDate]);
+            ->whereRaw("{$reportDateExpr} BETWEEN ? AND ?", [$startDate, $endDate]);
 
         if ($tenantId && $tenantId !== 'all') {
             $query->where('tenant_id', $tenantId);
@@ -78,17 +84,17 @@ class ReportsController extends Controller
                   ->whereNull('voided_at');
         }
 
-        $dailyMain = $query->groupBy('transaction_date')->get()->keyBy('transaction_date');
+        $dailyMain = $query->groupBy('report_date')->get()->keyBy('report_date');
 
         // 2. Fetch Adjustments Aggregates (Daily)
         $adjQuery = \DB::table('transaction_adjustments')
             ->join('transactions', 'transaction_adjustments.transaction_pk', '=', 'transactions.id')
             ->selectRaw("
-                transactions.transaction_date,
+                {$joinedReportDateExpr} as report_date,
                 SUM(IF(transaction_adjustments.adjustment_type = 'EMPLOYEE', transaction_adjustments.amount, 0)) as employee_discount,
                 SUM(IF(transaction_adjustments.adjustment_type = 'VIP', transaction_adjustments.amount, 0)) as vip_discount
             ")
-            ->whereBetween('transactions.transaction_date', [$startDate, $endDate]);
+            ->whereRaw("{$joinedReportDateExpr} BETWEEN ? AND ?", [$startDate, $endDate]);
 
         if ($tenantId && $tenantId !== 'all') {
             $adjQuery->where('transactions.tenant_id', $tenantId);
@@ -96,17 +102,17 @@ class ReportsController extends Controller
         if ($excludeVoids) {
             $adjQuery->where('transactions.transaction_type', '!=', 'VOID')->whereNull('transactions.voided_at');
         }
-        $dailyAdj = $adjQuery->groupBy('transactions.transaction_date')->get()->keyBy('transaction_date');
+        $dailyAdj = $adjQuery->groupBy('report_date')->get()->keyBy('report_date');
 
         // 3. Fetch Taxes Aggregates (Daily)
         $taxQuery = \DB::table('transaction_taxes')
             ->join('transactions', 'transaction_taxes.transaction_pk', '=', 'transactions.id')
             ->selectRaw("
-                transactions.transaction_date,
+                {$joinedReportDateExpr} as report_date,
                 SUM(IF(transaction_taxes.tax_type IN ('SC_VAT_EXEMPT_SALES', 'VAT_EXEMPT_SALES', 'VATEXEMPT_SALES', 'VAT-EXEMPT', 'EXEMPT', 'VATEXEMPT'), transaction_taxes.amount, 0)) as sc_vat_exempt_fallback,
                 SUM(IF(transaction_taxes.tax_type NOT IN ('VAT', 'VAT_AMOUNT', 'VATABLE_SALES', 'SC_VAT_EXEMPT_SALES', 'VAT-EXEMPT', 'EXEMPT', 'VATEXEMPT', 'VATEXEMPT_SALES', 'VAT_EXEMPT_SALES', 'ZERO_RATED', 'NON-VAT', 'NON_VAT', 'ZERO-RATED'), transaction_taxes.amount, 0)) as other_tax_basis
             ")
-            ->whereBetween('transactions.transaction_date', [$startDate, $endDate]);
+            ->whereRaw("{$joinedReportDateExpr} BETWEEN ? AND ?", [$startDate, $endDate]);
 
         if ($tenantId && $tenantId !== 'all') {
             $taxQuery->where('transactions.tenant_id', $tenantId);
@@ -114,7 +120,7 @@ class ReportsController extends Controller
         if ($excludeVoids) {
             $taxQuery->where('transactions.transaction_type', '!=', 'VOID')->whereNull('transactions.voided_at');
         }
-        $dailyTax = $taxQuery->groupBy('transactions.transaction_date')->get()->keyBy('transaction_date');
+        $dailyTax = $taxQuery->groupBy('report_date')->get()->keyBy('report_date');
 
         $service = app(\App\Services\Reports\FinanceCalculationService::class);
 

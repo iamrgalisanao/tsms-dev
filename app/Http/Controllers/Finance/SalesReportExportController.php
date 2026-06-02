@@ -15,6 +15,7 @@ use PhpOffice\PhpSpreadsheet\Style\NumberFormat;
 use PhpOffice\PhpSpreadsheet\Style\Alignment;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 class SalesReportExportController extends Controller
 {
@@ -49,11 +50,17 @@ class SalesReportExportController extends Controller
         // Get tenant trade name
         $tenantRecord = ($tenantId && $tenantId !== 'all') ? Tenant::find($tenantId) : null;
         $tenantName = $tenantRecord ? $tenantRecord->trade_name : 'All Tenants';
+        $reportDateExpr = Schema::hasColumn('transactions', 'completed_at')
+            ? 'DATE(completed_at)'
+            : 'transaction_date';
+        $joinedReportDateExpr = Schema::hasColumn('transactions', 'completed_at')
+            ? 'DATE(transactions.completed_at)'
+            : 'transactions.transaction_date';
 
         // Optimized Main Aggregation
         $mainQuery = Transaction::query()
             ->selectRaw("
-                transaction_date,
+                {$reportDateExpr} as report_date,
                 SUM(gross_sales) as gross_sales,
                 SUM(net_sales) as net_sales,
                 SUM(vatable_sales) as vatable_sales,
@@ -68,7 +75,7 @@ class SalesReportExportController extends Controller
                 SUM(IF(promo_status = 'WITH_APPROVAL', promo_discount, 0)) as promo_with_approval,
                 SUM(IF(promo_status != 'WITH_APPROVAL', promo_discount, 0)) as promo_without_approval
             ")
-            ->whereBetween('transaction_date', [$startDate, $endDate]);
+            ->whereRaw("{$reportDateExpr} BETWEEN ? AND ?", [$startDate, $endDate]);
 
         if ($tenantRecord) {
             $mainQuery->where('tenant_id', $tenantRecord->id);
@@ -76,17 +83,17 @@ class SalesReportExportController extends Controller
         if ($excludeVoids) {
             $mainQuery->where('transaction_type', '!=', 'VOID')->whereNull('voided_at');
         }
-        $dailyMain = $mainQuery->groupBy('transaction_date')->get()->keyBy('transaction_date');
+        $dailyMain = $mainQuery->groupBy('report_date')->get()->keyBy('report_date');
 
         // Optimized Adjustments (Employee/VIP Discounts)
         $adjQuery = DB::table('transaction_adjustments')
             ->join('transactions', 'transaction_adjustments.transaction_pk', '=', 'transactions.id')
             ->selectRaw("
-                transactions.transaction_date,
+                {$joinedReportDateExpr} as report_date,
                 SUM(IF(transaction_adjustments.adjustment_type = 'EMPLOYEE', transaction_adjustments.amount, 0)) as employee_discount,
                 SUM(IF(transaction_adjustments.adjustment_type = 'VIP', transaction_adjustments.amount, 0)) as vip_discount
             ")
-            ->whereBetween('transactions.transaction_date', [$startDate, $endDate]);
+            ->whereRaw("{$joinedReportDateExpr} BETWEEN ? AND ?", [$startDate, $endDate]);
 
         if ($tenantRecord) {
             $adjQuery->where('transactions.tenant_id', $tenantRecord->id);
@@ -94,17 +101,17 @@ class SalesReportExportController extends Controller
         if ($excludeVoids) {
             $adjQuery->where('transactions.transaction_type', '!=', 'VOID')->whereNull('transactions.voided_at');
         }
-        $dailyAdj = $adjQuery->groupBy('transactions.transaction_date')->get()->keyBy('transaction_date');
+        $dailyAdj = $adjQuery->groupBy('report_date')->get()->keyBy('report_date');
 
         // Optimized Taxes (Fallback for SC Vat Exempt and Local Tax)
         $taxQuery = DB::table('transaction_taxes')
             ->join('transactions', 'transaction_taxes.transaction_pk', '=', 'transactions.id')
             ->selectRaw("
-                transactions.transaction_date,
+                {$joinedReportDateExpr} as report_date,
                 SUM(IF(transaction_taxes.tax_type IN ('SC_VAT_EXEMPT_SALES', 'VAT_EXEMPT_SALES', 'VATEXEMPT_SALES', 'VAT-EXEMPT', 'EXEMPT', 'VATEXEMPT'), transaction_taxes.amount, 0)) as sc_vat_exempt_fallback,
                 SUM(IF(transaction_taxes.tax_type NOT IN ('VAT', 'VAT_AMOUNT', 'VATABLE_SALES', 'SC_VAT_EXEMPT_SALES', 'VAT-EXEMPT', 'EXEMPT', 'VATEXEMPT', 'VATEXEMPT_SALES', 'VAT_EXEMPT_SALES', 'ZERO_RATED', 'NON-VAT', 'NON_VAT', 'ZERO-RATED'), transaction_taxes.amount, 0)) as other_tax_basis
             ")
-            ->whereBetween('transactions.transaction_date', [$startDate, $endDate]);
+            ->whereRaw("{$joinedReportDateExpr} BETWEEN ? AND ?", [$startDate, $endDate]);
 
         if ($tenantRecord) {
             $taxQuery->where('transactions.tenant_id', $tenantRecord->id);
@@ -112,7 +119,7 @@ class SalesReportExportController extends Controller
         if ($excludeVoids) {
             $taxQuery->where('transactions.transaction_type', '!=', 'VOID')->whereNull('transactions.voided_at');
         }
-        $dailyTax = $taxQuery->groupBy('transactions.transaction_date')->get()->keyBy('transaction_date');
+        $dailyTax = $taxQuery->groupBy('report_date')->get()->keyBy('report_date');
 
         $service = app(\App\Services\Reports\FinanceCalculationService::class);
         $byDate = [];
