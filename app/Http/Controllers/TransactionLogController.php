@@ -531,8 +531,16 @@ class TransactionLogController extends Controller
             $perPage = 1000;
         }
 
-        // For summary roll-ups allow grouping/filters by transaction_timestamp as well
-        $query = \DB::table('transactions as t')
+        $hasReceiptNo = Schema::hasColumn('transactions', 'receipt_no');
+        $hasTaxExempt = Schema::hasColumn('transactions', 'tax_exempt');
+        $hasEmployeeDiscount = Schema::hasColumn('transactions', 'employee_discount');
+        $hasVipCardDiscount = Schema::hasColumn('transactions', 'vip_card_discount');
+
+        // Build the filtered transaction set once, then clone it for grouped
+        // pagination and ungrouped grand totals. Cloning after GROUP BY causes
+        // the grand total query to scan grouped rows and can return the first
+        // group instead of the true filtered total.
+        $baseQuery = \DB::table('transactions as t')
             ->leftJoin('tenants as tn', 'tn.id', '=', 't.tenant_id')
             ->leftJoin('pos_terminals as term', 'term.id', '=', 't.terminal_id')
             ->when(isset($filters['status']), function ($q) use ($filters) {
@@ -589,7 +597,19 @@ class TransactionLogController extends Controller
             })
             ->when(isset($filters['terminal_id']), function ($q) use ($filters) {
                 $q->where('t.terminal_id', $filters['terminal_id']);
-            })
+            });
+
+        // [FIX-FINANCE-RECON] When the schema supports receipt_no, default summary roll-ups to VALID
+        // transactions so aggregates align with POS-style unique receipt counts.
+        if ($hasReceiptNo && !isset($filters['status'])) {
+            // Exclude DUPLICATE rows and VOIDED rows from financial summaries by default
+            // to ensure Z-reading reconciliation matches (which typically subtracts voids).
+            $baseQuery->where('t.validation_status', '!=', 'DUPLICATE')
+                ->whereNull('t.voided_at');
+        }
+
+        // For summary roll-ups allow grouping/filters by transaction_timestamp as well
+        $query = (clone $baseQuery)
             ->selectRaw('DATE(' . $dateExpr . ') as date')
             ->selectRaw('t.tenant_id, t.terminal_id')
             ->selectRaw('COALESCE(tn.trade_name, "Unknown") as trade_name')
@@ -597,7 +617,7 @@ class TransactionLogController extends Controller
             ->selectRaw('COUNT(*) as tx_count')
             // If receipt_no exists, also surface unique receipt counts so the
             // UI can present provider-style counts (COUNT DISTINCT receipt_no).
-            ->when(Schema::hasColumn('transactions', 'receipt_no'), function ($q) {
+            ->when($hasReceiptNo, function ($q) {
                 // NULLIF guards against empty-string receipt_no values being counted
                 // as distinct; treat empty strings as NULL so they are excluded.
                 $q->selectRaw("COUNT(DISTINCT NULLIF(t.receipt_no, '')) as unique_receipts");
@@ -621,31 +641,22 @@ class TransactionLogController extends Controller
         ->selectRaw('COALESCE(SUM(t.management_service_charge),0) as service_charge_retained')
         // other_tax: derived from transactions_taxes relation is complex in a GROUP BY.
         // We will sum the transaction-level tax_exempt column as a proxy if it exists.
-        ->when(Schema::hasColumn('transactions', 'tax_exempt'), function ($q) {
+        ->when($hasTaxExempt, function ($q) {
             $q->selectRaw('COALESCE(SUM(t.tax_exempt),0) as other_tax');
         })
-        ->when(Schema::hasColumn('transactions', 'employee_discount'), function ($q) {
+        ->when($hasEmployeeDiscount, function ($q) {
             $q->selectRaw('COALESCE(SUM(t.employee_discount),0) as employee_discount');
         })
-        ->when(Schema::hasColumn('transactions', 'vip_card_discount'), function ($q) {
+        ->when($hasVipCardDiscount, function ($q) {
             $q->selectRaw('COALESCE(SUM(t.vip_card_discount),0) as vip_discount');
         })
         ->selectRaw('MIN(t.id) as sample_tx_id')
         ->groupBy('date', 't.tenant_id', 't.terminal_id', 'trade_name', 'term.serial_number', 'term.machine_number')
         ->orderBy('date', $sortDirection);
 
-        // [FIX-FINANCE-RECON] When the schema supports receipt_no, default summary roll-ups to VALID
-        // transactions so aggregates align with POS-style unique receipt counts.
-        if (Schema::hasColumn('transactions', 'receipt_no') && !isset($filters['status'])) {
-            // Exclude DUPLICATE rows and VOIDED rows from financial summaries by default
-            // to ensure Z-reading reconciliation matches (which typically subtracts voids).
-            $query->where('t.validation_status', '!=', 'DUPLICATE')
-                  ->whereNull('t.voided_at');
-        }
-
         // Clone the query for global grand totals before grouping and pagination.
         // This provides an overall total for the entire filtered set across all pages.
-        $grandTotalQuery = clone $query;
+        $grandTotalQuery = clone $baseQuery;
         $grandTotalRaw = $grandTotalQuery
             ->selectRaw('COUNT(*) as tx_count')
             ->selectRaw('COALESCE(SUM(t.gross_sales),0) as gross_sales')
@@ -661,16 +672,16 @@ class TransactionLogController extends Controller
             ->selectRaw('COALESCE(SUM(t.discount_total),0) as regular_discount')
             ->selectRaw('COALESCE(SUM(t.service_charge),0) as service_charge_distributed')
             ->selectRaw('COALESCE(SUM(t.management_service_charge),0) as service_charge_retained')
-            ->when(Schema::hasColumn('transactions', 'tax_exempt'), function ($q) {
+            ->when($hasTaxExempt, function ($q) {
                 $q->selectRaw('COALESCE(SUM(t.tax_exempt),0) as other_tax');
             })
-            ->when(Schema::hasColumn('transactions', 'employee_discount'), function ($q) {
+            ->when($hasEmployeeDiscount, function ($q) {
                 $q->selectRaw('COALESCE(SUM(t.employee_discount),0) as employee_discount');
             })
-            ->when(Schema::hasColumn('transactions', 'vip_card_discount'), function ($q) {
+            ->when($hasVipCardDiscount, function ($q) {
                 $q->selectRaw('COALESCE(SUM(t.vip_card_discount),0) as vip_discount');
             })
-            ->when(Schema::hasColumn('transactions', 'receipt_no'), function ($q) {
+            ->when($hasReceiptNo, function ($q) {
                 $q->selectRaw("COUNT(DISTINCT NULLIF(t.receipt_no, '')) as unique_receipts");
             })
             ->first();
@@ -757,7 +768,15 @@ class TransactionLogController extends Controller
             return $row;
         });
 
-        // Fetch one representative transaction per summary row to display full payload details
+        if ($request->wantsJson()) {
+            return response()->json([
+                'summary' => $summary,
+                'grandTotal' => $grandTotal
+            ]);
+        }
+
+        // Fetch Blade-only data after the JSON response path so the React summary
+        // view does not pay for representative transactions or filter lists.
         $sampleIds = collect($summary->items())->pluck('sample_tx_id')->filter()->unique()->values()->all();
         $sampleTransactions = [];
         if (!empty($sampleIds)) {
@@ -773,13 +792,6 @@ class TransactionLogController extends Controller
 
         $activeTab = 'summary';
         $logs = collect(); // not needed on summary route
-
-        if ($request->wantsJson()) {
-            return response()->json([
-                'summary' => $summary,
-                'grandTotal' => $grandTotal
-            ]);
-        }
 
         return view('transactions.logs.index', compact('logs', 'terminals', 'tenants', 'filters', 'activeTab', 'summary', 'sampleTransactions', 'grandTotal'));
     }
