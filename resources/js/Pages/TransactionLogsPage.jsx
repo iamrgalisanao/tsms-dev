@@ -240,7 +240,7 @@ const TransactionLogsPage = () => {
 
             {activeTab === 'summary' && filters.date_basis === 'transaction' && dateBasisDiscrepancy && (
                 <Alert
-                    severity={dateBasisDiscrepancy.excluded_due_to_completion_outside_range > 0 ? 'warning' : 'info'}
+                    severity={Math.abs(dateBasisDiscrepancy.net_difference || 0) > 0 ? 'warning' : 'info'}
                     sx={{ mb: 3, borderRadius: '12px' }}
                     action={
                         <Button
@@ -253,7 +253,7 @@ const TransactionLogsPage = () => {
                         </Button>
                     }
                 >
-                    Included: {dateBasisDiscrepancy.included?.toLocaleString() || 0} transactions. Excluded due to completion outside range: {dateBasisDiscrepancy.excluded_due_to_completion_outside_range?.toLocaleString() || 0}.
+                    Transaction Date: {dateBasisDiscrepancy.transaction_date_count?.toLocaleString() || 0}. Completed Date: {dateBasisDiscrepancy.completed_date_count?.toLocaleString() || 0}. Net difference: {(dateBasisDiscrepancy.net_difference || 0).toLocaleString()}. Event-date rows finalized outside range: {dateBasisDiscrepancy.event_date_rows_completed_outside_range?.toLocaleString() || 0}; finalized rows with event date outside range: {dateBasisDiscrepancy.completed_date_rows_with_event_outside_range?.toLocaleString() || 0}.
                 </Alert>
             )}
 

@@ -613,8 +613,42 @@ class TransactionLogController extends Controller
 
         $dateBasisDiscrepancy = null;
         if ($basis === 'transaction' && (isset($filters['date_from']) || isset($filters['date_to']))) {
-            $excludedQuery = clone $baseQuery;
-            $excludedQuery->where(function ($q) use ($filters) {
+            $discrepancyBaseQuery = \DB::table('transactions as t')
+                ->leftJoin('pos_terminals as term', 'term.id', '=', 't.terminal_id')
+                ->when(isset($filters['status']), function ($q) use ($filters) {
+                    if ($filters['status'] === 'VOIDED') {
+                        $q->whereNotNull('t.voided_at');
+                    } elseif ($filters['status'] === 'REFUNDED') {
+                        $q->where('t.is_refunded', true);
+                    } else {
+                        $q->where('t.validation_status', $filters['status']);
+                    }
+                })
+                ->when(isset($filters['tenant_id']), function ($q) use ($filters) {
+                    $q->where(function ($sub) use ($filters) {
+                        $sub->where('t.tenant_id', $filters['tenant_id'])
+                            ->orWhere('term.tenant_id', $filters['tenant_id']);
+                    });
+                })
+                ->when(isset($filters['terminal_id']), function ($q) use ($filters) {
+                    $q->where('t.terminal_id', $filters['terminal_id']);
+                });
+
+            if ($hasReceiptNo && !isset($filters['status'])) {
+                $discrepancyBaseQuery->where('t.validation_status', '!=', 'DUPLICATE')
+                    ->whereNull('t.voided_at');
+            }
+
+            $completedDateQuery = clone $discrepancyBaseQuery;
+            if (isset($filters['date_from'])) {
+                $completedDateQuery->where('t.completed_at', '>=', $filters['date_from'] . ' 00:00:00');
+            }
+            if (isset($filters['date_to'])) {
+                $completedDateQuery->where('t.completed_at', '<=', $filters['date_to'] . ' 23:59:59');
+            }
+
+            $completedOutsideRangeQuery = clone $baseQuery;
+            $completedOutsideRangeQuery->where(function ($q) use ($filters) {
                 $q->whereNull('t.completed_at');
 
                 if (isset($filters['date_from'])) {
@@ -626,10 +660,39 @@ class TransactionLogController extends Controller
                 }
             });
 
+            $eventOutsideRangeQuery = clone $completedDateQuery;
+            $eventOutsideRangeQuery->where(function ($q) use ($filters) {
+                if (isset($filters['date_from'])) {
+                    $q->orWhere(function ($subQ) use ($filters) {
+                        $subQ->whereNotNull('t.transaction_timestamp')
+                            ->where('t.transaction_timestamp', '<', $filters['date_from'] . ' 00:00:00');
+                    })->orWhere(function ($subQ) use ($filters) {
+                        $subQ->whereNull('t.transaction_timestamp')
+                            ->where('t.created_at', '<', $filters['date_from'] . ' 00:00:00');
+                    });
+                }
+
+                if (isset($filters['date_to'])) {
+                    $q->orWhere(function ($subQ) use ($filters) {
+                        $subQ->whereNotNull('t.transaction_timestamp')
+                            ->where('t.transaction_timestamp', '>', $filters['date_to'] . ' 23:59:59');
+                    })->orWhere(function ($subQ) use ($filters) {
+                        $subQ->whereNull('t.transaction_timestamp')
+                            ->where('t.created_at', '>', $filters['date_to'] . ' 23:59:59');
+                    });
+                }
+            });
+
+            $transactionDateCount = (int) (clone $baseQuery)->count();
+            $completedDateCount = (int) $completedDateQuery->count();
+
             $dateBasisDiscrepancy = [
                 'basis' => 'transaction',
-                'included' => (int) (clone $baseQuery)->count(),
-                'excluded_due_to_completion_outside_range' => (int) $excludedQuery->count(),
+                'transaction_date_count' => $transactionDateCount,
+                'completed_date_count' => $completedDateCount,
+                'net_difference' => $completedDateCount - $transactionDateCount,
+                'event_date_rows_completed_outside_range' => (int) $completedOutsideRangeQuery->count(),
+                'completed_date_rows_with_event_outside_range' => (int) $eventOutsideRangeQuery->count(),
             ];
         }
 
