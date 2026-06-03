@@ -101,9 +101,9 @@ class FinanceReportConsistencyTest extends TestCase
             'transaction_timestamp' => '2026-05-31 23:59:00',
             'completed_at' => '2026-06-01 00:01:00',
             'gross_sales' => 100.00,
-            'net_sales' => 90.00,
-            'vatable_sales' => 80.00,
-            'vat_amount' => 9.60,
+            'net_sales' => 100.00,
+            'vatable_sales' => 89.29,
+            'vat_amount' => 10.71,
             'payload_checksum' => 'completed-june',
             'customer_code' => 'TEST',
             'validation_status' => 'VALID',
@@ -115,9 +115,9 @@ class FinanceReportConsistencyTest extends TestCase
             'transaction_timestamp' => '2026-04-30 23:59:00',
             'completed_at' => '2026-05-31 00:01:00',
             'gross_sales' => 200.00,
-            'net_sales' => 180.00,
-            'vatable_sales' => 160.00,
-            'vat_amount' => 19.20,
+            'net_sales' => 200.00,
+            'vatable_sales' => 178.57,
+            'vat_amount' => 21.43,
             'payload_checksum' => 'completed-may',
             'customer_code' => 'TEST',
             'validation_status' => 'VALID',
@@ -132,9 +132,9 @@ class FinanceReportConsistencyTest extends TestCase
         $response->assertStatus(200);
         $service = new FinanceCalculationService();
         $expectedTotals = $service->deriveMetrics([
-            'vatable_sales' => 80.00,
+            'vatable_sales' => 89.29,
             'sc_vat_exempt_sales' => 0.00,
-            'vat_amount' => 9.60,
+            'vat_amount' => 10.71,
             'promo_with_approval' => 0.00,
             'promo_without_approval' => 0.00,
             'employee_discount' => 0.00,
@@ -146,12 +146,64 @@ class FinanceReportConsistencyTest extends TestCase
             'service_charge_retained' => 0.00,
             'regular_discount' => 0.00,
             'gross_sales' => 100.00,
-            'net_sales' => 90.00,
+            'net_sales' => 100.00,
         ]);
 
         $this->assertEquals($expectedTotals['gross_sales'], $response->json('totals.gross_sales'));
         $this->assertArrayHasKey('2026-05-31', $response->json('daily_totals'));
         $this->assertArrayNotHasKey('2026-06-01', $response->json('daily_totals'));
+    }
+
+    public function test_transaction_logs_summary_uses_transaction_date_for_pos_sale_day()
+    {
+        $this->seed(\Database\Seeders\RoleSeeder::class);
+        $tenant = Tenant::factory()->create();
+        $terminal = \App\Models\PosTerminal::factory()->create([
+            'tenant_id' => $tenant->id,
+        ]);
+        $user = User::factory()->create();
+        $user->assignRole('finance');
+
+        Transaction::factory()->create([
+            'tenant_id' => $tenant->id,
+            'terminal_id' => $terminal->id,
+            'transaction_timestamp' => '2026-05-31 23:59:00',
+            'completed_at' => '2026-06-01 00:01:00',
+            'gross_sales' => 100.00,
+            'net_sales' => 100.00,
+            'vatable_sales' => 89.29,
+            'vat_amount' => 10.71,
+            'payload_checksum' => 'summary-pos-sale-day',
+            'customer_code' => 'TEST',
+            'validation_status' => 'VALID',
+        ]);
+
+        Transaction::factory()->create([
+            'tenant_id' => $tenant->id,
+            'terminal_id' => $terminal->id,
+            'transaction_timestamp' => '2026-04-30 23:59:00',
+            'completed_at' => '2026-05-31 00:01:00',
+            'gross_sales' => 200.00,
+            'net_sales' => 200.00,
+            'vatable_sales' => 178.57,
+            'vat_amount' => 21.43,
+            'payload_checksum' => 'summary-completed-day',
+            'customer_code' => 'TEST',
+            'validation_status' => 'VALID',
+        ]);
+
+        $this->actingAs($user);
+        $response = $this->getJson(route('transactions.logs.summary', [
+            'tenant_id' => $tenant->id,
+            'date_from' => '2026-05-31',
+            'date_to' => '2026-05-31',
+            'date_basis' => 'transaction',
+        ]));
+
+        $response->assertStatus(200);
+        $this->assertSame(1, (int) $response->json('grandTotal.tx_count'));
+        $this->assertSame(100.0, (float) $response->json('grandTotal.gross'));
+        $this->assertSame('2026-05-31', $response->json('summary.data.0.date'));
     }
 
     public function test_canonical_employee_discount_adjustments_are_reported_in_csmr_and_transaction_logs()

@@ -525,20 +525,26 @@ class TransactionLogController extends Controller
             'terminal_id',
         ]);
 
-        // Allow 'transaction' as a date basis for summaries as well. When selected,
-        // group by the canonical transaction timestamp but fall back to created_at
-        // for rows that don't have transaction_timestamp set.
+        // Allow 'transaction' as a date basis for summaries as well. For daily
+        // roll-ups, prefer the generated/indexed business-date column so MySQL
+        // can use idx_tx_tenant_date instead of scanning timestamp expressions.
         $basis = in_array($request->input('date_basis'), ['created', 'completed', 'transaction']) ? $request->input('date_basis') : 'transaction';
+        $hasTransactionDate = Schema::hasColumn('transactions', 'transaction_date');
         // Allow client to control summary date ordering via sort_direction
         $sortDirection = strtolower($request->input('sort_direction')) === 'asc' ? 'asc' : 'desc';
         if ($basis === 'completed') {
             $dateColumn = 't.completed_at';
             $dateExpr = 't.completed_at';
         } elseif ($basis === 'transaction') {
-            $dateColumn = 't.transaction_timestamp';
-            // Use COALESCE so that rows without transaction_timestamp will still
-            // be included using created_at as a fallback for grouping and ordering.
-            $dateExpr = 'COALESCE(t.transaction_timestamp, t.created_at)';
+            if ($hasTransactionDate) {
+                $dateColumn = 't.transaction_date';
+                $dateExpr = 't.transaction_date';
+            } else {
+                $dateColumn = 't.transaction_timestamp';
+                // Older schemas may not have the generated date column yet.
+                // Keep the previous fallback expression for those environments.
+                $dateExpr = 'COALESCE(t.transaction_timestamp, t.created_at)';
+            }
         } else {
             $dateColumn = 't.created_at';
             $dateExpr = 't.created_at';
@@ -593,8 +599,10 @@ class TransactionLogController extends Controller
             })
             ->when(isset($filters['date_from']), function ($q) use ($filters, $dateColumn) {
                 // Apply date filtering based on selected date basis.
-                // For transaction_timestamp, use it as primary with created_at as fallback only for NULL values.
-                if ($dateColumn === 't.transaction_timestamp') {
+                // transaction_date is already DATE(COALESCE(transaction_timestamp, completed_at, created_at)).
+                if ($dateColumn === 't.transaction_date') {
+                    $q->where($dateColumn, '>=', $filters['date_from']);
+                } elseif ($dateColumn === 't.transaction_timestamp') {
                     $q->where(function ($q) use ($filters) {
                         $q->where(function ($subQ) use ($filters) {
                             // Primary: transaction_timestamp is not null and within range
@@ -611,7 +619,9 @@ class TransactionLogController extends Controller
                 }
             })
             ->when(isset($filters['date_to']), function ($q) use ($filters, $dateColumn) {
-                if ($dateColumn === 't.transaction_timestamp') {
+                if ($dateColumn === 't.transaction_date') {
+                    $q->where($dateColumn, '<=', $filters['date_to']);
+                } elseif ($dateColumn === 't.transaction_timestamp') {
                     $q->where(function ($q) use ($filters) {
                         $q->where(function ($subQ) use ($filters) {
                             // Primary: transaction_timestamp is not null and within range
@@ -709,27 +719,39 @@ class TransactionLogController extends Controller
             });
 
             $eventOutsideRangeQuery = clone $completedDateQuery;
-            $eventOutsideRangeQuery->where(function ($q) use ($filters) {
-                if (isset($filters['date_from'])) {
-                    $q->orWhere(function ($subQ) use ($filters) {
-                        $subQ->whereNotNull('t.transaction_timestamp')
-                            ->where('t.transaction_timestamp', '<', $filters['date_from'] . ' 00:00:00');
-                    })->orWhere(function ($subQ) use ($filters) {
-                        $subQ->whereNull('t.transaction_timestamp')
-                            ->where('t.created_at', '<', $filters['date_from'] . ' 00:00:00');
-                    });
-                }
+            if ($hasTransactionDate) {
+                $eventOutsideRangeQuery->where(function ($q) use ($filters) {
+                    if (isset($filters['date_from'])) {
+                        $q->orWhere('t.transaction_date', '<', $filters['date_from']);
+                    }
 
-                if (isset($filters['date_to'])) {
-                    $q->orWhere(function ($subQ) use ($filters) {
-                        $subQ->whereNotNull('t.transaction_timestamp')
-                            ->where('t.transaction_timestamp', '>', $filters['date_to'] . ' 23:59:59');
-                    })->orWhere(function ($subQ) use ($filters) {
-                        $subQ->whereNull('t.transaction_timestamp')
-                            ->where('t.created_at', '>', $filters['date_to'] . ' 23:59:59');
-                    });
-                }
-            });
+                    if (isset($filters['date_to'])) {
+                        $q->orWhere('t.transaction_date', '>', $filters['date_to']);
+                    }
+                });
+            } else {
+                $eventOutsideRangeQuery->where(function ($q) use ($filters) {
+                    if (isset($filters['date_from'])) {
+                        $q->orWhere(function ($subQ) use ($filters) {
+                            $subQ->whereNotNull('t.transaction_timestamp')
+                                ->where('t.transaction_timestamp', '<', $filters['date_from'] . ' 00:00:00');
+                        })->orWhere(function ($subQ) use ($filters) {
+                            $subQ->whereNull('t.transaction_timestamp')
+                                ->where('t.created_at', '<', $filters['date_from'] . ' 00:00:00');
+                        });
+                    }
+
+                    if (isset($filters['date_to'])) {
+                        $q->orWhere(function ($subQ) use ($filters) {
+                            $subQ->whereNotNull('t.transaction_timestamp')
+                                ->where('t.transaction_timestamp', '>', $filters['date_to'] . ' 23:59:59');
+                        })->orWhere(function ($subQ) use ($filters) {
+                            $subQ->whereNull('t.transaction_timestamp')
+                                ->where('t.created_at', '>', $filters['date_to'] . ' 23:59:59');
+                        });
+                    }
+                });
+            }
 
             $transactionDateCount = (int) (clone $baseQuery)->count();
             $completedDateCount = (int) $completedDateQuery->count();
@@ -744,9 +766,14 @@ class TransactionLogController extends Controller
             ];
         }
 
-        // For summary roll-ups allow grouping/filters by transaction_timestamp as well
+        // For transaction-basis summary roll-ups, transaction_date is already a
+        // daily value; timestamp bases still need DATE(...) for grouping.
+        $summaryDateSelect = $dateColumn === 't.transaction_date'
+            ? $dateExpr . ' as date'
+            : 'DATE(' . $dateExpr . ') as date';
+
         $query = (clone $baseQuery)
-            ->selectRaw('DATE(' . $dateExpr . ') as date')
+            ->selectRaw($summaryDateSelect)
             ->selectRaw('t.tenant_id, t.terminal_id')
             ->selectRaw('COALESCE(tn.trade_name, "Unknown") as trade_name')
             ->selectRaw('term.serial_number, term.machine_number')
