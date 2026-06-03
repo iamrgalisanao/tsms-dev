@@ -27,6 +27,7 @@ namespace Tests\Feature {
     use App\Models\PosTerminal;
     use App\Models\Tenant;
     use App\Models\Transaction;
+    use App\Models\TransactionAdjustment;
     use Illuminate\Foundation\Testing\RefreshDatabase;
     use Tests\TestCase;
 
@@ -103,6 +104,43 @@ namespace Tests\Feature {
 
             $this->assertCount(1, $rows);
             $this->assertSame('17374', $rows->first()->receipt_no);
+        }
+
+        public function test_export_maps_canonical_adjustment_rows(): void
+        {
+            $tenant = Tenant::factory()->create(['trade_name' => 'Subway']);
+            $terminal = PosTerminal::factory()->create([
+                'tenant_id' => $tenant->id,
+                'serial_number' => 'PCAP222919586',
+                'machine_number' => '1',
+            ]);
+
+            $transaction = Transaction::factory()->create([
+                'tenant_id' => $tenant->id,
+                'terminal_id' => $terminal->id,
+                'transaction_id' => '641feee9-3be5-4215-a85c-614ea2099c5f',
+                'receipt_no' => '000001',
+                'gross_sales' => 1000,
+                'net_sales' => 900,
+                'validation_status' => 'VALID',
+                'completed_at' => '2026-05-31 12:00:00',
+                'created_at' => '2026-05-31 12:00:00',
+            ]);
+
+            $transaction->setRelation('terminal', $terminal->setRelation('tenant', $tenant));
+            $transaction->setRelation('adjustments', collect([
+                new TransactionAdjustment(['adjustment_type' => 'vip_card_discount', 'amount' => 10.00]),
+                new TransactionAdjustment(['adjustment_type' => 'employee_discount', 'amount' => 20.00]),
+                new TransactionAdjustment(['adjustment_type' => 'service_charge_distributed_to_employees', 'amount' => 5.00]),
+                new TransactionAdjustment(['adjustment_type' => 'service_charge_retained_by_management', 'amount' => 3.00]),
+            ]));
+
+            $mapped = (new TransactionLogsExport())->map($transaction);
+
+            $this->assertSame('10.00', $mapped[8]);
+            $this->assertSame('20.00', $mapped[9]);
+            $this->assertSame('5.00', $mapped[10]);
+            $this->assertSame('3.00', $mapped[11]);
         }
     }
 }

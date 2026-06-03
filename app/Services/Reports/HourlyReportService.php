@@ -5,6 +5,7 @@ namespace App\Services\Reports;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Log;
 
 /**
  * Service that encapsulates the hourly aggregation logic used by both
@@ -37,7 +38,7 @@ class HourlyReportService
             // prefer the configured reporting connection if present
             $primary = DB::connection($this->connectionName);
             // build a cache key so frequently re-opened dashboards don't re-run heavy queries
-            $cacheKey = sprintf('reports:hourly:%s:%s:tenant:%s:terminal:%s:scale:%s', $dateFrom, $dateTo, $tenantId ?? 'all', $terminalId ?? 'all', $scaleToMillions ? '1' : '0');
+            $cacheKey = sprintf('reports:hourly:v2:%s:%s:tenant:%s:terminal:%s:scale:%s', $dateFrom, $dateTo, $tenantId ?? 'all', $terminalId ?? 'all', $scaleToMillions ? '1' : '0');
             // short TTL - dashboard should show near-real-time data but we avoid repeated identical queries
             $ttl = 60; // seconds
 
@@ -54,6 +55,8 @@ class HourlyReportService
                         'promo_discount' => $txSchema->hasColumn('transactions', 'promo_discount'),
                         'vat_amount' => $txSchema->hasColumn('transactions', 'vat_amount'),
                         'tax_amount' => $txSchema->hasColumn('transactions', 'tax_amount'),
+                        'vatable_sales' => $txSchema->hasColumn('transactions', 'vatable_sales'),
+                        'sc_vat_exempt_sales' => $txSchema->hasColumn('transactions', 'sc_vat_exempt_sales'),
                         'service_charge' => $txSchema->hasColumn('transactions', 'service_charge'),
                         'voided_at' => $txSchema->hasColumn('transactions', 'voided_at'),
                         'refund_amount' => $txSchema->hasColumn('transactions', 'refund_amount'),
@@ -66,19 +69,20 @@ class HourlyReportService
                 $hasNet = $schemaCache[$schemaKey]['net_sales'];
                 $hasDiscount = $schemaCache[$schemaKey]['discount_total'] || $schemaCache[$schemaKey]['promo_discount'];
                 $hasVat = $schemaCache[$schemaKey]['vat_amount'] || $schemaCache[$schemaKey]['tax_amount'];
+                $hasVatable = $schemaCache[$schemaKey]['vatable_sales'];
+                $hasVatExempt = $schemaCache[$schemaKey]['sc_vat_exempt_sales'];
                 $hasSc = $schemaCache[$schemaKey]['service_charge'];
                 $hasVoided = $schemaCache[$schemaKey]['voided_at'];
                 $hasRefund = $schemaCache[$schemaKey]['refund_amount'] || $schemaCache[$schemaKey]['refund_status'];
 
-            // Determine the best timestamp columns to use for grouping/filtering.
-            // Use a COALESCE expression so rows with NULL transaction_timestamp
-            // still get included using completed_at/created_at as fallback.
+            // Completed date is the reporting truth; event/created dates are
+            // fallbacks only for rows that have not been finalized.
                 $tsParts = [];
-            if ($txSchema->hasColumn('transactions', 'transaction_timestamp')) {
-                $tsParts[] = 'transaction_timestamp';
-            }
             if ($txSchema->hasColumn('transactions', 'completed_at')) {
                 $tsParts[] = 'completed_at';
+            }
+            if ($txSchema->hasColumn('transactions', 'transaction_timestamp')) {
+                $tsParts[] = 'transaction_timestamp';
             }
             // always include created_at as last-resort
             $tsParts[] = 'created_at';
@@ -94,6 +98,8 @@ class HourlyReportService
             ];
 
             $selects[] = $hasNet ? DB::raw('SUM(COALESCE(net_sales,0)) AS total_net_amount') : DB::raw('0 AS total_net_amount');
+            $selects[] = $hasVatable ? DB::raw('SUM(COALESCE(vatable_sales,0)) AS total_vatable_sales') : DB::raw('0 AS total_vatable_sales');
+            $selects[] = $hasVatExempt ? DB::raw('SUM(COALESCE(sc_vat_exempt_sales,0)) AS total_vat_exempt_sales') : DB::raw('0 AS total_vat_exempt_sales');
 
             if ($hasDiscount) {
                 $hasDiscountTotal = $txSchema->hasColumn('transactions', 'discount_total');
@@ -179,8 +185,8 @@ class HourlyReportService
                     'sales_date' => \Carbon\Carbon::parse($r->hour)->setTimezone(config('app.timezone'))->toDateString(),
                     'hour' => \Carbon\Carbon::parse($r->hour)->setTimezone(config('app.timezone'))->format('H:00'),
                     'gross_sales' => isset($r->total_gross_amount) ? (float) $r->total_gross_amount : (isset($r->total_amount) ? (float) $r->total_amount : 0.0),
-                    'vatable_sales' => isset($r->total_net_amount) ? (float) $r->total_net_amount : 0.0,
-                    'vat_exempt_sales' => 0.0,
+                    'vatable_sales' => isset($r->total_vatable_sales) ? (float) $r->total_vatable_sales : 0.0,
+                    'vat_exempt_sales' => isset($r->total_vat_exempt_sales) ? (float) $r->total_vat_exempt_sales : 0.0,
                     'vat_amount' => isset($r->total_tax_amount) ? (float) $r->total_tax_amount : 0.0,
                     'sc_pwd_discount' => 0.0,
                     'regular_discount' => isset($r->total_discount_amount) ? (float) $r->total_discount_amount : 0.0,
@@ -203,7 +209,7 @@ class HourlyReportService
             });
         } catch (\Throwable $e) {
             // On failure, log and return empty array to keep API contract non-breaking
-            \Illuminate\Support\Facades\Log::warning('HourlyReportService live aggregation failed: ' . $e->getMessage(), ['date_from' => $dateFrom, 'date_to' => $dateTo]);
+            Log::warning('HourlyReportService live aggregation failed: ' . $e->getMessage(), ['date_from' => $dateFrom, 'date_to' => $dateTo]);
             return [];
         }
     }

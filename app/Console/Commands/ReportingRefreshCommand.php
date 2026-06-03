@@ -5,6 +5,7 @@ namespace App\Console\Commands;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 
 class ReportingRefreshCommand extends Command
 {
@@ -47,6 +48,7 @@ class ReportingRefreshCommand extends Command
         // We execute the query on the primary DB connection but write into the reporting database using a fully-qualified table name.
         $reportingDb = DB::connection('reporting')->getDatabaseName();
         $insertInto = sprintf('`%s`.transactions_hourly', $reportingDb);
+        $reportingDateExpr = $this->reportingDateExpression();
 
         // Some deployments may have divergent `transactions` schemas (e.g. missing is_duplicate).
         // Detect optional columns and adapt the SELECT to avoid SQL errors on servers without the column.
@@ -65,7 +67,7 @@ class ReportingRefreshCommand extends Command
         // Build select fragments with runtime guards so we don't fail if the raw
         // `transactions` table in some deployments lacks optional columns.
         $hasNet = false; $hasDiscount = false; $hasVat = false; $hasSc = false;
-        $hasVoided = false; $hasRefund = false; $hasPaymentMethod = false; $hasChannel = false; $hasPrimary = false; $hasTxId = false; $hasCompletedAt = false;
+        $hasVoided = false; $hasRefund = false; $hasPaymentMethod = false; $hasChannel = false; $hasPrimary = false; $hasTxId = false;
         try {
             $schema = \Illuminate\Support\Facades\Schema::getFacadeRoot();
             $hasNet = \Illuminate\Support\Facades\Schema::hasColumn('transactions', 'net_sales');
@@ -78,7 +80,6 @@ class ReportingRefreshCommand extends Command
             $hasChannel = \Illuminate\Support\Facades\Schema::hasColumn('transactions', 'channel');
             $hasPrimary = \Illuminate\Support\Facades\Schema::hasColumn('transactions', 'primary_category');
             $hasTxId = \Illuminate\Support\Facades\Schema::hasColumn('transactions', 'id') || \Illuminate\Support\Facades\Schema::hasColumn('transactions', 'transaction_pk');
-            $hasCompletedAt = \Illuminate\Support\Facades\Schema::hasColumn('transactions', 'completed_at') || \Illuminate\Support\Facades\Schema::hasColumn('transactions', 'transaction_timestamp');
         } catch (\Throwable $e) {
             // ignore and leave flags false
         }
@@ -138,7 +139,7 @@ class ReportingRefreshCommand extends Command
 
     $sql = "INSERT INTO " . $insertInto . " (tenant_id, terminal_id, hour, tx_count, total_amount, total_gross_amount, total_net_amount, total_discount_amount, total_tax_amount, total_service_charge_amount, avg_amount, min_amount, max_amount, success_count, decline_count, issues_count, issues_amount, void_count, refunded_count, duplicate_count, created_at, updated_at)\n".
             "SELECT\n".
-            "  tenant_id, COALESCE(terminal_id, 0) AS terminal_id, DATE_FORMAT(transaction_timestamp, '%Y-%m-%d %H:00:00') AS hour,\n".
+            "  tenant_id, COALESCE(terminal_id, 0) AS terminal_id, DATE_FORMAT({$reportingDateExpr}, '%Y-%m-%d %H:00:00') AS hour,\n".
             "  COUNT(*) AS tx_count,\n".
             "  SUM(gross_sales) AS total_amount,\n".
             "  SUM(gross_sales) AS total_gross_amount,\n".
@@ -159,7 +160,7 @@ class ReportingRefreshCommand extends Command
             $duplicateSelect.
             "  NOW() AS created_at, NOW() AS updated_at\n".
             "FROM transactions\n".
-            "WHERE transaction_timestamp >= DATE_SUB(DATE_FORMAT(NOW(), '%Y-%m-%d %H:00:00'), INTERVAL {$hours} HOUR)\n".
+            "WHERE {$reportingDateExpr} >= DATE_SUB(DATE_FORMAT(NOW(), '%Y-%m-%d %H:00:00'), INTERVAL {$hours} HOUR)\n".
             "GROUP BY tenant_id, terminal_id, hour\n".
             "ON DUPLICATE KEY UPDATE\n".
             "  tx_count = VALUES(tx_count),\n".
@@ -199,16 +200,17 @@ class ReportingRefreshCommand extends Command
 
         $reportingDb = DB::connection('reporting')->getDatabaseName();
         $insertIntoDaily = sprintf('`%s`.transactions_daily', $reportingDb);
+        $reportingDateExpr = $this->reportingDateExpression();
 
         $sql = "INSERT INTO " . $insertIntoDaily . " (tenant_id, terminal_id, date, tx_count, total_amount, avg_amount, issues_count, issues_amount, created_at, updated_at)\n".
             "SELECT\n".
-            "  tenant_id, COALESCE(terminal_id, 0) AS terminal_id, DATE(transaction_timestamp) AS date,\n".
+            "  tenant_id, COALESCE(terminal_id, 0) AS terminal_id, DATE({$reportingDateExpr}) AS date,\n".
             "  COUNT(*) AS tx_count, SUM(gross_sales) AS total_amount, AVG(gross_sales) AS avg_amount,\n".
             "  SUM(CASE WHEN validation_status = 'WITH_ISSUES' THEN 1 ELSE 0 END) AS issues_count,\n".
             "  SUM(CASE WHEN validation_status = 'WITH_ISSUES' THEN gross_sales ELSE 0 END) AS issues_amount,\n".
             "  NOW() AS created_at, NOW() AS updated_at\n".
             "FROM transactions\n".
-            "WHERE transaction_timestamp >= DATE_SUB(CURDATE(), INTERVAL 2 DAY)\n".
+            "WHERE {$reportingDateExpr} >= DATE_SUB(CURDATE(), INTERVAL 2 DAY)\n".
             "GROUP BY tenant_id, terminal_id, date\n".
             "ON DUPLICATE KEY UPDATE\n".
             "  tx_count = VALUES(tx_count),\n".
@@ -227,5 +229,30 @@ class ReportingRefreshCommand extends Command
             $this->error('Failed to refresh transactions_daily: ' . $e->getMessage());
             Log::error('Reporting refresh failed (daily)', ['error' => $e->getMessage()]);
         }
+    }
+
+    private function reportingDateExpression(): string
+    {
+        $parts = [];
+
+        foreach (['completed_at', 'transaction_timestamp', 'created_at'] as $column) {
+            try {
+                if (Schema::hasColumn('transactions', $column)) {
+                    $parts[] = $column;
+                }
+            } catch (\Throwable $e) {
+                // Try the next candidate when schema introspection is unavailable.
+            }
+        }
+
+        if (empty($parts)) {
+            return 'NOW()';
+        }
+
+        if (count($parts) === 1) {
+            return $parts[0];
+        }
+
+        return 'COALESCE(' . implode(', ', $parts) . ')';
     }
 }

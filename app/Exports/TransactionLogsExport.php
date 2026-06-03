@@ -159,10 +159,10 @@ class TransactionLogsExport implements FromQuery, WithMapping, WithHeadings, Sho
             number_format($transaction->promo_discount ?? 0, 2),
             number_format($transaction->senior_discount ?? 0, 2),
             number_format($transaction->pwd_discount ?? 0, 2),
-            number_format($transaction->adjustments->where('adjustment_type', 'VIP')->sum('amount'), 2),
-            number_format($transaction->adjustments->where('adjustment_type', 'EMPLOYEE')->sum('amount'), 2),
-            number_format($transaction->service_charge ?? 0, 2),
-            number_format($transaction->management_service_charge ?? 0, 2),
+            number_format($this->adjustmentAmount($transaction, 'vip_card_discount', ['vip_card_discount', 'VIP']), 2),
+            number_format($this->adjustmentAmount($transaction, 'employee_discount', ['employee_discount', 'EMPLOYEE']), 2),
+            number_format($this->adjustmentAmount($transaction, 'service_charge', ['service_charge_distributed_to_employees', 'service_charge']), 2),
+            number_format($this->adjustmentAmount($transaction, 'management_service_charge', ['service_charge_retained_by_management', 'management_service_charge']), 2),
             // Tax Columns
             number_format($transaction->vat_amount ?? 0, 2),
             number_format($transaction->vatable_sales ?? 0, 2),
@@ -195,6 +195,23 @@ class TransactionLogsExport implements FromQuery, WithMapping, WithHeadings, Sho
         } catch (\Throwable) {
             return (string) $value;
         }
+    }
+
+    private function adjustmentAmount($transaction, string $attribute, array $adjustmentTypes): float
+    {
+        $columnAmount = (float) ($transaction->{$attribute} ?? 0);
+
+        if ($columnAmount !== 0.0) {
+            return $columnAmount;
+        }
+
+        if (!$transaction->relationLoaded('adjustments')) {
+            return 0.0;
+        }
+
+        return (float) $transaction->adjustments
+            ->whereIn('adjustment_type', $adjustmentTypes)
+            ->sum('amount');
     }
 
     /**
