@@ -131,10 +131,26 @@ class FinanceCalculationService
         $rawNetSales = (float)($c['net_sales'] ?? 0);
         $rawVat = (float)($c['vat_amount'] ?? 0);
 
-        // CSMR Gross Sales is the sum of the visible report columns from
-        // Net Sales through Service Charge. Keep vatable_sales exactly as
-        // reported so column D VAT is included once in the gross total.
+        // Some providers store vatable_sales as VAT-inclusive (Vatable + VAT).
+        // For CSMR gross component math, normalize it to ex-VAT using recorded net/vat
+        // when the pattern clearly indicates VAT-inclusive storage.
         $vatableForGross = (float)($c['vatable_sales'] ?? 0);
+        if ($rawNetSales > 0 && $rawVat > 0) {
+            $netBase = $rawNetSales;
+            if (($c['sc_vat_exempt_sales'] ?? 0) > 0 && $netBase >= ($c['sc_vat_exempt_sales'] ?? 0)) {
+                $netBase = round($netBase - ($c['sc_vat_exempt_sales'] ?? 0), 2);
+            }
+
+            $candidateExVat = round($netBase - $rawVat, 2);
+            $rawLooksVatInclusive = abs($vatableForGross - round($candidateExVat + $rawVat, 2)) <= 0.05;
+            if ($candidateExVat >= 0 && $rawLooksVatInclusive) {
+                // If it already matches the 12% VAT ratio as-is, then it's NOT VAT-inclusive!
+                $alreadyExVat = abs($rawVat - round($vatableForGross * 0.12, 2)) <= 0.10;
+                if (!$alreadyExVat) {
+                    $vatableForGross = $candidateExVat;
+                }
+            }
+        }
 
         // 2. Gross Sales (Source of Truth)
         // We prefer the Nominal Gross (sum of column) to absorb minor component-level rounding errors.

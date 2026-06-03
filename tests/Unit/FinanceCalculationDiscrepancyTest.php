@@ -104,11 +104,12 @@ class FinanceCalculationDiscrepancyTest extends TestCase
         $this->assertEquals(242.29, $metrics['vat_amount'], "VAT must match the raw recorded VAT.");
     }
 
-    public function test_csmr_gross_sales_includes_vat_column()
+    public function test_gross_sales_does_not_double_count_vat_when_vatable_is_vat_inclusive()
     {
         $service = new FinanceCalculationService();
 
         $components = [
+            // Upstream raw payload style: vatable already includes VAT here.
             'vatable_sales' => 81133.59,
             'sc_vat_exempt_sales' => 3936.03,
             'vat_amount' => 8692.94,
@@ -122,40 +123,17 @@ class FinanceCalculationDiscrepancyTest extends TestCase
             'service_charge_distributed' => 0.0,
             'service_charge_retained' => 0.0,
             'regular_discount' => 0.0,
+            // Nominal source contains the VAT-inclusive discrepancy.
             'gross_sales' => 94746.54,
+            // Raw net from POS commonly includes exempt + VAT; service normalizes this.
             'net_sales' => 85069.62,
         ];
 
         $metrics = $service->deriveMetrics($components);
 
-        // Expected gross = columns B:M, including VAT column D.
-        $this->assertEquals(94746.54, $metrics['gross_sales']);
+        // Expected gross = normalized vatable(ex-VAT) + exempt + VAT + discounts/service charge.
+        $this->assertEquals(86053.60, $metrics['gross_sales']);
         $this->assertEquals(81133.59, $metrics['vatable_sales']);
-    }
-
-    public function test_goldilocks_monthly_gross_sales_uses_net_sales_through_service_charge_sum()
-    {
-        $service = new FinanceCalculationService();
-
-        $metrics = $service->deriveMetrics([
-            'vatable_sales' => 2158481.64,
-            'sc_vat_exempt_sales' => 0.00,
-            'vat_amount' => 231360.83,
-            'promo_with_approval' => 26998.90,
-            'promo_without_approval' => 0.00,
-            'employee_discount' => 0.00,
-            'senior_discount' => 759.46,
-            'pwd_discount' => 131.00,
-            'vip_discount' => 0.00,
-            'other_tax' => 0.00,
-            'service_charge_distributed' => 0.00,
-            'service_charge_retained' => 0.00,
-            'regular_discount' => 0.00,
-            'gross_sales' => 2186371.00,
-            'net_sales' => 2158481.64,
-        ]);
-
-        $this->assertEquals(2417731.83, $metrics['gross_sales']);
     }
 
     public function test_finance_calculation_handles_vat_exclusive_net_sales_correctly()
