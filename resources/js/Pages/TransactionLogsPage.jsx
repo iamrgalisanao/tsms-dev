@@ -49,7 +49,7 @@ const TransactionLogsPage = () => {
     const [activeTab, setActiveTab] = useState('detailed');
     const getInitialReportingBasis = () => {
         const savedBasis = window.localStorage?.getItem(REPORTING_BASIS_STORAGE_KEY);
-        return ['completed', 'transaction', 'created'].includes(savedBasis) ? savedBasis : 'completed';
+        return ['completed', 'transaction', 'created'].includes(savedBasis) ? savedBasis : 'transaction';
     };
 
     const [filters, setFilters] = useState({
@@ -144,9 +144,9 @@ const TransactionLogsPage = () => {
             date_from: '',
             date_to: '',
             transaction_id: '',
-            date_basis: 'completed'
+            date_basis: 'transaction'
         });
-        window.localStorage?.setItem(REPORTING_BASIS_STORAGE_KEY, 'completed');
+        window.localStorage?.setItem(REPORTING_BASIS_STORAGE_KEY, 'transaction');
         setSortDirection('desc');
         setPage(0);
     };
@@ -161,7 +161,7 @@ const TransactionLogsPage = () => {
             const cleanFilters = Object.fromEntries(
                 Object.entries({
                     ...filters,
-                    date_basis: filters.date_basis || 'completed'
+                    date_basis: filters.date_basis || 'transaction'
                 }).filter(([_, value]) => value !== '')
             );
             await transactionLogService.exportToExcel(cleanFilters);

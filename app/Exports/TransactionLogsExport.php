@@ -215,13 +215,13 @@ class TransactionLogsExport implements FromQuery, WithMapping, WithHeadings, Sho
     }
 
     /**
-     * Get the date basis from filters, defaulting to 'completed'
+     * Get the date basis from filters, defaulting to POS sale date.
      */
     public function getDateBasis(): string
     {
         return in_array($this->filters['date_basis'] ?? null, ['created', 'completed', 'transaction']) 
             ? $this->filters['date_basis'] 
-            : 'completed';
+            : 'transaction';
     }
 
     /**
@@ -240,7 +240,7 @@ class TransactionLogsExport implements FromQuery, WithMapping, WithHeadings, Sho
     {
         return match ($this->getDateBasis()) {
             'created' => 'Created Date',
-            'transaction' => 'Transaction Date (Event Time)',
+            'transaction' => 'Transaction Date (POS Sale Date)',
             default => 'Completed Date (Finalized)',
         };
     }

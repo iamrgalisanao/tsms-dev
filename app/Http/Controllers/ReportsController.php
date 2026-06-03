@@ -48,11 +48,11 @@ class ReportsController extends Controller
         $month = $monthDate->format('m');
 
         $excludeVoids = config('tsms.reporting.exclude_voids_from_totals', true);
-        $reportDateExpr = Schema::hasColumn('transactions', 'completed_at')
-            ? 'DATE(completed_at)'
+        $reportDateExpr = Schema::hasColumn('transactions', 'transaction_timestamp')
+            ? 'DATE(transaction_timestamp)'
             : 'transaction_date';
-        $joinedReportDateExpr = Schema::hasColumn('transactions', 'completed_at')
-            ? 'DATE(transactions.completed_at)'
+        $joinedReportDateExpr = Schema::hasColumn('transactions', 'transaction_timestamp')
+            ? 'DATE(transactions.transaction_timestamp)'
             : 'transactions.transaction_date';
 
         // 1. Optimized Main Transaction Aggregation

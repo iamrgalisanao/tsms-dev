@@ -57,7 +57,7 @@ class TransactionLogController extends Controller
         }
 
         // Allow 'transaction' as a date basis which uses the canonical transaction_timestamp
-        $basis = in_array($request->input('date_basis'), ['created', 'completed', 'transaction']) ? $request->input('date_basis') : 'completed';
+        $basis = in_array($request->input('date_basis'), ['created', 'completed', 'transaction']) ? $request->input('date_basis') : 'transaction';
         $dateColumn = $basis === 'completed' ? 'completed_at' : ($basis === 'transaction' ? 'transaction_timestamp' : 'created_at');
 
         // Allow callers (web UI/API) to control sort direction for the
@@ -387,7 +387,7 @@ class TransactionLogController extends Controller
 
             $basis = in_array($filters['date_basis'] ?? null, ['created', 'completed', 'transaction'])
                 ? $filters['date_basis']
-                : 'completed';
+                : 'transaction';
             $filename = 'transaction-logs-' . $basis . '-date-' . now()->format('Y-m-d') . '.xlsx';
 
             return Excel::download(new TransactionLogsExport($filters), $filename);
@@ -435,7 +435,7 @@ class TransactionLogController extends Controller
         ]);
 
         // Allow 'transaction' as a date basis which uses the canonical transaction_timestamp
-        $basis = in_array($request->input('date_basis'), ['created', 'completed', 'transaction']) ? $request->input('date_basis') : 'completed';
+        $basis = in_array($request->input('date_basis'), ['created', 'completed', 'transaction']) ? $request->input('date_basis') : 'transaction';
         $dateColumn = $basis === 'completed' ? 'completed_at' : ($basis === 'transaction' ? 'transaction_timestamp' : 'created_at');
 
         $query = Transaction::query();
@@ -528,7 +528,7 @@ class TransactionLogController extends Controller
         // Allow 'transaction' as a date basis for summaries as well. When selected,
         // group by the canonical transaction timestamp but fall back to created_at
         // for rows that don't have transaction_timestamp set.
-        $basis = in_array($request->input('date_basis'), ['created', 'completed', 'transaction']) ? $request->input('date_basis') : 'completed';
+        $basis = in_array($request->input('date_basis'), ['created', 'completed', 'transaction']) ? $request->input('date_basis') : 'transaction';
         // Allow client to control summary date ordering via sort_direction
         $sortDirection = strtolower($request->input('sort_direction')) === 'asc' ? 'asc' : 'desc';
         if ($basis === 'completed') {

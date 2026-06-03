@@ -85,7 +85,7 @@ class FinanceReportConsistencyTest extends TestCase
         $this->assertEquals(50.00, $uiTotals['total_service_charge']);
     }
 
-    public function test_csmr_report_uses_completed_date_for_reporting_month()
+    public function test_csmr_report_uses_transaction_timestamp_for_reporting_month()
     {
         $this->seed(\Database\Seeders\RoleSeeder::class);
         $tenant = Tenant::factory()->create();
@@ -132,9 +132,9 @@ class FinanceReportConsistencyTest extends TestCase
         $response->assertStatus(200);
         $service = new FinanceCalculationService();
         $expectedTotals = $service->deriveMetrics([
-            'vatable_sales' => 160.00,
+            'vatable_sales' => 80.00,
             'sc_vat_exempt_sales' => 0.00,
-            'vat_amount' => 19.20,
+            'vat_amount' => 9.60,
             'promo_with_approval' => 0.00,
             'promo_without_approval' => 0.00,
             'employee_discount' => 0.00,
@@ -145,8 +145,8 @@ class FinanceReportConsistencyTest extends TestCase
             'service_charge_distributed' => 0.00,
             'service_charge_retained' => 0.00,
             'regular_discount' => 0.00,
-            'gross_sales' => 200.00,
-            'net_sales' => 180.00,
+            'gross_sales' => 100.00,
+            'net_sales' => 90.00,
         ]);
 
         $this->assertEquals($expectedTotals['gross_sales'], $response->json('totals.gross_sales'));

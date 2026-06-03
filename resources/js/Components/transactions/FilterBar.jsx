@@ -90,8 +90,8 @@ const FilterBar = ({ filters, onFilterChange, onReset }) => {
     ];
 
     const dateBasisOptions = [
-        { value: 'completed', label: 'Completed Date (Finalized)' },
-        { value: 'transaction', label: 'Transaction Date (Event Time)' },
+        { value: 'transaction', label: 'Transaction Date (POS Sale Date)' },
+        { value: 'completed', label: 'Completed Date (TSMS Finalized)' },
         { value: 'created', label: 'Created Date' }
     ];
 
@@ -155,7 +155,7 @@ const FilterBar = ({ filters, onFilterChange, onReset }) => {
                     <FormControl sx={{ flex: 2, minWidth: 180 }}>
                         <InputLabel>Reporting Basis</InputLabel>
                         <Select
-                            value={filters.date_basis || 'completed'}
+                            value={filters.date_basis || 'transaction'}
                             label="Reporting Basis"
                             onChange={(e) => handleChange('date_basis', e.target.value)}
                             sx={{ borderRadius: 2 }}
@@ -167,7 +167,7 @@ const FilterBar = ({ filters, onFilterChange, onReset }) => {
                         </Select>
                         <Tooltip
                             arrow
-                            title="Completed Date is recommended for reconciliation because it uses finalized records. Transaction Date uses the sale event time and may omit late-completed records."
+                            title="Transaction Date matches POS Z-reading sale dates. Completed Date shows when TSMS finalized records and is useful for processing audit."
                         >
                             <InfoOutlinedIcon
                                 sx={{

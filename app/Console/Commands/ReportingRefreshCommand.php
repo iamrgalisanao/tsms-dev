@@ -235,7 +235,7 @@ class ReportingRefreshCommand extends Command
     {
         $parts = [];
 
-        foreach (['completed_at', 'transaction_timestamp', 'created_at'] as $column) {
+        foreach (['transaction_timestamp', 'completed_at', 'created_at'] as $column) {
             try {
                 if (Schema::hasColumn('transactions', $column)) {
                     $parts[] = $column;
