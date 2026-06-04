@@ -221,15 +221,28 @@ class FinanceCalculationService
         // 4. VAT (Source of Truth: Recorded VAT if exists, else Derived from Net)
         // Excel N62: (Net Sales / 1.12) * 0.12
         $derivedVat = round(($netSales / 1.12) * 0.12, 2);
+        $reportedVatableSales = round((float)($c['vatable_sales'] ?? 0), 2);
 
-        // IMPORTANT: If raw recorded VAT exists, we MUST use it for the export/summary 
-        // to match the POS system's actual tax calculation.
+        // Use captured VAT/Vatable by default. If the captured split is only a
+        // centavo-level receipt-rounding difference from the aggregate taxable
+        // base, use the aggregate VAT split so CMSR tallies with Z-reading.
+        $capturedSplitMatchesTaxableBase = $rawVat > 0
+            && abs(round($reportedVatableSales + $rawVat, 2) - $derivedNetSales) <= 0.05;
+        $aggregateVat = round(($derivedNetSales / 1.12) * 0.12, 2);
+        $capturedSplitIsRoundingOnly = $capturedSplitMatchesTaxableBase
+            && abs($rawVat - $aggregateVat) <= 1.00;
         $vat = ($rawVat > 0) ? round($rawVat, 2) : $derivedVat;
+        if ($capturedSplitIsRoundingOnly) {
+            $vat = $aggregateVat;
+        }
 
         // 5. Net Ex-VAT (derived support metric)
         // Excel N64: Net Sales - VAT
         $netExVAT = round($netSales - $vat, 2);
-        $reportedVatableSales = round((float)($c['vatable_sales'] ?? 0), 2);
+        if ($capturedSplitIsRoundingOnly) {
+            $reportedVatableSales = round($derivedNetSales - $vat, 2);
+            $netExVAT = $reportedVatableSales;
+        }
 
         // 6. Net Subject to Rent
         // Excel N71: Net ex-VAT + SC Exempt + Promo (Without Approval) + Other Tax + SC Retained
