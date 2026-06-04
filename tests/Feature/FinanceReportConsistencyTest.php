@@ -303,7 +303,7 @@ class FinanceReportConsistencyTest extends TestCase
         $service = new FinanceCalculationService();
 
         $totals = $service->deriveMetrics([
-            'vatable_sales' => 45031.22,
+            'vatable_sales' => 50435.00,
             'sc_vat_exempt_sales' => 3930.61,
             'vat_amount' => 5403.78,
             'promo_with_approval' => 0.00,

@@ -136,6 +136,10 @@ class FinanceCalculationService
         // when the pattern clearly indicates VAT-inclusive storage.
         $vatableForGross = (float)($c['vatable_sales'] ?? 0);
         if ($rawNetSales > 0 && $rawVat > 0) {
+            if (abs($vatableForGross - $rawNetSales) <= 0.05) {
+                $vatableForGross = round($vatableForGross - $rawVat, 2);
+            }
+
             $netBase = $rawNetSales;
             if (($c['sc_vat_exempt_sales'] ?? 0) > 0 && $netBase >= ($c['sc_vat_exempt_sales'] ?? 0)) {
                 $netBase = round($netBase - ($c['sc_vat_exempt_sales'] ?? 0), 2);
@@ -226,10 +230,12 @@ class FinanceCalculationService
         // Use captured VAT/Vatable by default. If the captured split is only a
         // centavo-level receipt-rounding difference from the aggregate taxable
         // base, use the aggregate VAT split so CMSR tallies with Z-reading.
+        $capturedVatableIsTaxableInclusive = $rawVat > 0
+            && abs($reportedVatableSales - $derivedNetSales) <= 0.05;
         $capturedSplitMatchesTaxableBase = $rawVat > 0
             && abs(round($reportedVatableSales + $rawVat, 2) - $derivedNetSales) <= 0.05;
         $aggregateVat = round(($derivedNetSales / 1.12) * 0.12, 2);
-        $capturedSplitIsRoundingOnly = $capturedSplitMatchesTaxableBase
+        $capturedSplitIsRoundingOnly = ($capturedVatableIsTaxableInclusive || $capturedSplitMatchesTaxableBase)
             && abs($rawVat - $aggregateVat) <= 1.00;
         $vat = ($rawVat > 0) ? round($rawVat, 2) : $derivedVat;
         if ($capturedSplitIsRoundingOnly) {
