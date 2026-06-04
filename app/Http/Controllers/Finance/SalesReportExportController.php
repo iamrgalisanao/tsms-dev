@@ -50,11 +50,11 @@ class SalesReportExportController extends Controller
         // Get tenant trade name
         $tenantRecord = ($tenantId && $tenantId !== 'all') ? Tenant::find($tenantId) : null;
         $tenantName = $tenantRecord ? $tenantRecord->trade_name : 'All Tenants';
-        $reportDateExpr = Schema::hasColumn('transactions', 'transaction_timestamp')
-            ? 'DATE(transaction_timestamp)'
+        $reportDateExpr = Schema::hasColumn('transactions', 'completed_at')
+            ? 'DATE(completed_at)'
             : 'transaction_date';
-        $joinedReportDateExpr = Schema::hasColumn('transactions', 'transaction_timestamp')
-            ? 'DATE(transactions.transaction_timestamp)'
+        $joinedReportDateExpr = Schema::hasColumn('transactions', 'completed_at')
+            ? 'DATE(transactions.completed_at)'
             : 'transactions.transaction_date';
 
         // Optimized Main Aggregation
