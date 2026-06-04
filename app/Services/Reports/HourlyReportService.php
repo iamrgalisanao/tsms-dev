@@ -75,14 +75,14 @@ class HourlyReportService
                 $hasVoided = $schemaCache[$schemaKey]['voided_at'];
                 $hasRefund = $schemaCache[$schemaKey]['refund_amount'] || $schemaCache[$schemaKey]['refund_status'];
 
-            // Completed date is the reporting truth for finance reports.
-            // Event/created dates are fallbacks only for rows not finalized yet.
+            // POS sale date is the reporting truth for finance/Z-reading.
+            // Completion/created dates are fallbacks only when event time is missing.
                 $tsParts = [];
-            if ($txSchema->hasColumn('transactions', 'completed_at')) {
-                $tsParts[] = 'completed_at';
-            }
             if ($txSchema->hasColumn('transactions', 'transaction_timestamp')) {
                 $tsParts[] = 'transaction_timestamp';
+            }
+            if ($txSchema->hasColumn('transactions', 'completed_at')) {
+                $tsParts[] = 'completed_at';
             }
             // always include created_at as last-resort
             $tsParts[] = 'created_at';
