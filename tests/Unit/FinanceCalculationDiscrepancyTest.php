@@ -104,7 +104,7 @@ class FinanceCalculationDiscrepancyTest extends TestCase
         $this->assertEquals(242.29, $metrics['vat_amount'], "VAT must match the raw recorded VAT.");
     }
 
-    public function test_gross_sales_does_not_double_count_vat_when_vatable_is_vat_inclusive()
+    public function test_gross_sales_uses_raw_pos_value_when_vatable_is_vat_inclusive()
     {
         $service = new FinanceCalculationService();
 
@@ -131,8 +131,9 @@ class FinanceCalculationDiscrepancyTest extends TestCase
 
         $metrics = $service->deriveMetrics($components);
 
-        // Expected gross = normalized vatable(ex-VAT) + exempt + VAT + discounts/service charge.
-        $this->assertEquals(86053.60, $metrics['gross_sales']);
+        // Finance defines Gross Sales as the raw POS value before deductions;
+        // VAT/Vatable normalization must not reduce the Gross Sales column.
+        $this->assertEquals(94746.54, $metrics['gross_sales']);
         $this->assertEquals(81133.59, $metrics['vatable_sales']);
     }
 

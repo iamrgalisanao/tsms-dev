@@ -157,8 +157,10 @@ class FinanceCalculationService
         }
 
         // 2. Gross Sales (Source of Truth)
-        // We prefer the Nominal Gross (sum of column) to absorb minor component-level rounding errors.
-        // If nominal is unavailable or mismatched significantly, we fall back to component sum.
+        // Finance defines Gross Sales as the POS-reported sales value before
+        // deductions. Discounts stay in their own CMSR columns and must not
+        // reduce the Gross Sales column. Component math is only a fallback for
+        // legacy rows where gross_sales was not captured.
         $componentSum = round(
             $vatableForGross
             + ($c['sc_vat_exempt_sales'] ?? 0)
@@ -177,11 +179,7 @@ class FinanceCalculationService
 
         $nominalGross = round($c['gross_sales'] ?? 0, 2);
         
-        // Use nominal gross if it exists, otherwise use component sum.
-        // A difference of > 1% would suggest a payload integrity issue, not just rounding.
-        $gross = ($nominalGross > 0 && abs($nominalGross - $componentSum) < ($nominalGross * 0.01))
-            ? $nominalGross
-            : $componentSum;
+        $gross = $nominalGross > 0 ? $nominalGross : $componentSum;
 
         // 3. Net Sales (Source of Truth: Gross - Non-VAT components)
         // Excel N61: Gross - (Promos + Employee + Senior/PWD + VIP + Exempt + LocalTax + SC)

@@ -297,6 +297,33 @@ class FinanceReportConsistencyTest extends TestCase
         $this->assertSame(79670.97, $totals['net_ex_vat']);
     }
 
+    public function test_csmr_gross_sales_uses_raw_pos_gross_before_discounts()
+    {
+        $service = new FinanceCalculationService();
+
+        $totals = $service->deriveMetrics([
+            'vatable_sales' => 81133.59,
+            'sc_vat_exempt_sales' => 3936.03,
+            'vat_amount' => 8692.94,
+            'promo_with_approval' => 0.00,
+            'promo_without_approval' => 0.00,
+            'employee_discount' => 0.00,
+            'senior_discount' => 430.86,
+            'pwd_discount' => 553.12,
+            'vip_discount' => 0.00,
+            'other_tax' => 0.00,
+            'service_charge_distributed' => 0.00,
+            'service_charge_retained' => 0.00,
+            'regular_discount' => 0.00,
+            'gross_sales' => 94746.54,
+            'net_sales' => 85069.62,
+        ]);
+
+        $this->assertSame(94746.54, $totals['gross_sales']);
+        $this->assertSame(430.86, $totals['senior_discount']);
+        $this->assertSame(553.12, $totals['pwd_discount']);
+    }
+
     public function test_small_vat_rounding_split_uses_aggregate_z_reading_basis()
     {
         $service = new FinanceCalculationService();
