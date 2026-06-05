@@ -72,7 +72,7 @@ class FinanceReportConsistencyTest extends TestCase
         $service = new FinanceCalculationService();
         $transactions = Transaction::where('tenant_id', $tenant->id)->get();
         $components = $service->aggregateComponents($transactions);
-        $exportTotals = $service->deriveMetrics($components);
+        $exportTotals = $service->deriveMetrics($components, ['gross_sales_basis' => 'pre_deduction']);
 
         // 4. Assert Consistency
         $this->assertEquals($uiTotals['net_sales'], $exportTotals['net_sales'], 'UI and Export Net Sales must match');
@@ -297,7 +297,7 @@ class FinanceReportConsistencyTest extends TestCase
         $this->assertSame(79670.97, $totals['net_ex_vat']);
     }
 
-    public function test_csmr_gross_sales_uses_raw_pos_gross_before_discounts()
+    public function test_csmr_gross_sales_uses_pre_deduction_report_definition()
     {
         $service = new FinanceCalculationService();
 
@@ -317,11 +317,36 @@ class FinanceReportConsistencyTest extends TestCase
             'regular_discount' => 0.00,
             'gross_sales' => 94746.54,
             'net_sales' => 85069.62,
-        ]);
+        ], ['gross_sales_basis' => 'pre_deduction']);
 
         $this->assertSame(94746.54, $totals['gross_sales']);
         $this->assertSame(430.86, $totals['senior_discount']);
         $this->assertSame(553.12, $totals['pwd_discount']);
+    }
+
+    public function test_csmr_gross_sales_adds_back_discounts_when_pos_gross_is_net_of_discounts()
+    {
+        $service = new FinanceCalculationService();
+
+        $totals = $service->deriveMetrics([
+            'vatable_sales' => 73782.86,
+            'sc_vat_exempt_sales' => 7292.86,
+            'vat_amount' => 8854.14,
+            'promo_with_approval' => 0.00,
+            'promo_without_approval' => 0.00,
+            'employee_discount' => 0.00,
+            'senior_discount' => 798.59,
+            'pwd_discount' => 660.01,
+            'vip_discount' => 0.00,
+            'other_tax' => 0.00,
+            'service_charge_distributed' => 0.00,
+            'service_charge_retained' => 0.00,
+            'regular_discount' => 0.00,
+            'gross_sales' => 90805.00,
+            'net_sales' => 90805.00,
+        ], ['gross_sales_basis' => 'pre_deduction']);
+
+        $this->assertSame(91388.46, $totals['gross_sales']);
     }
 
     public function test_small_vat_rounding_split_uses_aggregate_z_reading_basis()

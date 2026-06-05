@@ -159,10 +159,10 @@ class SalesReportExportController extends Controller
             foreach ($components as $key => $val) {
                 $allComponents[$key] = ($allComponents[$key] ?? 0) + $val;
             }
-            $byDate[$date] = $service->deriveMetrics($components);
+            $byDate[$date] = $service->deriveMetrics($components, ['gross_sales_basis' => 'pre_deduction']);
         }
 
-        $totals = $service->deriveMetrics($allComponents);
+        $totals = $service->deriveMetrics($allComponents, ['gross_sales_basis' => 'pre_deduction']);
 
         // 3) Spreadsheet Generation
         $tpl = storage_path('app/templates/monthly_sales_template.xlsx');

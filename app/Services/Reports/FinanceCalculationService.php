@@ -121,7 +121,7 @@ class FinanceCalculationService
      * @param array $c Raw components from aggregateComponents()
      * @return array
      */
-    public function deriveMetrics(array $c): array
+    public function deriveMetrics(array $c, array $options = []): array
     {
         // 1. Aggregate Discs and Service Charges for readability
         $promotions = round(($c['promo_with_approval'] ?? 0) + ($c['promo_without_approval'] ?? 0), 2);
@@ -135,9 +135,20 @@ class FinanceCalculationService
         // For CSMR gross component math, normalize it to ex-VAT using recorded net/vat
         // when the pattern clearly indicates VAT-inclusive storage.
         $vatableForGross = (float)($c['vatable_sales'] ?? 0);
+        $capturedVatableIncludesVatLessSeniorPwd = false;
         if ($rawNetSales > 0 && $rawVat > 0) {
             if (abs($vatableForGross - $rawNetSales) <= 0.05) {
                 $vatableForGross = round($vatableForGross - $rawVat, 2);
+            }
+
+            $discountAdjustedExVat = round($vatableForGross - $rawVat + $seniorPwd, 2);
+            if (
+                $discountAdjustedExVat >= 0
+                && abs($rawVat - round($discountAdjustedExVat * 0.12, 2)) <= 0.10
+                && abs($rawVat - round($vatableForGross * 0.12, 2)) > 0.10
+            ) {
+                $vatableForGross = $discountAdjustedExVat;
+                $capturedVatableIncludesVatLessSeniorPwd = true;
             }
 
             $netBase = $rawNetSales;
@@ -156,13 +167,18 @@ class FinanceCalculationService
             }
         }
 
-        // 2. Gross Sales (Source of Truth)
-        // Finance defines Gross Sales as the POS-reported sales value before
-        // deductions. Discounts stay in their own CMSR columns and must not
-        // reduce the Gross Sales column. Component math is only a fallback for
-        // legacy rows where gross_sales was not captured.
+        // 2. Gross Sales
+        // Default callers keep the raw POS gross. CMSR can opt into Finance's
+        // pre-deduction definition, reconstructing gross from visible CMSR
+        // columns without mutating the stored POS payload values.
+        $nominalGross = round($c['gross_sales'] ?? 0, 2);
+        $grossBasis = $options['gross_sales_basis'] ?? 'raw';
+        $grossVatableSales = $grossBasis === 'pre_deduction'
+            ? (float)($c['vatable_sales'] ?? 0)
+            : $vatableForGross;
+
         $componentSum = round(
-            $vatableForGross
+            $grossVatableSales
             + ($c['sc_vat_exempt_sales'] ?? 0)
             + ($c['vat_amount'] ?? 0)
             + ($c['promo_with_approval'] ?? 0)
@@ -176,10 +192,10 @@ class FinanceCalculationService
             + ($c['service_charge_retained'] ?? 0),
             2
         );
-
-        $nominalGross = round($c['gross_sales'] ?? 0, 2);
         
-        $gross = $nominalGross > 0 ? $nominalGross : $componentSum;
+        $gross = $grossBasis === 'pre_deduction'
+            ? $componentSum
+            : ($nominalGross > 0 ? $nominalGross : $componentSum);
 
         // 3. Net Sales (Source of Truth: Gross - Non-VAT components)
         // Excel N61: Gross - (Promos + Employee + Senior/PWD + VIP + Exempt + LocalTax + SC)
@@ -233,7 +249,11 @@ class FinanceCalculationService
         $capturedSplitMatchesTaxableBase = $rawVat > 0
             && abs(round($reportedVatableSales + $rawVat, 2) - $derivedNetSales) <= 0.05;
         $aggregateVat = round(($derivedNetSales / 1.12) * 0.12, 2);
-        $capturedSplitIsRoundingOnly = ($capturedVatableIsTaxableInclusive || $capturedSplitMatchesTaxableBase)
+        $capturedSplitIsRoundingOnly = (
+                $capturedVatableIncludesVatLessSeniorPwd
+                || $capturedVatableIsTaxableInclusive
+                || $capturedSplitMatchesTaxableBase
+            )
             && abs($rawVat - $aggregateVat) <= 1.00;
         $vat = ($rawVat > 0) ? round($rawVat, 2) : $derivedVat;
         if ($capturedSplitIsRoundingOnly) {

@@ -166,12 +166,12 @@ class ReportsController extends Controller
                 $allComponents[$key] = ($allComponents[$key] ?? 0) + $val;
             }
 
-            $derived = $service->deriveMetrics($components);
+            $derived = $service->deriveMetrics($components, ['gross_sales_basis' => 'pre_deduction']);
             $dailyTotals[$date] = $derived;
         }
 
         // Build total month metrics
-        $totals = $service->deriveMetrics($allComponents);
+        $totals = $service->deriveMetrics($allComponents, ['gross_sales_basis' => 'pre_deduction']);
 
         return response()->json([
             'status' => 'success',
