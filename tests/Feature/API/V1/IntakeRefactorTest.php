@@ -6,9 +6,11 @@ use App\Models\PosTerminal;
 use App\Models\Tenant;
 use App\Models\Transaction;
 use App\Models\TransactionIntake;
+use App\Jobs\ProcessTransactionJob;
 use App\Jobs\ProcessTransactionIntakeJob;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Bus;
+use Illuminate\Support\Str;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
 
@@ -38,7 +40,7 @@ class IntakeRefactorTest extends TestCase
     {
         Bus::fake([ProcessTransactionIntakeJob::class]);
 
-        $submissionUuid = (string) \Illuminate\Support\Str::uuid();
+        $submissionUuid = (string) Str::uuid();
         $payload = [
             'submission_uuid' => $submissionUuid,
             'submission_timestamp' => now()->toISOString(),
@@ -46,7 +48,7 @@ class IntakeRefactorTest extends TestCase
             'terminal_id' => $this->terminal->id,
             'transaction_count' => 1,
             'transaction' => [
-                'transaction_id' => 'TX-' . uniqid(),
+                'transaction_id' => (string) Str::uuid(),
                 'gross_sales' => 100.00,
                 'customer_code' => 'CUST01',
                 'transaction_timestamp' => now()->toISOString(),
@@ -108,7 +110,7 @@ class IntakeRefactorTest extends TestCase
     /** @test */
     public function test_handles_duplicate_submission_uuid_gracefully()
     {
-        $submissionUuid = (string) \Illuminate\Support\Str::uuid();
+        $submissionUuid = (string) Str::uuid();
         $payloadChecksum = str_repeat('d', 64);
         
         // Create an existing intake record
@@ -132,7 +134,7 @@ class IntakeRefactorTest extends TestCase
             'terminal_id' => $this->terminal->id,
             'transaction_count' => 1,
             'transaction' => [
-                'transaction_id' => 'TX-DUP',
+                'transaction_id' => (string) Str::uuid(),
                 'receipt_no' => 'REC-DUP',
             ],
         ];
@@ -148,7 +150,7 @@ class IntakeRefactorTest extends TestCase
     /** @test */
     public function test_duplicate_rejected_submission_returns_rejection_status()
     {
-        $submissionUuid = (string) \Illuminate\Support\Str::uuid();
+        $submissionUuid = (string) Str::uuid();
 
         TransactionIntake::create([
             'submission_uuid' => $submissionUuid,
@@ -172,7 +174,7 @@ class IntakeRefactorTest extends TestCase
             'terminal_id' => $this->terminal->id,
             'transaction_count' => 1,
             'transaction' => [
-                'transaction_id' => 'TX-REJECTED-DUP',
+                'transaction_id' => (string) Str::uuid(),
                 'receipt_no' => 'REC-REJECTED-DUP',
             ],
         ];
@@ -197,7 +199,7 @@ class IntakeRefactorTest extends TestCase
     /** @test */
     public function test_processes_intake_through_the_job()
     {
-        $submissionUuid = (string) \Illuminate\Support\Str::uuid();
+        $submissionUuid = (string) Str::uuid();
         $txId = 'TX-PROCESS-' . uniqid();
         
         $intake = TransactionIntake::create([
@@ -270,5 +272,108 @@ class IntakeRefactorTest extends TestCase
         Bus::assertDispatched(ProcessTransactionIntakeJob::class, function ($job) use ($intake) {
             return $job->intakeId === $intake->id;
         });
+    }
+
+    /** @test */
+    public function test_reconciliation_command_dry_run_reports_processed_intake_missing_transaction()
+    {
+        $submissionUuid = (string) Str::uuid();
+        $transactionId = (string) Str::uuid();
+
+        TransactionIntake::create([
+            'submission_uuid' => $submissionUuid,
+            'tenant_id' => $this->terminal->tenant_id,
+            'terminal_id' => $this->terminal->id,
+            'payload_checksum' => 'checksum',
+            'payload' => $this->processedIntakePayload($transactionId, 'REC-MISSING-001'),
+            'payload_size_bytes' => 500,
+            'intake_status' => TransactionIntake::INTAKE_STATUS_QUEUED,
+            'processing_status' => TransactionIntake::PROCESSING_STATUS_PROCESSED,
+            'trace_id' => (string) Str::uuid(),
+            'received_at' => now()->subMinutes(10),
+            'queued_at' => now()->subMinutes(9),
+            'processed_at' => now()->subMinutes(8),
+        ]);
+
+        $this->artisan('tsms:reconcile-intake', [
+            '--dry-run' => true,
+            '--tenant' => $this->terminal->tenant_id,
+            '--terminal' => $this->terminal->id,
+        ])
+            ->expectsOutputToContain('Missing processed intake records found: 1')
+            ->expectsOutputToContain('Dry run only')
+            ->assertExitCode(0);
+
+        $this->assertDatabaseMissing('transactions', [
+            'transaction_id' => $transactionId,
+        ]);
+    }
+
+    /** @test */
+    public function test_reconciliation_command_repairs_processed_intake_missing_transaction()
+    {
+        Bus::fake([ProcessTransactionJob::class]);
+
+        $submissionUuid = (string) Str::uuid();
+        $transactionId = (string) Str::uuid();
+
+        TransactionIntake::create([
+            'submission_uuid' => $submissionUuid,
+            'tenant_id' => $this->terminal->tenant_id,
+            'terminal_id' => $this->terminal->id,
+            'payload_checksum' => 'checksum',
+            'payload' => $this->processedIntakePayload($transactionId, 'REC-MISSING-002'),
+            'payload_size_bytes' => 500,
+            'intake_status' => TransactionIntake::INTAKE_STATUS_QUEUED,
+            'processing_status' => TransactionIntake::PROCESSING_STATUS_PROCESSED,
+            'trace_id' => (string) Str::uuid(),
+            'received_at' => now()->subMinutes(10),
+            'queued_at' => now()->subMinutes(9),
+            'processed_at' => now()->subMinutes(8),
+        ]);
+
+        $this->artisan('tsms:reconcile-intake', [
+            '--repair-missing' => true,
+            '--tenant' => $this->terminal->tenant_id,
+            '--terminal' => $this->terminal->id,
+        ])
+            ->expectsOutputToContain('Repair complete. Repaired: 1. Skipped: 0. Failed: 0.')
+            ->assertExitCode(0);
+
+        $transaction = Transaction::where('transaction_id', $transactionId)->first();
+        $this->assertNotNull($transaction);
+        $this->assertEquals($submissionUuid, $transaction->submission_uuid);
+        $this->assertEquals('REC-MISSING-002', $transaction->receipt_no);
+
+        Bus::assertDispatched(ProcessTransactionJob::class, function ($job) use ($transaction) {
+            return $job->getTransactionId() === $transaction->id;
+        });
+    }
+
+    private function processedIntakePayload(string $transactionId, string $receiptNo): array
+    {
+        return [
+            'submission_timestamp' => now()->toISOString(),
+            'transaction' => [
+                'transaction_id' => $transactionId,
+                'hardware_id' => 'HW-RECON',
+                'receipt_no' => $receiptNo,
+                'transaction_timestamp' => now()->toISOString(),
+                'gross_sales' => '602.00',
+                'net_sales' => '602.00',
+                'promo_status' => 'WITH_APPROVAL',
+                'customer_code' => 'C-RECON',
+                'adjustments' => [
+                    ['adjustment_type' => 'promo_discount', 'amount' => '0.00'],
+                    ['adjustment_type' => 'senior_discount', 'amount' => '0.00'],
+                    ['adjustment_type' => 'pwd_discount', 'amount' => '0.00'],
+                ],
+                'taxes' => [
+                    ['tax_type' => 'VAT', 'amount' => '64.50'],
+                    ['tax_type' => 'VATABLE_SALES', 'amount' => '537.50'],
+                    ['tax_type' => 'SC_VAT_EXEMPT_SALES', 'amount' => '0.00'],
+                ],
+            ],
+        ];
     }
 }
