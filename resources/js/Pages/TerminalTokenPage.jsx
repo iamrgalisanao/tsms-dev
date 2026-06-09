@@ -163,15 +163,17 @@ const TerminalTokenPage = () => {
     };
 
     const handleExportCSV = async () => {
+        console.log('TerminalTokenPage: handleExportCSV called with filters:', filters);
         try {
             await terminalTokenService.exportCSV(filters);
+            console.log('TerminalTokenPage: exportCSV success');
             setNotification({
                 open: true,
                 message: 'Terminal identity archive exported successfully.',
                 severity: 'success'
             });
         } catch (error) {
-            console.error('Error exporting CSV:', error);
+            console.error('TerminalTokenPage: Error exporting CSV:', error);
             setNotification({
                 open: true,
                 message: 'Export sequence failed.',

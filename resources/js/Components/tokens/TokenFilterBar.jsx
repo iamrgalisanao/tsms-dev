@@ -164,7 +164,10 @@ const TokenFilterBar = ({ filters, onFilterChange, onReset, onExportCSV }) => {
                     <Stack direction="row" spacing={1}>
                         <Button
                             startIcon={<FileDownloadIcon />}
-                            onClick={onExportCSV}
+                            onClick={() => {
+                                console.log('TokenFilterBar: CSV button clicked');
+                                onExportCSV();
+                            }}
                             sx={{
                                 color: '#EB342E',
                                 fontWeight: 800,

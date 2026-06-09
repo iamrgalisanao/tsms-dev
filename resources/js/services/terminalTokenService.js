@@ -35,10 +35,12 @@ export const terminalTokenService = {
      * @param {Object} filters - Filter parameters
      */
     exportCSV: async (filters = {}) => {
+        console.log('terminalTokenService: exportCSV called with filters:', filters);
         const response = await axios.get(`${API_BASE}/terminals/tokens/export`, {
             params: filters,
             responseType: 'blob'
         });
+        console.log('terminalTokenService: exportCSV response received', response);
 
         const url = window.URL.createObjectURL(new Blob([response.data]));
         const link = document.createElement('a');
@@ -48,6 +50,7 @@ export const terminalTokenService = {
         link.click();
         link.remove();
         window.URL.revokeObjectURL(url);
+        console.log('terminalTokenService: exportCSV download link clicked and cleaned up');
     },
 
     /**
