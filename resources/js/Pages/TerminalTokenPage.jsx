@@ -162,6 +162,24 @@ const TerminalTokenPage = () => {
         setPage(0);
     };
 
+    const handleExportCSV = async () => {
+        try {
+            await terminalTokenService.exportCSV(filters);
+            setNotification({
+                open: true,
+                message: 'Terminal identity archive exported successfully.',
+                severity: 'success'
+            });
+        } catch (error) {
+            console.error('Error exporting CSV:', error);
+            setNotification({
+                open: true,
+                message: 'Export sequence failed.',
+                severity: 'error'
+            });
+        }
+    };
+
     const handlePageChange = (event, newPage) => {
         setPage(newPage);
     };
@@ -411,6 +429,7 @@ const TerminalTokenPage = () => {
                     filters={filters}
                     onFilterChange={handleFilterChange}
                     onReset={handleReset}
+                    onExportCSV={handleExportCSV}
                 />
 
                 <TokenTable

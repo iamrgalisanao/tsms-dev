@@ -62,6 +62,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
         // Terminal Token Management
         Route::prefix('terminals/tokens')->group(function () {
             Route::get('/', [TerminalTokenController::class, 'apiIndex']);
+            Route::get('/export', [TerminalTokenController::class, 'export']);
             Route::post('/{terminalId}/regenerate', [TerminalTokenController::class, 'apiRegenerate']);
             Route::post('/{terminalId}/revoke', [TerminalTokenController::class, 'apiRevoke']);
         });

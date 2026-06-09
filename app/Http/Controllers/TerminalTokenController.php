@@ -642,6 +642,93 @@ class TerminalTokenController extends Controller
         ]);
     }
 
+    /**
+     * Export terminal tokens to CSV
+     */
+    public function export(Request $request)
+    {
+        try {
+            $query = PosTerminal::with([
+                'tenant:id,trade_name',
+                'tokens' => function ($query) {
+                    $query->select('id', 'tokenable_id', 'name', 'created_at', 'last_used_at', 'expires_at')
+                        ->where('tokenable_type', 'App\Models\PosTerminal')
+                        ->orderBy('created_at', 'desc');
+                }
+            ]);
+
+            $this->applyFilters($query, $request);
+
+            $filename = 'terminal_tokens_' . now()->format('Ymd_His') . '.csv';
+            $headers = [
+                'Content-Type' => 'text/csv',
+                'Content-Disposition' => "attachment; filename=\"{$filename}\"",
+                'Pragma' => 'no-cache',
+                'Cache-Control' => 'must-revalidate, post-check=0, pre-check=0',
+                'Expires' => '0'
+            ];
+
+            $callback = function() use($query) {
+                $handle = fopen('php://output', 'w');
+                // Header row
+                fputcsv($handle, [
+                    'Terminal ID', 
+                    'Serial Number', 
+                    'Machine Number', 
+                    'Tenant', 
+                    'IP Address', 
+                    'Status', 
+                    'Token Name', 
+                    'Token Created', 
+                    'Token Last Used', 
+                    'Token Expires'
+                ]);
+
+                // Chunk results to avoid memory exhaustion
+                $query->chunk(200, function($terminals) use($handle) {
+                    foreach ($terminals as $terminal) {
+                        $status = 'Inactive';
+                        if ($terminal->status_id === 1 && $terminal->is_active) {
+                            $status = 'Active';
+                        } elseif ($terminal->status_id === 3) {
+                            $status = 'Revoked';
+                        } elseif ($terminal->status_id === 4) {
+                            $status = 'Expired';
+                        }
+
+                        $token = $terminal->tokens->first();
+                        
+                        fputcsv($handle, [
+                            $terminal->id,
+                            $terminal->serial_number,
+                            $terminal->machine_number ?? 'N/A',
+                            $terminal->tenant ? $terminal->tenant->trade_name : 'Unassigned',
+                            $terminal->ip_address ?? 'N/A',
+                            $status,
+                            $token ? $token->name : 'No Token',
+                            $token ? $token->created_at->toISOString() : 'N/A',
+                            $token && $token->last_used_at ? $token->last_used_at->toISOString() : 'N/A',
+                            $token && $token->expires_at ? $token->expires_at->toISOString() : 'N/A'
+                        ]);
+                    }
+                });
+
+                fclose($handle);
+            };
+
+            return response()->stream($callback, 200, $headers);
+        } catch (\Exception $e) {
+            Log::error('Error exporting terminal tokens', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Error exporting terminal tokens: ' . $e->getMessage()
+            ], 500);
+        }
+    }
+
     private function invalidTokenResponse(string $reason)
     {
         // Always collapse to same outward response (avoid enumeration), include code per contract

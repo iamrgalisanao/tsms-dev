@@ -18,7 +18,7 @@ import RestartAltIcon from '@mui/icons-material/RestartAlt';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import FileDownloadIcon from '@mui/icons-material/FileDownload';
 
-const TokenFilterBar = ({ filters, onFilterChange, onReset }) => {
+const TokenFilterBar = ({ filters, onFilterChange, onReset, onExportCSV }) => {
     const [localFilters, setLocalFilters] = useState(filters);
 
     useEffect(() => {
@@ -164,6 +164,7 @@ const TokenFilterBar = ({ filters, onFilterChange, onReset }) => {
                     <Stack direction="row" spacing={1}>
                         <Button
                             startIcon={<FileDownloadIcon />}
+                            onClick={onExportCSV}
                             sx={{
                                 color: '#EB342E',
                                 fontWeight: 800,

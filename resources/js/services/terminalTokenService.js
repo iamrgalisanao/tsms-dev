@@ -31,6 +31,26 @@ export const terminalTokenService = {
     },
 
     /**
+     * Export terminal tokens to CSV
+     * @param {Object} filters - Filter parameters
+     */
+    exportCSV: async (filters = {}) => {
+        const response = await axios.get(`${API_BASE}/terminals/tokens/export`, {
+            params: filters,
+            responseType: 'blob'
+        });
+
+        const url = window.URL.createObjectURL(new Blob([response.data]));
+        const link = document.createElement('a');
+        link.href = url;
+        link.setAttribute('download', `terminal-tokens-${new Date().toISOString().split('T')[0]}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        window.URL.revokeObjectURL(url);
+    },
+
+    /**
      * Regenerate API token for a terminal
      * @param {string|number} terminalId 
      */
