@@ -90,6 +90,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
 
         // Tenants API
         Route::post('tenants', [TenantController::class, 'store']);
+        Route::get('tenants/export', [TenantController::class, 'export']);
         Route::get('tenants/{tenant}', [TenantController::class, 'show']);
         Route::put('tenants/{tenant}', [TenantController::class, 'update']);
         Route::delete('tenants/{tenant}', [TenantController::class, 'destroy']);

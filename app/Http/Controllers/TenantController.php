@@ -65,4 +65,85 @@ class TenantController extends Controller
         $tenant->delete();
         return response()->json(null, 24);
     }
+
+    /**
+     * Export all tenants to CSV (seeder-compatible format)
+     */
+    public function export(Request $request)
+    {
+        try {
+            $filename = 'tenants_export_' . now()->format('Ymd_His') . '.csv';
+            $headers = [
+                'Content-Type' => 'text/csv',
+                'Content-Disposition' => "attachment; filename=\"{$filename}\"",
+                'Pragma' => 'no-cache',
+                'Cache-Control' => 'must-revalidate, post-check=0, pre-check=0',
+                'Expires' => '0'
+            ];
+
+            $callback = function() {
+                $handle = fopen('php://output', 'w');
+                // Header row with all seeder-relevant columns
+                fputcsv($handle, [
+                    'id',
+                    'company_id',
+                    'customer_code',
+                    'trade_name',
+                    'location_type',
+                    'location',
+                    'unit_no',
+                    'floor_area',
+                    'status',
+                    'accept_with_issues',
+                    'activity_monitoring_enabled',
+                    'activity_threshold_minutes',
+                    'activity_monitoring_notes',
+                    'category',
+                    'zone',
+                    'uuid',
+                    'created_at',
+                    'updated_at'
+                ]);
+
+                // Stream the tenants chunk by chunk
+                Tenant::orderBy('id')->chunk(200, function($tenants) use($handle) {
+                    foreach ($tenants as $tenant) {
+                        fputcsv($handle, [
+                            $tenant->id,
+                            $tenant->company_id,
+                            $tenant->customer_code,
+                            $tenant->trade_name,
+                            $tenant->location_type,
+                            $tenant->location,
+                            $tenant->unit_no,
+                            $tenant->floor_area,
+                            $tenant->status,
+                            $tenant->accept_with_issues ? 1 : 0,
+                            $tenant->activity_monitoring_enabled ? 1 : 0,
+                            $tenant->activity_threshold_minutes,
+                            $tenant->activity_monitoring_notes,
+                            $tenant->category,
+                            $tenant->zone,
+                            $tenant->uuid,
+                            $tenant->created_at ? $tenant->created_at->toISOString() : null,
+                            $tenant->updated_at ? $tenant->updated_at->toISOString() : null
+                        ]);
+                    }
+                });
+
+                fclose($handle);
+            };
+
+            return response()->stream($callback, 200, $headers);
+        } catch (\Exception $e) {
+            \Illuminate\Support\Facades\Log::error('Error exporting tenants', [
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+            return response()->json([
+                'success' => false,
+                'message' => 'Error exporting tenants: ' . $e->getMessage()
+            ], 500);
+        }
+    }
 }

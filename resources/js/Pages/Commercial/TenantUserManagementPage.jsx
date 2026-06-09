@@ -40,7 +40,8 @@ import {
     LocationOn as LocationOnIcon,
     MapsHomeWork as MapsHomeWorkIcon,
     Search as SearchIcon,
-    Info as InfoIcon
+    Info as InfoIcon,
+    FileDownload as FileDownloadIcon
 } from '@mui/icons-material';
 import api from '../../services/api';
 import { useRole } from '../../Hooks/useRole';
@@ -205,6 +206,14 @@ const TenantUserManagementPage = () => {
             }
         }
     };
+    const handleExportCSV = async () => {
+        try {
+            await api.exportTenantsCSV();
+            setSuccess('Tenant database exported successfully.');
+        } catch (err) {
+            setError('Failed to export tenants.');
+        }
+    };
 
     return (
         <Container maxWidth="lg" sx={{ py: 4 }}>
@@ -223,6 +232,14 @@ const TenantUserManagementPage = () => {
                         onClick={fetchTenants}
                     >
                         Sync
+                    </Button>
+                    <Button
+                        variant="outlined"
+                        color="primary"
+                        startIcon={<FileDownloadIcon />}
+                        onClick={handleExportCSV}
+                    >
+                        Export CSV
                     </Button>
                     <Button
                         variant="contained"

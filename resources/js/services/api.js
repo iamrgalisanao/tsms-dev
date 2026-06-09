@@ -56,6 +56,19 @@ const api = {
         const response = await axios.delete(`/api/tenants/${id}`);
         return response.data;
     },
+    exportTenantsCSV: async () => {
+        const response = await axios.get('/api/tenants/export', {
+            responseType: 'blob'
+        });
+        const url = window.URL.createObjectURL(new Blob([response.data]));
+        const link = document.createElement('a');
+        link.href = url;
+        link.setAttribute('download', `tenants-export-${new Date().toISOString().split('T')[0]}.csv`);
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        window.URL.revokeObjectURL(url);
+    },
     // Tenant User Management
     getTenantUsers: async (tenantId) => {
         const response = await axios.get(`/api/tenants/${tenantId}/users`);
