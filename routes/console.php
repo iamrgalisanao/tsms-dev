@@ -33,6 +33,16 @@ Schedule::command(\App\Console\Commands\ReconcileStrandedIntake::class)
     ->onOneServer();
 
 // --------------------------------------------------------------------------
+// Processed Intake Repair: Re-ingest and repair processed intake records
+// that are missing matching transaction rows. Runs daily at 11:00 PM (non-peak).
+// --------------------------------------------------------------------------
+Schedule::command(\App\Console\Commands\ReconcileStrandedIntake::class, ['--repair-missing'])
+    ->dailyAt('23:00')
+    ->name('tsms-repair-missing-transactions')
+    ->withoutOverlapping()
+    ->onOneServer();
+
+// --------------------------------------------------------------------------
 // DLQ Alert: warn when failed_jobs table exceeds configured threshold.
 // Runs every 5 minutes. Threshold controlled by TSMS_DLQ_ALERT_THRESHOLD.
 // --------------------------------------------------------------------------

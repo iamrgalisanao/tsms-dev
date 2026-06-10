@@ -2,7 +2,10 @@
 
 All notable changes to the TSMS project will be documented in this file.
 
-## [Unreleased] - 2026-05-07
+## [Unreleased] - 2026-06-10
+
+### Added
+- **Intake Repair Scheduling**: Scheduled a daily cron job at 11:00 PM for the `tsms:reconcile-intake --repair-missing` command to automatically repair processed intake records missing matching transaction rows.
 
 ### Fixed
 - **POS API Redirection**: Hardened the authentication layer to force 401 JSON responses instead of 302 redirects for `/api/v1/` routes. This prevents machine-to-machine integration failures for POS terminals that do not send explicit `Accept` headers.
