@@ -951,4 +951,96 @@ class TransactionLogController extends Controller
 
         return view('transactions.logs.index', compact('logs', 'terminals', 'tenants', 'filters', 'activeTab', 'summary', 'sampleTransactions', 'grandTotal'));
     }
+
+    /**
+     * Trigger manual reconciliation.
+     * Accessible by Admin, Finance, and Commercial roles.
+     */
+    public function reconcile(Request $request)
+    {
+        $user = $request->user();
+        $isAuthorized = false;
+        if ($user) {
+            if (method_exists($user, 'hasAnyRole')) {
+                $isAuthorized = $user->hasAnyRole(['admin', 'finance', 'commercial']);
+            } elseif (method_exists($user, 'hasRole')) {
+                $isAuthorized = $user->hasRole('admin') || $user->hasRole('finance') || $user->hasRole('commercial');
+            } else {
+                $isAuthorized = in_array(strtolower($user->role ?? ''), ['admin', 'finance', 'commercial']);
+            }
+        }
+
+        if (!$isAuthorized) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Unauthorized action. Only Admin, Finance, and Commercial roles can perform reconciliation.'
+            ], 403);
+        }
+
+        try {
+            Log::info('Manual reconciliation triggered by user', [
+                'user_id' => $user->id,
+                'email' => $user->email,
+                'role' => $user->role ?? null,
+            ]);
+
+            // 1. Reconcile stranded intakes (ACCEPTED status)
+            \Illuminate\Support\Facades\Artisan::call('tsms:reconcile-intake');
+            $strandedOutput = trim(\Illuminate\Support\Facades\Artisan::output());
+
+            // 2. Repair missing transactions (PROCESSED status)
+            \Illuminate\Support\Facades\Artisan::call('tsms:reconcile-intake', [
+                '--repair-missing' => true
+            ]);
+            $repairOutput = trim(\Illuminate\Support\Facades\Artisan::output());
+
+            // Write to AuditLog
+            try {
+                \App\Models\AuditLog::create([
+                    'user_id' => $request->user()->id,
+                    'ip_address' => $request->ip(),
+                    'action' => 'MANUAL_RECONCILIATION_TRIGGERED',
+                    'action_type' => 'reconciliation',
+                    'resource_type' => 'transaction_intake',
+                    'resource_id' => 'all',
+                    'auditable_type' => 'system',
+                    'auditable_id' => null,
+                    'message' => 'Manual intake/transaction reconciliation triggered by ' . $request->user()->email,
+                    'metadata' => [
+                        'stranded_output' => $strandedOutput,
+                        'repair_output' => $repairOutput,
+                    ],
+                ]);
+            } catch (\Throwable $auditEx) {
+                Log::error('Failed to write manual reconciliation AuditLog', ['error' => $auditEx->getMessage()]);
+            }
+
+            $message = 'Reconciliation completed successfully.';
+            if ($strandedOutput) {
+                $message .= "\n" . $strandedOutput;
+            }
+            if ($repairOutput) {
+                $message .= "\n" . $repairOutput;
+            }
+
+            return response()->json([
+                'status' => 'success',
+                'message' => $message,
+                'details' => [
+                    'stranded' => $strandedOutput,
+                    'repair' => $repairOutput,
+                ]
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('Manual reconciliation failed', [
+                'error' => $e->getMessage(),
+                'user_id' => $request->user()->id ?? null,
+            ]);
+
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Manual reconciliation failed: ' . $e->getMessage()
+            ], 500);
+        }
+    }
 }

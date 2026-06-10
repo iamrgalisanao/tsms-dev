@@ -17,7 +17,9 @@ import SummarizeIcon from '@mui/icons-material/Summarize';
 import FileDownloadIcon from '@mui/icons-material/FileDownload';
 import HomeIcon from '@mui/icons-material/Home';
 import NavigateNextIcon from '@mui/icons-material/NavigateNext';
-import { Breadcrumbs, Link as MuiLink } from '@mui/material';
+import SyncIcon from '@mui/icons-material/Sync';
+import { Breadcrumbs, Link as MuiLink, CircularProgress } from '@mui/material';
+import { useAuth } from '../Contexts/AuthContext';
 import FilterBar from '../Components/transactions/FilterBar';
 import TransactionTable from '../Components/transactions/TransactionTable';
 import SummaryTable from '../Components/transactions/SummaryTable';
@@ -71,6 +73,12 @@ const TransactionLogsPage = () => {
     const [dateBasisDiscrepancy, setDateBasisDiscrepancy] = useState(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
+    const [success, setSuccess] = useState(null);
+    const [reconciling, setReconciling] = useState(false);
+    const { user } = useAuth();
+
+    const userRole = user?.role?.toUpperCase() || (user?.roles?.[0]?.name || user?.roles?.[0] || '').toUpperCase();
+    const canReconcile = ['ADMIN', 'FINANCE', 'COMMERCIAL'].includes(userRole);
 
     const [page, setPage] = useState(0);
     const [rowsPerPage, setRowsPerPage] = useState(15);
@@ -171,6 +179,27 @@ const TransactionLogsPage = () => {
         }
     };
 
+    const handleReconcile = async () => {
+        setReconciling(true);
+        setError(null);
+        setSuccess(null);
+
+        try {
+            const response = await transactionLogService.reconcile();
+            if (response.status === 'success') {
+                setSuccess(response.message || 'Reconciliation completed successfully.');
+                loadData(); // reload page data
+            } else {
+                setError(response.message || 'Failed to trigger reconciliation.');
+            }
+        } catch (err) {
+            console.error('Error during reconciliation:', err);
+            setError(err.response?.data?.message || 'Failed to run manual reconciliation.');
+        } finally {
+            setReconciling(false);
+        }
+    };
+
     return (
         <Box sx={{ pb: 8 }}>
             {/* Unified Breadcrumbs */}
@@ -221,6 +250,18 @@ const TransactionLogsPage = () => {
                         >
                             Export Archive
                         </Button>
+                        {canReconcile && (
+                            <Button
+                                variant="contained"
+                                color="warning"
+                                startIcon={reconciling ? <CircularProgress size={20} color="inherit" /> : <SyncIcon />}
+                                onClick={handleReconcile}
+                                disabled={reconciling}
+                                sx={{ borderRadius: 3, px: 3, py: 1.2, fontWeight: 800, textTransform: 'none', boxShadow: '0 4px 15px rgba(237, 108, 2, 0.3)' }}
+                            >
+                                {reconciling ? 'Reconciling...' : 'Manual Reconciliation'}
+                            </Button>
+                        )}
                     </Stack>
                 </Stack>
 
@@ -231,9 +272,16 @@ const TransactionLogsPage = () => {
                 />
             </Box>
 
+            {/* Success Alert */}
+            {success && (
+                <Alert severity="success" sx={{ mb: 3, borderRadius: '12px', whiteSpace: 'pre-line' }} onClose={() => setSuccess(null)}>
+                    {success}
+                </Alert>
+            )}
+
             {/* Error Alert */}
             {error && (
-                <Alert severity="error" sx={{ mb: 3, borderRadius: '12px' }} onClose={() => setError(null)}>
+                <Alert severity="error" sx={{ mb: 3, borderRadius: '12px', whiteSpace: 'pre-line' }} onClose={() => setError(null)}>
                     {error}
                 </Alert>
             )}

@@ -127,6 +127,8 @@ Route::middleware(['auth:sanctum'])->group(function () {
             Route::get('/summary', [\App\Http\Controllers\TransactionLogController::class, 'summary']);
             Route::get('/issues-count', [\App\Http\Controllers\TransactionLogController::class, 'issuesCount']);
             Route::get('/export', [\App\Http\Controllers\TransactionLogController::class, 'export']);
+            Route::post('/reconcile', [\App\Http\Controllers\TransactionLogController::class, 'reconcile'])
+                ->middleware('role:admin|finance|commercial');
             Route::get('/{id}', [\App\Http\Controllers\TransactionLogController::class, 'show']);
         });
     });

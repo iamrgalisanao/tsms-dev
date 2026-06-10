@@ -5,6 +5,7 @@ All notable changes to the TSMS project will be documented in this file.
 ## [Unreleased] - 2026-06-10
 
 ### Added
+- **Manual Reconciliation Trigger**: Added a "Manual Reconciliation" button on the Transaction Logs page for `admin`, `finance`, and `commercial` roles to invoke the self-healing reconciliation pipeline on-demand with real-time feedback.
 - **Intake Repair Scheduling**: Scheduled a daily cron job at 11:00 PM for the `tsms:reconcile-intake --repair-missing` command to automatically repair processed intake records missing matching transaction rows.
 
 ### Fixed

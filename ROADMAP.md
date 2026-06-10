@@ -19,6 +19,7 @@ See the detailed development roadmap in [_md/NEXT_DEVELOPMENT_ROADMAP.md](_md/NE
 - [/] **Phase 7: Validation & Rollout** - Shadow mode testing, tenant pilot, and full migration.
     - [x] **Auth Hardening**: Resolved 302 redirect regressions for POS API terminals.
     - [x] **Stranded Intake Repair Scheduler**: Scheduled automated daily run for missing transaction repair.
+    - [x] **Manual Reconciliation Trigger**: Added a manual trigger button on the Transaction Logs page for admin, finance, and commercial roles.
 - [ ] **Phase 8: Monitoring Enhancements** - Implement Operational/Business Hours for Inactivity Alerts to prevent false alarms during closing hours.
 
 ## Phase 3: React UI & Dashboards (Planned)

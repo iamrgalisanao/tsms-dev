@@ -92,5 +92,13 @@ export const transactionLogService = {
     getTenants: async () => {
         const response = await axios.get(`${API_BASE}/tenants`);
         return response.data;
+    },
+
+    /**
+     * Trigger manual reconciliation
+     */
+    reconcile: async () => {
+        const response = await axios.post(`${API_BASE}/transactions/logs/reconcile`);
+        return response.data;
     }
 };
