@@ -1,7 +1,7 @@
 <?php
 
 // Streamlined Horizon configuration aligned with standardized queue naming:
-// transaction-processing (critical), forwarding (medium), low (housekeeping)
+// transaction-processing (critical), low (housekeeping), notifications
 return [
     'domain' => env('HORIZON_DOMAIN'),
     'path'   => env('HORIZON_PATH', 'horizon'),
@@ -14,7 +14,6 @@ return [
     // Long wait detection thresholds (seconds)
     'waits' => [
         'redis:transaction-processing' => 5,
-        'redis:forwarding'             => 10,
         'redis:low'                    => 15,
         'redis:notifications'          => 5,
     ],
@@ -43,15 +42,6 @@ return [
                 'timeout'    => 30,
                 'nice'       => 0,
             ],
-            'forward-supervisor' => [
-                'connection' => 'redis',
-                'queue'      => ['forwarding'],
-                'balance'    => 'auto',
-                'processes'  => env('HZ_FORWARD_PROCESSES', 4),
-                'tries'      => 5,
-                'timeout'    => 60,
-                'nice'       => 2,
-            ],
             'low-supervisor' => [
                 'connection' => 'redis',
                 'queue'      => ['low'],
@@ -74,7 +64,7 @@ return [
         'staging' => [
             'default' => [
                 'connection' => 'redis',
-                'queue'      => ['transaction-processing','forwarding','low','notifications'],
+                'queue'      => ['transaction-processing','low','notifications'],
                 'balance'    => 'auto',
                 'processes'  => 4,
                 'tries'      => 2,
@@ -84,7 +74,7 @@ return [
             'default' => [
                 'connection' => 'redis',
                 // Include processing queues locally so Horizon runs workers for them
-                'queue'      => ['transaction-processing','forwarding','low','notifications','default'],
+                'queue'      => ['transaction-processing','low','notifications','default'],
                 'processes'  => 1,
                 'tries'      => 1,
             ],
