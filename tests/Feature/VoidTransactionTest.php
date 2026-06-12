@@ -24,11 +24,6 @@ class VoidTransactionTest extends TestCase
         // Disable middleware for testing
         $this->withoutMiddleware();
         
-        // Mock WebAppForwardingService to avoid external dependencies
-        $this->mock(\App\Services\WebAppForwardingService::class, function ($mock) {
-            $mock->shouldReceive('forwardVoidedTransaction')->andReturn(true);
-        });
-        
         // Create test terminal with correct schema
         $this->terminal = PosTerminal::factory()->create([
             'status_id' => 1 // Use status_id instead of status

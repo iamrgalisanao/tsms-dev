@@ -507,11 +507,6 @@ class TransactionController extends Controller
         ]);
 
         $transaction = Transaction::where('transaction_id', $transaction_id)->first();
-        if ($transaction) {
-            // Ensure tenant_id and terminal_id are loaded
-            $tenant_id = $transaction->tenant_id ?? null;
-            $terminal_id = $transaction->terminal_id ?? ($transaction->serial_number ? \App\Models\PosTerminal::where('serial_number', $transaction->serial_number)->value('id') : null);
-        }
         if (!$transaction) {
             return response()->json([
                 'success' => false,
@@ -532,36 +527,6 @@ class TransactionController extends Controller
         $transaction->voided_at = now();
         $transaction->void_reason = $request->void_reason;
         $transaction->save();
-
-        // Forward to webapp after voiding
-        try {
-            $forwardingService = app(\App\Services\WebAppForwardingService::class);
-            // Set the endpoint for void transactions explicitly if needed
-            if (method_exists($forwardingService, 'setEndpoint')) {
-                $voidEndpoint = config('tsms.web_app.void_endpoint', env('WEBAPP_FORWARDING_VOID_ENDPOINT', 'https://tsms-ops.test/api/transactions/void'));
-                $forwardingService->setEndpoint($voidEndpoint);
-            }
-            // Build payload with tenant_id and terminal_id
-            $payload = [
-                'transaction_id' => $transaction->transaction_id,
-                'voided_at' => $transaction->voided_at,
-                'void_reason' => $transaction->void_reason,
-                'tenant_id' => $tenant_id,
-                'terminal_id' => $terminal_id,
-            ];
-            if (method_exists($forwardingService, 'forwardVoidedTransaction')) {
-                $forwardingService->forwardVoidedTransaction($payload);
-            } else {
-                // Fallback: send via generic forward method
-                $forwardingService->forward($payload);
-            }
-        } catch (\Exception $e) {
-            \Log::error('Failed to forward voided transaction to webapp', [
-                'transaction_id' => $transaction->transaction_id,
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
-            ]);
-        }
 
         return response()->json([
             'success' => true,
@@ -625,9 +590,7 @@ class TransactionController extends Controller
                 ], 404);
             }
 
-            // Fix: Move variable assignment after null check
             $tenant_id = $transaction->tenant_id ?? null;
-            $terminal_id = $posTerminal->id;
 
             if ($transaction->voided_at) {
                 DB::rollBack();
@@ -731,39 +694,6 @@ class TransactionController extends Controller
                 Log::warning('Failed to create audit log for POS void', [
                     'error' => $logError->getMessage(),
                     'transaction_id' => $transaction->transaction_id
-                ]);
-            }
-
-            // Forward to webapp after voiding
-            try {
-                $forwardingService = app(\App\Services\WebAppForwardingService::class);
-                // Set the endpoint for void transactions explicitly if needed
-                if (method_exists($forwardingService, 'setEndpoint')) {
-                    $voidEndpoint = config('tsms.web_app.void_endpoint', env('WEBAPP_FORWARDING_VOID_ENDPOINT', 'https://tsms-ops.test/api/transactions/void'));
-                    $forwardingService->setEndpoint($voidEndpoint);
-                }
-                // Build payload with tenant_id and terminal_id
-                $payload = [
-                    'transaction_id' => $transaction->transaction_id,
-                    'voided_at' => $transaction->voided_at,
-                    'void_reason' => $transaction->void_reason,
-                    'tenant_id' => $tenant_id,
-                    'terminal_id' => $terminal_id,
-                    'initiated_by' => 'POS',
-                    'terminal_serial' => $posTerminal->serial_number,
-                ];
-                if (method_exists($forwardingService, 'forwardVoidedTransaction')) {
-                    $forwardingService->forwardVoidedTransaction($payload);
-                } else {
-                    // Fallback: send via generic forward method
-                    $forwardingService->forward($payload);
-                }
-            } catch (\Exception $e) {
-                // Don't rollback for forwarding failures - void operation should still succeed
-                \Log::error('Failed to forward voided transaction to webapp', [
-                    'transaction_id' => $transaction->transaction_id,
-                    'error' => $e->getMessage(),
-                    'trace' => $e->getTraceAsString(),
                 ]);
             }
 

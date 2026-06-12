@@ -175,56 +175,6 @@ class DashboardController extends Controller
         return new \App\Http\Resources\TransactionCollection($transactions);
     }
 
-    // API: POST /api/dashboard/forward-transaction/{id}
-    public function forwardTransaction(Request $request, $transactionId)
-    {
-        try {
-            $transaction = Transaction::with(['adjustments', 'taxes'])->findOrFail($transactionId);
-
-            // Check if user has permission (optional - adjust as needed)
-            // if (!auth()->user() || !auth()->user()->hasAnyRole(['admin', 'manager'])) {
-            //     return response()->json(['error' => 'Forbidden'], 403);
-            // }
-
-            $forwardingService = app(\App\Services\WebAppForwardingService::class);
-            $result = $forwardingService->forwardTransactionImmediately($transaction);
-
-            if ($result['success']) {
-                return response()->json([
-                    'status' => 'success',
-                    'message' => $result['message'],
-                    'batch_id' => $result['batch_id'],
-                    'transaction_id' => $transaction->transaction_id
-                ]);
-            } else {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => $result['error'],
-                    'batch_id' => $result['batch_id'] ?? null,
-                    'transaction_id' => $transaction->transaction_id
-                ], 500);
-            }
-
-        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Transaction not found',
-                'transaction_id' => $transactionId
-            ], 404);
-        } catch (\Exception $e) {
-            \Log::error('Transaction forwarding failed', [
-                'transaction_id' => $transactionId,
-                'error' => $e->getMessage()
-            ]);
-
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Forwarding failed: ' . $e->getMessage(),
-                'transaction_id' => $transactionId
-            ], 500);
-        }
-    }
-
     // protected function getEnrollmentData()
     // {
     //     $dates = collect(range(30, 0))->map(function($days) {

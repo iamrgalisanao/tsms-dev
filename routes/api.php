@@ -35,7 +35,6 @@ Route::middleware(['api'])->group(function () {
     Route::get('dashboard/charts', [DashboardController::class, 'apiCharts']);
     Route::get('dashboard/transactions', [DashboardController::class, 'apiTransactions']);
     Route::get('dashboard/audit-logs', [DashboardController::class, 'apiAuditLogs']);
-    Route::post('dashboard/forward-transaction/{id}', [DashboardController::class, 'forwardTransaction']);
 });
 
 // Health check endpoint (public)
@@ -377,54 +376,3 @@ Route::post('/transactions/bulk', [ApiTransactionController::class, 'bulk'])
 
 // Void transaction endpoint (API v1) - DEPRECATED: Use v1 route above instead
 // Route::post('api/v1/transactions/{transaction_id}/void', [\App\Http\Controllers\API\V1\TransactionController::class, 'void']);
-
-// Register the new endpoint for receiving voided transactions in the webapp
-// Route::post('/transactions/void', [\App\Http\Controllers\Api\VoidTransactionController::class, 'receive']);
-
-// Test WebApp receiver endpoint for TSMS forwarding
-Route::post('/transactions/bulk', function (Request $request) {
-    // Log the incoming request
-    $timestamp = now()->toISOString();
-    $data = $request->all();
-
-    Log::info('WebApp Test Receiver: Transaction batch received', [
-        'timestamp' => $timestamp,
-        'batch_id' => $data['batch_id'] ?? 'unknown',
-        'transaction_count' => $data['transaction_count'] ?? 0,
-        'source' => $data['source'] ?? 'unknown',
-        'client_ip' => $request->ip(),
-    ]);
-
-    // Validate required fields
-    $requiredFields = ['source', 'batch_id', 'timestamp', 'transaction_count', 'transactions'];
-    foreach ($requiredFields as $field) {
-        if (!isset($data[$field])) {
-            Log::warning('WebApp Test Receiver: Missing required field', [
-                'field' => $field,
-                'batch_id' => $data['batch_id'] ?? null
-            ]);
-
-            return response()->json([
-                'status' => 'error',
-                'error_code' => 'MISSING_FIELD',
-                'message' => "Missing required field: {$field}",
-                'batch_id' => $data['batch_id'] ?? null
-            ], 400);
-        }
-    }
-
-    // Simulate successful processing
-    Log::info('WebApp Test Receiver: Transaction batch processed successfully', [
-        'batch_id' => $data['batch_id'],
-        'transaction_count' => $data['transaction_count'],
-        'transactions_processed' => count($data['transactions'] ?? [])
-    ]);
-
-    return response()->json([
-        'status' => 'success',
-        'message' => 'Transaction batch received and processed successfully',
-        'batch_id' => $data['batch_id'],
-        'transaction_count' => $data['transaction_count'],
-        'processed_at' => $timestamp
-    ]);
-})->name('webapp.test-receiver');

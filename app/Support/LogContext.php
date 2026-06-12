@@ -3,7 +3,6 @@
 namespace App\Support;
 
 use App\Models\Transaction;
-use App\Models\WebappTransactionForward;
 
 /**
  * Small helper to produce a consistent logging context ("stamp").
@@ -34,15 +33,4 @@ class LogContext
         return self::base(array_merge($ctx, $extra));
     }
 
-    public static function fromForward(?WebappTransactionForward $fwd, array $extra = []): array
-    {
-        if (!$fwd) {
-            return self::base($extra);
-        }
-        $tx = $fwd->transaction ?? null;
-        $ctx = [
-            'batch_id' => $fwd->batch_id,
-        ];
-        return $tx ? self::fromTransaction($tx, array_merge($ctx, $extra)) : self::base(array_merge($ctx, $extra));
-    }
 }
