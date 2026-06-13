@@ -484,10 +484,10 @@ const IntakeHealthPage = () => {
                         </Grid>
                     </Grid>
 
-                    {/* Layout Block 3: Exceptions, Workers, and Sources (Section 5 - 3 Columns Symmetrical [4][4][4]) */}
-                    <Grid container spacing={3} sx={{ mb: 3 }}>
+                    {/* Layout Block 3: Exceptions, Workers, and Sources (Section 5 - 3 Columns Symmetrical [4][4][4] stretched) */}
+                    <Grid container spacing={3} sx={{ mb: 3 }} alignItems="stretch">
                         {/* Prominent Exceptions Card */}
-                        <Grid item xs={12} md={4}>
+                        <Grid item xs={12} md={4} sx={{ display: 'flex' }}>
                             <Card 
                                 sx={{ 
                                     borderRadius: 3, 
@@ -495,14 +495,17 @@ const IntakeHealthPage = () => {
                                     borderColor: 'error.main', 
                                     height: '100%', 
                                     bgcolor: 'rgba(211, 47, 47, 0.02)',
-                                    boxShadow: '0 4px 20px rgba(211, 47, 47, 0.05)'
+                                    boxShadow: '0 4px 20px rgba(211, 47, 47, 0.05)',
+                                    display: 'flex',
+                                    flexDirection: 'column',
+                                    width: '100%'
                                 }}
                             >
-                                <CardContent sx={{ p: 3 }}>
+                                <CardContent sx={{ p: 3, flexGrow: 1, display: 'flex', flexDirection: 'column' }}>
                                     <Typography variant="h6" sx={{ fontWeight: 1000, mb: 3, color: 'error.main', display: 'flex', alignItems: 'center', letterSpacing: '0.02em' }}>
                                         <ErrorOutlineIcon sx={{ mr: 1, fontSize: 24 }} /> PIPELINE EXCEPTIONS
                                     </Typography>
-                                    <Stack spacing={2}>
+                                    <Stack spacing={2} sx={{ flexGrow: 1, justifyContent: 'space-between' }}>
                                         <Box sx={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px dashed', borderColor: 'divider', pb: 1.5 }}>
                                             <Typography variant="body2" sx={{ fontWeight: 800, color: 'text.primary' }}>Failed Dispatches</Typography>
                                             <Chip label={failedReconciliation} size="small" color={failedReconciliation > 0 ? 'error' : 'success'} sx={{ fontWeight: 900 }} />
@@ -525,13 +528,13 @@ const IntakeHealthPage = () => {
                         </Grid>
 
                         {/* Worker Health Card (Aligned badges) */}
-                        <Grid item xs={12} md={4}>
-                            <Card sx={{ borderRadius: 3, border: '1px solid', borderColor: 'divider', height: '100%', bgcolor: 'white' }}>
-                                <CardContent sx={{ p: 3 }}>
+                        <Grid item xs={12} md={4} sx={{ display: 'flex' }}>
+                            <Card sx={{ borderRadius: 3, border: '1px solid', borderColor: 'divider', height: '100%', bgcolor: 'white', display: 'flex', flexDirection: 'column', width: '100%' }}>
+                                <CardContent sx={{ p: 3, flexGrow: 1, display: 'flex', flexDirection: 'column' }}>
                                     <Typography variant="h6" sx={{ fontWeight: 900, mb: 3, color: 'primary.main', display: 'flex', alignItems: 'center' }}>
                                         <DnsIcon sx={{ mr: 1 }} /> Worker Nodes Pool
                                     </Typography>
-                                    <Stack spacing={2.5}>
+                                    <Stack spacing={2.5} sx={{ flexGrow: 1, justifyContent: 'space-between' }}>
                                         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                             <Typography variant="body2" sx={{ fontWeight: 800, color: 'text.primary' }}>Ingestion Worker Node 1</Typography>
                                             <Chip label="Healthy" size="small" color="success" sx={{ fontWeight: 900, width: 90, justifyContent: 'center' }} />
@@ -554,13 +557,13 @@ const IntakeHealthPage = () => {
                         </Grid>
 
                         {/* Source Health Card */}
-                        <Grid item xs={12} md={4}>
-                            <Card sx={{ borderRadius: 3, border: '1px solid', borderColor: 'divider', height: '100%', bgcolor: 'white' }}>
-                                <CardContent sx={{ p: 3 }}>
+                        <Grid item xs={12} md={4} sx={{ display: 'flex' }}>
+                            <Card sx={{ borderRadius: 3, border: '1px solid', borderColor: 'divider', height: '100%', bgcolor: 'white', display: 'flex', flexDirection: 'column', width: '100%' }}>
+                                <CardContent sx={{ p: 3, flexGrow: 1, display: 'flex', flexDirection: 'column' }}>
                                     <Typography variant="h6" sx={{ fontWeight: 900, mb: 3, color: 'success.main', display: 'flex', alignItems: 'center' }}>
                                         <TerminalIcon sx={{ mr: 1 }} /> Source Ingestion Health
                                     </Typography>
-                                    <Stack spacing={2}>
+                                    <Stack spacing={2} sx={{ flexGrow: 1, justifyContent: 'space-between' }}>
                                         <Box sx={{ display: 'flex', justifyContent: 'space-between', borderBottom: '1px dashed', borderColor: 'divider', pb: 1.5 }}>
                                             <Typography variant="body2" sx={{ fontWeight: 800, color: 'text.primary' }}>Healthy Sources</Typography>
                                             <Typography variant="body2" sx={{ fontWeight: 900, color: 'success.main' }}>117 devices</Typography>

@@ -40,6 +40,8 @@ const MetricCard = memo(({ title, value, icon, color = 'primary', trend, sparkli
                 overflow: 'hidden',
                 bgcolor: 'rgba(255, 255, 255, 0.6)',
                 cursor: onClick ? 'pointer' : 'default',
+                display: 'flex',
+                flexDirection: 'column',
                 '&:hover': {
                     '& .metric-icon-box': { 
                         transform: 'scale(1.1) rotate(5deg)',
