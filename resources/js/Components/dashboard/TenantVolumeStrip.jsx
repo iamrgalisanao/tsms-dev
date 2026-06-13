@@ -7,7 +7,7 @@ const TenantVolumeStrip = ({ tenants = [], title = "TOP TENANTS (24H)" }) => {
             className="glass-container stagger-item" 
             sx={{ 
                 p: 2, 
-                mb: 4, 
+                mb: 3, // Tightened vertical gap (24px spacing)
                 display: 'flex', 
                 alignItems: 'center', 
                 overflowX: 'auto',
@@ -29,24 +29,39 @@ const TenantVolumeStrip = ({ tenants = [], title = "TOP TENANTS (24H)" }) => {
                 {title}
             </Typography>
 
-            <Stack direction="row" spacing={4} sx={{ display: 'flex', alignItems: 'center' }}>
+            <Stack direction="row" spacing={2} sx={{ display: 'flex', alignItems: 'center' }}>
                 {tenants.map((tenant, index) => (
                     <Tooltip key={tenant.tenant_id} title={`Total Transactions: ${tenant.count}`}>
-                        <Stack direction="row" spacing={1.5} alignItems="center" sx={{ cursor: 'help' }}>
-                            <Box 
+                        <Stack 
+                            direction="row" 
+                            spacing={1.5} 
+                            alignItems="center" 
+                            sx={{ 
+                                cursor: 'help',
+                                bgcolor: 'rgba(0,0,0,0.02)',
+                                px: 1.5,
+                                py: 0.75,
+                                borderRadius: 2,
+                                border: '1px solid',
+                                borderColor: index === 0 ? 'primary.light' : 'divider',
+                                boxShadow: index === 0 ? '0 2px 8px rgba(0,242,255,0.08)' : 'none'
+                            }}
+                        >
+                            <Typography 
+                                variant="caption" 
                                 sx={{ 
-                                    width: 8, 
-                                    height: 8, 
-                                    borderRadius: '50%', 
-                                    bgcolor: index === 0 ? '#00f2ff' : 'rgba(0,0,0,0.1)',
-                                    boxShadow: index === 0 ? '0 0 10px #00f2ff' : 'none'
-                                }} 
-                            />
+                                    fontWeight: 900, 
+                                    color: index === 0 ? 'primary.main' : 'text.secondary',
+                                    fontSize: '0.7rem'
+                                }}
+                            >
+                                #{index + 1}
+                            </Typography>
                             <Box>
-                                <Typography sx={{ fontSize: '0.75rem', fontWeight: 900, color: '#101221', lineHeight: 1 }}>
-                                    {tenant.tenant_id}
+                                <Typography sx={{ fontSize: '0.75rem', fontWeight: 900, color: '#101221', lineHeight: 1, mb: 0.2 }}>
+                                    Terminal {tenant.tenant_id}
                                 </Typography>
-                                <Typography sx={{ fontSize: '0.6rem', fontWeight: 700, color: 'text.secondary', opacity: 0.5 }}>
+                                <Typography sx={{ fontSize: '0.6rem', fontWeight: 800, color: 'text.secondary', opacity: 0.7 }}>
                                     {tenant.count} units
                                 </Typography>
                             </Box>
