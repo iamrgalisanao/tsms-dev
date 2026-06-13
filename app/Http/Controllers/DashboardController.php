@@ -10,6 +10,7 @@ use App\Models\IntegrationLog;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use App\Models\TransactionJob;
+use Illuminate\Support\Facades\Schema;
 
 class DashboardController extends Controller
 {
@@ -287,5 +288,83 @@ class DashboardController extends Controller
             'per_page' => $auditLogs->perPage(),
             'total' => $auditLogs->total(),
         ]);
+    }
+
+    // API: GET /api/dashboard/system-health
+    public function apiSystemHealth(Request $request)
+    {
+        $memoryLimit = $this->memoryLimitInBytes(ini_get('memory_limit'));
+        $memoryUsage = memory_get_usage(true);
+        $memoryPercent = $memoryLimit > 0
+            ? min(100, round(($memoryUsage / $memoryLimit) * 100, 2))
+            : 0;
+
+        $queueBacklog = Schema::hasTable('jobs') ? \DB::table('jobs')->count() : 0;
+
+        return response()->json([
+            'cpu' => 0,
+            'memory' => $memoryPercent,
+            'network' => 'Online',
+            'queues' => [
+                'backlog' => $queueBacklog,
+            ],
+        ]);
+    }
+
+    // API: GET /api/dashboard/terminal-performance
+    public function apiTerminalPerformance(Request $request)
+    {
+        $rows = Transaction::query()
+            ->leftJoin('pos_terminals', 'pos_terminals.id', '=', 'transactions.terminal_id')
+            ->leftJoin('tenants', 'tenants.id', '=', 'pos_terminals.tenant_id')
+            ->selectRaw('COALESCE(tenants.trade_name, pos_terminals.serial_number, "Unknown") as trade_name')
+            ->selectRaw('COALESCE(SUM(transactions.gross_sales), 0) as total_sales')
+            ->whereDate('transactions.transaction_timestamp', Carbon::today())
+            ->groupBy('trade_name')
+            ->orderByDesc('total_sales')
+            ->limit(5)
+            ->get();
+
+        return response()->json($rows);
+    }
+
+    // API: GET /api/dashboard/notifications
+    public function apiNotifications(Request $request)
+    {
+        if (!Schema::hasTable('notifications')) {
+            return response()->json(['data' => []]);
+        }
+
+        $notifications = \DB::table('notifications')
+            ->whereNull('read_at')
+            ->orderByDesc('created_at')
+            ->limit(10)
+            ->get()
+            ->map(function ($notification) {
+                $notification->data = is_string($notification->data)
+                    ? json_decode($notification->data, true)
+                    : $notification->data;
+
+                return $notification;
+            });
+
+        return response()->json(['data' => $notifications]);
+    }
+
+    private function memoryLimitInBytes(string $memoryLimit): int
+    {
+        if ($memoryLimit === '-1') {
+            return 0;
+        }
+
+        $unit = strtolower(substr($memoryLimit, -1));
+        $value = (int) $memoryLimit;
+
+        return match ($unit) {
+            'g' => $value * 1024 * 1024 * 1024,
+            'm' => $value * 1024 * 1024,
+            'k' => $value * 1024,
+            default => $value,
+        };
     }
 }

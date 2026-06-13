@@ -38,8 +38,10 @@ Route::middleware('guest')->group(function () {
 });
 
 Route::middleware(['auth'])->group(function () {
-    // Main Dashboard Route
-    Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
+    // Main Dashboard Route: React shell. Keep dashboard/* below for backend actions/data.
+    Route::get('/dashboard', function () {
+        return view('app');
+    })->name('dashboard');
 
     // Dashboard Group Routes
     Route::prefix('dashboard')->name('dashboard.')->group(function () {
@@ -52,18 +54,6 @@ Route::middleware(['auth'])->group(function () {
         Route::post('/performance/export', [DashboardController::class, 'exportPerformance'])->name('performance.export');
     });
     Route::post('/logout', [LoginController::class, 'logout'])->name('logout');
-    
-    // Main Dashboard Route
-    Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
-    
-    // Dashboard Group Routes
-    Route::prefix('dashboard')->name('dashboard.')->group(function () {
-        Route::get('/providers', [ProvidersController::class, 'index'])->name('providers.index');
-        Route::get('/providers/{id}', [ProvidersController::class, 'show'])->name('providers.show');
-        Route::get('/retry-history', [RetryHistoryController::class, 'index'])->name('retry-history');
-        Route::get('/performance', [DashboardController::class, 'performance'])->name('performance');
-        Route::post('/performance/export', [DashboardController::class, 'exportPerformance'])->name('performance.export');
-    });
 
     // Centralized Log Viewer Routes - renamed from logs to log-viewer
     Route::prefix('log-viewer')->name('log-viewer.')->group(function () {
