@@ -27,6 +27,7 @@ import { formatDate } from '../../utils/dateFormatter';
 
 const Row = ({ transaction, onViewDetails, getStatusColor, formatCurrency, formatDate }) => {
     const [open, setOpen] = useState(false);
+    const receivedAt = transaction.created_at;
     const transactionDisplayTime = transaction.transaction_timestamp || transaction.completed_at || transaction.created_at;
     const operationStatus = transaction.voided_at
         ? 'ERROR'
@@ -110,7 +111,7 @@ const Row = ({ transaction, onViewDetails, getStatusColor, formatCurrency, forma
                         )}
                     </Stack>
                 </TableCell>
-                <TableCell sx={{ minWidth: 130 }}>
+                <TableCell sx={{ minWidth: 145 }}>
                     <Typography variant="body2" sx={{ fontFamily: 'monospace', fontSize: '11px', color: 'text.secondary', fontWeight: 700 }}>
                         {formatDate(transactionDisplayTime)}
                     </Typography>
@@ -207,6 +208,16 @@ const Row = ({ transaction, onViewDetails, getStatusColor, formatCurrency, forma
                                                     <Tooltip title={`Raw: ${transactionDisplayTime || 'N/A'}`} arrow>
                                                         <Typography variant="body2" sx={{ fontWeight: 700, color: 'text.primary', cursor: 'help' }}>
                                                             {formatDate(transactionDisplayTime)}
+                                                        </Typography>
+                                                    </Tooltip>
+                                                }
+                                            />
+                                            <DetailItem
+                                                label="Received At"
+                                                value={
+                                                    <Tooltip title={`Server ingest time: ${receivedAt || 'N/A'}`} arrow>
+                                                        <Typography variant="body2" sx={{ fontWeight: 700, color: 'text.primary', cursor: 'help' }}>
+                                                            {formatDate(receivedAt)}
                                                         </Typography>
                                                     </Tooltip>
                                                 }
@@ -337,7 +348,7 @@ const TransactionTable = ({ transactions, loading, page, rowsPerPage, totalCount
                     <TableHead>
                         <TableRow>
                             <TableCell sx={{ ...headerStyles, verticalAlign: 'bottom', pb: 1.5 }}>Transaction ID</TableCell>
-                            <TableCell sx={{ ...headerStyles, verticalAlign: 'bottom', pb: 1.5 }}>Date</TableCell>
+                            <TableCell sx={{ ...headerStyles, verticalAlign: 'bottom', pb: 1.5 }}>Transaction Date</TableCell>
                             <TableCell sx={{ ...headerStyles, verticalAlign: 'bottom', pb: 1.5 }}>Receipt No</TableCell>
                             <TableCell sx={{ ...headerStyles, verticalAlign: 'bottom', pb: 1.5 }}>Tenant / Terminal</TableCell>
                             <TableCell align="left" sx={{ ...headerStyles, verticalAlign: 'bottom', pb: 1.5 }}>Gross Sales</TableCell>

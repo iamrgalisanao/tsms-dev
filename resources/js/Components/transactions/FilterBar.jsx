@@ -102,7 +102,7 @@ const FilterBar = ({ filters, onFilterChange, onReset }) => {
     const dateBasisOptions = [
         { value: 'transaction', label: 'Transaction Date (POS Sale Date)' },
         { value: 'completed', label: 'Completed Date (TSMS Finalized)' },
-        { value: 'created', label: 'Created Date' }
+        { value: 'created', label: 'Received Date (TSMS Ingested)' }
     ];
 
     return (
@@ -284,11 +284,11 @@ const FilterBar = ({ filters, onFilterChange, onReset }) => {
                             </FormControl>
                             <Tooltip
                                 arrow
-                                title="Transaction Date matches POS sale dates. Completed Date reflects when TSMS finalized records for audit timelines."
+                                title="Transaction Date uses the transaction_timestamp from the POS payload. Received Date shows when TSMS ingested the record. Completed Date reflects when TSMS finalized records for audit timelines."
                             >
                                 <Box sx={{ display: 'flex', alignItems: 'center', color: 'text.secondary', gap: 1 }}>
                                     <InfoOutlinedIcon sx={{ fontSize: 18 }} />
-                                    <Typography variant="caption">Use completed date for processing audit.</Typography>
+                                    <Typography variant="caption">Transaction date is the canonical sales date.</Typography>
                                 </Box>
                             </Tooltip>
                         </Stack>

@@ -65,7 +65,7 @@ export const transactionLogService = {
             responseType: 'blob'
         });
 
-        const dateBasis = filters.date_basis || 'completed';
+        const dateBasis = filters.date_basis || 'transaction';
 
         // Create download link
         const url = window.URL.createObjectURL(new Blob([response.data]));

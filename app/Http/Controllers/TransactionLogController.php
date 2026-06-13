@@ -395,7 +395,7 @@ class TransactionLogController extends Controller
 
         $basis = in_array($request->input('date_basis'), ['created', 'completed', 'transaction'], true)
             ? $request->input('date_basis')
-            : 'completed';
+            : 'transaction';
 
         $dateColumn = match ($basis) {
             'created' => 'created_at',
