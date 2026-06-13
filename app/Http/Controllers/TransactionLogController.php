@@ -13,6 +13,7 @@ use Maatwebsite\Excel\Facades\Excel;
 use App\Models\PosProvider;
 use App\Models\PosTerminal;
 use App\Models\Tenant;
+use App\Models\TransactionIntake;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\Log;
 
@@ -158,7 +159,7 @@ class TransactionLogController extends Controller
                     'tenant' => $transaction->tenant ?: ($transaction->terminal->tenant ?? null),
                     'adjustments' => $transaction->adjustments,
                     'taxes' => $transaction->taxes,
-                    'payload' => $transaction->original_payload ? json_decode($transaction->original_payload) : null,
+                    'payload' => $this->resolveTransactionPayload($transaction),
                     'retry_history' => $transaction->jobs->map(function ($job) {
                         return [
                             'attempt' => $job->attempts ?? 1,
@@ -230,6 +231,102 @@ class TransactionLogController extends Controller
         return response()->json(
             Tenant::orderBy('trade_name')->get(['id', 'trade_name'])
         );
+    }
+
+    /**
+     * Resolve the best-available full payload for a transaction.
+     *
+     * Priority:
+     * 1) Stored original_payload on transactions table
+     * 2) Matching payload from transaction_intake (by submission_uuid + transaction_id)
+     * 3) Reconstructed payload from normalized transaction + adjustments + taxes
+     */
+    private function resolveTransactionPayload(Transaction $transaction)
+    {
+        if (!empty($transaction->original_payload)) {
+            $decoded = json_decode($transaction->original_payload, true);
+            if (json_last_error() === JSON_ERROR_NONE && !empty($decoded)) {
+                return $decoded;
+            }
+        }
+
+        $submissionUuid = $transaction->submission_uuid;
+        if (!empty($submissionUuid)) {
+            $intake = TransactionIntake::query()
+                ->where('submission_uuid', $submissionUuid)
+                ->when($transaction->terminal_id, function ($q) use ($transaction) {
+                    $q->where('terminal_id', $transaction->terminal_id);
+                })
+                ->orderByDesc('received_at')
+                ->first();
+
+            if ($intake && is_array($intake->payload) && !empty($intake->payload)) {
+                $payload = $intake->payload;
+
+                // If a batch payload exists, keep only the matching transaction
+                // so the details drawer remains specific to the selected row.
+                if (isset($payload['transactions']) && is_array($payload['transactions'])) {
+                    $matched = collect($payload['transactions'])
+                        ->firstWhere('transaction_id', $transaction->transaction_id);
+
+                    if (!empty($matched)) {
+                        $payload['transactions'] = [$matched];
+                        $payload['transaction_count'] = 1;
+                    }
+                } elseif (isset($payload['transaction']) && is_array($payload['transaction'])) {
+                    $payloadTxId = $payload['transaction']['transaction_id'] ?? null;
+                    if ($payloadTxId && $payloadTxId !== $transaction->transaction_id) {
+                        // Submission payload exists but points to a different transaction;
+                        // prefer deterministic reconstruction for this row.
+                        return $this->buildPayloadFromTransaction($transaction);
+                    }
+                }
+
+                return $payload;
+            }
+        }
+
+        return $this->buildPayloadFromTransaction($transaction);
+    }
+
+    /**
+     * Deterministic reconstruction of payload when original envelope is unavailable.
+     */
+    private function buildPayloadFromTransaction(Transaction $transaction): array
+    {
+        return [
+            'submission_uuid' => $transaction->submission_uuid,
+            'submission_timestamp' => optional($transaction->submission_timestamp)->toIso8601String(),
+            'tenant_id' => $transaction->tenant_id,
+            'terminal_id' => $transaction->terminal_id,
+            'transaction_count' => 1,
+            'payload_checksum' => $transaction->payload_checksum,
+            'transaction' => [
+                'transaction_id' => $transaction->transaction_id,
+                'transaction_timestamp' => optional($transaction->transaction_timestamp)->toIso8601String(),
+                'receipt_no' => $transaction->receipt_no,
+                'gross_sales' => (float) ($transaction->gross_sales ?? 0),
+                'net_sales' => (float) ($transaction->net_sales ?? 0),
+                'vatable_sales' => (float) ($transaction->vatable_sales ?? 0),
+                'vat_amount' => (float) ($transaction->vat_amount ?? 0),
+                'sc_vat_exempt_sales' => (float) ($transaction->sc_vat_exempt_sales ?? 0),
+                'customer_code' => $transaction->customer_code,
+                'promo_status' => $transaction->promo_status,
+                'payload_checksum' => $transaction->payload_checksum,
+                'adjustments' => $transaction->adjustments->map(function ($adj) {
+                    return [
+                        'adjustment_type' => $adj->adjustment_type,
+                        'amount' => (float) ($adj->amount ?? 0),
+                    ];
+                })->values()->all(),
+                'taxes' => $transaction->taxes->map(function ($tax) {
+                    return [
+                        'tax_type' => $tax->tax_type,
+                        'amount' => (float) ($tax->amount ?? 0),
+                    ];
+                })->values()->all(),
+            ],
+        ];
     }
 
     /**
