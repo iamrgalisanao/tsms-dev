@@ -94,9 +94,10 @@ Route::middleware(['auth'])->group(function () {
         Route::middleware(['role:admin|manager'])->prefix('logs')->name('logs.')->group(function () {
             Route::get('/', [TransactionLogController::class, 'index'])->name('index');
             Route::get('/summary', [TransactionLogController::class, 'summary'])->name('summary');
+            Route::get('/issues-count', [TransactionLogController::class, 'issuesCount'])->name('issues.count');
+            Route::get('/updates', [TransactionLogController::class, 'getUpdates'])->name('updates');
             Route::get('/{id}', [TransactionLogController::class, 'show'])->name('show');
             Route::post('/export', [TransactionLogController::class, 'export'])->name('export');
-            Route::get('/updates', [TransactionLogController::class, 'getUpdates'])->name('updates');
         });
 
         Route::get('/{id}', [TransactionController::class, 'show'])->name('show');

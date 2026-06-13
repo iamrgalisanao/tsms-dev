@@ -156,6 +156,102 @@ class TransactionLogController extends Controller
     }
 
     /**
+     * Return a server-side count of transactions with validation issues using
+     * the same lightweight filters as the detailed logs view.
+     */
+    public function issuesCount(Request $request)
+    {
+        $filters = $request->only([
+            'status',
+            'date_from',
+            'date_to',
+            'tenant_id',
+            'terminal_id',
+            'amount_min',
+            'amount_max'
+        ]);
+
+        $basis = in_array($request->input('date_basis'), ['created', 'completed', 'transaction'], true)
+            ? $request->input('date_basis')
+            : 'completed';
+
+        $dateColumn = match ($basis) {
+            'created' => 'created_at',
+            'transaction' => 'transaction_timestamp',
+            default => 'completed_at',
+        };
+
+        $query = Transaction::query();
+
+        if ($request->filled('transaction_id')) {
+            $search = str_replace('TX-', '', trim($request->transaction_id));
+            $query->where('transaction_id', 'like', "%{$search}%");
+        }
+
+        if (isset($filters['status'])) {
+            if ($filters['status'] === 'VOIDED') {
+                $query->whereNotNull('voided_at');
+            } elseif ($filters['status'] === 'REFUNDED') {
+                $query->where('is_refunded', true);
+            } else {
+                $query->where('validation_status', $filters['status']);
+            }
+        }
+
+        if (isset($filters['date_from'])) {
+            if ($dateColumn === 'transaction_timestamp') {
+                $query->where(function ($q) use ($filters) {
+                    $q->where(function ($subQ) use ($filters) {
+                        $subQ->whereNotNull('transaction_timestamp')
+                            ->where('transaction_timestamp', '>=', $filters['date_from'] . ' 00:00:00');
+                    })->orWhere(function ($subQ) use ($filters) {
+                        $subQ->whereNull('transaction_timestamp')
+                            ->where('created_at', '>=', $filters['date_from'] . ' 00:00:00');
+                    });
+                });
+            } else {
+                $query->where($dateColumn, '>=', $filters['date_from'] . ' 00:00:00');
+            }
+        }
+
+        if (isset($filters['date_to'])) {
+            if ($dateColumn === 'transaction_timestamp') {
+                $query->where(function ($q) use ($filters) {
+                    $q->where(function ($subQ) use ($filters) {
+                        $subQ->whereNotNull('transaction_timestamp')
+                            ->where('transaction_timestamp', '<=', $filters['date_to'] . ' 23:59:59');
+                    })->orWhere(function ($subQ) use ($filters) {
+                        $subQ->whereNull('transaction_timestamp')
+                            ->where('created_at', '<=', $filters['date_to'] . ' 23:59:59');
+                    });
+                });
+            } else {
+                $query->where($dateColumn, '<=', $filters['date_to'] . ' 23:59:59');
+            }
+        }
+
+        if (isset($filters['tenant_id'])) {
+            $query->where('tenant_id', $filters['tenant_id']);
+        }
+
+        if (isset($filters['terminal_id'])) {
+            $query->where('terminal_id', $filters['terminal_id']);
+        }
+
+        if (isset($filters['amount_min'])) {
+            $query->where('gross_sales', '>=', $filters['amount_min']);
+        }
+
+        if (isset($filters['amount_max'])) {
+            $query->where('gross_sales', '<=', $filters['amount_max']);
+        }
+
+        $count = $query->where('validation_status', 'WITH_ISSUES')->count();
+
+        return response()->json(['count' => (int) $count]);
+    }
+
+    /**
      * Summary view: grouped roll-ups by date, tenant, and terminal using existing numeric fields.
      * Columns: date, tenant (trade_name), terminal (serial/machine), tx_count, gross, vat, net, refund
      */
