@@ -3,12 +3,12 @@
 namespace App\Providers;
 
 use Illuminate\Support\ServiceProvider;
-use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Facades\Schema;
-use Illuminate\Cache\Repository;
-use Illuminate\Cache\FileStore;
-use Illuminate\Filesystem\Filesystem;
 use Illuminate\Support\Facades\View;
+use Illuminate\Cache\RateLimiting\Limit;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Log;
 
 class AppServiceProvider extends ServiceProvider
 {
@@ -17,13 +17,6 @@ class AppServiceProvider extends ServiceProvider
      */
     public function register(): void
     {
-        // Register a fallback cache store if needed
-        $this->app->bind('cache.store', function ($app) {
-            return new Repository(
-                new FileStore(new Filesystem(), storage_path('framework/cache/data'))
-            );
-        });
-
         // Early binding for services that other facades might depend on
         $this->app->singleton('transaction.validation', function ($app) {
             return new \App\Services\TransactionValidationService();
@@ -37,6 +30,8 @@ class AppServiceProvider extends ServiceProvider
     {
         // Set default string length for schema
         Schema::defaultStringLength(191);
+
+        $this->configureRateLimiting();
         
         // Ensure app is fully initialized before bootstrapping services
         if ($this->app->runningInConsole()) {
@@ -68,5 +63,84 @@ class AppServiceProvider extends ServiceProvider
         } catch (\Throwable $e) {
             // no-op
         }
+    }
+
+    private function configureRateLimiting(): void
+    {
+        RateLimiter::for('pos-ingestion', function (Request $request) {
+            $limit = config('rate-limiting.default_limits.pos_ingestion');
+
+            return Limit::perMinute((int) $limit['attempts'])
+                ->by($this->posRateLimitKey($request, 'ingestion'))
+                ->response($this->rateLimitResponse('pos-ingestion'));
+        });
+
+        RateLimiter::for('pos-read', function (Request $request) {
+            $limit = config('rate-limiting.default_limits.pos_read');
+
+            return Limit::perMinute((int) $limit['attempts'])
+                ->by($this->posRateLimitKey($request, 'read'))
+                ->response($this->rateLimitResponse('pos-read'));
+        });
+
+        RateLimiter::for('pos-auth', function (Request $request) {
+            $limit = config('rate-limiting.default_limits.pos_auth');
+            $hardwareId = (string) $request->input('hardware_id', $request->input('serial_number', 'unknown'));
+
+            return Limit::perMinute((int) $limit['attempts'])
+                ->by('pos:auth:' . sha1($request->ip() . '|' . $hardwareId))
+                ->response($this->rateLimitResponse('pos-auth'));
+        });
+
+        RateLimiter::for('pos-heartbeat', function (Request $request) {
+            $limit = config('rate-limiting.default_limits.pos_heartbeat');
+
+            return Limit::perMinute((int) $limit['attempts'])
+                ->by($this->posRateLimitKey($request, 'heartbeat'))
+                ->response($this->rateLimitResponse('pos-heartbeat'));
+        });
+
+        RateLimiter::for('webapp', function (Request $request) {
+            $limit = config('rate-limiting.default_limits.webapp');
+            $user = $request->user();
+            $identifier = $user ? 'user:' . $user->getAuthIdentifier() : 'ip:' . $request->ip();
+
+            return Limit::perMinute((int) $limit['attempts'])
+                ->by('webapp:' . $identifier)
+                ->response($this->rateLimitResponse('webapp'));
+        });
+    }
+
+    private function posRateLimitKey(Request $request, string $scope): string
+    {
+        $terminal = $request->user();
+        $tenantId = $terminal?->tenant_id ?? $request->input('tenant_id', 'unknown');
+        $terminalId = $terminal?->getAuthIdentifier() ?? $request->input('terminal_id', $request->ip());
+
+        return sprintf('pos:%s:tenant:%s:terminal:%s', $scope, $tenantId, $terminalId);
+    }
+
+    private function rateLimitResponse(string $scope): \Closure
+    {
+        return function (Request $request, array $headers) use ($scope) {
+            $retryAfter = (int) ($headers['Retry-After'] ?? 60);
+            $user = $request->user();
+
+            Log::warning('Rate limit exceeded', [
+                'scope' => $scope,
+                'ip' => $request->ip(),
+                'path' => $request->path(),
+                'tenant_id' => $user?->tenant_id ?? $request->input('tenant_id'),
+                'terminal_id' => $user?->getAuthIdentifier() ?? $request->input('terminal_id'),
+                'retry_after' => $retryAfter,
+                'correlation_id' => $request->headers->get('X-Correlation-ID'),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Too many requests.',
+                'retry_after' => $retryAfter,
+            ], 429, $headers);
+        };
     }
 }

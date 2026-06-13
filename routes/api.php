@@ -145,7 +145,8 @@ Route::get('/v1/health', function () {
 
 // Terminal authentication (public - no middleware)
 Route::prefix('v1/auth')->group(function () {
-    Route::post('/terminal', [TerminalAuthController::class, 'authenticate']);
+    Route::post('/terminal', [TerminalAuthController::class, 'authenticate'])
+        ->middleware('throttle:pos-auth');
 });
 
 // V1 API Routes with Sanctum authentication
@@ -154,11 +155,11 @@ Route::prefix('v1')->middleware(['auth:sanctum', 'capture.terminal.ip', AttachCo
     Route::post('/auth/refresh', [TerminalAuthController::class, 'refresh']);
     Route::get('/auth/me', [TerminalAuthController::class, 'me']);
     Route::post('/heartbeat', [TerminalAuthController::class, 'heartbeat'])
-        ->middleware(['abilities:heartbeat:send', 'throttle:60,1']);
+        ->middleware(['abilities:heartbeat:send', 'throttle:pos-heartbeat']);
 
     // Transaction endpoints with token abilities
-    // Apply custom API rate limiter (uses config/rate-limiting.php default_limits.api)
-    Route::middleware(['abilities:transaction:create', 'api.limit:api'])->group(function () {
+    // POS ingestion is throttled per authenticated terminal/tenant, not just IP.
+    Route::middleware(['abilities:transaction:create', 'throttle:pos-ingestion'])->group(function () {
         // Legacy basic ingestion endpoint disabled (use /v1/transactions/official)
         // Route::post('/transactions', [TransactionController::class, 'store']);
         Route::post('/transactions/batch', [TransactionController::class, 'batchStore'])
@@ -169,7 +170,7 @@ Route::prefix('v1')->middleware(['auth:sanctum', 'capture.terminal.ip', AttachCo
         Route::post('/transactions/{transaction}/void', [TransactionController::class, 'voidFromPOS']);
     });
 
-    Route::middleware(['abilities:transaction:read', 'api.limit:api'])->group(function () {
+    Route::middleware(['abilities:transaction:read', 'throttle:pos-read'])->group(function () {
         // Read-only provider testing/support lookup. This route does not mutate intake or processing state.
         Route::get('/submissions/{submission_uuid}', [SubmissionStatusController::class, 'show'])
             ->middleware('abilities:provider:testing');

@@ -10,7 +10,7 @@ class RateLimitMonitor
     public function recordViolation(string $type, array $context): void
     {
         // Log the violation
-        Log::channel('rate-limits')->warning("Rate limit exceeded", [
+        Log::warning("Rate limit exceeded", [
             'type' => $type,
             'ip' => $context['ip'] ?? null,
             'user_id' => $context['user_id'] ?? null,
