@@ -41,7 +41,7 @@ const MainLayout = ({ children }) => {
         // ── Finance (exclusive set) ───────────────────────────────────
         { name: 'Dashboard', path: '/finance', icon: DashboardIcon, roles: ['finance'] },
         { name: 'Transaction Logs', path: '/transactions', icon: ReceiptIcon, roles: ['finance'] },
-        { name: 'Reports', path: '/reports', icon: DescriptionIcon, roles: ['finance'] },
+        { name: 'CSMR Reports', path: '/reports', icon: DescriptionIcon, roles: ['finance', 'commercial'] },
 
         // ── Commercial ───────────────────────────────────────────────
         { name: 'Dashboard', path: '/commercial', icon: DashboardIcon, roles: ['commercial'] },
