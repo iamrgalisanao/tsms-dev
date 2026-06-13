@@ -13,6 +13,7 @@ use App\Support\Metrics;
 use App\Support\RejectionPlaybook;
 use App\Support\LogContext;
 use App\Support\Settings;
+use App\Rules\ReceiptNumber;
 
 class TransactionValidationService
 {
@@ -451,6 +452,7 @@ class TransactionValidationService
             'tenant_id'             => 'required|string',
             'terminal_id'           => 'required|string',
             'transaction_id'        => 'required|string',
+            'receipt_no'            => ['required', new ReceiptNumber()],
             'transaction_timestamp' => 'required|date',
             'gross_sales'           => 'required|numeric|min:0',
             'net_sales'             => 'required|numeric|min:0',

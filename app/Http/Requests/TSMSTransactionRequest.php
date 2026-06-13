@@ -5,6 +5,7 @@ namespace App\Http\Requests;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Http\Exceptions\HttpResponseException;
+use App\Rules\ReceiptNumber;
 
 class TSMSTransactionRequest extends FormRequest
 {
@@ -41,6 +42,7 @@ class TSMSTransactionRequest extends FormRequest
                 'transaction.net_sales' => 'required|numeric',
                 'transaction.promo_status' => 'required|string',
                 'transaction.customer_code' => 'required|string',
+                'transaction.receipt_no' => ['required', new ReceiptNumber()],
                 'transaction.payload_checksum' => 'required|string|min:64|max:64',
                 'transaction.adjustments' => 'required|array|min:7',
                 'transaction.adjustments.*.adjustment_type' => 'required|string',
@@ -58,6 +60,7 @@ class TSMSTransactionRequest extends FormRequest
                 'transactions.*.net_sales' => 'required|numeric',
                 'transactions.*.promo_status' => 'required|string',
                 'transactions.*.customer_code' => 'required|string',
+                'transactions.*.receipt_no' => ['required', new ReceiptNumber()],
                 'transactions.*.payload_checksum' => 'required|string|min:64|max:64',
                 'transactions.*.adjustments' => 'required|array|min:7',
                 'transactions.*.adjustments.*.adjustment_type' => 'required|string',

@@ -15,6 +15,7 @@ use App\Jobs\CheckTransactionFailureThresholdsJob;
 use App\Services\PayloadChecksumService; // Add this import
 use App\Services\NotificationService;
 use App\Http\Requests\TSMSTransactionRequest;
+use App\Rules\ReceiptNumber;
 use Laravel\Sanctum\PersonalAccessToken;
 
 class TransactionController extends Controller
@@ -920,6 +921,7 @@ class TransactionController extends Controller
                     'transaction.net_sales' => 'required|numeric|min:0',
                     'transaction.promo_status' => 'required|string',
                     'transaction.customer_code' => 'required|string',
+                    'transaction.receipt_no' => ['required', new ReceiptNumber()],
                     'transaction.payload_checksum' => 'required|string|min:64|max:64',
                     'transaction.adjustments' => 'required|array|min:7',
                     'transaction.adjustments.*.adjustment_type' => 'required_with:transaction.adjustments|string',
@@ -937,6 +939,7 @@ class TransactionController extends Controller
                     'transactions.*.net_sales' => 'required|numeric|min:0',
                     'transactions.*.promo_status' => 'required|string',
                     'transactions.*.customer_code' => 'required|string',
+                    'transactions.*.receipt_no' => ['required', new ReceiptNumber()],
                     'transactions.*.payload_checksum' => 'required|string|min:64|max:64',
                     'transactions.*.adjustments' => 'required|array|min:7',
                     'transactions.*.adjustments.*.adjustment_type' => 'required_with:transactions.*.adjustments|string',
@@ -1399,6 +1402,7 @@ class TransactionController extends Controller
                 'transaction.net_sales' => 'required|numeric|min:0',
                 'transaction.promo_status' => 'required|string',
                 'transaction.customer_code' => 'required|string',
+                'transaction.receipt_no' => ['required', new ReceiptNumber()],
                 'transaction.payload_checksum' => 'required|string|min:64|max:64',
                 'transaction.adjustments' => 'required|array|min:7',
                 'transaction.adjustments.*.adjustment_type' => 'required_with:transaction.adjustments|string',
@@ -1416,6 +1420,7 @@ class TransactionController extends Controller
                 'transactions.*.net_sales' => 'required|numeric|min:0',
                 'transactions.*.promo_status' => 'required|string',
                 'transactions.*.customer_code' => 'required|string',
+                'transactions.*.receipt_no' => ['required', new ReceiptNumber()],
                 'transactions.*.payload_checksum' => 'required|string|min:64|max:64',
                 'transactions.*.adjustments' => 'required|array|min:7',
                 'transactions.*.adjustments.*.adjustment_type' => 'required_with:transactions.*.adjustments|string',
