@@ -356,8 +356,9 @@ class TransactionController extends Controller
                         continue;
                     }
 
-                    // Create transaction record
-                    $transaction = Transaction::create([
+                    // Create transaction record. Keep the submitted timestamp untouched;
+                    // original_payload preserves the exact provider value for audit.
+                    $txPayload = [
                         'tenant_id' => $terminal->tenant_id,
                         'terminal_id' => $terminal->id,
                         'transaction_id' => $transactionData['transaction_id'],
@@ -368,7 +369,12 @@ class TransactionController extends Controller
                         'customer_code' => $request->customer_code,
                         'payload_checksum' => $transactionData['payload_checksum'] ?? md5(json_encode($transactionData)),
                         'validation_status' => 'PENDING',
-                    ]);
+                    ];
+                    if (Schema::hasColumn('transactions', 'original_payload')) {
+                        $txPayload['original_payload'] = json_encode($transactionData, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+                    }
+
+                    $transaction = Transaction::create($txPayload);
 
                     // Queue the transaction for processing
                     ProcessTransactionJob::dispatch($transaction->id)->afterCommit();
@@ -1188,7 +1194,9 @@ class TransactionController extends Controller
                         }
                     }
                     
-                    $transaction = Transaction::create([
+                    // Keep the submitted timestamp untouched; original_payload preserves
+                    // the exact provider value for audit and timezone investigations.
+                    $txPayload = [
                         'tenant_id' => $terminal->tenant_id,
                         'terminal_id' => $terminal->id,
                         'transaction_id' => $transactionData['transaction_id'],
@@ -1205,7 +1213,12 @@ class TransactionController extends Controller
                         'validation_status' => 'PENDING',
                         'submission_uuid' => $request->submission_uuid,
                         'submission_timestamp' => $request->submission_timestamp,
-                    ]);
+                    ];
+                    if (Schema::hasColumn('transactions', 'original_payload')) {
+                        $txPayload['original_payload'] = json_encode($transactionData, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+                    }
+
+                    $transaction = Transaction::create($txPayload);
 
                     // Process adjustments if present
                     if (isset($transactionData['adjustments']) && is_array($transactionData['adjustments'])) {
@@ -1696,8 +1709,9 @@ class TransactionController extends Controller
                 ];
             }
 
-            // Create transaction
-            $transactionModel = Transaction::create([
+            // Create transaction. Keep transaction_timestamp as submitted; the raw
+            // payload is stored separately when the audit column is available.
+            $txPayload = [
                 'tenant_id' => $terminal->tenant_id,
                 'terminal_id' => $terminal->id,
                 'transaction_id' => $transaction['transaction_id'],
@@ -1709,7 +1723,12 @@ class TransactionController extends Controller
                 'payload_checksum' => $transaction['payload_checksum'] ?? '',
                 'validation_status' => $validationStatus,
                 'submission_uuid' => $transaction['submission_uuid'] ?? null,
-            ]);
+            ];
+            if (Schema::hasColumn('transactions', 'original_payload')) {
+                $txPayload['original_payload'] = json_encode($transaction, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+            }
+
+            $transactionModel = Transaction::create($txPayload);
             $isSaved = true;
 
             // Process adjustments & taxes

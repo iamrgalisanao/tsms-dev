@@ -136,6 +136,7 @@ class Transaction extends Model
         'refund_processed_at',
         'voided_at',
         'void_reason',
+        'original_payload',
         'created_at',
         'updated_at',
     ];

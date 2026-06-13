@@ -9,6 +9,7 @@ use App\Models\Tenant;
 use App\Models\PosTerminal;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use App\Services\PayloadChecksumService;
+use Illuminate\Support\Facades\Queue;
 
 class SubmissionIdempotencyTest extends TestCase
 {
@@ -32,6 +33,7 @@ class SubmissionIdempotencyTest extends TestCase
         // Build transaction scalars first
         $txnScalars = [
             'transaction_id' => (string) $txId,
+            'receipt_no' => 'IDEMP-'.Str::upper(Str::random(8)),
             'transaction_timestamp' => $now->copy()->subMinute()->format('Y-m-d\\TH:i:s\\Z'),
             'gross_sales' => 100.0,
             'net_sales' => 100.0,
@@ -100,6 +102,8 @@ class SubmissionIdempotencyTest extends TestCase
 
     public function test_duplicate_submission_is_idempotent(): void
     {
+        Queue::fake();
+
         [$tenant, $terminal] = $this->seedTenantAndTerminal();
         $uuid = (string) Str::uuid();
         $payload = $this->makePayload($tenant->id, $terminal->id, $uuid);
