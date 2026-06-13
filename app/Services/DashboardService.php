@@ -66,6 +66,18 @@ class DashboardService
             : 0;
         $totalTerminals = (int) PosTerminal::count();
 
+        $activeTenants = 0;
+        $totalTenants = 0;
+        try {
+            $activeTenants = DB::table('transactions')
+                ->whereBetween($dateColumn, [$todayStart, $todayEnd])
+                ->distinct('tenant_id')
+                ->count('tenant_id');
+            $totalTenants = DB::table('tenants')->count();
+        } catch (\Throwable $e) {
+            \Log::warning('DashboardService: failed to compute active tenants', ['error' => $e->getMessage()]);
+        }
+
         $reconciledQuery = Transaction::whereBetween($dateColumn, [$todayStart, $todayEnd]);
         if ($hasValidationStatus) {
             $reconciledQuery->where('validation_status', Transaction::VALIDATION_STATUS_VALID);
@@ -230,6 +242,10 @@ class DashboardService
             'active_terminals' => [
                 'current' => $activeTerminals,
                 'total' => $totalTerminals,
+            ],
+            'active_tenants' => [
+                'current' => $activeTenants,
+                'total' => $totalTenants,
             ],
             'reconciliation' => [
                 'reconciled' => $reconciled,

@@ -19,6 +19,12 @@ const SystemHealthMonitor = ({ health, loading }) => {
         return 'success';
     };
 
+    const getStatusLabel = (value) => {
+        if (value > 80) return 'Critical';
+        if (value > 50) return 'Warning';
+        return 'Healthy';
+    };
+
     const queueBacklog = Number(stats.queues?.backlog ?? 0);
     const networkHealthy = String(stats.network || '').toLowerCase() === 'healthy';
 
@@ -27,7 +33,7 @@ const SystemHealthMonitor = ({ health, loading }) => {
             key: 'cpu',
             icon: <MemoryIcon sx={{ fontSize: 16, color: 'grey.500' }} />,
             label: 'CPU',
-            value: `${stats.cpu}%`,
+            value: `${stats.cpu}% - ${getStatusLabel(stats.cpu)}`,
             progress: stats.cpu,
             color: getStatusColor(stats.cpu)
         },
@@ -35,7 +41,7 @@ const SystemHealthMonitor = ({ health, loading }) => {
             key: 'memory',
             icon: <StorageIcon sx={{ fontSize: 16, color: 'grey.500' }} />,
             label: 'Memory',
-            value: `${stats.memory}%`,
+            value: `${stats.memory}% - ${getStatusLabel(stats.memory)}`,
             progress: stats.memory,
             color: getStatusColor(stats.memory)
         },
@@ -43,17 +49,17 @@ const SystemHealthMonitor = ({ health, loading }) => {
             key: 'queue',
             icon: <StorageIcon sx={{ fontSize: 16, color: 'grey.500' }} />,
             label: 'Queue',
-            value: `${queueBacklog}`,
+            value: `${queueBacklog} - ${queueBacklog > 20 ? 'Critical' : queueBacklog > 5 ? 'Warning' : 'Healthy'}`,
             progress: Math.min(queueBacklog, 100),
-            color: queueBacklog > 20 ? 'warning' : 'success'
+            color: queueBacklog > 20 ? 'error' : queueBacklog > 5 ? 'warning' : 'success'
         },
         {
             key: 'network',
             icon: <LanguageIcon sx={{ fontSize: 16, color: 'grey.500' }} />,
             label: 'Network',
-            value: stats.network || 'Unknown',
+            value: networkHealthy ? 'Healthy' : 'Critical',
             progress: null,
-            color: networkHealthy ? 'success' : 'warning'
+            color: networkHealthy ? 'success' : 'error'
         }
     ];
 

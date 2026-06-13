@@ -151,6 +151,7 @@ class DashboardController extends Controller
                 'voided_transactions' => ['current' => 0, 'trend' => 0],
                 'void_rate' => ['current' => 0, 'trend' => 0],
                 'active_terminals' => ['current' => 0, 'total' => 0],
+                'active_tenants' => ['current' => 0, 'total' => 0],
                 'reconciliation' => ['reconciled' => 0, 'total' => 0, 'pending' => 0, 'failed' => 0, 'trend' => 0],
                 'pending_uploads' => ['current' => 0],
                 'generated_at' => now()->toIso8601String(),
