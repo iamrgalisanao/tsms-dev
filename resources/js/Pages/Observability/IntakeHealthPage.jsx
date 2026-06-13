@@ -100,6 +100,7 @@ const IntakeHealthPage = () => {
     const [selectedLogId, setSelectedLogId] = useState(null);
     const [loading, setLoading] = useState(true);
     const [isRefreshing, setIsRefreshing] = useState(false);
+    const [apiError, setApiError] = useState(false);
     
     // Live feed mode & filters
     const [liveFeed, setLiveFeed] = useState(true);
@@ -121,8 +122,10 @@ const IntakeHealthPage = () => {
             setHistory(historyRes.data || []);
             setTenants(tenantsRes.data || []);
             setRecentLogs(recentRes.data || []);
+            setApiError(false);
         } catch (error) {
             console.error('Error fetching intake health data:', error);
+            setApiError(true);
         } finally {
             setLoading(false);
             setIsRefreshing(false);
@@ -224,6 +227,39 @@ const IntakeHealthPage = () => {
         });
     }, [recentLogs, feedFilter]);
 
+    // Live counts for Forensic Feed filter chips
+    const filterCounts = useMemo(() => {
+        const counts = {
+            all: recentLogs.length,
+            processed: 0,
+            failed: 0,
+            retries: 0,
+            duplicates: 0
+        };
+        recentLogs.forEach(log => {
+            const status = log.processing_status || 'received';
+            if (status === 'processed') {
+                counts.processed++;
+            } else if (status === 'failed' || log.last_error_message) {
+                counts.failed++;
+            } else if (status === 'retry') {
+                counts.retries++;
+            } else if (status === 'duplicate') {
+                counts.duplicates++;
+            }
+        });
+        return counts;
+    }, [recentLogs]);
+
+    // Check if pipeline is offline (no logs or last log older than 15 minutes)
+    const isPipelineOffline = useMemo(() => {
+        if (!loading && recentLogs.length === 0) return true;
+        if (recentLogs.length === 0) return false;
+        const lastTime = new Date(recentLogs[0].received_at).getTime();
+        const now = new Date().getTime();
+        return (now - lastTime) > 15 * 60 * 1000;
+    }, [recentLogs, loading]);
+
     if (loading && !stats) {
         return (
             <Box sx={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', height: '100vh', bgcolor: '#101221' }}>
@@ -255,47 +291,45 @@ const IntakeHealthPage = () => {
                                     <Typography variant="h2" sx={{ fontWeight: 1000, letterSpacing: '-0.05em', color: '#101221', mb: 0.5 }}>
                                         Pipeline Command Console
                                     </Typography>
-                                    <Stack direction="row" spacing={1.5} alignItems="center">
-                                        <div className="status-pulse" style={{ backgroundColor: systemStatus === 'OPERATIONAL' ? '#00e676' : systemStatus === 'DEGRADED' ? '#feb700' : '#ff1744' }} />
-                                        <Typography variant="body2" sx={{ fontWeight: 900, opacity: 0.8, fontSize: '0.85rem' }}>
-                                            PIPELINE STATUS: <span style={{ color: systemStatus === 'OPERATIONAL' ? '#00e676' : systemStatus === 'DEGRADED' ? '#feb700' : '#ff1744' }}>
-                                                {systemStatus === 'OPERATIONAL' ? '🟢 Healthy' : systemStatus === 'DEGRADED' ? '🟠 Elevated' : '🔴 Action Required'}
-                                            </span>
-                                        </Typography>
-                                    </Stack>
                                 </Box>
                             </Stack>
 
                             <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap" useFlexGap>
-                                {/* Consolidated status telemetry */}
-                                <Stack direction="row" spacing={2.5} sx={{ bgcolor: 'rgba(255,255,255,0.8)', px: 2.5, py: 1, borderRadius: 3, border: '1px solid', borderColor: 'divider' }}>
-                                    <Box>
-                                        <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', fontWeight: 800, fontSize: '0.6rem', letterSpacing: '0.05em' }}>
-                                            LAST INGESTION
-                                        </Typography>
-                                        <Typography variant="body2" sx={{ fontWeight: 900, color: 'text.primary' }}>
-                                            {recentLogs.length > 0 ? new Date(recentLogs[0].received_at).toLocaleTimeString() : 'N/A'}
-                                        </Typography>
-                                    </Box>
-                                    <Divider orientation="vertical" flexItem />
-                                    <Box>
-                                        <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', fontWeight: 800, fontSize: '0.6rem', letterSpacing: '0.05em' }}>
-                                            LAST DISPATCH
-                                        </Typography>
-                                        <Typography variant="body2" sx={{ fontWeight: 900, color: 'text.primary' }}>
-                                            {recentLogs.length > 0 ? new Date(recentLogs[0].processed_at || recentLogs[0].received_at).toLocaleTimeString() : 'N/A'}
-                                        </Typography>
-                                    </Box>
-                                    <Divider orientation="vertical" flexItem />
-                                    <Box>
-                                        <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', fontWeight: 800, fontSize: '0.6rem', letterSpacing: '0.05em' }}>
-                                            WORKERS STATUS
-                                        </Typography>
-                                        <Typography variant="body2" sx={{ fontWeight: 900, color: 'success.main' }}>
-                                            12/12 Active
-                                        </Typography>
-                                    </Box>
-                                </Stack>
+                                {/* Consolidated status telemetry block */}
+                                <Box className="glass-container" sx={{ px: 3, py: 1.5, bgcolor: 'rgba(255,255,255,0.7)', border: '1px solid', borderColor: 'divider' }}>
+                                    <Stack direction={{ xs: 'column', sm: 'row' }} spacing={3} alignItems="center" divider={<Divider orientation="vertical" flexItem sx={{ display: { xs: 'none', sm: 'block' } }} />}>
+                                        <Stack direction="row" spacing={1.5} alignItems="center">
+                                            <div className="status-pulse" style={{ backgroundColor: systemStatus === 'OPERATIONAL' ? '#00e676' : systemStatus === 'DEGRADED' ? '#feb700' : '#ff1744' }} />
+                                            <Typography variant="body2" sx={{ fontWeight: 900, fontSize: '0.8rem', letterSpacing: '0.02em' }}>
+                                                Pipeline Status: <span style={{ color: systemStatus === 'OPERATIONAL' ? '#00e676' : systemStatus === 'DEGRADED' ? '#feb700' : '#ff1744' }}>{systemStatus}</span>
+                                            </Typography>
+                                        </Stack>
+                                        <Box>
+                                            <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', fontWeight: 800, fontSize: '0.6rem', letterSpacing: '0.05em' }}>
+                                                Last Ingestion
+                                            </Typography>
+                                            <Typography variant="body2" sx={{ fontWeight: 900, color: 'text.primary' }}>
+                                                {recentLogs.length > 0 ? new Date(recentLogs[0].received_at).toLocaleTimeString() : 'N/A'}
+                                            </Typography>
+                                        </Box>
+                                        <Box>
+                                            <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', fontWeight: 800, fontSize: '0.6rem', letterSpacing: '0.05em' }}>
+                                                Last Dispatch
+                                            </Typography>
+                                            <Typography variant="body2" sx={{ fontWeight: 900, color: 'text.primary' }}>
+                                                {recentLogs.length > 0 ? new Date(recentLogs[0].processed_at || recentLogs[0].received_at).toLocaleTimeString() : 'N/A'}
+                                            </Typography>
+                                        </Box>
+                                        <Box>
+                                            <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', fontWeight: 800, fontSize: '0.6rem', letterSpacing: '0.05em' }}>
+                                                Workers
+                                            </Typography>
+                                            <Typography variant="body2" sx={{ fontWeight: 900, color: 'success.main' }}>
+                                                12/12 Active
+                                            </Typography>
+                                        </Box>
+                                    </Stack>
+                                </Box>
 
                                 <Button
                                     variant="contained"
@@ -318,6 +352,38 @@ const IntakeHealthPage = () => {
                             </Stack>
                         </Stack>
                     </Box>
+
+                    {/* Operational Alerts for Pipeline Offline & Queue Failure */}
+                    {apiError && (
+                        <Alert 
+                            severity="error" 
+                            variant="filled"
+                            sx={{ 
+                                mb: 3, 
+                                borderRadius: 3, 
+                                fontWeight: 900,
+                                bgcolor: 'error.main',
+                                boxShadow: '0 8px 24px rgba(211, 47, 47, 0.2)'
+                            }}
+                        >
+                            DISPATCH QUEUE UNAVAILABLE: Dispatch queue unavailable.
+                        </Alert>
+                    )}
+                    {!apiError && isPipelineOffline && (
+                        <Alert 
+                            severity="warning" 
+                            variant="filled"
+                            sx={{ 
+                                mb: 3, 
+                                borderRadius: 3, 
+                                fontWeight: 900,
+                                bgcolor: 'warning.main',
+                                boxShadow: '0 8px 24px rgba(254, 183, 0, 0.2)'
+                            }}
+                        >
+                            PIPELINE OFFLINE: No ingestion activity for 15 minutes.
+                        </Alert>
+                    )}
 
                     {/* Active Ingestion Source volume strip (Section 2) */}
                     <Box sx={{ mb: 3 }}>
@@ -468,19 +534,19 @@ const IntakeHealthPage = () => {
                                     <Stack spacing={2.5}>
                                         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                             <Typography variant="body2" sx={{ fontWeight: 800, color: 'text.primary' }}>Ingestion Worker Node 1</Typography>
-                                            <Chip label="Healthy" size="small" color="success" sx={{ fontWeight: 900, minWidth: 90, justifyContent: 'center' }} />
+                                            <Chip label="Healthy" size="small" color="success" sx={{ fontWeight: 900, width: 90, justifyContent: 'center' }} />
                                         </Box>
                                         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                             <Typography variant="body2" sx={{ fontWeight: 800, color: 'text.primary' }}>Ingestion Worker Node 2</Typography>
-                                            <Chip label="Healthy" size="small" color="success" sx={{ fontWeight: 900, minWidth: 90, justifyContent: 'center' }} />
+                                            <Chip label="Healthy" size="small" color="success" sx={{ fontWeight: 900, width: 90, justifyContent: 'center' }} />
                                         </Box>
                                         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                             <Typography variant="body2" sx={{ fontWeight: 800, color: 'text.primary' }}>Ingestion Worker Node 3</Typography>
-                                            <Chip label="Healthy" size="small" color="success" sx={{ fontWeight: 900, minWidth: 90, justifyContent: 'center' }} />
+                                            <Chip label="Healthy" size="small" color="success" sx={{ fontWeight: 900, width: 90, justifyContent: 'center' }} />
                                         </Box>
                                         <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                                             <Typography variant="body2" sx={{ fontWeight: 800, color: 'text.primary' }}>Ingestion Worker Node 4</Typography>
-                                            <Chip label="Restarting" size="small" color="warning" sx={{ fontWeight: 900, minWidth: 90, justifyContent: 'center' }} />
+                                            <Chip label="Restarting" size="small" color="warning" sx={{ fontWeight: 900, width: 90, justifyContent: 'center' }} />
                                         </Box>
                                     </Stack>
                                 </CardContent>
@@ -513,11 +579,11 @@ const IntakeHealthPage = () => {
                         </Grid>
                     </Grid>
 
-                    {/* Layout Block 4: Side-by-Side Chart and Feed (Section 6 - 2 Columns Grid [4][8]) */}
+                    {/* Layout Block 4: Side-by-Side Chart and Feed (Section 6 - 2 Columns Grid [4][8] on md+) */}
                     <Grid container spacing={3}>
                         {/* Temporal Drift Chart (Column 1 - 4/12 width / 33.3%) */}
-                        <Grid item xs={12} lg={4}>
-                            <Paper className="glass-container stagger-item" sx={{ p: 4, height: 600, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+                        <Grid item xs={12} md={4}>
+                            <Paper className="glass-container stagger-item" sx={{ p: 4, height: 650, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
                                 <Box sx={{ mb: 4 }}>
                                     <Typography variant="h6" sx={{ fontWeight: 1000, letterSpacing: '0.05em', color: '#101221', mb: 0.5 }}>
                                         TEMPORAL DRIFT (LAG)
@@ -533,8 +599,8 @@ const IntakeHealthPage = () => {
                         </Grid>
 
                         {/* Diagnostic Forensic Feed (Column 2 - 8/12 width / 66.6% - Aligned side-by-side) */}
-                        <Grid item xs={12} lg={8}>
-                            <Paper className="glass-container stagger-item" sx={{ p: 4, height: 600, display: 'flex', flexDirection: 'column' }}>
+                        <Grid item xs={12} md={8}>
+                            <Paper className="glass-container stagger-item" sx={{ p: 4, height: 650, display: 'flex', flexDirection: 'column' }}>
                                 {/* Feed Header (Aligned filter chips and toggle to the right) */}
                                 <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" alignItems="center" spacing={2} sx={{ mb: 3 }}>
                                     <Typography variant="h6" sx={{ fontWeight: 1000, display: 'flex', alignItems: 'center', color: '#101221', letterSpacing: '0.05em' }}>
@@ -545,15 +611,18 @@ const IntakeHealthPage = () => {
                                     <Stack direction="row" spacing={2} alignItems="center" flexWrap="wrap" useFlexGap>
                                         {/* Filters list */}
                                         <Stack direction="row" spacing={1} sx={{ overflowX: 'auto', py: 0.5 }}>
-                                            {['all', 'processed', 'failed', 'retries', 'duplicates'].map((filter) => (
-                                                <Chip
-                                                    key={filter}
-                                                    label={filter.toUpperCase()}
-                                                    onClick={() => setFeedFilter(filter)}
-                                                    color={feedFilter === filter ? 'primary' : 'default'}
-                                                    sx={{ fontWeight: 900, fontSize: '0.65rem', borderRadius: 2 }}
-                                                />
-                                            ))}
+                                            {['all', 'processed', 'failed', 'retries', 'duplicates'].map((filter) => {
+                                                const count = filterCounts[filter];
+                                                return (
+                                                    <Chip
+                                                        key={filter}
+                                                        label={`${filter.toUpperCase()} (${count})`}
+                                                        onClick={() => setFeedFilter(filter)}
+                                                        color={feedFilter === filter ? 'primary' : 'default'}
+                                                        sx={{ fontWeight: 900, fontSize: '0.65rem', borderRadius: 2 }}
+                                                    />
+                                                );
+                                            })}
                                         </Stack>
 
                                         <Divider orientation="vertical" flexItem sx={{ display: { xs: 'none', md: 'block' } }} />
@@ -664,10 +733,26 @@ const IntakeHealthPage = () => {
                                                 </Box>
                                             );
                                         })}
-                                        {filteredLogs.length === 0 && (
-                                            <Typography sx={{ py: 8, textAlign: 'center', opacity: 0.4, fontStyle: 'italic', fontWeight: 600 }}>
-                                                No events match the selected severity filter.
-                                            </Typography>
+                                        {recentLogs.length === 0 ? (
+                                            <Box sx={{ py: 12, display: 'flex', flexDirection: 'column', alignItems: 'center', opacity: 0.5 }}>
+                                                <Typography variant="body1" sx={{ fontWeight: 900, mb: 1, letterSpacing: '0.05em', color: '#101221' }}>
+                                                    NO EVENTS
+                                                </Typography>
+                                                <Typography variant="caption" sx={{ fontWeight: 700, color: 'text.secondary' }}>
+                                                    No pipeline events detected.
+                                                </Typography>
+                                            </Box>
+                                        ) : (
+                                            filteredLogs.length === 0 && (
+                                                <Box sx={{ py: 12, display: 'flex', flexDirection: 'column', alignItems: 'center', opacity: 0.5 }}>
+                                                    <Typography variant="body1" sx={{ fontWeight: 900, mb: 1, letterSpacing: '0.05em', color: '#101221' }}>
+                                                        FILTERED EMPTY
+                                                    </Typography>
+                                                    <Typography variant="caption" sx={{ fontWeight: 700, color: 'text.secondary' }}>
+                                                        No events match the selected filter.
+                                                    </Typography>
+                                                </Box>
+                                            )
                                         )}
                                     </Stack>
                                 </Box>

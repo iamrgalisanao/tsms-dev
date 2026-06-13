@@ -34,7 +34,7 @@ const MetricCard = memo(({ title, value, icon, color = 'primary', trend, sparkli
             className="glass-container stagger-item"
             sx={{
                 height: '100%',
-                minHeight: 180,
+                minHeight: 160,
                 borderRadius: '24px',
                 position: 'relative',
                 overflow: 'hidden',
@@ -50,8 +50,8 @@ const MetricCard = memo(({ title, value, icon, color = 'primary', trend, sparkli
             }}
             onClick={onClick}
         >
-            <CardContent sx={{ p: 4, height: '100%', display: 'flex', flexDirection: 'column' }}>
-                <Stack direction="row" justifyContent="space-between" alignItems="flex-start" sx={{ mb: 3 }}>
+            <CardContent sx={{ p: 3, height: '100%', display: 'flex', flexDirection: 'column' }}>
+                <Stack direction="row" justifyContent="space-between" alignItems="flex-start" sx={{ mb: 2 }}>
                     <Box
                         className="metric-icon-box"
                         sx={{
@@ -132,7 +132,7 @@ const MetricCard = memo(({ title, value, icon, color = 'primary', trend, sparkli
                 </Box>
 
                 {sparkline && sparkline.length > 0 && (
-                    <Box sx={{ mt: 'auto', pt: 3, height: 40, transition: 'all 0.4s' }}>
+                    <Box sx={{ mt: 'auto', pt: 2, height: 40, transition: 'all 0.4s' }}>
                         <svg viewBox="0 0 100 20" style={{ width: '100%', height: '100%', overflow: 'visible' }}>
                             <path
                                 className="sparkline-path"
