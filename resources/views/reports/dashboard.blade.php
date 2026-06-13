@@ -972,7 +972,7 @@
           tbody.append(`
                   <tr>
                       <td>${day}</td>
-                      <td>${formatNumber(daily.net_sales)}</td>
+                      <td>${formatNumber(daily.vatable_sales)}</td>
                       <td>${formatNumber(daily.sc_vat_exempt_sales)}</td>
                       <td>${formatNumber(daily.vat_amount)}</td>
                       <td>${formatNumber(daily.promo_with_approval)}</td>
@@ -994,7 +994,7 @@
         tbody.append(`
               <tr style="font-weight:600;">
                   <td>Total</td>
-                  <td>${formatNumber(t.net_sales)}</td>
+                  <td>${formatNumber(t.vatable_sales)}</td>
                   <td>${formatNumber(t.sc_vat_exempt_sales)}</td>
                   <td>${formatNumber(t.vat_amount)}</td>
                   <td>${formatNumber(t.promo_with_approval)}</td>
