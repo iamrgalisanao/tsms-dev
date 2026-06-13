@@ -131,14 +131,31 @@ class DashboardController extends Controller
     // API: GET /api/dashboard/metrics
     public function apiMetrics(Request $request)
     {
-        $dateKey = Carbon::today()->toDateString();
-        $cacheKey = "dashboard.api_metrics.{$dateKey}";
+        try {
+            $dateKey = Carbon::today()->toDateString();
+            $cacheKey = "dashboard.api_metrics.{$dateKey}";
 
-        $metrics = \Illuminate\Support\Facades\Cache::remember($cacheKey, 300, function () use ($request) {
-            return $this->dashboardService->getAdvancedMetrics($request->all());
-        });
+            $metrics = \Illuminate\Support\Facades\Cache::remember($cacheKey, 300, function () use ($request) {
+                return $this->dashboardService->getAdvancedMetrics($request->all());
+            });
 
-        return response()->json($metrics);
+            return response()->json($metrics);
+        } catch (\Throwable $e) {
+            \Log::error('Dashboard metrics endpoint failed', [
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'total_sales' => ['current' => 0, 'trend' => 0, 'sparkline' => []],
+                'total_transactions' => ['current' => 0, 'trend' => 0, 'sparkline' => []],
+                'voided_transactions' => ['current' => 0, 'trend' => 0],
+                'void_rate' => ['current' => 0, 'trend' => 0],
+                'active_terminals' => ['current' => 0, 'total' => 0],
+                'reconciliation' => ['reconciled' => 0, 'total' => 0, 'pending' => 0, 'failed' => 0, 'trend' => 0],
+                'pending_uploads' => ['current' => 0],
+                'generated_at' => now()->toIso8601String(),
+            ], 200);
+        }
     }
 
     // API: GET /api/dashboard/charts
@@ -187,13 +204,34 @@ class DashboardController extends Controller
     // API: GET /api/dashboard/system-health
     public function apiSystemHealth()
     {
-        return response()->json($this->dashboardService->getSystemHealth());
+        try {
+            return response()->json($this->dashboardService->getSystemHealth());
+        } catch (\Throwable $e) {
+            \Log::error('Dashboard system-health endpoint failed', [
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'cpu' => 0,
+                'memory' => 0,
+                'network' => 'Unknown',
+                'queues' => ['backlog' => 0],
+            ], 200);
+        }
     }
 
     // API: GET /api/dashboard/terminal-performance
     public function apiTerminalPerformance()
     {
-        return response()->json($this->dashboardService->getTerminalPerformance());
+        try {
+            return response()->json($this->dashboardService->getTerminalPerformance());
+        } catch (\Throwable $e) {
+            \Log::error('Dashboard terminal-performance endpoint failed', [
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([], 200);
+        }
     }
 
     // API: GET /api/dashboard/notifications
