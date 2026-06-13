@@ -114,25 +114,25 @@ class TransactionLogController extends Controller
     {
         try {
             $transaction = Transaction::with([
-                'terminal',
+                'terminal.tenant',
+                'terminal.provider',
                 'tenant',
                 'adjustments',
-                'taxes'
+                'taxes',
+                'jobs',
+                'validations',
+                'submission'
             ])->findOrFail($id);
-            if (!$transaction) {
-                return redirect()
-                    ->route('transactions.logs.index')
-                    ->with('error', 'Transaction not found');
-            }
 
             if ($request->wantsJson()) {
                 return response()->json([
                     'id' => $transaction->id,
                     'transaction_id' => $transaction->transaction_id,
-                    'receipt_no' => $transaction->receipt_no ?? null,
+                    'receipt_no' => $transaction->receipt_no ?? 'N/A',
                     'amount' => (float) ($transaction->gross_sales ?? 0),
                     'net_sales' => (float) ($transaction->net_sales ?? 0),
                     'validation_status' => $transaction->validation_status,
+                    'is_voided' => (bool) ($transaction->isVoided() ?? false),
                     'voided_at' => $transaction->voided_at,
                     'void_reason' => $transaction->void_reason,
                     'is_refunded' => (bool) ($transaction->is_refunded ?? false),
@@ -141,11 +141,43 @@ class TransactionLogController extends Controller
                     'job_attempts' => (int) ($transaction->job_attempts ?? 0),
                     'created_at' => $transaction->created_at,
                     'completed_at' => $transaction->completed_at,
-                    'terminal' => $transaction->terminal,
-                    'tenant' => $transaction->tenant,
+                    'terminal' => [
+                        'id' => $transaction->terminal->id ?? null,
+                        'serial_number' => $transaction->terminal->serial_number ?? 'N/A',
+                        'tenant_id' => $transaction->terminal->tenant_id ?? null,
+                        'machine_number' => $transaction->terminal->machine_number ?? null,
+                        'tenant' => [
+                            'id' => $transaction->terminal->tenant->id ?? null,
+                            'trade_name' => $transaction->terminal->tenant->trade_name ?? 'N/A',
+                        ],
+                        'provider' => [
+                            'id' => $transaction->terminal->provider->id ?? null,
+                            'name' => $transaction->terminal->provider->name ?? 'N/A',
+                        ],
+                    ],
+                    'tenant' => $transaction->tenant ?: ($transaction->terminal->tenant ?? null),
                     'adjustments' => $transaction->adjustments,
                     'taxes' => $transaction->taxes,
                     'payload' => $transaction->original_payload ? json_decode($transaction->original_payload) : null,
+                    'retry_history' => $transaction->jobs->map(function ($job) {
+                        return [
+                            'attempt' => $job->attempts ?? 1,
+                            'status' => $job->job_status,
+                            'attempted_at' => $job->created_at,
+                            'error' => $job->last_error,
+                        ];
+                    })->values(),
+                    'submission_events' => $transaction->validations->map(function ($validation) {
+                        return [
+                            'submission_uuid' => $validation->id,
+                            'status' => $validation->status_code ?? 'VALIDATED',
+                            'created_at' => $validation->validated_at ?? $validation->created_at,
+                        ];
+                    })->values(),
+                    'horizon_job_tags' => [
+                        'transaction:' . $transaction->transaction_id,
+                        'terminal:' . ($transaction->terminal->serial_number ?? 'unknown'),
+                    ],
                 ]);
             }
             
