@@ -858,7 +858,10 @@ class TransactionController extends Controller
                             'original_count' => $submission->transaction_count,
                             'incoming_count' => $request->transaction_count,
                         ]);
-                        DB::rollBack();
+                        $this->safeRollBack('storeOfficial drift conflict rollback', [
+                            'submission_uuid' => $request->submission_uuid,
+                            'terminal_id' => $request->terminal_id,
+                        ]);
                         return response()->json([
                             'success' => false,
                             'message' => 'Submission conflict (payload drift)',
@@ -898,7 +901,10 @@ class TransactionController extends Controller
                     ]);
                 }
                 
-                DB::commit();
+                $this->safeCommit('storeOfficial idempotent replay commit', [
+                    'submission_uuid' => $request->submission_uuid,
+                    'terminal_id' => $request->terminal_id,
+                ]);
                 return response()->json([
                     'success' => true,
                     'message' => 'Submission already processed (idempotent)',
@@ -953,7 +959,12 @@ class TransactionController extends Controller
             // Validate transaction count matches actual count
             $actualCount = $request->transaction_count === 1 ? 1 : count($request->transactions);
             if ($actualCount !== $request->transaction_count) {
-                DB::rollBack();
+                $this->safeRollBack('storeOfficial count mismatch rollback', [
+                    'submission_uuid' => $request->submission_uuid,
+                    'terminal_id' => $request->terminal_id,
+                    'expected_count' => $request->transaction_count,
+                    'actual_count' => $actualCount,
+                ]);
                 return response()->json([
                     'success' => false,
                     'message' => 'Transaction count mismatch',
@@ -966,7 +977,16 @@ class TransactionController extends Controller
             $checksumService = new PayloadChecksumService();
             $checksumResults = $checksumService->validateSubmissionChecksumsFromRaw($rawPayload);
             if (!$checksumResults['valid']) {
-                DB::rollBack();
+                Log::warning('storeOfficial: Payload checksum validation failed', [
+                    'submission_uuid' => $request->submission_uuid,
+                    'terminal_id' => $request->terminal_id,
+                    'errors' => $checksumResults['errors'],
+                ]);
+
+                $this->safeRollBack('storeOfficial checksum failure rollback', [
+                    'submission_uuid' => $request->submission_uuid,
+                    'terminal_id' => $request->terminal_id,
+                ]);
                 return response()->json([
                     'success' => false,
                     'message' => 'Invalid payload checksum',
@@ -1000,7 +1020,10 @@ class TransactionController extends Controller
                         'error' => $te->getMessage(),
                     ]);
                 }
-                try { \DB::commit(); } catch (\Throwable $t) {}
+                $this->safeCommit('storeOfficial cache-lock idempotent commit', [
+                    'submission_uuid' => $request->submission_uuid,
+                    'terminal_id' => $request->terminal_id,
+                ]);
                 return response()->json([
                     'success' => true,
                     'message' => 'Submission already processed (idempotent)',
@@ -1053,7 +1076,10 @@ class TransactionController extends Controller
                     }
 
                     // Commit open transaction (if any) and return idempotent success
-                    try { \DB::commit(); } catch (\Throwable $t) {}
+                    $this->safeCommit('storeOfficial duplicate insert idempotent commit', [
+                        'submission_uuid' => $request->submission_uuid,
+                        'terminal_id' => $request->terminal_id,
+                    ]);
                     return response()->json([
                         'success' => true,
                         'message' => 'Submission already processed (idempotent)',
@@ -1084,6 +1110,17 @@ class TransactionController extends Controller
             // Get terminal and validate tenant
             $terminal = PosTerminal::with(['tenant.company'])->findOrFail($request->terminal_id);
             if ($terminal->tenant_id !== $request->tenant_id) {
+                Log::warning('storeOfficial: Terminal tenant mismatch', [
+                    'submission_uuid' => $request->submission_uuid,
+                    'terminal_id' => $request->terminal_id,
+                    'declared_tenant_id' => $request->tenant_id,
+                    'actual_tenant_id' => $terminal->tenant_id,
+                ]);
+
+                $this->safeRollBack('storeOfficial tenant mismatch rollback', [
+                    'submission_uuid' => $request->submission_uuid,
+                    'terminal_id' => $request->terminal_id,
+                ]);
                 return response()->json([
                     'success' => false,
                     'message' => 'Validation failed',
@@ -1275,10 +1312,19 @@ class TransactionController extends Controller
                 }
             }
 
-            DB::commit();
-
             $totalProcessed = count($processedTransactions);
             $totalFailed = count($failedTransactions);
+
+            $submission->status = $totalFailed === 0
+                ? \App\Models\TransactionSubmission::STATUS_COMPLETED
+                : \App\Models\TransactionSubmission::STATUS_PROCESSING;
+            $submission->save();
+
+            $this->safeCommit('storeOfficial final commit', [
+                'submission_uuid' => $request->submission_uuid,
+                'processed_count' => $totalProcessed,
+                'failed_count' => $totalFailed,
+            ]);
 
             Log::info('Official transaction processing completed', [
                 'submission_uuid' => $request->submission_uuid,
@@ -1312,7 +1358,9 @@ class TransactionController extends Controller
             ], 200);
 
         } catch (\Illuminate\Validation\ValidationException $e) {
-            DB::rollBack();
+            $this->safeRollBack('storeOfficial validation exception rollback', [
+                'submission_uuid' => $request->submission_uuid ?? 'unknown',
+            ]);
             
             Log::warning('Official transaction validation failed', [
                 'submission_uuid' => $request->submission_uuid ?? 'unknown',
@@ -1328,7 +1376,10 @@ class TransactionController extends Controller
             ], 422);
 
         } catch (\Exception $e) {
-            DB::rollBack();
+            $this->safeRollBack('storeOfficial exception rollback', [
+                'submission_uuid' => $request->submission_uuid ?? 'unknown',
+                'error' => $e->getMessage(),
+            ]);
             
             Log::error('Official transaction API error', [
                 'submission_uuid' => $request->submission_uuid ?? 'unknown',
@@ -1368,6 +1419,48 @@ class TransactionController extends Controller
                 'message' => 'Failed to process official transaction submission: ' . $e->getMessage(),
                 'timestamp' => now()->toISOString()
             ], 500);
+        }
+    }
+
+    private function safeCommit(string $operation, array $context = []): void
+    {
+        try {
+            if (DB::transactionLevel() > 0) {
+                DB::commit();
+                return;
+            }
+
+            Log::warning($operation . ': commit skipped because no transaction is active', $context);
+        } catch (\Throwable $e) {
+            if (str_contains(strtolower($e->getMessage()), 'no active transaction')) {
+                Log::warning($operation . ': commit skipped because PDO has no active transaction', $context + [
+                    'error' => $e->getMessage(),
+                ]);
+                return;
+            }
+
+            throw $e;
+        }
+    }
+
+    private function safeRollBack(string $operation, array $context = []): void
+    {
+        try {
+            if (DB::transactionLevel() > 0) {
+                DB::rollBack();
+                return;
+            }
+
+            Log::warning($operation . ': rollback skipped because no transaction is active', $context);
+        } catch (\Throwable $e) {
+            if (str_contains(strtolower($e->getMessage()), 'no active transaction')) {
+                Log::warning($operation . ': rollback skipped because PDO has no active transaction', $context + [
+                    'error' => $e->getMessage(),
+                ]);
+                return;
+            }
+
+            throw $e;
         }
     }
 
