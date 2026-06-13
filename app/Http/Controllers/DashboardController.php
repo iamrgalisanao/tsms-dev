@@ -391,29 +391,11 @@ class DashboardController extends Controller
         try {
             $transaction = Transaction::with(['adjustments', 'taxes'])->findOrFail($transactionId);
 
-            // Check if user has permission (optional - adjust as needed)
-            // if (!auth()->user() || !auth()->user()->hasAnyRole(['admin', 'manager'])) {
-            //     return response()->json(['error' => 'Forbidden'], 403);
-            // }
-
-            $forwardingService = app(\App\Services\WebAppForwardingService::class);
-            $result = $forwardingService->forwardTransactionImmediately($transaction);
-
-            if ($result['success']) {
-                return response()->json([
-                    'status' => 'success',
-                    'message' => $result['message'],
-                    'batch_id' => $result['batch_id'],
-                    'transaction_id' => $transaction->transaction_id
-                ]);
-            } else {
-                return response()->json([
-                    'status' => 'error',
-                    'message' => $result['error'],
-                    'batch_id' => $result['batch_id'] ?? null,
-                    'transaction_id' => $transaction->transaction_id
-                ], 500);
-            }
+            return response()->json([
+                'status' => 'disabled',
+                'message' => 'WebApp forwarding is disabled in this build.',
+                'transaction_id' => $transaction->transaction_id,
+            ], 410);
 
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
             return response()->json([
@@ -422,14 +404,14 @@ class DashboardController extends Controller
                 'transaction_id' => $transactionId
             ], 404);
         } catch (\Exception $e) {
-            \Log::error('Transaction forwarding failed', [
+            \Log::error('Forwarding endpoint failed while disabled', [
                 'transaction_id' => $transactionId,
                 'error' => $e->getMessage()
             ]);
 
             return response()->json([
                 'status' => 'error',
-                'message' => 'Forwarding failed: ' . $e->getMessage(),
+                'message' => 'Forwarding endpoint failed: ' . $e->getMessage(),
                 'transaction_id' => $transactionId
             ], 500);
         }

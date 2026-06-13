@@ -35,7 +35,39 @@ return [
     | POS clock drift. Set to 0 (default) in production for strict behavior.
     */
     'validation' => [
+        'strict_mode' => env('TSMS_VALIDATION_STRICT_MODE', false),
+        'net_includes_vat' => env('TSMS_NET_INCLUDES_VAT', true),
+        'strict_customer_code_binding' => (bool) env('TSMS_STRICT_CUSTOMER_CODE_BINDING', false),
+        'enable_computation_validation' => (bool) env('TSMS_ENABLE_COMPUTATION_VALIDATION', env('APP_ENV') === 'testing'),
+        'max_vat_difference' => env('TSMS_MAX_VAT_DIFFERENCE', 0.02),
+        'max_rounding_difference' => env('TSMS_MAX_ROUNDING_DIFFERENCE', 0.05),
         'future_timestamp_tolerance_seconds' => (int) env('TSMS_FUTURE_TIMESTAMP_TOLERANCE_SECONDS', 0),
+    ],
+
+    'testing' => [
+        'capture_only' => (bool) env('TSMS_TESTING_CAPTURE_ONLY', false),
+        'allow_capture_only_in_production' => (bool) env('TSMS_ALLOW_CAPTURE_ONLY_IN_PROD', false),
+    ],
+
+    'reporting' => [
+        'exclude_voids_from_totals' => (bool) env('TSMS_REPORTING_EXCLUDE_VOIDS', true),
+    ],
+
+    'dlq' => [
+        'alert_threshold' => (int) env('TSMS_DLQ_ALERT_THRESHOLD', 10),
+    ],
+
+    'rollout' => [
+        'pilot_tenants' => array_filter(explode(',', env('TSMS_PILOT_TENANTS', ''))),
+    ],
+
+    'intake' => [
+        'backpressure' => [
+            'enabled' => (bool) env('TSMS_INTAKE_BACKPRESSURE_ENABLED', true),
+            'max_queue_depth' => (int) env('TSMS_INTAKE_MAX_QUEUE_DEPTH', 5000),
+        ],
+        'shard_count' => (int) env('TSMS_INTAKE_SHARD_COUNT', 8),
+        'vip_shard' => env('TSMS_INTAKE_VIP_SHARD', 'vip'),
     ],
 
     /*
