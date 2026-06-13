@@ -170,24 +170,53 @@ class DashboardController extends Controller
             $salesData = [];
             $volumeData = [];
             $prevSalesData = [];
+            $reconciledData = [];
+            $exceptionData = [];
 
+            $startDate = Carbon::today()->subDays($days - 1)->startOfDay();
+            $endDate = Carbon::today()->endOfDay();
+
+            // Fetch current period metrics in a single query
+            $stats = Transaction::whereBetween('transaction_timestamp', [$startDate, $endDate])
+                ->selectRaw('
+                    DATE(transaction_timestamp) as date,
+                    SUM(gross_sales) as sales,
+                    COUNT(*) as count,
+                    SUM(IF(validation_status = "VALID", 1, 0)) as reconciled,
+                    SUM(IF(validation_status IN ("FAILED", "INVALID", "ERROR"), 1, 0)) as exceptions
+                ')
+                ->groupBy('date')
+                ->get()
+                ->keyBy('date');
+
+            // Fetch previous period gross sales for comparison in a single query
+            $prevStartDate = $startDate->copy()->subDays($days);
+            $prevEndDate = $endDate->copy()->subDays($days);
+
+            $prevStats = Transaction::whereBetween('transaction_timestamp', [$prevStartDate, $prevEndDate])
+                ->selectRaw('
+                    DATE(transaction_timestamp) as date,
+                    SUM(gross_sales) as sales
+                ')
+                ->groupBy('date')
+                ->get()
+                ->keyBy('date');
+
+            // Build data series
             for ($i = $days - 1; $i >= 0; $i--) {
                 $date = Carbon::today()->subDays($i);
+                $dateStr = $date->toDateString();
                 $labels[] = $date->format('M d');
 
-                $stats = Transaction::whereDate('transaction_timestamp', $date)
-                    ->selectRaw('SUM(gross_sales) as sales, COUNT(*) as count')
-                    ->first();
+                $dayStats = $stats->get($dateStr);
+                $salesData[] = (float) ($dayStats->sales ?? 0);
+                $volumeData[] = (int) ($dayStats->count ?? 0);
+                $reconciledData[] = (int) ($dayStats->reconciled ?? 0);
+                $exceptionData[] = (int) ($dayStats->exceptions ?? 0);
 
-                $salesData[] = (float) ($stats->sales ?? 0);
-                $volumeData[] = (int) ($stats->count ?? 0);
-
-                // Previous period comparison (e.g., last week)
-                $prevDate = $date->copy()->subDays($days);
-                $prevStats = Transaction::whereDate('transaction_timestamp', $prevDate)
-                    ->selectRaw('SUM(gross_sales) as sales')
-                    ->first();
-                $prevSalesData[] = (float) ($prevStats->sales ?? 0);
+                $prevDateStr = $date->copy()->subDays($days)->toDateString();
+                $prevDayStats = $prevStats->get($prevDateStr);
+                $prevSalesData[] = (float) ($prevDayStats->sales ?? 0);
             }
 
             return [
@@ -195,6 +224,8 @@ class DashboardController extends Controller
                 'sales' => $salesData,
                 'volume' => $volumeData,
                 'previous_sales' => $prevSalesData,
+                'reconciled' => $reconciledData,
+                'exceptions' => $exceptionData,
             ];
         });
 

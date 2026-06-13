@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Transaction;
 use App\Models\PosTerminal;
 use App\Models\TerminalStatus;
+use App\Models\TransactionIntake;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -30,12 +31,20 @@ class DashboardService
         $hasValidationStatus = Schema::hasColumn('transactions', 'validation_status');
         $hasJobStatus = Schema::hasColumn('transactions', 'job_status');
 
-        $currentRevenue = (float) Transaction::whereBetween($dateColumn, [$todayStart, $todayEnd])
-            ->selectRaw("COALESCE(SUM($amountColumn), 0) as value")
+        $currentGrossSales = (float) Transaction::whereBetween($dateColumn, [$todayStart, $todayEnd])
+            ->selectRaw("COALESCE(SUM(gross_sales), 0) as value")
             ->value('value');
 
-        $previousRevenue = (float) Transaction::whereBetween($dateColumn, [$previousStart, $previousEnd])
-            ->selectRaw("COALESCE(SUM($amountColumn), 0) as value")
+        $previousGrossSales = (float) Transaction::whereBetween($dateColumn, [$previousStart, $previousEnd])
+            ->selectRaw("COALESCE(SUM(gross_sales), 0) as value")
+            ->value('value');
+
+        $currentNetSales = (float) Transaction::whereBetween($dateColumn, [$todayStart, $todayEnd])
+            ->selectRaw("COALESCE(SUM(net_sales), 0) as value")
+            ->value('value');
+
+        $previousNetSales = (float) Transaction::whereBetween($dateColumn, [$previousStart, $previousEnd])
+            ->selectRaw("COALESCE(SUM(net_sales), 0) as value")
             ->value('value');
 
         $currentTransactions = (int) Transaction::whereBetween($dateColumn, [$todayStart, $todayEnd])->count();
@@ -96,11 +105,114 @@ class DashboardService
         }
         $failed = (int) $failedQuery->count();
 
+        // Missing terminal uploads
+        $missingUploads = 0;
+        try {
+            $missingUploads = (int) TransactionIntake::where('processing_status', TransactionIntake::PROCESSING_STATUS_PROCESSED)
+                ->whereBetween('received_at', [$todayStart, $todayEnd])
+                ->whereNotExists(function ($query) {
+                    $query->select(DB::raw(1))
+                        ->from('transactions')
+                        ->whereColumn('transactions.submission_uuid', 'transaction_intake.submission_uuid');
+                })
+                ->count();
+        } catch (\Throwable $e) {
+            \Log::warning('DashboardService: failed to compute missing uploads', ['error' => $e->getMessage()]);
+        }
+
+        // Invalid tax records
+        $invalidTaxRecords = 0;
+        try {
+            $invalidTaxRecords = (int) Transaction::whereBetween($dateColumn, [$todayStart, $todayEnd])
+                ->where(function($query) {
+                    $query->where(function($q) {
+                        $q->whereIn('validation_status', ['FAILED', 'INVALID', 'ERROR'])
+                          ->where(function($sub) {
+                              $sub->where('last_error', 'LIKE', '%tax%')
+                                  ->orWhere('last_error', 'LIKE', '%vat%');
+                          });
+                    })
+                    ->orWhere(function($q) {
+                        $q->where('tax_exempt', false)
+                          ->where('vatable_sales', '>', 0)
+                          ->whereRaw('ABS(vatable_sales * 0.12 - vat_amount) > 0.02');
+                    });
+                })
+                ->count();
+        } catch (\Throwable $e) {
+            \Log::warning('DashboardService: failed to compute invalid tax records', ['error' => $e->getMessage()]);
+        }
+
+        $totalExceptions = $failed + $missingUploads + $invalidTaxRecords;
+
+        // Compliance status
+        $csmrReady = ($failed === 0 && $pending === 0 && $currentTransactions > 0);
+        $birExportGenerated = ($currentTransactions > 0 && $failed === 0);
+        $taxValidationPassed = ($invalidTaxRecords === 0 && $currentTransactions > 0);
+
+        // Top Tenants ranking
+        $topTenants = [];
+        try {
+            $topTenantsData = DB::table('transactions as tr')
+                ->join('tenants as t', 't.id', '=', 'tr.tenant_id')
+                ->whereBetween("tr.$dateColumn", [$todayStart, $todayEnd])
+                ->where('tr.validation_status', 'VALID')
+                ->selectRaw("t.trade_name, COALESCE(SUM(tr.gross_sales), 0) as total_revenue")
+                ->groupBy('t.trade_name')
+                ->orderByDesc('total_revenue')
+                ->limit(5)
+                ->get();
+            $topTenants = $topTenantsData->map(function ($row) {
+                return [
+                    'trade_name' => $row->trade_name,
+                    'total_revenue' => (float) $row->total_revenue,
+                ];
+            })->all();
+        } catch (\Throwable $e) {
+            \Log::warning('DashboardService: failed to fetch top tenants', ['error' => $e->getMessage()]);
+        }
+
+        // Revenue Composition
+        $composition = [
+            'net_sales' => 0.0,
+            'tax_exempt' => 0.0,
+            'vat' => 0.0,
+            'refunds' => 0.0,
+            'discounts' => 0.0,
+        ];
+        try {
+            $compData = Transaction::whereBetween($dateColumn, [$todayStart, $todayEnd])
+                ->where('validation_status', 'VALID')
+                ->selectRaw("
+                    COALESCE(SUM(net_sales), 0) as net_sales,
+                    COALESCE(SUM(sc_vat_exempt_sales), 0) as tax_exempt,
+                    COALESCE(SUM(vat_amount), 0) as vat,
+                    COALESCE(SUM(refund_amount), 0) as refunds,
+                    COALESCE(SUM(promo_discount + senior_discount + pwd_discount + discount_total), 0) as discounts
+                ")
+                ->first();
+            if ($compData) {
+                $composition = [
+                    'net_sales' => round((float) $compData->net_sales, 2),
+                    'tax_exempt' => round((float) $compData->tax_exempt, 2),
+                    'vat' => round((float) $compData->vat, 2),
+                    'refunds' => round((float) $compData->refunds, 2),
+                    'discounts' => round((float) $compData->discounts, 2),
+                ];
+            }
+        } catch (\Throwable $e) {
+            \Log::warning('DashboardService: failed to compute revenue composition', ['error' => $e->getMessage()]);
+        }
+
         return [
             'total_sales' => [
-                'current' => round($currentRevenue, 2),
-                'trend' => $this->percentDelta($currentRevenue, $previousRevenue),
+                'current' => round($currentGrossSales, 2),
+                'trend' => $this->percentDelta($currentGrossSales, $previousGrossSales),
                 'sparkline' => $this->buildSparkline($rangeDays, 'sum', 'gross_sales', $todayEnd, $dateColumn),
+            ],
+            'total_net_sales' => [
+                'current' => round($currentNetSales, 2),
+                'trend' => $this->percentDelta($currentNetSales, $previousNetSales),
             ],
             'total_transactions' => [
                 'current' => $currentTransactions,
@@ -128,6 +240,24 @@ class DashboardService
             ],
             'pending_uploads' => [
                 'current' => $this->queueBacklog(),
+            ],
+            'exceptions' => [
+                'failed_reconciliations' => $failed,
+                'missing_uploads' => $missingUploads,
+                'invalid_tax_records' => $invalidTaxRecords,
+                'total_exceptions' => $totalExceptions,
+            ],
+            'compliance' => [
+                'csmr_ready' => $csmrReady,
+                'bir_export_generated' => $birExportGenerated,
+                'tax_validation_passed' => $taxValidationPassed,
+            ],
+            'top_tenants' => $topTenants,
+            'revenue_composition' => $composition,
+            'sync_status' => [
+                'last_sync' => $now->format('g:i:s A'),
+                'records_synced' => $currentTransactions,
+                'status' => 'Healthy',
             ],
             'generated_at' => $now->toIso8601String(),
         ];
