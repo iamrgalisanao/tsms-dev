@@ -17,7 +17,7 @@ import {
 } from '@mui/icons-material';
 import '../../../css/TenantDirectory.css';
 import { Button } from '@mui/material';
-import { useRole } from '../../Hooks/useRole';
+import { useRole } from '../../hooks/useRole';
 import { useAuth } from '../../Contexts/AuthContext';
 
 // ── PITX brand ────────────────────────────────────────────────────────────────

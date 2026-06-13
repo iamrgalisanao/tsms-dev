@@ -44,7 +44,7 @@ import {
     FileDownload as FileDownloadIcon
 } from '@mui/icons-material';
 import api from '../../services/api';
-import { useRole } from '../../Hooks/useRole';
+import { useRole } from '../../hooks/useRole';
 
 const TenantUserManagementPage = () => {
     const isAuthorized = useRole();
