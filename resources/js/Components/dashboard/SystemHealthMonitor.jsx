@@ -1,5 +1,5 @@
 import React from 'react';
-import { Card, CardContent, Typography, Box, Stack, LinearProgress } from '@mui/material';
+import { Card, CardContent, Typography, Box, Stack, LinearProgress, Grid, Chip } from '@mui/material';
 import MemoryIcon from '@mui/icons-material/Memory';
 import StorageIcon from '@mui/icons-material/Storage';
 import LanguageIcon from '@mui/icons-material/Language';
@@ -19,60 +19,77 @@ const SystemHealthMonitor = ({ health, loading }) => {
         return 'success';
     };
 
+    const queueBacklog = Number(stats.queues?.backlog ?? 0);
+    const networkHealthy = String(stats.network || '').toLowerCase() === 'healthy';
+
+    const compactItems = [
+        {
+            key: 'cpu',
+            icon: <MemoryIcon sx={{ fontSize: 16, color: 'grey.500' }} />,
+            label: 'CPU',
+            value: `${stats.cpu}%`,
+            progress: stats.cpu,
+            color: getStatusColor(stats.cpu)
+        },
+        {
+            key: 'memory',
+            icon: <StorageIcon sx={{ fontSize: 16, color: 'grey.500' }} />,
+            label: 'Memory',
+            value: `${stats.memory}%`,
+            progress: stats.memory,
+            color: getStatusColor(stats.memory)
+        },
+        {
+            key: 'queue',
+            icon: <StorageIcon sx={{ fontSize: 16, color: 'grey.500' }} />,
+            label: 'Queue',
+            value: `${queueBacklog}`,
+            progress: Math.min(queueBacklog, 100),
+            color: queueBacklog > 20 ? 'warning' : 'success'
+        },
+        {
+            key: 'network',
+            icon: <LanguageIcon sx={{ fontSize: 16, color: 'grey.500' }} />,
+            label: 'Network',
+            value: stats.network || 'Unknown',
+            progress: null,
+            color: networkHealthy ? 'success' : 'warning'
+        }
+    ];
+
     return (
-        <Card sx={{ borderRadius: '32px', p: 2 }}>
-            <CardContent>
-                <Typography variant="caption" sx={{ fontSize: '12px', fontWeight: 900, color: 'grey.500', textTransform: 'uppercase', letterSpacing: '0.15em', mb: 4, display: 'block' }}>
-                    System Health
-                </Typography>
-
-                <Stack spacing={4}>
-                    {/* CPU Utilization */}
-                    <Box>
-                        <Stack direction="row" justifyContent="space-between" sx={{ mb: 1 }}>
-                            <Stack direction="row" alignItems="center" spacing={1}>
-                                <MemoryIcon sx={{ fontSize: 16, color: 'grey.400' }} />
-                                <Typography variant="caption" sx={{ fontWeight: 'bold', color: 'grey.600' }}>CPU UTILIZATION</Typography>
-                            </Stack>
-                            <Typography variant="caption" sx={{ fontWeight: 900, color: stats.cpu > 80 ? 'error.main' : 'text.primary' }}>{stats.cpu}%</Typography>
-                        </Stack>
-                        <LinearProgress
-                            variant="determinate"
-                            value={stats.cpu}
-                            color={getStatusColor(stats.cpu)}
-                            sx={{ height: 8, borderRadius: 4, bgcolor: 'grey.100' }}
-                        />
-                    </Box>
-
-                    {/* Memory Usage */}
-                    <Box>
-                        <Stack direction="row" justifyContent="space-between" sx={{ mb: 1 }}>
-                            <Stack direction="row" alignItems="center" spacing={1}>
-                                <StorageIcon sx={{ fontSize: 16, color: 'grey.400' }} />
-                                <Typography variant="caption" sx={{ fontWeight: 'bold', color: 'grey.600' }}>MEMORY USAGE</Typography>
-                            </Stack>
-                            <Typography variant="caption" sx={{ fontWeight: 900, color: stats.memory > 80 ? 'error.main' : 'text.primary' }}>{stats.memory}%</Typography>
-                        </Stack>
-                        <LinearProgress
-                            variant="determinate"
-                            value={stats.memory}
-                            color={getStatusColor(stats.memory)}
-                            sx={{ height: 8, borderRadius: 4, bgcolor: 'grey.100' }}
-                        />
-                    </Box>
-
-                    {/* Network Status */}
-                    <Box sx={{ pt: 2, borderTop: '1px solid', borderColor: 'grey.100' }}>
-                        <Typography variant="caption" sx={{ fontSize: '10px', fontWeight: 900, color: 'grey.400', display: 'block', mb: 0.5 }}>NETWORK</Typography>
-                        <Stack direction="row" alignItems="center" spacing={1} sx={{ mb: 1 }}>
-                            <LanguageIcon sx={{ fontSize: 14, color: 'success.main' }} />
-                            <Typography variant="body2" sx={{ fontWeight: 'bold', color: 'success.main' }}>{stats.network}</Typography>
-                        </Stack>
-                        <Typography variant="caption" sx={{ fontSize: '10px', fontWeight: 700, color: 'grey.600' }}>
-                            Queue backlog: {stats.queues?.backlog ?? 0} job{(stats.queues?.backlog ?? 0) === 1 ? '' : 's'}
-                        </Typography>
-                    </Box>
-                </Stack>
+        <Card sx={{ borderRadius: '24px', p: 1.5 }}>
+            <CardContent sx={{ p: '12px !important' }}>
+                <Grid container spacing={1.5}>
+                    {compactItems.map((item) => (
+                        <Grid item xs={12} sm={6} lg={3} key={item.key}>
+                            <Box sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 2, p: 1.5, bgcolor: 'grey.50' }}>
+                                <Stack direction="row" alignItems="center" justifyContent="space-between" sx={{ mb: 1 }}>
+                                    <Stack direction="row" alignItems="center" spacing={1}>
+                                        {item.icon}
+                                        <Typography variant="caption" sx={{ fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                                            {item.label}
+                                        </Typography>
+                                    </Stack>
+                                    <Chip
+                                        size="small"
+                                        label={item.value}
+                                        color={item.color}
+                                        sx={{ fontWeight: 800, height: 22 }}
+                                    />
+                                </Stack>
+                                {item.progress !== null && (
+                                    <LinearProgress
+                                        variant="determinate"
+                                        value={item.progress}
+                                        color={item.color}
+                                        sx={{ height: 6, borderRadius: 3, bgcolor: 'grey.200' }}
+                                    />
+                                )}
+                            </Box>
+                        </Grid>
+                    ))}
+                </Grid>
             </CardContent>
         </Card>
     );

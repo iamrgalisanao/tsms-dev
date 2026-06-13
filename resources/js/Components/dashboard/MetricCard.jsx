@@ -9,7 +9,7 @@ const COLOR_MAP = {
     danger: '#ff005c',  // Vibrant Rose
 };
 
-const MetricCard = memo(({ title, value, icon, color = 'primary', trend, sparkline }) => {
+const MetricCard = memo(({ title, value, icon, color = 'primary', trend, sparkline, subtitle, onClick }) => {
     const activeColor = COLOR_MAP[color] || COLOR_MAP.primary;
 
     // Robust sparkline path calculation
@@ -39,6 +39,7 @@ const MetricCard = memo(({ title, value, icon, color = 'primary', trend, sparkli
                 position: 'relative',
                 overflow: 'hidden',
                 bgcolor: 'rgba(255, 255, 255, 0.6)',
+                cursor: onClick ? 'pointer' : 'default',
                 '&:hover': {
                     '& .metric-icon-box': { 
                         transform: 'scale(1.1) rotate(5deg)',
@@ -47,6 +48,7 @@ const MetricCard = memo(({ title, value, icon, color = 'primary', trend, sparkli
                     '& .sparkline-path': { opacity: 0.8 }
                 }
             }}
+            onClick={onClick}
         >
             <CardContent sx={{ p: 4, height: '100%', display: 'flex', flexDirection: 'column' }}>
                 <Stack direction="row" justifyContent="space-between" alignItems="flex-start" sx={{ mb: 3 }}>
@@ -144,6 +146,20 @@ const MetricCard = memo(({ title, value, icon, color = 'primary', trend, sparkli
                             />
                         </svg>
                     </Box>
+                )}
+
+                {subtitle && (
+                    <Typography
+                        variant="caption"
+                        sx={{
+                            mt: 1.5,
+                            color: 'text.secondary',
+                            fontWeight: 700,
+                            letterSpacing: '0.03em'
+                        }}
+                    >
+                        {subtitle}
+                    </Typography>
                 )}
             </CardContent>
         </Card>

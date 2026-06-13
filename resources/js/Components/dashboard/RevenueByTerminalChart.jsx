@@ -1,14 +1,5 @@
 import React from 'react';
-import {
-    Chart as ChartJS,
-    ArcElement,
-    Tooltip,
-    Legend
-} from 'chart.js';
-import { Card, CardContent, Typography, Box, CircularProgress } from '@mui/material';
-import { Doughnut } from 'react-chartjs-2';
-
-ChartJS.register(ArcElement, Tooltip, Legend);
+import { Card, CardContent, Typography, Box, CircularProgress, Stack, LinearProgress } from '@mui/material';
 
 const RevenueByTerminalChart = ({ data, loading }) => {
     if (loading) return (
@@ -17,53 +8,17 @@ const RevenueByTerminalChart = ({ data, loading }) => {
         </Card>
     );
 
-    const chartData = {
-        labels: data?.map(d => d.trade_name) || ['None'],
-        datasets: [{
-            data: data?.map(d => d.total_sales) || [100],
-            backgroundColor: [
-                'rgba(37, 99, 235, 0.8)',
-                'rgba(16, 185, 129, 0.8)',
-                'rgba(245, 158, 11, 0.8)',
-                'rgba(239, 68, 68, 0.8)',
-                'rgba(139, 92, 246, 0.8)',
-            ],
-            borderColor: '#ffffff',
-            borderWidth: 2,
-            hoverOffset: 12,
-        }]
-    };
+    const items = (data || [])
+        .map((item) => ({
+            ...item,
+            total_sales: Number(item.total_sales || 0),
+            terminalLabel: item.serial_number || item.terminal_id || 'N/A',
+            tenantLabel: item.trade_name || item.tenant_name || 'Unknown Tenant'
+        }))
+        .sort((a, b) => b.total_sales - a.total_sales)
+        .slice(0, 6);
 
-    const options = {
-        responsive: true,
-        maintainAspectRatio: false,
-        plugins: {
-            legend: {
-                position: 'bottom',
-                labels: {
-                    usePointStyle: true,
-                    boxWidth: 8,
-                    padding: 20,
-                    font: { size: 10, weight: 'bold' }
-                }
-            },
-            tooltip: {
-                backgroundColor: 'rgba(255, 255, 255, 0.95)',
-                titleColor: '#111827',
-                bodyColor: '#4B5563',
-                borderColor: '#E5E7EB',
-                borderWidth: 1,
-                padding: 12,
-                callbacks: {
-                    label: function (context) {
-                        const val = context.raw;
-                        return ` ${new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(val)}`;
-                    }
-                }
-            }
-        },
-        cutout: '70%',
-    };
+    const maxSales = Math.max(...items.map((item) => item.total_sales), 1);
 
     return (
         <Card sx={{ height: '100%', borderRadius: '32px', p: 2 }}>
@@ -80,10 +35,39 @@ const RevenueByTerminalChart = ({ data, loading }) => {
                         display: 'block'
                     }}
                 >
-                    Revenue by Terminal
+                    Top Performing Terminals
                 </Typography>
                 <Box sx={{ flex: 1, minHeight: 250, position: 'relative' }}>
-                    <Doughnut data={chartData} options={options} />
+                    {items.length === 0 ? (
+                        <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+                            No terminal performance data available for this period.
+                        </Typography>
+                    ) : (
+                        <Stack spacing={2}>
+                            {items.map((item, index) => (
+                                <Box key={`${item.terminalLabel}-${index}`} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 2, p: 1.5 }}>
+                                    <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 1 }}>
+                                        <Box>
+                                            <Typography variant="body2" sx={{ fontWeight: 800 }}>
+                                                #{index + 1} {item.terminalLabel}
+                                            </Typography>
+                                            <Typography variant="caption" sx={{ color: 'text.secondary' }}>
+                                                {item.tenantLabel}
+                                            </Typography>
+                                        </Box>
+                                        <Typography variant="body2" sx={{ fontWeight: 900, fontFamily: 'monospace' }}>
+                                            {new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(item.total_sales)}
+                                        </Typography>
+                                    </Stack>
+                                    <LinearProgress
+                                        variant="determinate"
+                                        value={Math.round((item.total_sales / maxSales) * 100)}
+                                        sx={{ height: 8, borderRadius: 4 }}
+                                    />
+                                </Box>
+                            ))}
+                        </Stack>
+                    )}
                 </Box>
             </CardContent>
         </Card>

@@ -9,10 +9,9 @@ import {
     Tooltip,
     Legend,
     Filler,
-    ArcElement, // Added ArcElement for Doughnut chart
 } from 'chart.js';
 import { Card, CardContent, Typography, Box, Stack, CircularProgress } from '@mui/material';
-import { Line, Doughnut } from 'react-chartjs-2'; // Added Doughnut import
+import { Line } from 'react-chartjs-2';
 
 ChartJS.register(
     CategoryScale,
@@ -124,33 +123,26 @@ const TransactionChart = ({ data, loading }) => {
         },
     }), []);
 
-    // Demo data implementation for visualization when real data is missing or zero
-    const hasData = useMemo(() => {
-        return data?.sales && data.sales.some(v => v > 0);
-    }, [data]);
-
     const displayData = useMemo(() => {
-        if (!hasData) {
-            // Generate realistic mock data for demonstration
-            return {
-                labels: ['00:00', '02:00', '04:00', '06:00', '08:00', '10:00', '12:00', '14:00', '16:00', '18:00', '20:00', '22:00'],
-                sales: [12000, 8500, 4200, 15000, 45000, 82000, 125000, 138000, 115000, 95000, 62000, 28000],
-                previous_sales: [11000, 9000, 4000, 14000, 40000, 75000, 110000, 120000, 105000, 88000, 58000, 25000],
-                volume: [45, 32, 18, 55, 120, 245, 380, 410, 340, 290, 185, 95]
-            };
-        }
-
-        // Use real data but ensure labels are meaningful if they are just indices
-        const labels = data.labels.map((l, i) => {
+        const labels = (data?.labels || []).map((l) => {
             if (typeof l === 'number' || !isNaN(l)) {
-                // If it's a number, assume it's an hour index for Today view
                 return `${String(l).padStart(2, '0')}:00`;
             }
             return l;
         });
 
-        return { ...data, labels };
-    }, [data, hasData]);
+        return {
+            labels,
+            sales: data?.sales || [],
+            previous_sales: data?.previous_sales || [],
+            volume: data?.volume || []
+        };
+    }, [data]);
+
+    const hasData = useMemo(
+        () => (displayData.sales?.length || 0) > 0 || (displayData.volume?.length || 0) > 0,
+        [displayData]
+    );
 
     const chartData = useMemo(() => ({
         labels: displayData.labels,
@@ -209,7 +201,15 @@ const TransactionChart = ({ data, loading }) => {
                     </Stack>
                 </Stack>
                 <Box sx={{ flex: 1, minHeight: 0 }}>
-                    <Line options={options} data={chartData} />
+                    {hasData ? (
+                        <Line options={options} data={chartData} />
+                    ) : (
+                        <Box sx={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+                                No sales analytics available for the selected range.
+                            </Typography>
+                        </Box>
+                    )}
                 </Box>
             </CardContent>
         </Card>
