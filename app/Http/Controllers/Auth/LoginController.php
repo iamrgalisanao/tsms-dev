@@ -27,17 +27,25 @@ class LoginController extends Controller
 
             Log::info('User logged in successfully', ['email' => $request->email]);
 
+            $roles = $user->getRoleNames()->values()->toArray();
+            $redirectUrl = '/dashboard';
+            if (in_array('finance', $roles, true)) {
+                $redirectUrl = '/finance';
+            } elseif (in_array('commercial', $roles, true)) {
+                $redirectUrl = '/commercial';
+            }
+
             if ($request->wantsJson()) {
                 return response()->json([
                     'user' => array_merge(
                         $user->toArray(),
-                        ['roles' => $user->getRoleNames()->values()->toArray()]
+                        ['roles' => $roles]
                     ),
-                    'redirect_url' => '/dashboard',
+                    'redirect_url' => $redirectUrl,
                 ]);
             }
             
-            return redirect()->intended('/dashboard');
+            return redirect()->intended($redirectUrl);
         }
 
         Log::warning('Failed login attempt', ['email' => $request->email]);
