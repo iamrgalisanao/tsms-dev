@@ -79,7 +79,7 @@ const Row = ({ transaction, onViewDetails, getStatusColor, formatCurrency, forma
                         }}>
                             {transaction.transaction_id.slice(0, 18)}...
                         </Typography>
-                        {transaction.is_refunded && (
+                        {Boolean(Number(transaction.is_refunded)) && (
                             <Chip 
                                 label="REFUNDED" 
                                 size="small" 
