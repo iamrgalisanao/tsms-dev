@@ -1,7 +1,7 @@
 import React from 'react';
 import { Box, Typography, Stack, Tooltip } from '@mui/material';
 
-const TenantVolumeStrip = ({ tenants = [] }) => {
+const TenantVolumeStrip = ({ tenants = [], title = "TOP TENANTS (24H)" }) => {
     return (
         <Box 
             className="glass-container stagger-item" 
@@ -26,7 +26,7 @@ const TenantVolumeStrip = ({ tenants = [] }) => {
                     opacity: 0.6
                 }}
             >
-                TOP TENANTS (24H)
+                {title}
             </Typography>
 
             <Stack direction="row" spacing={4} sx={{ display: 'flex', alignItems: 'center' }}>
