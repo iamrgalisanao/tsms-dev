@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App\Services;
 
 /**
@@ -8,13 +10,16 @@ namespace App\Services;
  */
 class PayloadChecksumService
 {
+    private const SUPPORTED_VERSIONS = ['v2.1', 'v2.0'];
+
     /**
      * Public wrapper for canonicalize (for debugging/external use)
      */
-    public function getCanonicalized($data)
+    public function getCanonicalized($data, string $version = 'v2.1')
     {
-        return $this->canonicalize($data);
+        return $this->canonicalize($data, $version);
     }
+
     /**
      * Validate checksums from raw JSON string (canonicalize from original input).
      *
@@ -24,6 +29,15 @@ class PayloadChecksumService
     public function validateSubmissionChecksumsFromRaw(string $rawJson): array
     {
         $submission = json_decode($rawJson, true);
+
+        if (! is_array($submission) || json_last_error() !== JSON_ERROR_NONE) {
+            return [
+                'valid' => false,
+                'errors' => ['Invalid JSON payload: ' . json_last_error_msg()],
+                'diagnostics' => [],
+            ];
+        }
+
         return $this->validateSubmissionChecksums($submission);
     }
 
@@ -35,72 +49,143 @@ class PayloadChecksumService
      */
     public function validateSubmissionChecksums(array $submission): array
     {
-        $errors = [];
+        $attempts = [];
 
-        // Single transaction submission (preserve working logic)
+        foreach (self::SUPPORTED_VERSIONS as $version) {
+            $result = $this->validateWithVersion($submission, $version);
+            $attempts[$version] = $result['diagnostics'];
+
+            if ($result['valid']) {
+                if ($version !== 'v2.1') {
+                    \Log::info('Checksum validated via compatibility fallback', [
+                        'submission_uuid' => $submission['submission_uuid'] ?? null,
+                        'checksum_version' => $version,
+                    ]);
+                }
+
+                return [
+                    'valid' => true,
+                    'errors' => [],
+                    'checksum_version' => $version,
+                    'diagnostics' => $attempts,
+                ];
+            }
+        }
+
+        $strictResult = $this->validateWithVersion($submission, 'v2.1');
+
+        return [
+            'valid' => false,
+            'errors' => $strictResult['errors'],
+            'checksum_version' => null,
+            'diagnostics' => $attempts,
+        ];
+    }
+
+    private function validateWithVersion(array $submission, string $version): array
+    {
+        $errors = [];
+        $diagnostics = [
+            'version' => $version,
+            'transactions' => [],
+            'submission' => null,
+        ];
+
         if (isset($submission['transaction'])) {
             $txn = $submission['transaction'];
             $txnCopy = $txn;
             unset($txnCopy['payload_checksum']);
-            $computedTxn = $this->computeChecksum($txnCopy);
-            if (!isset($txn['payload_checksum']) || $txn['payload_checksum'] !== $computedTxn) {
-                $errors[] = 'Invalid payload_checksum for transaction';
+            $computedTxn = $this->computeChecksum($txnCopy, $version);
+            $providedTxn = $txn['payload_checksum'] ?? null;
+            $txnMatches = $this->checksumsMatch($providedTxn, $computedTxn);
+
+            $diagnostics['transactions'][] = [
+                'index' => 0,
+                'transaction_id' => $txn['transaction_id'] ?? null,
+                'provided' => $providedTxn,
+                'computed' => $computedTxn,
+                'matches' => $txnMatches,
+            ];
+
+            if (! $txnMatches) {
+                $errors[] = $this->formatChecksumError('transaction', $version, $providedTxn, $computedTxn);
             }
 
-            // Validate submission-level checksum
             $submissionCopy = $submission;
             unset($submissionCopy['payload_checksum']);
-            $computedSubmission = $this->computeChecksum($submissionCopy);
-            if (!isset($submission['payload_checksum']) || $submission['payload_checksum'] !== $computedSubmission) {
-                $errors[] = 'Invalid submission payload_checksum';
+            $computedSubmission = $this->computeChecksum($submissionCopy, $version);
+            $providedSubmission = $submission['payload_checksum'] ?? null;
+            $submissionMatches = $this->checksumsMatch($providedSubmission, $computedSubmission);
+
+            $diagnostics['submission'] = [
+                'provided' => $providedSubmission,
+                'computed' => $computedSubmission,
+                'matches' => $submissionMatches,
+            ];
+
+            if (! $submissionMatches) {
+                $errors[] = $this->formatChecksumError('submission', $version, $providedSubmission, $computedSubmission);
             }
 
             return [
                 'valid'  => empty($errors),
                 'errors' => $errors,
+                'diagnostics' => $diagnostics,
             ];
         }
 
-        // Batch transaction submission
         if (isset($submission['transactions']) && is_array($submission['transactions'])) {
             $allTxnValid = true;
             foreach ($submission['transactions'] as $i => $txn) {
                 $txnCopy = $txn;
                 unset($txnCopy['payload_checksum']);
-                $computedTxn = $this->computeChecksum($txnCopy);
-                if (!isset($txn['payload_checksum']) || $txn['payload_checksum'] !== $computedTxn) {
-                    $errors[] = "Invalid payload_checksum for transaction at index {$i}";
+                $computedTxn = $this->computeChecksum($txnCopy, $version);
+                $providedTxn = $txn['payload_checksum'] ?? null;
+                $txnMatches = $this->checksumsMatch($providedTxn, $computedTxn);
+
+                $diagnostics['transactions'][] = [
+                    'index' => $i,
+                    'transaction_id' => $txn['transaction_id'] ?? null,
+                    'provided' => $providedTxn,
+                    'computed' => $computedTxn,
+                    'matches' => $txnMatches,
+                ];
+
+                if (! $txnMatches) {
+                    $errors[] = $this->formatChecksumError("transaction at index {$i}", $version, $providedTxn, $computedTxn);
                     $allTxnValid = false;
                 }
             }
 
-            // Only validate submission-level checksum if all transaction checksums are valid
             if ($allTxnValid) {
                 $submissionCopy = $submission;
                 unset($submissionCopy['payload_checksum']);
-                $computedSubmission = $this->computeChecksum($submissionCopy);
-                if (!isset($submission['payload_checksum']) || $submission['payload_checksum'] !== $computedSubmission) {
-                    $errors[] = 'Invalid submission payload_checksum';
+                $computedSubmission = $this->computeChecksum($submissionCopy, $version);
+                $providedSubmission = $submission['payload_checksum'] ?? null;
+                $submissionMatches = $this->checksumsMatch($providedSubmission, $computedSubmission);
+
+                $diagnostics['submission'] = [
+                    'provided' => $providedSubmission,
+                    'computed' => $computedSubmission,
+                    'matches' => $submissionMatches,
+                ];
+
+                if (! $submissionMatches) {
+                    $errors[] = $this->formatChecksumError('submission', $version, $providedSubmission, $computedSubmission);
                 }
             }
 
             return [
                 'valid'  => empty($errors),
                 'errors' => $errors,
+                'diagnostics' => $diagnostics,
             ];
         }
 
-        // If neither single nor batch, just check submission-level checksum
-        $submissionCopy = $submission;
-        unset($submissionCopy['payload_checksum']);
-        $computedSubmission = $this->computeChecksum($submissionCopy);
-        if (!isset($submission['payload_checksum']) || $submission['payload_checksum'] !== $computedSubmission) {
-            $errors[] = 'Invalid submission payload_checksum';
-        }
-
         return [
-            'valid'  => empty($errors),
-            'errors' => $errors,
+            'valid' => false,
+            'errors' => ['Unsupported payload structure: expected transaction or transactions'],
+            'diagnostics' => $diagnostics,
         ];
     }
 
@@ -110,9 +195,9 @@ class PayloadChecksumService
      * @param  mixed  $payload  Array or scalar data
      * @return string  Hexadecimal SHA-256 hash
      */
-    public function computeChecksum($payload): string
+    public function computeChecksum($payload, string $version = 'v2.1'): string
     {
-        $canonical = $this->canonicalize($payload);
+        $canonical = $this->canonicalize($payload, $version);
 
         return hash('sha256', json_encode(
             $canonical,
@@ -124,31 +209,53 @@ class PayloadChecksumService
      * Recursively canonicalize data for consistent JSON serialization:
      * - Sort associative arrays by key
      * - Preserve indexed arrays order
-     * - Cast monetary values to float
+     * - v2.1 formats monetary values as two-decimal strings
+     * - v2.0 casts monetary values to floats
      *
      * @param  mixed  $data
      * @return mixed
      */
-    private function canonicalize($data)
+    private function canonicalize($data, string $version = 'v2.1')
     {
         if (is_array($data)) {
-            // If associative array, sort by keys
-            if ($this->isAssoc($data)) {
-                ksort($data);
+            $canonical = $data;
+
+            if ($this->isAssoc($canonical)) {
+                ksort($canonical);
             }
 
-            foreach ($data as $key => &$value) {
-                // Recurse
-                $value = $this->canonicalize($value);
+            foreach ($canonical as $key => $value) {
+                $value = $this->canonicalize($value, $version);
 
-                // Cast monetary fields to float
-                if (in_array($key, ['gross_sales', 'net_sales', 'amount'], true)) {
+                if ($version === 'v2.1' && in_array($key, ['gross_sales', 'net_sales', 'amount'], true) && is_numeric($value)) {
+                    $value = number_format((float) $value, 2, '.', '');
+                } elseif ($version === 'v2.0' && in_array($key, ['gross_sales', 'net_sales', 'amount'], true)) {
                     $value = (float) $value;
                 }
+
+                $canonical[$key] = $value;
             }
+
+            return $canonical;
         }
 
         return $data;
+    }
+
+    private function checksumsMatch(?string $provided, string $computed): bool
+    {
+        if ($provided === null || $provided === '') {
+            return false;
+        }
+
+        return hash_equals(strtolower($computed), strtolower($provided));
+    }
+
+    private function formatChecksumError(string $scope, string $version, ?string $provided, string $computed): string
+    {
+        $received = $provided ?: 'missing';
+
+        return "Invalid payload_checksum for {$scope} ({$version}). Received: {$received}, Computed: {$computed}";
     }
 
     /**

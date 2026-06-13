@@ -18,16 +18,31 @@ class ChecksumSandboxController extends Controller
         ]);
 
         $svc = new PayloadChecksumService();
-        $canonical = $svc->getCanonicalized($request->payload);
-        $computed = $svc->computeChecksum($request->payload);
+        $provided = $request->filled('provided_checksum')
+            ? (string) $request->string('provided_checksum')
+            : null;
 
         $result = [
-            'computed_checksum' => $computed,
-            'canonical_payload' => $canonical,
+            'versions' => [
+                'v2.1' => [
+                    'computed_checksum' => $svc->computeChecksum($request->payload, 'v2.1'),
+                    'canonical_payload' => $svc->getCanonicalized($request->payload, 'v2.1'),
+                ],
+                'v2.0' => [
+                    'computed_checksum' => $svc->computeChecksum($request->payload, 'v2.0'),
+                    'canonical_payload' => $svc->getCanonicalized($request->payload, 'v2.0'),
+                ],
+            ],
         ];
 
-        if ($request->filled('provided_checksum')) {
-            $result['matches'] = hash_equals($computed, (string) $request->string('provided_checksum'));
+        if ($provided !== null) {
+            $result['provided_checksum'] = $provided;
+            foreach ($result['versions'] as $version => $data) {
+                $result['versions'][$version]['matches'] = hash_equals(
+                    strtolower($data['computed_checksum']),
+                    strtolower($provided)
+                );
+            }
         }
 
         return response()->json([
