@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import {
     Box,
     Card,
@@ -86,6 +86,14 @@ const TransactionLogsPage = () => {
 
     const [detailPanelOpen, setDetailPanelOpen] = useState(false);
     const [selectedTransaction, setSelectedTransaction] = useState(null);
+    const [issuesCount, setIssuesCount] = useState(0);
+
+    const detailedKpis = useMemo(() => {
+        const gross = (transactions || []).reduce((sum, tx) => sum + Number(tx.amount || 0), 0);
+        const net = (transactions || []).reduce((sum, tx) => sum + Number(tx.net_sales || 0), 0);
+        const refund = (transactions || []).reduce((sum, tx) => sum + Number(tx.refund || tx.refund_amount || 0), 0);
+        return { gross, net, refund };
+    }, [transactions]);
 
     useEffect(() => {
         loadData();
@@ -107,14 +115,18 @@ const TransactionLogsPage = () => {
             );
 
             if (activeTab === 'detailed') {
-                const response = await transactionLogService.getTransactions(
-                    cleanFilters,
-                    page + 1,
-                    rowsPerPage
-                );
+                const [response, issues] = await Promise.all([
+                    transactionLogService.getTransactions(
+                        cleanFilters,
+                        page + 1,
+                        rowsPerPage
+                    ),
+                    transactionLogService.getIssuesCount(cleanFilters)
+                ]);
                 setTransactions(response.data || []);
                 setTotalCount(response.total || 0);
                 setDateBasisDiscrepancy(null);
+                setIssuesCount(Number(issues?.count || 0));
             } else {
                 const response = await transactionLogService.getSummary(
                     cleanFilters,
@@ -234,21 +246,21 @@ const TransactionLogsPage = () => {
 
                     <Stack direction="row" spacing={1.5}>
                         <Button
-                            variant="outlined"
+                            variant="text"
                             color="inherit"
                             startIcon={activeTab === 'detailed' ? <SummarizeIcon /> : <ReceiptIcon />}
-                            sx={{ borderRadius: 3, px: 2.5, py: 1.2, fontWeight: 700, borderColor: 'divider', textTransform: 'none', bgcolor: 'white' }}
+                            sx={{ borderRadius: 3, px: 2, py: 1.2, fontWeight: 700, textTransform: 'none' }}
                             onClick={() => setActiveTab(activeTab === 'detailed' ? 'summary' : 'detailed')}
                         >
                             {activeTab === 'detailed' ? 'Switch to Summary' : 'Switch to Detailed'}
                         </Button>
                         <Button
-                            variant="contained"
+                            variant="outlined"
                             startIcon={<FileDownloadIcon />}
                             onClick={handleExport}
-                            sx={{ borderRadius: 3, px: 3, py: 1.2, fontWeight: 800, textTransform: 'none', boxShadow: '0 4px 15px rgba(25, 118, 210, 0.3)' }}
+                            sx={{ borderRadius: 3, px: 2.5, py: 1.2, fontWeight: 700, textTransform: 'none' }}
                         >
-                            Export Archive
+                            Export
                         </Button>
                         {canReconcile && (
                             <Button
@@ -264,6 +276,28 @@ const TransactionLogsPage = () => {
                         )}
                     </Stack>
                 </Stack>
+
+                {activeTab === 'detailed' && (
+                    <Box sx={{ p: 2.5, mb: 3, bgcolor: 'rgba(248,250,252,0.65)', borderRadius: 3, border: '1px solid', borderColor: 'divider' }}>
+                        <Grid container spacing={3}>
+                            <Grid item xs={6} md={4} lg={2}>
+                                <StatCard label="Transactions" value={totalCount?.toLocaleString() || '0'} color="text.primary" />
+                            </Grid>
+                            <Grid item xs={6} md={4} lg={2}>
+                                <StatCard label="Gross Sales" value={formatCurrency(detailedKpis.gross)} color="text.primary" />
+                            </Grid>
+                            <Grid item xs={6} md={4} lg={2}>
+                                <StatCard label="Net Sales" value={formatCurrency(detailedKpis.net)} color="primary.main" />
+                            </Grid>
+                            <Grid item xs={6} md={4} lg={2}>
+                                <StatCard label="Refunds" value={formatCurrency(detailedKpis.refund)} color="error.main" />
+                            </Grid>
+                            <Grid item xs={6} md={4} lg={2}>
+                                <StatCard label="Audit Failures" value={issuesCount?.toLocaleString() || '0'} color="warning.main" />
+                            </Grid>
+                        </Grid>
+                    </Box>
+                )}
 
                 <FilterBar
                     filters={filters}

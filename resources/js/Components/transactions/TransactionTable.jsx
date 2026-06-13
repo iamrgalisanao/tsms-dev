@@ -16,14 +16,10 @@ import {
     Stack,
     Button,
     Collapse,
-    Paper,
-    Divider,
     Grid,
     Card
 } from '@mui/material';
 import VisibilityIcon from '@mui/icons-material/Visibility';
-import BlockIcon from '@mui/icons-material/Block';
-import PrintIcon from '@mui/icons-material/Print';
 import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
@@ -31,6 +27,12 @@ import { formatDate } from '../../utils/dateFormatter';
 
 const Row = ({ transaction, onViewDetails, getStatusColor, formatCurrency, formatDate }) => {
     const [open, setOpen] = useState(false);
+    const operationStatus = transaction.voided_at
+        ? 'ERROR'
+        : (['INVALID', 'WITH_ISSUES'].includes((transaction.validation_status || '').toUpperCase())
+            ? 'ERROR'
+            : ((transaction.validation_status || '').toUpperCase() === 'PENDING' ? 'PENDING' : 'RECONCILED'));
+    const operationStatusColor = operationStatus === 'RECONCILED' ? 'success' : operationStatus === 'PENDING' ? 'warning' : 'error';
 
     return (
         <React.Fragment>
@@ -107,6 +109,11 @@ const Row = ({ transaction, onViewDetails, getStatusColor, formatCurrency, forma
                         )}
                     </Stack>
                 </TableCell>
+                <TableCell sx={{ minWidth: 130 }}>
+                    <Typography variant="body2" sx={{ fontFamily: 'monospace', fontSize: '11px', color: 'text.secondary', fontWeight: 700 }}>
+                        {formatDate(transaction.completed_at || transaction.created_at)}
+                    </Typography>
+                </TableCell>
                 <TableCell>
                     <Typography variant="body2" sx={{ fontFamily: 'monospace', fontSize: '11px', color: 'text.secondary' }}>
                         {transaction.receipt_no || '-'}
@@ -132,7 +139,7 @@ const Row = ({ transaction, onViewDetails, getStatusColor, formatCurrency, forma
                         </Typography>
                     </Tooltip>
                 </TableCell>
-                <TableCell align="left">
+                <TableCell align="left" sx={{ minWidth: 120 }}>
                     <Tooltip title={transaction.voided_at ? "Voided transactions contribute ₱0.00 to reconciled totals" : ""} arrow>
                         <Typography variant="body2" sx={{ 
                             fontWeight: 800, 
@@ -144,34 +151,39 @@ const Row = ({ transaction, onViewDetails, getStatusColor, formatCurrency, forma
                         </Typography>
                     </Tooltip>
                 </TableCell>
-                <TableCell align="left">
-                    <Typography variant="body2" sx={{ fontWeight: 800, fontFamily: 'monospace', color: 'warning.dark' }}>
-                        {transaction.refund ? formatCurrency(transaction.refund) : '-'}
-                    </Typography>
+                <TableCell align="center" sx={{ minWidth: 110 }}>
+                    <Chip
+                        label={transaction.validation_status || 'UNKNOWN'}
+                        color={getStatusColor(transaction.validation_status)}
+                        size="small"
+                        sx={{ fontWeight: 800, fontSize: '0.65rem' }}
+                    />
                 </TableCell>
-                <TableCell align="right" sx={{ color: 'text.secondary', fontSize: '11px' }}>
-                    {transaction.promo_discount ? formatCurrency(transaction.promo_discount) : '-'}
+                <TableCell align="center" sx={{ minWidth: 110 }}>
+                    <Chip
+                        label={operationStatus}
+                        color={operationStatusColor}
+                        size="small"
+                        sx={{ fontWeight: 800, fontSize: '0.65rem' }}
+                    />
                 </TableCell>
-                <TableCell align="right" sx={{ color: 'text.secondary', fontSize: '11px' }}>
-                    {transaction.senior_discount ? formatCurrency(transaction.senior_discount) : '-'}
-                </TableCell>
-                <TableCell align="right" sx={{ color: 'text.secondary', fontSize: '11px' }}>
-                    {transaction.pwd_discount ? formatCurrency(transaction.pwd_discount) : '-'}
-                </TableCell>
-                <TableCell align="right" sx={{ color: 'text.secondary', fontSize: '11px' }}>
-                    {transaction.vip_discount ? formatCurrency(transaction.vip_discount) : '-'}
-                </TableCell>
-                <TableCell align="right" sx={{ color: 'text.secondary', fontSize: '11px' }}>
-                    {transaction.employee_discount ? formatCurrency(transaction.employee_discount) : '-'}
-                </TableCell>
-                <TableCell align="left" sx={{ color: 'text.secondary', fontSize: '11px' }}>
-                    {transaction.service_charge ? formatCurrency(transaction.service_charge) : '-'}
+                <TableCell align="center" sx={{ minWidth: 70 }}>
+                    <IconButton
+                        size="small"
+                        onClick={(e) => {
+                            e.stopPropagation();
+                            onViewDetails(transaction);
+                        }}
+                        sx={{ bgcolor: 'primary.50', color: 'primary.main' }}
+                    >
+                        <VisibilityIcon fontSize="small" />
+                    </IconButton>
                 </TableCell>
             </TableRow>
             <TableRow>
-                <TableCell style={{ paddingBottom: 0, paddingTop: 0 }} colSpan={11}>
+                <TableCell style={{ paddingBottom: 0, paddingTop: 0 }} colSpan={9}>
                     <Collapse in={open} timeout="auto" unmountOnExit>
-                        <Box sx={{ py: 3, px: 4, bgcolor: 'rgba(248, 250, 252, 0.5)' }}>
+                        <Box sx={{ py: 3, px: 4, bgcolor: 'rgba(248, 250, 252, 0.7)', borderTop: '1px solid', borderColor: 'divider' }}>
                             <Grid container spacing={4}>
                                 <Grid item xs={12} md={7}>
                                     <Typography variant="subtitle2" gutterBottom sx={{ fontWeight: 800, color: 'text.secondary', fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.1em', mb: 2 }}>
@@ -234,10 +246,6 @@ const Row = ({ transaction, onViewDetails, getStatusColor, formatCurrency, forma
                                         <Typography variant="caption" color="text.disabled" sx={{ display: 'block', mb: 1, fontFamily: 'monospace' }}>
                                             TXID: {transaction.transaction_id}
                                         </Typography>
-                                        <Stack direction="row" spacing={1}>
-                                            <IconButton size="small" color="error" sx={{ bgcolor: 'error.50' }}><BlockIcon fontSize="small" /></IconButton>
-                                            <IconButton size="small" sx={{ bgcolor: 'grey.100' }}><PrintIcon fontSize="small" /></IconButton>
-                                        </Stack>
                                     </Box>
                                 </Grid>
                             </Grid>
@@ -315,30 +323,27 @@ const TransactionTable = ({ transactions, loading, page, rowsPerPage, totalCount
         py: 2.5,
         bgcolor: 'white',
         borderBottom: '2px solid',
-        borderColor: 'divider'
+        borderColor: 'divider',
+        position: 'sticky',
+        top: 0,
+        zIndex: 2
     };
 
     return (
         <Box>
-            <TableContainer sx={{ overflowX: 'auto' }}>
-                <Table size="small">
+            <TableContainer sx={{ overflowX: 'auto', maxHeight: '70vh' }}>
+                <Table size="small" stickyHeader>
                     <TableHead>
                         <TableRow>
-                            <TableCell sx={{ ...headerStyles, verticalAlign: 'bottom', pb: 1.5 }} rowSpan={2}>Transaction ID</TableCell>
-                            <TableCell sx={{ ...headerStyles, verticalAlign: 'bottom', pb: 1.5 }} rowSpan={2}>Receipt No</TableCell>
-                            <TableCell sx={{ ...headerStyles, verticalAlign: 'bottom', pb: 1.5 }} rowSpan={2}>Tenant / Terminal</TableCell>
-                            <TableCell align="left" sx={{ ...headerStyles, verticalAlign: 'bottom', pb: 1.5 }} rowSpan={2}>Gross Sales</TableCell>
-                            <TableCell align="left" sx={{ ...headerStyles, verticalAlign: 'bottom', pb: 1.5 }} rowSpan={2}>Net Sales</TableCell>
-                            <TableCell align="left" sx={{ ...headerStyles, verticalAlign: 'bottom', pb: 1.5 }} rowSpan={2}>Refund</TableCell>
-                            <TableCell align="center" sx={{ ...headerStyles, verticalAlign: 'top', pt: 1.5, pb: 0, borderBottom: '1px solid rgba(0,0,0,0.06)' }} colSpan={5}>Discounts</TableCell>
-                            <TableCell align="left" sx={{ ...headerStyles, verticalAlign: 'bottom', pb: 1.5 }} rowSpan={2}>SC (Emp)</TableCell>
-                        </TableRow>
-                        <TableRow>
-                            <TableCell align="right" sx={{ ...headerStyles, verticalAlign: 'bottom', py: 1.5 }}>Promo</TableCell>
-                            <TableCell align="right" sx={{ ...headerStyles, verticalAlign: 'bottom', py: 1.5 }}>Senior</TableCell>
-                            <TableCell align="right" sx={{ ...headerStyles, verticalAlign: 'bottom', py: 1.5 }}>PWD</TableCell>
-                            <TableCell align="right" sx={{ ...headerStyles, verticalAlign: 'bottom', py: 1.5 }}>VIP</TableCell>
-                            <TableCell align="right" sx={{ ...headerStyles, verticalAlign: 'bottom', py: 1.5 }}>Employee</TableCell>
+                            <TableCell sx={{ ...headerStyles, verticalAlign: 'bottom', pb: 1.5 }}>Transaction ID</TableCell>
+                            <TableCell sx={{ ...headerStyles, verticalAlign: 'bottom', pb: 1.5 }}>Date</TableCell>
+                            <TableCell sx={{ ...headerStyles, verticalAlign: 'bottom', pb: 1.5 }}>Receipt No</TableCell>
+                            <TableCell sx={{ ...headerStyles, verticalAlign: 'bottom', pb: 1.5 }}>Tenant / Terminal</TableCell>
+                            <TableCell align="left" sx={{ ...headerStyles, verticalAlign: 'bottom', pb: 1.5 }}>Gross Sales</TableCell>
+                            <TableCell align="left" sx={{ ...headerStyles, verticalAlign: 'bottom', pb: 1.5 }}>Net Sales</TableCell>
+                            <TableCell align="center" sx={{ ...headerStyles, verticalAlign: 'bottom', pb: 1.5 }}>Audit</TableCell>
+                            <TableCell align="center" sx={{ ...headerStyles, verticalAlign: 'bottom', pb: 1.5 }}>Status</TableCell>
+                            <TableCell align="center" sx={{ ...headerStyles, verticalAlign: 'bottom', pb: 1.5 }}>Actions</TableCell>
                         </TableRow>
                     </TableHead>
                     <TableBody>
