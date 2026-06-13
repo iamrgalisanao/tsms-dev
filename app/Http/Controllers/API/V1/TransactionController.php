@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\API\V1;
 
 use App\Http\Controllers\Controller;
+use App\Models\IngestionQuarantine;
 use App\Models\Transaction;
 use App\Models\PosTerminal;
 use Illuminate\Http\Request;
@@ -993,6 +994,8 @@ class TransactionController extends Controller
                     'submission_uuid' => $request->submission_uuid,
                     'terminal_id' => $request->terminal_id,
                 ]);
+                $this->quarantineRejectedPayload($request, $rawPayload, $checksumResults, 'CHECKSUM_VALIDATION_FAILED');
+
                 return response()->json([
                     'success' => false,
                     'message' => 'Invalid payload checksum',
@@ -1474,6 +1477,59 @@ class TransactionController extends Controller
             }
 
             throw $e;
+        }
+    }
+
+    private function quarantineRejectedPayload(Request $request, string $rawPayload, array $checksumResults, string $reason): void
+    {
+        if (! config('ingestion.quarantine.enabled', true)) {
+            return;
+        }
+
+        try {
+            if (! Schema::hasTable('ingestion_quarantine')) {
+                Log::warning('Ingestion quarantine table is unavailable; rejected payload was not captured', [
+                    'submission_uuid' => $request->input('submission_uuid'),
+                    'reason' => $reason,
+                ]);
+                return;
+            }
+
+            $diagnostics = $checksumResults['diagnostics'] ?? [];
+            $computed = data_get($diagnostics, 'v2.1.submission.computed')
+                ?? data_get($diagnostics, 'v2.0.submission.computed');
+            if (! $computed) {
+                $decodedPayload = json_decode($rawPayload, true);
+                if (is_array($decodedPayload)) {
+                    unset($decodedPayload['payload_checksum']);
+                    $computed = (new PayloadChecksumService())->computeChecksum($decodedPayload, 'v2.1');
+                }
+            }
+
+            IngestionQuarantine::create([
+                'submission_uuid' => $request->input('submission_uuid'),
+                'tenant_id' => $request->input('tenant_id'),
+                'terminal_id' => $request->input('terminal_id'),
+                'payload' => $rawPayload,
+                'payload_checksum_received' => $request->input('payload_checksum'),
+                'payload_checksum_computed' => $computed,
+                'status' => IngestionQuarantine::STATUS_NEW,
+                'metadata' => [
+                    'reason' => $reason,
+                    'errors' => $checksumResults['errors'] ?? [],
+                    'checksum_version' => $checksumResults['checksum_version'] ?? null,
+                    'diagnostics' => $diagnostics,
+                    'source_ip' => $request->ip(),
+                    'content_type' => $request->header('Content-Type'),
+                    'captured_at' => now()->toISOString(),
+                ],
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('Failed to quarantine rejected ingestion payload', [
+                'submission_uuid' => $request->input('submission_uuid'),
+                'reason' => $reason,
+                'error' => $e->getMessage(),
+            ]);
         }
     }
 
