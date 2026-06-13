@@ -28,7 +28,11 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'transform.text.format' => \App\Http\Middleware\TransformTextFormat::class,
             'rate.limit' => \App\Http\Middleware\RateLimitMiddleware::class,
+            'api.limit' => \App\Http\Middleware\ApiRateLimiter::class,
             'role' => \Spatie\Permission\Middleware\RoleMiddleware::class,
+            'capture.terminal.ip' => \App\Http\Middleware\CaptureTerminalIp::class,
+            'circuit.breaker' => \App\Http\Middleware\CircuitBreakerMiddleware::class,
+            'ensure.webapp.token' => \App\Http\Middleware\EnsureWebappToken::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {

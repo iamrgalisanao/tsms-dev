@@ -1,6 +1,6 @@
 import axios from 'axios';
 
-const LOGS_BASE = '/transactions/logs';
+const API_BASE = window.config?.api_base || '/api';
 
 export const transactionLogService = {
     /**
@@ -16,7 +16,7 @@ export const transactionLogService = {
             per_page: perPage
         };
 
-        const response = await axios.get(LOGS_BASE, { params });
+        const response = await axios.get(`${API_BASE}/transactions/logs`, { params });
         return response.data;
     },
 
@@ -33,7 +33,7 @@ export const transactionLogService = {
             per_page: perPage
         };
 
-        const response = await axios.get(`${LOGS_BASE}/summary`, { params });
+        const response = await axios.get(`${API_BASE}/transactions/logs/summary`, { params });
         return response.data;
     },
 
@@ -42,7 +42,7 @@ export const transactionLogService = {
      * @param {number} id - Transaction ID
      */
     getTransactionDetails: async (id) => {
-        const response = await axios.get(`${LOGS_BASE}/${id}`);
+        const response = await axios.get(`${API_BASE}/transactions/logs/${id}`);
         return response.data;
     },
 
@@ -51,7 +51,7 @@ export const transactionLogService = {
      * @param {Object} filters - Filter parameters
      */
     getIssuesCount: async (filters = {}) => {
-        const response = await axios.get(`${LOGS_BASE}/issues-count`, { params: filters });
+        const response = await axios.get(`${API_BASE}/transactions/logs/issues-count`, { params: filters });
         return response.data;
     },
 
@@ -60,7 +60,7 @@ export const transactionLogService = {
      * @param {Object} filters - Filter parameters
      */
     exportToExcel: async (filters = {}) => {
-        const response = await axios.get(`${LOGS_BASE}/export`, {
+        const response = await axios.get(`${API_BASE}/transactions/logs/export`, {
             params: filters,
             responseType: 'blob'
         });
@@ -82,7 +82,7 @@ export const transactionLogService = {
      * Get list of terminals for filter dropdown
      */
     getTerminals: async () => {
-        const response = await axios.get(`${LOGS_BASE}/terminals`);
+        const response = await axios.get(`${API_BASE}/terminals`);
         return response.data;
     },
 
@@ -90,7 +90,7 @@ export const transactionLogService = {
      * Get list of tenants for filter dropdown
      */
     getTenants: async () => {
-        const response = await axios.get(`${LOGS_BASE}/tenants`);
+        const response = await axios.get(`${API_BASE}/tenants`);
         return response.data;
     },
 
@@ -98,7 +98,7 @@ export const transactionLogService = {
      * Trigger manual reconciliation
      */
     reconcile: async () => {
-        const response = await axios.post(`${LOGS_BASE}/reconcile`);
+        const response = await axios.post(`${API_BASE}/transactions/logs/reconcile`);
         return response.data;
     }
 };

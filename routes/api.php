@@ -9,17 +9,38 @@ use App\Http\Controllers\API\V1\LogViewerController;
 use App\Http\Controllers\API\V1\RetryHistoryController;
 use App\Http\Controllers\API\V1\TestParserController;
 use App\Http\Controllers\API\V1\TerminalAuthController;
+use App\Http\Controllers\API\V1\ObservabilityController;
 use App\Http\Controllers\TerminalTokenController;
+use App\Http\Controllers\UserController;
 use App\Services\TransactionValidationService;
 use App\Http\Controllers\API\V1\TransactionController as ApiTransactionController;
+use App\Http\Controllers\API\V1\SubmissionEventController;
+use App\Http\Controllers\API\V1\SubmissionEventItemsController;
+use App\Http\Controllers\API\V1\SubmissionStatusController;
+use App\Http\Controllers\API\V1\ProviderActivityMonitoringController;
+use App\Http\Controllers\API\V1\IncidentController;
+use App\Http\Controllers\API\V1\ChecksumSandboxController;
+use App\Http\Middleware\AttachCorrelationId;
 use App\Http\Controllers\McpController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\TenantController;
+use App\Http\Controllers\TenantUserController;
 
 // MCP endpoint for kirschbaum-development/laravel-loop (public, no auth, CSRF-free)
 Route::post('/mcp', [McpController::class, 'handle']);
 
+// Authentication API Routes
+Route::prefix('auth')->group(function () {
+    Route::post('/login', [\App\Http\Controllers\API\Auth\AuthController::class, 'login']);
+    Route::middleware('auth:sanctum')->group(function () {
+        Route::post('/logout', [\App\Http\Controllers\API\Auth\AuthController::class, 'logout']);
+        Route::get('/user', [\App\Http\Controllers\API\Auth\AuthController::class, 'user']);
+    });
+});
+
 /*
 |--------------------------------------------------------------------------
+
 | API Routes
 |--------------------------------------------------------------------------
 |
@@ -29,16 +50,88 @@ Route::post('/mcp', [McpController::class, 'handle']);
 |
 */
 
-// Dashboard API endpoints (for frontend dashboard) - within API middleware
-Route::middleware(['api'])->group(function () {
-    Route::get('dashboard/metrics', [DashboardController::class, 'apiMetrics']);
-    Route::get('dashboard/charts', [DashboardController::class, 'apiCharts']);
-    Route::get('dashboard/transactions', [DashboardController::class, 'apiTransactions']);
-    Route::get('dashboard/audit-logs', [DashboardController::class, 'apiAuditLogs']);
-    Route::get('dashboard/system-health', [DashboardController::class, 'apiSystemHealth']);
-    Route::get('dashboard/terminal-performance', [DashboardController::class, 'apiTerminalPerformance']);
-    Route::get('dashboard/notifications', [DashboardController::class, 'apiNotifications']);
-    Route::post('dashboard/notifications/dismiss', [DashboardController::class, 'dismissNotification']);
+// Dashboard API endpoints (for frontend dashboard) - secured with sanctum and roles
+Route::middleware(['auth:sanctum'])->group(function () {
+    
+    // Admin/Manager/Commercial accessible management
+    Route::middleware(['role:admin|manager|commercial'])->group(function () {
+        Route::get('dashboard/system-health', [DashboardController::class, 'apiSystemHealth']);
+        Route::get('dashboard/audit-logs', [DashboardController::class, 'apiAuditLogs']);
+        Route::post('dashboard/forward-transaction/{id}', [DashboardController::class, 'forwardTransaction']);
+
+        // Terminal Token Management
+        Route::prefix('terminals/tokens')->group(function () {
+            Route::get('/', [TerminalTokenController::class, 'apiIndex']);
+            Route::get('/export', [TerminalTokenController::class, 'export']);
+            Route::post('/{terminalId}/regenerate', [TerminalTokenController::class, 'apiRegenerate']);
+            Route::post('/{terminalId}/revoke', [TerminalTokenController::class, 'apiRevoke']);
+        });
+
+        Route::post('terminals', [TerminalTokenController::class, 'apiStore']);
+        Route::put('terminals/{terminal}/expiry', [TerminalTokenController::class, 'updateExpiry']);
+    });
+
+    // Finance dashboards also consume notifications; include finance role.
+    Route::middleware(['role:admin|manager|commercial|finance'])->group(function () {
+        Route::get('dashboard/notifications', [DashboardController::class, 'apiNotifications']);
+        Route::post('dashboard/notifications/dismiss', [DashboardController::class, 'apiDismissNotification']);
+    });
+
+    // Admin/Manager ONLY (Sensitive administration)
+    Route::middleware(['role:admin|manager'])->group(function () {
+        // User Management API Routes
+        Route::prefix('users')->group(function () {
+            Route::get('/', [UserController::class, 'apiIndex']);
+            Route::get('/roles', [UserController::class, 'apiRoles']);
+            Route::post('/', [UserController::class, 'apiStore']);
+            Route::put('/{user}', [UserController::class, 'apiUpdate']);
+            Route::delete('/{user}', [UserController::class, 'apiDestroy']);
+        });
+
+        // Tenants API
+        Route::post('tenants', [TenantController::class, 'store']);
+        Route::get('tenants/export', [TenantController::class, 'export']);
+        Route::get('tenants/{tenant}', [TenantController::class, 'show']);
+        Route::put('tenants/{tenant}', [TenantController::class, 'update']);
+        Route::delete('tenants/{tenant}', [TenantController::class, 'destroy']);
+
+        // Tenant Users
+        Route::get('tenants/{tenant}/users', [TenantUserController::class, 'index']);
+        Route::post('tenants/{tenant}/users', [TenantUserController::class, 'store']);
+        Route::delete('tenants/{tenant}/users/{user}', [TenantUserController::class, 'destroy']);
+    });
+
+    // Dashboard Data (Authorized roles)
+    Route::middleware(['role:admin|manager|finance|commercial'])->group(function () {
+        // Read-only access to tenants and terminals for filtering
+        Route::get('tenants', [TenantController::class, 'index']);
+        Route::get('terminals', function () {
+            return \App\Models\PosTerminal::with('tenant:id,trade_name')
+                ->get(['id', 'serial_number', 'tenant_id', 'machine_number']);
+        });
+
+        Route::get('dashboard/metrics', [DashboardController::class, 'apiMetrics']);
+        Route::get('dashboard/charts', [DashboardController::class, 'apiCharts']);
+        Route::get('dashboard/transactions', [DashboardController::class, 'apiTransactions']);
+        Route::get('dashboard/terminal-performance', [DashboardController::class, 'apiTerminalPerformance']);
+        Route::get('monitoring/activity/daily-report', [ProviderActivityMonitoringController::class, 'dailyReport'])
+            ->middleware('role:admin|manager');
+        Route::put('monitoring/tenants/{tenant}/config', [ProviderActivityMonitoringController::class, 'updateTenantConfig'])
+            ->middleware('role:admin|manager');
+        Route::put('monitoring/terminals/{terminal}/config', [ProviderActivityMonitoringController::class, 'updateTerminalConfig'])
+            ->middleware('role:admin|manager');
+
+        // Transaction Logs API endpoints
+        Route::prefix('transactions/logs')->group(function () {
+            Route::get('/', [\App\Http\Controllers\TransactionLogController::class, 'index']);
+            Route::get('/summary', [\App\Http\Controllers\TransactionLogController::class, 'summary']);
+            Route::get('/issues-count', [\App\Http\Controllers\TransactionLogController::class, 'issuesCount']);
+            Route::get('/export', [\App\Http\Controllers\TransactionLogController::class, 'export']);
+            Route::post('/reconcile', [\App\Http\Controllers\TransactionLogController::class, 'reconcile'])
+                ->middleware('role:admin|finance|commercial');
+            Route::get('/{id}', [\App\Http\Controllers\TransactionLogController::class, 'show']);
+        });
+    });
 });
 
 // Health check endpoint (public)
@@ -56,38 +149,110 @@ Route::prefix('v1/auth')->group(function () {
 });
 
 // V1 API Routes with Sanctum authentication
-Route::prefix('v1')->middleware(['auth:sanctum', 'capture.terminal.ip'])->group(function () {
+Route::prefix('v1')->middleware(['auth:sanctum', 'capture.terminal.ip', AttachCorrelationId::class])->group(function () {
     // Terminal management endpoints
     Route::post('/auth/refresh', [TerminalAuthController::class, 'refresh']);
     Route::get('/auth/me', [TerminalAuthController::class, 'me']);
     Route::post('/heartbeat', [TerminalAuthController::class, 'heartbeat'])
         ->middleware(['abilities:heartbeat:send', 'throttle:60,1']);
-    
+
     // Transaction endpoints with token abilities
-    Route::middleware('abilities:transaction:create')->group(function () {
+    // Apply custom API rate limiter (uses config/rate-limiting.php default_limits.api)
+    Route::middleware(['abilities:transaction:create', 'api.limit:api'])->group(function () {
         // Legacy basic ingestion endpoint disabled (use /v1/transactions/official)
         // Route::post('/transactions', [TransactionController::class, 'store']);
-        Route::post('/transactions/batch', [TransactionController::class, 'batchStore']);
-        Route::post('/transactions/official', [TransactionController::class, 'storeOfficial']);
-        Route::post('/transactions/{id}/refund', [TransactionController::class, 'refund']);
-        Route::post('/transactions/{transaction_id}/void', [TransactionController::class, 'voidFromPOS']);
+        Route::post('/transactions/batch', [TransactionController::class, 'batchStore'])
+            ->middleware('circuit.breaker:transaction-intake');
+        Route::post('/transactions/official', [TransactionController::class, 'storeOfficial'])
+            ->middleware('circuit.breaker:transaction-intake');
+        Route::post('/transactions/{transaction}/refund', [TransactionController::class, 'refund']);
+        Route::post('/transactions/{transaction}/void', [TransactionController::class, 'voidFromPOS']);
     });
-    
-    Route::middleware('abilities:transaction:read')->group(function () {
-        Route::get('/transactions/{id}/status', [TransactionController::class, 'status']);
+
+    Route::middleware(['abilities:transaction:read', 'api.limit:api'])->group(function () {
+        // Read-only provider testing/support lookup. This route does not mutate intake or processing state.
+        Route::get('/submissions/{submission_uuid}', [SubmissionStatusController::class, 'show'])
+            ->middleware('abilities:provider:testing');
+        Route::get('/transactions/{transaction}/status', [TransactionController::class, 'status']);
+        Route::get('/monitoring/tenants/activity', [ProviderActivityMonitoringController::class, 'tenants'])
+            ->middleware('abilities:provider:testing');
+        Route::get('/monitoring/terminals/activity', [ProviderActivityMonitoringController::class, 'terminals'])
+            ->middleware('abilities:provider:testing');
+        Route::get('/submission-events', [SubmissionEventController::class, 'index']);
+        Route::get('/submission-events/{submission_uuid}/items', [SubmissionEventItemsController::class, 'index']);
+        Route::get('/incidents', [IncidentController::class, 'index']);
+        Route::get('/incidents/{id}', [IncidentController::class, 'show']);
     });
-    
+
     // Terminal Token Management API (requires admin authentication)
     Route::middleware('abilities:admin:manage')->group(function () {
         Route::post('/terminals/{terminalId}/generate-token', [TerminalTokenController::class, 'generateToken']);
         Route::get('/terminals/{terminalId}/tokens', [TerminalTokenController::class, 'listTokens']);
         Route::post('/terminals/generate-all-tokens', [TerminalTokenController::class, 'generateTokensForAllTerminals']);
+
+        // Dead-Letter Queue (DLQ) management — admin only
+        Route::prefix('admin/failed-jobs')->group(function () {
+            Route::get('/',             [\App\Http\Controllers\API\V1\FailedJobController::class, 'index']);
+            Route::get('/stats',        [\App\Http\Controllers\API\V1\FailedJobController::class, 'stats']);
+            Route::get('/{uuid}',       [\App\Http\Controllers\API\V1\FailedJobController::class, 'show']);
+            Route::post('/retry-all',   [\App\Http\Controllers\API\V1\FailedJobController::class, 'retryAll']);
+            Route::post('/{uuid}/retry',[\App\Http\Controllers\API\V1\FailedJobController::class, 'retry']);
+            Route::delete('/{uuid}',    [\App\Http\Controllers\API\V1\FailedJobController::class, 'flush']);
+        });
+
+        // Observability Metrics
+        Route::prefix('observability')->group(function () {
+            Route::get('/intake',          [\App\Http\Controllers\API\V1\ObservabilityController::class, 'index']);
+            Route::get('/intake/history',  [\App\Http\Controllers\API\V1\ObservabilityController::class, 'history']);
+            Route::get('/intake/tenants',  [\App\Http\Controllers\API\V1\ObservabilityController::class, 'tenants']);
+            Route::get('/intake/recent',   [\App\Http\Controllers\API\V1\ObservabilityController::class, 'recent']);
+        });
     });
 
     // Token introspection (any authenticated token may introspect itself)
     Route::get('/tokens/introspect', [TerminalTokenController::class, 'introspectToken'])
         ->middleware('throttle:30,1');
 });
+
+// Public POS provider payload validator. This is rate-limited and diagnostic
+// only; it does not persist or submit transactions.
+Route::prefix('v1')->middleware(['throttle:30,1'])->group(function () {
+    Route::post('/sandbox/payload/validate', [ChecksumSandboxController::class, 'validatePayload']);
+});
+
+// Checksum sandbox utility (tenant-authenticated; rate-limited)
+Route::prefix('v1')->middleware(['auth:sanctum', 'throttle:30,1'])->group(function () {
+    Route::post('/checksum/sandbox', [ChecksumSandboxController::class, 'compute']);
+});
+
+// Machine-to-machine read-only webapp API (directly registered here for test/dev)
+Route::prefix('v1/webapp')->middleware(['auth:sanctum', 'ensure.webapp.token', 'throttle:webapp'])->group(function () {
+    Route::get('/transactions', [\App\Http\Controllers\API\Webapp\TransactionController::class, 'index']);
+    Route::get('/transactions/count', [\App\Http\Controllers\API\Webapp\TransactionController::class, 'count']);
+    Route::get('/transactions/{id}', [\App\Http\Controllers\API\Webapp\TransactionController::class, 'show']);
+    // Hourly transactions contract endpoint
+    Route::get('/transactions/hourly', [\App\Http\Controllers\API\Webapp\HourlyTransactionsController::class, 'index']);
+    // Reporting endpoints (summary/aggregates for the Webapp)
+    Route::get('/reports/sales', [\App\Http\Controllers\API\Webapp\ReportsController::class, 'sales']);
+    Route::get('/reports/sales/drilldown', [\App\Http\Controllers\API\Webapp\ReportsController::class, 'drilldown']);
+    Route::get('/reports/summary', [\App\Http\Controllers\API\Webapp\ReportsController::class, 'summary']);
+});
+
+// Also register explicit full-path routes so they are discoverable without relying on prefix grouping
+Route::get('/v1/webapp/transactions', [\App\Http\Controllers\API\Webapp\TransactionController::class, 'index'])
+    ->middleware(['auth:sanctum', 'ensure.webapp.token', 'throttle:webapp']);
+Route::get('/v1/webapp/transactions/count', [\App\Http\Controllers\API\Webapp\TransactionController::class, 'count'])
+    ->middleware(['auth:sanctum', 'ensure.webapp.token', 'throttle:webapp']);
+Route::get('/v1/webapp/transactions/{id}', [\App\Http\Controllers\API\Webapp\TransactionController::class, 'show'])
+    ->middleware(['auth:sanctum', 'ensure.webapp.token', 'throttle:webapp']);
+
+// Explicit reporting routes for discovery
+Route::get('/v1/webapp/reports/sales', [\App\Http\Controllers\API\Webapp\ReportsController::class, 'sales'])
+    ->middleware(['auth:sanctum', 'ensure.webapp.token', 'throttle:webapp']);
+Route::get('/v1/webapp/reports/sales/drilldown', [\App\Http\Controllers\API\Webapp\ReportsController::class, 'drilldown'])
+    ->middleware(['auth:sanctum', 'ensure.webapp.token', 'throttle:webapp']);
+Route::get('/v1/webapp/reports/summary', [\App\Http\Controllers\API\Webapp\ReportsController::class, 'summary'])
+    ->middleware(['auth:sanctum', 'ensure.webapp.token', 'throttle:webapp']);
 
 // Legacy V1 API Routes with rate limiting (for backward compatibility)
 // Disabled by default. Enable temporarily via TSMS_ENABLE_LEGACY_API=true if you must
@@ -116,10 +281,10 @@ Route::middleware('api')->group(function () {
 Route::post('/v1/test-parser', function (Request $request) {
     $service = app(TransactionValidationService::class);
     $rawContent = $request->getContent();
-    
+
     // Parse the raw content
     $result = $service->parseTextFormat($rawContent);
-    
+
     return response()->json($result, 200, [], JSON_UNESCAPED_SLASHES);
 })->middleware('api');
 
@@ -134,7 +299,7 @@ Route::prefix('web')->group(function () {
 // V1 Retry History API Routes
 Route::middleware(['api'])->prefix('v1')->group(function () {
     // Special routes with fixed paths first (before any route with parameters)
-    Route::get('/retry-history/debug', function() {
+    Route::get('/retry-history/debug', function () {
         return response()->json([
             'transaction_count' => DB::table('transactions')->count(),
             'retry_count' => DB::table('transactions')->where('job_attempts', '>', 0)->count(),
@@ -146,12 +311,12 @@ Route::middleware(['api'])->prefix('v1')->group(function () {
     });
     Route::get('/retry-history/emergency-data', [RetryHistoryController::class, 'createEmergencyData']);
     Route::post('/retry-history/seed', [RetryHistoryController::class, 'seedData']);
-    Route::post('/retry-history/force-seed', function() {
+    Route::post('/retry-history/force-seed', function () {
         try {
             // Find or create tenant
             $tenant = DB::table('tenants')->first();
             $tenantId = $tenant ? $tenant->id : 'default-tenant';
-            
+
             if (!$tenant) {
                 // Create a tenant if none exists
                 $tenantId = 'tenant-' . uniqid();
@@ -163,11 +328,11 @@ Route::middleware(['api'])->prefix('v1')->group(function () {
                     'updated_at' => now()
                 ]);
             }
-            
+
             // Find or create terminal
             $terminal = DB::table('pos_terminals')->first();
             $terminalId = $terminal ? $terminal->id : 'default-terminal';
-            
+
             if (!$terminal) {
                 // Create a terminal if none exists
                 $terminalId = 'term-' . uniqid();
@@ -181,16 +346,16 @@ Route::middleware(['api'])->prefix('v1')->group(function () {
                     'updated_at' => now()
                 ]);
             }
-            
+
             $count = 0;
-            
+
             // Insert 5 sample retry transactions directly using DB facade to avoid validation service issues
             $statuses = ['FAILED', 'COMPLETED', 'PROCESSING'];
-            
+
             for ($i = 1; $i <= 5; $i++) {
                 $txId = 'DEMO-' . uniqid();
                 $status = $statuses[array_rand($statuses)];
-                
+
                 try {
                     DB::table('transactions')->insert([
                         'tenant_id' => $tenantId,
@@ -208,7 +373,7 @@ Route::middleware(['api'])->prefix('v1')->group(function () {
                         'created_at' => now(),
                         'updated_at' => now()
                     ]);
-                    
+
                     $count++;
                 } catch (\Exception $innerEx) {
                     Log::error('Failed to insert demo transaction', [
@@ -218,7 +383,7 @@ Route::middleware(['api'])->prefix('v1')->group(function () {
                     // Continue to next record on error
                 }
             }
-            
+
             return response()->json([
                 'status' => 'success',
                 'message' => "Created $count transactions successfully",
@@ -228,9 +393,9 @@ Route::middleware(['api'])->prefix('v1')->group(function () {
             ]);
         } catch (\Throwable $e) {
             Log::error('Force seed failed', ['error' => $e->getMessage()]);
-            
+
             return response()->json([
-                'status' => 'error', 
+                'status' => 'error',
                 'message' => 'Error: ' . $e->getMessage(),
                 'file' => $e->getFile(),
                 'line' => $e->getLine(),
@@ -238,7 +403,7 @@ Route::middleware(['api'])->prefix('v1')->group(function () {
             ], 200); // Return 200 so we can see the actual error
         }
     });
-    
+
     // Now regular routes with parameters
     Route::get('/retry-history', [RetryHistoryController::class, 'index']);
     Route::post('/retry-history/{id}/retry', [RetryHistoryController::class, 'retry'])
@@ -248,7 +413,7 @@ Route::middleware(['api'])->prefix('v1')->group(function () {
 });
 
 // API endpoint for recent test transactions
-Route::get('/v1/recent-test-transactions', function() {
+Route::get('/v1/recent-test-transactions', function () {
     try {
         $transactions = DB::table('transactions')
             ->join('pos_terminals', 'transactions.terminal_id', '=', 'pos_terminals.id')
@@ -260,14 +425,14 @@ Route::get('/v1/recent-test-transactions', function() {
                 'transactions.validation_status',
                 'transactions.created_at'
             )
-            ->where(function($query) {
+            ->where(function ($query) {
                 $query->where('transactions.transaction_id', 'like', 'TEST-%')
-                      ->orWhere('transactions.transaction_id', 'like', 'DEMO-%');
+                    ->orWhere('transactions.transaction_id', 'like', 'DEMO-%');
             })
             ->orderBy('transactions.created_at', 'desc')
             ->limit(10)
             ->get();
-        
+
         return response()->json([
             'status' => 'success',
             'data' => $transactions
@@ -277,7 +442,7 @@ Route::get('/v1/recent-test-transactions', function() {
             'error' => $e->getMessage(),
             'trace' => $e->getTraceAsString()
         ]);
-        
+
         return response()->json([
             'status' => 'error',
             'message' => 'Failed to load recent transactions: ' . $e->getMessage()
@@ -286,7 +451,7 @@ Route::get('/v1/recent-test-transactions', function() {
 });
 
 // Add a simplified diagnostics endpoint that won't fail
-Route::get('/v1/retry-history/simple-status', function() {
+Route::get('/v1/retry-history/simple-status', function () {
     return response()->json([
         'status' => 'success',
         'message' => 'API is responding',
@@ -295,7 +460,7 @@ Route::get('/v1/retry-history/simple-status', function() {
 });
 
 // Move the diagnostics endpoint outside of any middleware to simplify it
-Route::get('/v1/retry-history/diagnostics', function() {
+Route::get('/v1/retry-history/diagnostics', function () {
     return response()->json([
         'status' => 'success',
         'data' => [
@@ -308,7 +473,7 @@ Route::get('/v1/retry-history/diagnostics', function() {
 });
 
 // Add a direct test endpoint at the top level (outside any middleware)
-Route::get('/api-test', function() {
+Route::get('/api-test', function () {
     return response()->json([
         'status' => 'success',
         'message' => 'API is responding correctly',
@@ -317,12 +482,12 @@ Route::get('/api-test', function() {
 });
 
 // Direct database endpoint bypassing controller entirely
-Route::get('/retry-check', function() {
+Route::get('/retry-check', function () {
     try {
         // Simple DB query with minimal dependencies
         $result = DB::select('SELECT COUNT(*) AS count FROM transactions WHERE job_attempts > 0');
         $count = $result[0]->count;
-        
+
         return response()->json([
             'status' => 'success',
             'retry_count' => $count,
@@ -337,22 +502,22 @@ Route::get('/retry-check', function() {
 });
 
 // Very simple status endpoint with minimal code
-Route::get('/system-status', function() {
+Route::get('/system-status', function () {
     return response()->json(['status' => 'online']);
 });
 
 // API endpoint for transaction details (for cloning)
-Route::get('/v1/transactions/{id}/details', function($id) {
+Route::get('/v1/transactions/{id}/details', function ($id) {
     try {
         $transaction = DB::table('transactions')->where('id', $id)->first();
-        
+
         if (!$transaction) {
             return response()->json([
                 'status' => 'error',
                 'message' => 'Transaction not found'
             ], 404);
         }
-        
+
         return response()->json([
             'status' => 'success',
             'data' => $transaction
@@ -376,7 +541,63 @@ Route::get('v1/transaction-id-exists', function (Illuminate\Http\Request $reques
 });
 
 Route::post('/transactions/bulk', [ApiTransactionController::class, 'bulk'])
-     ->name('api.transactions.bulk');
+    ->name('api.transactions.bulk');
 
 // Void transaction endpoint (API v1) - DEPRECATED: Use v1 route above instead
 // Route::post('api/v1/transactions/{transaction_id}/void', [\App\Http\Controllers\API\V1\TransactionController::class, 'void']);
+
+// Register the new endpoint for receiving voided transactions in the webapp
+// Route::post('/transactions/void', [\App\Http\Controllers\Api\VoidTransactionController::class, 'receive']);
+
+// Test WebApp receiver endpoint for TSMS forwarding
+Route::post('/transactions/bulk', function (Request $request) {
+    // Log the incoming request
+    $timestamp = now()->toISOString();
+    $data = $request->all();
+
+    Log::info('WebApp Test Receiver: Transaction batch received', [
+        'timestamp' => $timestamp,
+        'batch_id' => $data['batch_id'] ?? 'unknown',
+        'transaction_count' => $data['transaction_count'] ?? 0,
+        'source' => $data['source'] ?? 'unknown',
+        'client_ip' => $request->ip(),
+    ]);
+
+    // Validate required fields
+    $requiredFields = ['source', 'batch_id', 'timestamp', 'transaction_count', 'transactions'];
+    foreach ($requiredFields as $field) {
+        if (!isset($data[$field])) {
+            Log::warning('WebApp Test Receiver: Missing required field', [
+                'field' => $field,
+                'batch_id' => $data['batch_id'] ?? null
+            ]);
+
+            return response()->json([
+                'status' => 'error',
+                'error_code' => 'MISSING_FIELD',
+                'message' => "Missing required field: {$field}",
+                'batch_id' => $data['batch_id'] ?? null
+            ], 400);
+        }
+    }
+
+    // Simulate successful processing
+    Log::info('WebApp Test Receiver: Transaction batch processed successfully', [
+        'batch_id' => $data['batch_id'],
+        'transaction_count' => $data['transaction_count'],
+        'transactions_processed' => count($data['transactions'] ?? [])
+    ]);
+
+    return response()->json([
+        'status' => 'success',
+        'message' => 'Transaction batch received and processed successfully',
+        'batch_id' => $data['batch_id'],
+        'transaction_count' => $data['transaction_count'],
+        'processed_at' => $timestamp
+    ]);
+})->name('webapp.test-receiver');
+
+// Include machine-to-machine read-only webapp API routes if present
+if (file_exists(base_path('routes/webapp_api.php'))) {
+    require base_path('routes/webapp_api.php');
+}

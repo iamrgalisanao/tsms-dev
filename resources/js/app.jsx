@@ -55,14 +55,7 @@ const App = () => {
 
                     {/* Any Authenticated User */}
                     <Route path="/dashboard" element={<DashboardPage />} />
-                    <Route
-                      path="/transactions"
-                      element={
-                        <ProtectedRoute roles={['admin', 'manager', 'finance', 'commercial']}>
-                          <TransactionLogsPage />
-                        </ProtectedRoute>
-                      }
-                    />
+                    <Route path="/transactions" element={<TransactionLogsPage />} />
                     
                     {/* Admin / Manager / Commercial */}
                     <Route 

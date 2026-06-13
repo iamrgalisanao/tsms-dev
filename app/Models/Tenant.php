@@ -11,6 +11,13 @@ class Tenant extends Model
 {
     use HasApiTokens, HasFactory, SoftDeletes;
 
+    /**
+     * Get the users associated with the tenant.
+     */
+    public function users()
+    {
+        return $this->hasMany(User::class);
+    }
 
     /**
      * Get the POS terminals for the tenant.
@@ -19,7 +26,6 @@ class Tenant extends Model
     {
         return $this->hasMany(PosTerminal::class);
     }
-    use HasApiTokens, HasFactory, SoftDeletes;
 
     protected $fillable = [
         'company_id',
@@ -30,8 +36,40 @@ class Tenant extends Model
         'unit_no',
         'floor_area',
         'status',
+        'accept_with_issues',
+        'activity_monitoring_enabled',
+        'activity_threshold_minutes',
+        'activity_monitoring_notes',
+        'activity_suppressed_until',
+        'activity_suppression_reason',
+        'activity_suppressed_by',
+        'activity_suppressed_at',
         'category',
         'zone',
+        'uuid',
+    ];
+
+    protected static function boot()
+    {
+        parent::boot();
+        static::creating(function ($model) {
+            if (empty($model->uuid)) {
+                $model->uuid = (string) \Illuminate\Support\Str::uuid();
+            }
+        });
+    }
+
+    public function getRouteKeyName(): string
+    {
+        return 'uuid';
+    }
+
+    protected $casts = [
+        'accept_with_issues' => 'boolean',
+        'activity_monitoring_enabled' => 'boolean',
+        'activity_threshold_minutes' => 'integer',
+        'activity_suppressed_until' => 'datetime',
+        'activity_suppressed_at' => 'datetime',
     ];
 
 

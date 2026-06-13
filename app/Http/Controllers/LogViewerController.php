@@ -9,6 +9,7 @@ use App\Models\PosTerminal;
 use App\Services\SystemLogService;
 use App\Services\LogExportService;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class LogViewerController extends Controller
 {
@@ -165,6 +166,11 @@ class LogViewerController extends Controller
             ->latest()
             ->paginate(15);
 
+        // Preload a small page of submission events for initial render
+        $submissionEvents = \App\Models\SubmissionEvent::latest('occurred_at')
+            ->latest('created_at')
+            ->paginate(15);
+
         $stats = $this->logService->getEnhancedStats();
         
         // Add audit-specific stats
@@ -178,7 +184,7 @@ class LogViewerController extends Controller
             'system_events' => \App\Models\AuditLog::where('action_type', 'SYSTEM')->count(),
         ];
 
-    return view('logs.index', compact('auditLogs', 'webhookLogs', 'stats', 'auditStats'));
+    return view('logs.index', compact('auditLogs', 'webhookLogs', 'stats', 'auditStats', 'submissionEvents'));
     }
 
     public function getFilteredLogs(Request $request)
@@ -189,8 +195,9 @@ class LogViewerController extends Controller
         // Inputs (advanced filters removed; keep basic search)
         $search = trim((string) $request->input('search')) ?: null;
 
-        $auditHtml = '';
-        $webhookHtml = '';
+    $auditHtml = '';
+    $webhookHtml = '';
+    $submissionHtml = '';
 
         if ($tab === 'webhook') {
             // Basic webhook filtering (extend as needed)
@@ -201,6 +208,9 @@ class LogViewerController extends Controller
 
             $webhookLogs = $webhookQuery->limit(100)->get();
             $webhookHtml = view('logs.partials.webhook-table', compact('webhookLogs'))->render();
+        } elseif ($tab === 'submission') {
+            // Render the Submission Events tab shell; data loads via dedicated JSON endpoint with filters/pagination
+            $submissionHtml = view('logs.partials.submission-events-table')->render();
         } else {
             // Audit Trail filtering
             $auditQuery = \App\Models\AuditLog::with(['user'])
@@ -308,7 +318,8 @@ class LogViewerController extends Controller
         return response()->json([
             'auditHtml' => $auditHtml,
             'webhookHtml' => $webhookHtml,
-            'isEmpty' => empty($auditHtml) && empty($webhookHtml),
+            'submissionHtml' => $submissionHtml,
+            'isEmpty' => empty($auditHtml) && empty($webhookHtml) && empty($submissionHtml),
         ]);
     }
 
@@ -467,5 +478,112 @@ public function getAuditContext($id)
     public function export(Request $request, string $format = 'csv')
     {
         return $this->exportService->export($format, $request->all());
+    }
+
+    /**
+     * Return submission event items for a submission UUID (web-authenticated).
+     */
+    public function submissionItems(string $submission_uuid)
+    {
+        try {
+            $event = \App\Models\SubmissionEvent::where('submission_uuid', $submission_uuid)
+                ->latest('occurred_at')
+                ->latest('created_at')
+                ->first();
+            $items = \App\Models\SubmissionEventItem::where('submission_uuid', $submission_uuid)
+                ->latest('occurred_at')
+                ->latest('created_at')
+                ->limit(500)
+                ->get();
+            return response()->json([
+                'submission_uuid' => $submission_uuid,
+                'count' => $items->count(),
+                'items' => $items,
+                'event' => $event,
+            ]);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'error' => 'Failed to load submission items',
+                'message' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    /**
+     * Server-side fetch for Submission Events with filters and pagination.
+     */
+    public function submissionEventsData(Request $request)
+    {
+        try {
+            $tenantId = $request->integer('tenant_id');
+            $terminalId = $request->integer('terminal_id');
+            $status = $request->string('status')->toString();
+            $dateFrom = $request->input('date_from');
+            $dateTo = $request->input('date_to');
+            $search = trim((string) $request->input('search')) ?: null;
+            $page = max(1, (int) $request->input('page', 1));
+            $perPage = min(100, max(5, (int) $request->input('per_page', 15)));
+
+            $query = \App\Models\SubmissionEvent::query()
+                ->when($tenantId, fn($q) => $q->where('tenant_id', $tenantId))
+                ->when($terminalId, fn($q) => $q->where('terminal_id', $terminalId))
+                ->when($status, fn($q) => $q->where('status', strtoupper($status)))
+                ->when($dateFrom, fn($q) => $q->whereDate('occurred_at', '>=', $dateFrom))
+                ->when($dateTo, fn($q) => $q->whereDate('occurred_at', '<=', $dateTo))
+                ->when($search, function($q) use ($search) {
+                    $q->where(function($qq) use ($search) {
+                        $qq->where('submission_uuid', 'like', "%$search%")
+                           ->orWhere('status', 'like', "%$search%")
+                           ->orWhere('reason_code', 'like', "%$search%")
+                           ->orWhere('tenant_id', (int) $search ?: 0)
+                           ->orWhere('terminal_id', (int) $search ?: 0);
+                    });
+                })
+                ->latest('occurred_at')
+                ->latest('created_at');
+
+            $paginator = $query->paginate($perPage, ['*'], 'page', $page);
+            $events = $paginator->items();
+
+            // Summary counts for the current filter window (last 24h if no date filter)
+            $summaryBase = \App\Models\SubmissionEvent::query()
+                ->when($tenantId, fn($q) => $q->where('tenant_id', $tenantId))
+                ->when($terminalId, fn($q) => $q->where('terminal_id', $terminalId))
+                ->when($dateFrom, fn($q) => $q->whereDate('occurred_at', '>=', $dateFrom))
+                ->when($dateTo, fn($q) => $q->whereDate('occurred_at', '<=', $dateTo));
+            if (!$dateFrom && !$dateTo) {
+                $summaryBase->where('occurred_at', '>=', now()->subDay());
+            }
+
+            $summary = [
+                'total' => (clone $summaryBase)->count(),
+                'received' => (clone $summaryBase)->where('status', 'RECEIVED')->count(),
+                'completed' => (clone $summaryBase)->where('status', 'COMPLETED')->count(),
+                'rejected' => (clone $summaryBase)->where('status', 'REJECTED')->count(),
+            ];
+
+            // Provide tenant options (limited) for UI filters
+            $tenantOptions = Tenant::orderBy('trade_name')->limit(200)->get(['id','trade_name']);
+
+            return response()->json([
+                'data' => $events,
+                'pagination' => [
+                    'current_page' => $paginator->currentPage(),
+                    'per_page' => $paginator->perPage(),
+                    'total' => $paginator->total(),
+                    'last_page' => $paginator->lastPage(),
+                ],
+                'summary' => $summary,
+                'options' => [
+                    'tenants' => $tenantOptions,
+                    'statuses' => ['RECEIVED','COMPLETED','REJECTED'],
+                ],
+            ]);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'error' => 'Failed to load submission events',
+                'message' => $e->getMessage(),
+            ], 500);
+        }
     }
 }

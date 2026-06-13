@@ -4,13 +4,16 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use App\Traits\BelongsToTenant;
 use Illuminate\Contracts\Auth\Authenticatable;
 use Illuminate\Auth\Authenticatable as AuthenticatableTrait;
+use Illuminate\Contracts\Auth\Access\Authorizable;
+use Illuminate\Foundation\Auth\Access\Authorizable as AuthorizableTrait;
 use Laravel\Sanctum\HasApiTokens;
 
-class PosTerminal extends Model implements Authenticatable
+class PosTerminal extends Model implements Authenticatable, Authorizable
 {
-    use HasFactory, AuthenticatableTrait, HasApiTokens;
+    use HasFactory, AuthenticatableTrait, AuthorizableTrait, HasApiTokens, BelongsToTenant;
 
     protected $fillable = [
         'tenant_id',
@@ -27,6 +30,13 @@ class PosTerminal extends Model implements Authenticatable
 	'last_sale_at',
     'last_ip_at',
         'heartbeat_threshold',
+        'activity_monitoring_enabled',
+        'activity_threshold_minutes',
+        'activity_monitoring_notes',
+        'activity_suppressed_until',
+        'activity_suppression_reason',
+        'activity_suppressed_by',
+        'activity_suppressed_at',
         'expires_at',
         'callback_url',
         'notification_preferences',
@@ -40,6 +50,10 @@ class PosTerminal extends Model implements Authenticatable
         'notifications_enabled' => 'boolean',
         'notification_preferences' => 'array',
         'is_active' => 'boolean',
+        'activity_monitoring_enabled' => 'boolean',
+        'activity_threshold_minutes' => 'integer',
+        'activity_suppressed_until' => 'datetime',
+        'activity_suppressed_at' => 'datetime',
         'created_at' => 'datetime',
         'updated_at' => 'datetime',
         'expires_at' => 'datetime',
@@ -92,11 +106,7 @@ class PosTerminal extends Model implements Authenticatable
                (!$this->expires_at || $this->expires_at->isFuture());
     }
 
-    // Relationships
-    public function tenant()
-    {
-        return $this->belongsTo(Tenant::class);
-    }
+    // Relational definitions moved to BelongsToTenant trait
 
     public function provider()
     {
