@@ -1,0 +1,489 @@
+openapi: 3.0.3
+info:
+  title: TSMS POS Provider API
+  version: 2026-06-13
+  description: >
+    Provider-facing API contract for terminal authentication, heartbeat,
+    official transaction ingestion, status lookup, monitoring, and payload
+    sandbox validation. Production POS endpoints are rate-limited by terminal
+    and tenant identity. When a request receives HTTP 429, retry only after the
+    Retry-After duration and keep the same submission_uuid for the same payload.
+servers:
+  - url: https://stagingtsms.pitx.com.ph/api/v1
+    description: Staging
+  - url: https://tsms.pitx.com.ph/api/v1
+    description: Production
+tags:
+  - name: Authentication
+  - name: Ingestion
+  - name: Status
+  - name: Monitoring
+  - name: Sandbox
+paths:
+  /auth/terminal:
+    post:
+      tags: [Authentication]
+      summary: Authenticate terminal
+      description: >
+        Exchanges terminal credentials for a Sanctum bearer token. This endpoint
+        is rate-limited by source IP and terminal hardware identity.
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TerminalAuthRequest'
+      responses:
+        '200':
+          description: Terminal authenticated.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TerminalAuthResponse'
+        '401':
+          description: Invalid terminal credentials.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /heartbeat:
+    post:
+      tags: [Authentication]
+      summary: Send terminal heartbeat
+      description: Updates terminal liveness. Rate-limited per authenticated terminal and tenant.
+      security:
+        - bearerAuth: ['heartbeat:send']
+      responses:
+        '200':
+          description: Heartbeat accepted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HeartbeatResponse'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /transactions/official:
+    post:
+      tags: [Ingestion]
+      summary: Submit official TSMS transaction payload
+      description: >
+        Accepts a single official transaction when transaction_count is 1, or a
+        batch when transaction_count is greater than 1. Checksums are validated
+        before records are persisted and jobs are dispatched. Rate-limited per
+        authenticated terminal and tenant, not by shared public IP.
+      security:
+        - bearerAuth: ['transaction:create']
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OfficialSubmission'
+      responses:
+        '200':
+          description: Submission accepted, processed idempotently, or queued.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OfficialSubmissionResponse'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          description: Same submission_uuid already exists with different payload characteristics.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubmissionConflictResponse'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /transactions/batch:
+    post:
+      tags: [Ingestion]
+      summary: Submit legacy batch payload
+      description: Legacy batch ingestion endpoint. New providers should prefer /transactions/official.
+      security:
+        - bearerAuth: ['transaction:create']
+      responses:
+        '200':
+          description: Batch accepted.
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /submissions/{submission_uuid}:
+    get:
+      tags: [Status]
+      summary: Look up submission status
+      description: Read-only provider testing/support lookup. Rate-limited per authenticated terminal and tenant.
+      security:
+        - bearerAuth: ['transaction:read', 'provider:testing']
+      parameters:
+        - in: path
+          name: submission_uuid
+          required: true
+          description: Submission UUID returned by the provider payload.
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Submission status found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubmissionStatusResponse'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: Submission not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /transactions/{transaction}/status:
+    get:
+      tags: [Status]
+      summary: Look up transaction status
+      description: Returns processing status for a submitted transaction. Rate-limited per authenticated terminal and tenant.
+      security:
+        - bearerAuth: ['transaction:read']
+      parameters:
+        - in: path
+          name: transaction
+          required: true
+          description: Transaction UUID or database identifier accepted by TSMS.
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Transaction status found.
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: Transaction not found.
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /monitoring/tenants/activity:
+    get:
+      tags: [Monitoring]
+      summary: List tenant activity monitoring rows
+      description: Provider testing endpoint for daily tenant activity visibility.
+      security:
+        - bearerAuth: ['transaction:read', 'provider:testing']
+      parameters:
+        - in: query
+          name: threshold_minutes
+          required: false
+          description: Override inactivity threshold for the lookup.
+          schema:
+            type: integer
+            default: 1440
+      responses:
+        '200':
+          description: Tenant activity rows.
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /monitoring/terminals/activity:
+    get:
+      tags: [Monitoring]
+      summary: List terminal activity monitoring rows
+      description: Provider testing endpoint for daily terminal activity visibility.
+      security:
+        - bearerAuth: ['transaction:read', 'provider:testing']
+      parameters:
+        - in: query
+          name: threshold_minutes
+          required: false
+          description: Override inactivity threshold for the lookup.
+          schema:
+            type: integer
+            default: 1440
+      responses:
+        '200':
+          description: Terminal activity rows.
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /sandbox/payload/validate:
+    post:
+      tags: [Sandbox]
+      summary: Validate payload without ingestion
+      description: Public diagnostic endpoint. Does not persist or submit transactions.
+      security: []
+      parameters:
+        - in: query
+          name: include_debug
+          required: false
+          description: Include canonical JSON debug strings used for checksum computation.
+          schema:
+            type: boolean
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '200':
+          description: Validation report.
+        '413':
+          description: Payload too large.
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: Sanctum
+  responses:
+    Unauthenticated:
+      description: Missing, expired, or invalid bearer token.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Forbidden:
+      description: Token does not have the required ability or terminal is inactive.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    ValidationError:
+      description: Payload validation failed.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ValidationErrorResponse'
+    RateLimited:
+      description: >
+        Too many requests for the current limiter scope. POS ingestion limits
+        are evaluated per authenticated terminal and tenant. Retry only after
+        the Retry-After header duration.
+      headers:
+        Retry-After:
+          description: Seconds to wait before retrying this request.
+          schema:
+            type: integer
+            example: 42
+        X-RateLimit-Limit:
+          description: Maximum requests allowed in the current window.
+          schema:
+            type: integer
+            example: 120
+        X-RateLimit-Remaining:
+          description: Requests remaining in the current window.
+          schema:
+            type: integer
+            example: 0
+        X-RateLimit-Reset:
+          description: Unix timestamp when the current window resets.
+          schema:
+            type: integer
+            example: 1781348292
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/RateLimitResponse'
+  schemas:
+    TerminalAuthRequest:
+      type: object
+      required: [serial_number, api_key]
+      properties:
+        serial_number:
+          type: string
+          description: Registered terminal serial number.
+        api_key:
+          type: string
+          description: Terminal API key issued by TSMS.
+    TerminalAuthResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+    HeartbeatResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+    OfficialSubmission:
+      type: object
+      required: [submission_uuid, tenant_id, terminal_id, submission_timestamp, transaction_count, payload_checksum]
+      properties:
+        submission_uuid:
+          type: string
+          format: uuid
+        tenant_id:
+          type: integer
+        terminal_id:
+          type: integer
+        submission_timestamp:
+          type: string
+          format: date-time
+          description: UTC timestamp formatted as YYYY-MM-DDTHH:mm:ssZ.
+        transaction_count:
+          type: integer
+          minimum: 1
+        payload_checksum:
+          type: string
+          minLength: 64
+          maxLength: 64
+          description: SHA-256 checksum for the submission payload.
+        transaction:
+          $ref: '#/components/schemas/OfficialTransaction'
+        transactions:
+          type: array
+          items:
+            $ref: '#/components/schemas/OfficialTransaction'
+    OfficialTransaction:
+      type: object
+      required: [transaction_id, receipt_no, transaction_timestamp, gross_sales, net_sales, promo_status, customer_code, payload_checksum, adjustments, taxes]
+      properties:
+        transaction_id:
+          type: string
+          format: uuid
+        receipt_no:
+          type: string
+          description: Required receipt number. Must pass TSMS strict receipt format validation.
+        transaction_timestamp:
+          type: string
+          format: date-time
+          description: UTC timestamp formatted as YYYY-MM-DDTHH:mm:ssZ.
+        gross_sales:
+          type: number
+          format: decimal
+        net_sales:
+          type: number
+          format: decimal
+        promo_status:
+          type: string
+        customer_code:
+          type: string
+        payload_checksum:
+          type: string
+          minLength: 64
+          maxLength: 64
+        adjustments:
+          type: array
+          minItems: 7
+          items:
+            $ref: '#/components/schemas/Adjustment'
+        taxes:
+          type: array
+          minItems: 4
+          items:
+            $ref: '#/components/schemas/Tax'
+    Adjustment:
+      type: object
+      required: [adjustment_type, amount]
+      properties:
+        adjustment_type:
+          type: string
+        amount:
+          type: number
+          format: decimal
+    Tax:
+      type: object
+      required: [tax_type, amount]
+      properties:
+        tax_type:
+          type: string
+        amount:
+          type: number
+          format: decimal
+    OfficialSubmissionResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+        data:
+          type: object
+    SubmissionStatusResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object
+    SubmissionConflictResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+        conflict:
+          type: object
+    RateLimitResponse:
+      type: object
+      required: [success, message, retry_after]
+      properties:
+        success:
+          type: boolean
+          example: false
+        message:
+          type: string
+          example: Too many requests.
+        retry_after:
+          type: integer
+          description: Seconds to wait before retrying.
+          example: 42
+    ValidationErrorResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: false
+        message:
+          type: string
+        errors:
+          type: object
+    ErrorResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+        error_code:
+          type: string

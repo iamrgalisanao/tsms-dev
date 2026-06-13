@@ -98,7 +98,7 @@ If already voided you receive code `already_voided`.
 - Retry safely: reuse idempotency key only with identical body.
 - Keep logs of your `transaction_id` and `submission_uuid`.
 - Use `/api/v1/tokens/introspect` to verify an access token.
-- Respect `Retry-After` when rate limited.
+- Respect `Retry-After` when rate limited. For HTTP `429`, wait the requested seconds and retry the same payload with the same `submission_uuid`.
 
 ## 11. When To Ask For Help
 - Constant `invalid_token` right after re-auth.
@@ -116,6 +116,7 @@ Actions include: copy token, revoke, regenerate.
 | 401 invalid_token | Wrong / truncated token | Re-authenticate |
 | 422 checksum_failed | Hash not over exact JSON | Recompute after final serialization |
 | 409 idempotency_key_payload_mismatch | Body changed with same key | Use new key or revert body |
+| 429 rate_limited | Terminal exceeded current request window | Wait for `Retry-After`; retry unchanged |
 | Slow status updates | Queue backlog | Monitor queue / contact ops |
 
 ## 14. Support Data To Provide

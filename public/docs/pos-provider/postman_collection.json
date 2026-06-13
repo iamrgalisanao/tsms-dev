@@ -1,0 +1,129 @@
+{
+  "info": {
+    "name": "TSMS POS Provider API",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "https://stagingtsms.pitx.com.ph/api/v1"
+    },
+    {
+      "key": "token",
+      "value": "{provider_testing_token}"
+    },
+    {
+      "key": "submission_uuid",
+      "value": "{submission_uuid}"
+    }
+  ],
+  "item": [
+    {
+      "name": "Authenticate Terminal",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/auth/terminal",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"serial_number\": \"TERM-001\",\n  \"api_key\": \"replace-with-terminal-api-key\"\n}"
+        }
+      }
+    },
+    {
+      "name": "Submit Official Transaction",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "url": "{{base_url}}/transactions/official",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"submission_uuid\": \"{{submission_uuid}}\",\n  \"tenant_id\": 28,\n  \"terminal_id\": 31,\n  \"submission_timestamp\": \"2026-06-13T13:25:45Z\",\n  \"transaction_count\": 1,\n  \"payload_checksum\": \"replace-with-64-char-sha256\",\n  \"transaction\": {\n    \"transaction_id\": \"fc3b0759-d617-487d-9463-1e6d6e5a7985\",\n    \"receipt_no\": \"0000017336\",\n    \"transaction_timestamp\": \"2026-06-13T13:00:44Z\",\n    \"gross_sales\": \"90.00\",\n    \"net_sales\": \"90.00\",\n    \"promo_status\": \"WITH_APPROVAL\",\n    \"customer_code\": \"C-C1036\",\n    \"payload_checksum\": \"replace-with-64-char-sha256\",\n    \"adjustments\": [],\n    \"taxes\": []\n  }\n}"
+        }
+      },
+      "response": [
+        {
+          "name": "429 Too Many Requests",
+          "originalRequest": {
+            "method": "POST",
+            "header": [],
+            "url": "{{base_url}}/transactions/official"
+          },
+          "status": "Too Many Requests",
+          "code": 429,
+          "header": [
+            {
+              "key": "Retry-After",
+              "value": "42"
+            },
+            {
+              "key": "X-RateLimit-Limit",
+              "value": "120"
+            },
+            {
+              "key": "X-RateLimit-Remaining",
+              "value": "0"
+            }
+          ],
+          "body": "{\n  \"success\": false,\n  \"message\": \"Too many requests.\",\n  \"retry_after\": 42\n}"
+        }
+      ]
+    },
+    {
+      "name": "Submission Status",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          }
+        ],
+        "url": "{{base_url}}/submissions/{{submission_uuid}}"
+      }
+    },
+    {
+      "name": "Heartbeat",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          }
+        ],
+        "url": "{{base_url}}/heartbeat"
+      }
+    }
+  ]
+}

@@ -53,7 +53,9 @@ Scale up only after single works. Compute checksum over exact final JSON.
 | invalid_token | Re-authenticate |
 | checksum_failed | Recompute hash |
 | terminal_inactive | Reactivate terminal |
-| rate_limited | Back off per Retry-After |
+| rate_limited | Back off per `Retry-After`; retry the same payload with the same `submission_uuid` |
+
+When TSMS returns HTTP `429 Too Many Requests`, read the `Retry-After` header or `retry_after` JSON field, wait that many seconds, and retry unchanged. Do not create a new `submission_uuid` for the same payload unless you are correcting a validation or checksum error.
 
 ## 9. Success Checklist
 - [ ] Auth works

@@ -115,11 +115,18 @@ const cryptographicIntegrityFailureResponse = `{
   }
 }`;
 
+const rateLimitResponse = `{
+  "success": false,
+  "message": "Too many requests.",
+  "retry_after": 42
+}`;
+
 const sectionLinks = [
     ['access', 'Access'],
     ['openapi', 'OpenAPI Viewer'],
     ['status', 'Status Lookup'],
     ['errors', 'Errors'],
+    ['rate-limits', 'Rate Limits'],
     ['monitoring', 'Monitoring'],
     ['sandbox', 'Sandbox'],
     ['downloads', 'Downloads']
@@ -1183,6 +1190,7 @@ const ProviderApiDocsPage = () => {
                                     if (id === 'openapi') icon = <ArticleIcon style={{ fontSize: 18 }} />;
                                     if (id === 'status') icon = <SearchIcon style={{ fontSize: 18 }} />;
                                     if (id === 'errors') icon = <ErrorOutlineIcon style={{ fontSize: 18 }} />;
+                                    if (id === 'rate-limits') icon = <ShieldOutlinedIcon style={{ fontSize: 18 }} />;
                                     if (id === 'monitoring') icon = <TerminalIcon style={{ fontSize: 18 }} />;
                                     if (id === 'sandbox') icon = <FactCheckIcon style={{ fontSize: 18 }} />;
                                     if (id === 'downloads') icon = <InfoIcon style={{ fontSize: 18 }} />;
@@ -1460,11 +1468,51 @@ const ProviderApiDocsPage = () => {
                                     <p className="text-[11px] text-slate-500">Returned when computed checksums do not match the values supplied inside the payload.</p>
                                     <CodeBlock value={cryptographicIntegrityFailureResponse} />
                                 </div>
+
+                                {/* 429 Too Many Requests - Rate Limited */}
+                                <div className="p-4 border border-[#c6c6cd]/80 rounded-xl bg-slate-50/50 space-y-3">
+                                    <div className="flex items-center justify-between gap-2 border-b border-[#c6c6cd]/50 pb-2">
+                                        <span className="text-[10px] font-black px-2 py-0.5 rounded bg-blue-50 text-blue-700 border border-blue-200 font-mono">429 TOO MANY</span>
+                                        <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Terminal Rate Limit</span>
+                                    </div>
+                                    <p className="text-[11px] text-slate-500">Returned when a terminal exceeds the current request window. Retry only after the Retry-After header duration.</p>
+                                    <CodeBlock value={rateLimitResponse} />
+                                </div>
                             </div>
                             <div className="p-3 bg-slate-50 border border-[#c6c6cd]/50 rounded-xl text-[11px] text-slate-500 leading-normal">
-                                💡 A standard <strong>401 Unauthorized</strong> response is returned if the Authorization header is missing, expired, or references a revoked staging key.
+                                A standard <strong>401 Unauthorized</strong> response is returned if the Authorization header is missing, expired, or references a revoked staging key.
                             </div>
                         </div>
+
+                        {/* Rate Limits Section */}
+                        <EndpointSection
+                            id="rate-limits"
+                            icon={<ShieldOutlinedIcon />}
+                            title="Production POS Rate Limits"
+                            method="429"
+                            path="Retry-After / X-RateLimit-*"
+                        >
+                            <p className="text-xs text-slate-500 leading-relaxed mb-4 max-w-4xl">
+                                POS ingestion limits are evaluated per authenticated terminal and tenant, not by shared public IP. If TSMS returns
+                                <code className="mx-1 px-1 py-0.5 rounded bg-slate-100 border border-slate-200 font-mono text-[10px]">429 Too Many Requests</code>
+                                retry only after the
+                                <code className="mx-1 px-1 py-0.5 rounded bg-slate-100 border border-slate-200 font-mono text-[10px]">Retry-After</code>
+                                duration. For the same payload, keep the same submission_uuid so idempotency remains intact.
+                            </p>
+                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                                <div className="space-y-2">
+                                    <span className="block text-[10px] font-black uppercase tracking-wider text-slate-400">429 response body</span>
+                                    <CodeBlock value={rateLimitResponse} />
+                                </div>
+                                <div className="space-y-2">
+                                    <span className="block text-[10px] font-black uppercase tracking-wider text-slate-400">Expected headers</span>
+                                    <CodeBlock value={`Retry-After: 42
+X-RateLimit-Limit: 120
+X-RateLimit-Remaining: 0
+X-RateLimit-Reset: 1781348292`} />
+                                </div>
+                            </div>
+                        </EndpointSection>
 
                         {/* Monitoring Card Section */}
                         <EndpointSection
