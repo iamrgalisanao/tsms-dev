@@ -64,7 +64,7 @@
     </div>
 
     <!-- Scripts -->
-    <script src="https://cdn.jsdelivr.net/npm/chart.js@3.7.0/dist/chart.min.js"></script>
+    {{-- Chart.js is provided by the master layout via Vite or fallback; remove duplicate include --}}
     @stack('scripts')
 </body>
 </html>

@@ -2,6 +2,7 @@
 /** @jsx React.createElement */
 
 import React, { useState, useEffect } from "react";
+import { formatDate } from '../../../utils/dateFormatter';
 import { Link } from "react-router-dom";
 import securityService from "../../../services/securityService";
 
@@ -417,7 +418,7 @@ const ScheduleReportDelivery = () => {
                                                 <span>Frequency: {schedule.frequency}</span>
                                             </div>
                                             <div className="mt-2 flex items-center text-sm text-gray-500 sm:mt-0">
-                                                <span>Next run: {new Date(schedule.next_run).toLocaleString()}</span>
+                                                <span>Next run: {formatDate(schedule.next_run)}</span>
                                             </div>
                                         </div>
                                         <div className="mt-2 flex items-center text-sm text-gray-500 sm:mt-0">

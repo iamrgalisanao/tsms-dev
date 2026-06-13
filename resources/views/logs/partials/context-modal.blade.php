@@ -1,9 +1,12 @@
-<div class="modal fade" id="contextModal" tabindex="-1">
+<div class="modal fade" id="contextModal" tabindex="-1" role="dialog" aria-modal="true" aria-labelledby="contextModalTitle">
   <div class="modal-dialog modal-lg">
     <div class="modal-content">
       <div class="modal-header">
-        <h5 class="modal-title">Log Context Details</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        <h5 class="modal-title" id="contextModalTitle">Log Context Details</h5>
+        <!-- Close button compatible with Bootstrap 4 and 5 -->
+        <button type="button" class="btn-close" data-bs-dismiss="modal" data-dismiss="modal" aria-label="Close">
+          <span class="sr-only">Close</span>
+        </button>
       </div>
       <div class="modal-body">
         <ul class="nav nav-tabs mb-3" id="contextTabs" role="tablist">
@@ -26,7 +29,7 @@
         </div>
       </div>
       <div class="modal-footer">
-        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal" data-dismiss="modal">Close</button>
         <button type="button" class="btn btn-primary" onclick="copyContext()">
           <i class="fas fa-copy me-1"></i>Copy
         </button>
@@ -67,5 +70,57 @@ function setLogDetails(json, html) {
   document.getElementById('contextContent').textContent = formatJson(json);
   document.getElementById('contextHtmlContent').innerHTML = html;
 }
+
+// Accessibility/focus management for the modal to avoid aria-hidden focus warnings
+(function() {
+  var modal = document.getElementById('contextModal');
+  if (!modal) return;
+
+  var previouslyFocused = null;
+
+  function contains(parent, node) {
+    try { return parent && node && parent.contains(node); } catch (e) { return false; }
+  }
+
+  function onShow() {
+    // Remember what had focus before opening
+    previouslyFocused = document.activeElement;
+    // Move initial focus inside modal (close button preferred)
+    var closeBtn = modal.querySelector('.btn-close, [data-dismiss="modal"], [data-bs-dismiss="modal"]');
+    if (closeBtn && typeof closeBtn.focus === 'function') {
+      try { closeBtn.focus({ preventScroll: true }); } catch (e) {}
+    }
+  }
+
+  function onHide() {
+    // If a focused element is inside the modal, blur it before aria-hidden is applied
+    var active = document.activeElement;
+    if (contains(modal, active) && typeof active.blur === 'function') {
+      try { active.blur(); } catch (e) {}
+    }
+  }
+
+  function onHidden() {
+    // Restore focus to the element that opened the modal (if still in DOM), else fallback
+    if (previouslyFocused && document.contains(previouslyFocused) && typeof previouslyFocused.focus === 'function') {
+      try { previouslyFocused.focus({ preventScroll: true }); } catch (e) {}
+    } else {
+      try { (document.querySelector('main, [tabindex="-1"]') || document.body).focus({ preventScroll: true }); } catch (e) {}
+    }
+    previouslyFocused = null;
+  }
+
+  // Wire events for both Bootstrap 4 (jQuery) and Bootstrap 5
+  if (typeof $ !== 'undefined' && $.fn && $.fn.modal) {
+    $('#contextModal')
+      .on('show.bs.modal', onShow)
+      .on('hide.bs.modal', onHide)
+      .on('hidden.bs.modal', onHidden);
+  } else if (window.bootstrap && window.bootstrap.Modal) {
+    modal.addEventListener('show.bs.modal', onShow);
+    modal.addEventListener('hide.bs.modal', onHide);
+    modal.addEventListener('hidden.bs.modal', onHidden);
+  }
+})();
 </script>
 @endpush

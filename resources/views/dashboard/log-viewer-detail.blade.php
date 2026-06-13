@@ -1,4 +1,4 @@
-@extends('layouts.app')
+@extends('layouts.master')
 
 @section('content')
 <div class="container-fluid py-4">
@@ -64,7 +64,7 @@
             <dd class="col-sm-8">{{ $log->transaction_id ?? 'N/A' }}</dd>
 
             <dt class="col-sm-4">Terminal</dt>
-            <dd class="col-sm-8">{{ $log->posTerminal->terminal_uid ?? 'N/A' }}</dd>
+            <dd class="col-sm-8">{{ $log->posTerminal->serial_number ?? $log->terminal_uid ?? 'N/A' }}</dd>
 
             <dt class="col-sm-4">User</dt>
             <dd class="col-sm-8">{{ $log->user ? ($log->user->name . ' (' . $log->user->email . ')') : 'N/A' }}</dd>

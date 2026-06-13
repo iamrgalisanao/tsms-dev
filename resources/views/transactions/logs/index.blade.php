@@ -15,6 +15,50 @@
 .dataTables_wrapper .dataTables_info { display: none !important; }
 /* Tidy up paginator alignment under AdminLTE */
 .pagination { margin-bottom: 0; }
+
+/* Keep table header visible when scrolling long result sets. The
+   .table-responsive wrapper becomes the scroll container; the thead
+   cells are positioned sticky relative to that container. Adjust the
+   max-height as appropriate for your UI chrome. */
+.table-responsive {
+    max-height: calc(100vh - 220px);
+    overflow: auto;
+}
+
+/* Sticky header for both summary and detailed tables */
+#transactionLogsTable thead th,
+#transactionSummaryTable thead th {
+    position: sticky;
+    top: 0;
+    z-index: 5;
+    background: #ffffff; /* ensure header background hides rows behind it */
+}
+
+/* Add a subtle shadow so the header visually separates from rows */
+#transactionLogsTable thead th,
+#transactionSummaryTable thead th {
+    box-shadow: 0 2px 4px rgba(0,0,0,0.03);
+}
+
+/* Highlight rows which were accepted with issues (make them clearly noticeable) */
+#transactionLogsTable tbody tr[data-validation-status="WITH_ISSUES"] {
+    background-color: #f8d7da; /* light red/pink (Bootstrap danger background) */
+    color: #721c24; /* dark red text for contrast */
+}
+#transactionLogsTable tbody tr[data-validation-status="WITH_ISSUES"] code {
+    color: inherit; /* ensure code text follows the row colouring */
+}
+.with-issues-badge {
+    display: inline-block;
+    background-color: #c82333;
+    color: #ffffff;
+    font-weight: 600;
+    margin-left: 8px;
+    padding: 3px 6px;
+    border-radius: 4px;
+    font-size: 0.72rem;
+    vertical-align: middle;
+}
 </style>
 
 @endpush
@@ -91,10 +135,11 @@ use App\Helpers\FormatHelper;
                 </div>
                 <div class="form-group col-sm-6 col-md-2 col-lg-2">
                     <label class="small text-muted mb-1">Date Basis</label>
-                    @php $basis = in_array(request('date_basis'), ['created','completed']) ? request('date_basis') : 'completed'; @endphp
+                    @php $basis = in_array(request('date_basis'), ['created','completed','transaction']) ? request('date_basis') : 'completed'; @endphp
                     <select name="date_basis" class="form-control form-control-sm">
                         <option value="created" {{ $basis==='created' ? 'selected' : '' }}>Created</option>
                         <option value="completed" {{ $basis==='completed' ? 'selected' : '' }}>Completed</option>
+                        <option value="transaction" {{ $basis==='transaction' ? 'selected' : '' }}>Transaction Time</option>
                     </select>
                 </div>
                 <div class="form-group col-sm-6 col-md-2 col-lg-2">
@@ -118,6 +163,21 @@ use App\Helpers\FormatHelper;
                     <button class="btn btn-primary btn-sm mr-2" type="submit"><i class="fas fa-check mr-1"></i> Apply</button>
                     <button class="btn btn-outline-primary btn-sm mr-2" type="button" id="btnToday"><i class="far fa-calendar-day mr-1"></i> Today</button>
                     <a href="{{ route('transactions.logs.index') }}" class="btn btn-outline-secondary btn-sm"><i class="fas fa-undo mr-1"></i> Reset</a>
+                </div>
+                <div class="form-group col-sm-6 col-md-3 col-lg-3 d-flex align-items-center">
+                    <div class="form-check ml-2 mr-3">
+                        <input class="form-check-input" type="checkbox" value="1" id="toggleDuplicates" />
+                        <label class="form-check-label small text-muted" for="toggleDuplicates">Show duplicates</label>
+                    </div>
+                    <div class="form-check ml-2 mr-3">
+                        <input class="form-check-input" type="checkbox" value="1" id="toggleIssuesOnly" />
+                        <label class="form-check-label small text-muted" for="toggleIssuesOnly">Only show issues</label>
+                    </div>
+                    @if(auth()->check() && auth()->user()->hasRole('admin'))
+                    <div class="ml-2">
+                        <span id="issuesCountBadge" class="badge badge-danger" title="Number of visible transactions with issues">Issues: <strong>0</strong></span>
+                    </div>
+                    @endif
                 </div>
             </div>
         </form>
@@ -143,10 +203,24 @@ use App\Helpers\FormatHelper;
                     <th>Tenant</th>
                     <th>Terminal</th>
                     <th>Tx Count</th>
+                    <th>Unique Receipts</th>
                     <th>Gross</th>
-                    <th>VAT</th>
                     <th>Net</th>
                     <th>Refund</th>
+                    <!-- Adjustment Columns -->
+                    <th>Promo Discount</th>
+                    <th>Senior Discount</th>
+                    <th>PWD Discount</th>
+                    <th>VIP Card Discount</th>
+                    <th>Employee Discount</th>
+                    <th>Service Charge (Employees)</th>
+                    <th>Service Charge (Management)</th>
+                    <!-- Tax Columns -->
+                    <th>VAT</th>
+                    <th>Vatable Sales</th>
+                    <th>SC VAT Exempt Sales</th>
+                    <th>Tax Exempt</th>
+                    <th>Other Tax</th>
                 </tr>
             </thead>
             <tbody>
@@ -156,35 +230,147 @@ use App\Helpers\FormatHelper;
                     <td>{{ $row->trade_name }}</td>
                     <td>SN: {{ $row->serial_number ?? 'N/A' }} • M: {{ $row->machine_number ?? 'N/A' }}</td>
                     <td class="text-end">{{ number_format($row->tx_count) }}</td>
-                    <td class="text-end">₱{{ number_format($row->gross, 2) }}</td>
-                    <td class="text-end">₱{{ number_format($row->vat, 2) }}</td>
-                    <td class="text-end">₱{{ number_format($row->net, 2) }}</td>
-                    <td class="text-end">₱{{ number_format($row->refund, 2) }}</td>
+                    <td class="text-end">{{ isset($row->unique_receipts) ? number_format($row->unique_receipts) : '-' }}</td>
+                    @php
+                        // Prefer aggregated row totals (daily sums) for Gross/Net/Refund.
+                        // Only use the sample-transaction presenter values when the
+                        // summary row represents exactly one transaction (tx_count == 1).
+                        $presenterGross = null; $presenterNet = null; $presenterRefund = null;
+                        if (isset($sampleTransactions) && isset($row->sample_tx_id) && $sampleTransactions->has($row->sample_tx_id)) {
+                            $txp = $sampleTransactions->get($row->sample_tx_id);
+                            $p = \App\Presenters\TransactionSummaryPresenter::fromTransaction($txp);
+                            if ((int) ($row->tx_count ?? 0) === 1) {
+                                $presenterGross = $p['gross'];
+                                $presenterNet = $p['net'];
+                                $presenterRefund = $p['refund'];
+                            }
+                        }
+                    @endphp
+                    <td class="text-end">{{ isset($presenterGross) ? \App\Helpers\FormatHelper::formatCurrency($presenterGross) : ('₱' . number_format($row->gross, 2)) }}</td>
+                    <td class="text-end">{{ isset($presenterNet) ? \App\Helpers\FormatHelper::formatCurrency($presenterNet) : ('₱' . number_format($row->net, 2)) }}</td>
+                    <td class="text-end">{{ isset($presenterRefund) ? \App\Helpers\FormatHelper::formatCurrency($presenterRefund) : ('₱' . number_format($row->refund, 2)) }}</td>
+                    @php
+                        // Extract all adjustment and tax values using presenter and fallbacks
+                        $adjustmentData = $taxData = [];
+                        if (isset($sampleTransactions) && isset($row->sample_tx_id) && $sampleTransactions->has($row->sample_tx_id)) {
+                            $tx = $sampleTransactions->get($row->sample_tx_id);
+                            // avoid clobbering the paginator $summary variable; use $txSummary for the presenter result
+                            $txSummary = \App\Presenters\TransactionSummaryPresenter::fromTransaction($tx);
+
+                            // Only use presenter (sample transaction) values when the summary row
+                            // represents exactly one transaction. For multi-transaction rows we
+                            // prefer the aggregated row totals so the summary reflects daily/terminal sums.
+                            $usePresenter = ((int) ($row->tx_count ?? 0) === 1);
+
+                            // Adjustment types mapping
+                            $adjustmentData = [
+                                'promo_discount' => $usePresenter ? ($txSummary['promo'] ?? null) : ($row->promo_discount ?? null),
+                                'senior_discount' => $usePresenter ? ($txSummary['senior'] ?? null) : ($row->senior_discount ?? null),
+                                'pwd_discount' => $usePresenter ? ($txSummary['pwd'] ?? null) : ($row->pwd_discount ?? null),
+                                'vip_card_discount' => null, // Not available in database
+                                'employee_discount' => null, // Not available in database
+                                'service_charge' => $usePresenter ? ($txSummary['service_charge'] ?? null) : ($row->service_charge ?? null),
+                                'management_service_charge' => $usePresenter ? ($txSummary['management_service_charge'] ?? null) : ($row->management_service_charge ?? null),
+                            ];
+
+                            // Tax types mapping
+                            $taxData = [
+                                'vat' => $usePresenter ? ($txSummary['vat'] ?? null) : ($row->vat ?? null),
+                                'vatable_sales' => $usePresenter ? ($txSummary['vatable'] ?? null) : ($row->vatable_sales ?? null),
+                                'sc_vat_exempt_sales' => $usePresenter ? ($txSummary['sc_vat'] ?? null) : ($row->sc_vat_exempt_sales ?? null),
+                                'tax_exempt' => $usePresenter ? ($txSummary['tax_exempt'] ?? null) : ($row->tax_exempt ?? null),
+                                'other_tax' => null, // Not available in database
+                            ];
+                        }
+                    @endphp
+                    <!-- Adjustment Columns -->
+                    <td class="text-end">{{ $adjustmentData['promo_discount'] !== null ? \App\Helpers\FormatHelper::formatCurrency($adjustmentData['promo_discount']) : '-' }}</td>
+                    <td class="text-end">{{ $adjustmentData['senior_discount'] !== null ? \App\Helpers\FormatHelper::formatCurrency($adjustmentData['senior_discount']) : '-' }}</td>
+                    <td class="text-end">{{ $adjustmentData['pwd_discount'] !== null ? \App\Helpers\FormatHelper::formatCurrency($adjustmentData['pwd_discount']) : '-' }}</td>
+                    <td class="text-end">{{ $adjustmentData['vip_card_discount'] !== null ? \App\Helpers\FormatHelper::formatCurrency($adjustmentData['vip_card_discount']) : '-' }}</td>
+                    <td class="text-end">{{ $adjustmentData['employee_discount'] !== null ? \App\Helpers\FormatHelper::formatCurrency($adjustmentData['employee_discount']) : '-' }}</td>
+                    <td class="text-end">{{ $adjustmentData['service_charge'] !== null ? \App\Helpers\FormatHelper::formatCurrency($adjustmentData['service_charge']) : '-' }}</td>
+                    <td class="text-end">{{ $adjustmentData['management_service_charge'] !== null ? \App\Helpers\FormatHelper::formatCurrency($adjustmentData['management_service_charge']) : '-' }}</td>
+                    <!-- Tax Columns -->
+                    <td class="text-end">{{ $taxData['vat'] !== null ? \App\Helpers\FormatHelper::formatCurrency($taxData['vat']) : '-' }}</td>
+                    <td class="text-end">{{ $taxData['vatable_sales'] !== null ? \App\Helpers\FormatHelper::formatCurrency($taxData['vatable_sales']) : '-' }}</td>
+                    <td class="text-end">{{ $taxData['sc_vat_exempt_sales'] !== null ? \App\Helpers\FormatHelper::formatCurrency($taxData['sc_vat_exempt_sales']) : '-' }}</td>
+                    <td class="text-end">{{ $taxData['tax_exempt'] !== null ? \App\Helpers\FormatHelper::formatCurrency($taxData['tax_exempt']) : '-' }}</td>
+                    <td class="text-end">{{ $taxData['other_tax'] !== null ? \App\Helpers\FormatHelper::formatCurrency($taxData['other_tax']) : '-' }}</td>
                 </tr>
                 @empty
                 @endforelse
             </tbody>
+            @if(isset($grandTotal))
+            <tfoot class="bg-light font-weight-bold">
+                <tr>
+                    <td colspan="3" class="text-center">GRAND TOTAL (Filtered)</td>
+                    <td class="text-end">{{ number_format($grandTotal->tx_count) }}</td>
+                    <td class="text-end">{{ number_format($grandTotal->unique_receipts) }}</td>
+                    <td class="text-end">₱{{ number_format($grandTotal->gross, 2) }}</td>
+                    <td class="text-end">₱{{ number_format($grandTotal->net, 2) }}</td>
+                    <td class="text-end">₱{{ number_format($grandTotal->refund, 2) }}</td>
+                    
+                    <td class="text-end">₱{{ number_format($grandTotal->promo_discount, 2) }}</td>
+                    <td class="text-end">₱{{ number_format($grandTotal->senior_discount, 2) }}</td>
+                    <td class="text-end">₱{{ number_format($grandTotal->pwd_discount, 2) }}</td>
+                    <td class="text-end">₱{{ number_format($grandTotal->vip_discount, 2) }}</td>
+                    <td class="text-end">₱{{ number_format($grandTotal->employee_discount, 2) }}</td>
+                    <td class="text-end">₱{{ number_format($grandTotal->service_charge, 2) }}</td>
+                    <td class="text-end">₱{{ number_format($grandTotal->management_service_charge, 2) }}</td>
+                    
+                    <td class="text-end">₱{{ number_format($grandTotal->vat, 2) }}</td>
+                    <td class="text-end">₱{{ number_format($grandTotal->vatable_sales, 2) }}</td>
+                    <td class="text-end">₱{{ number_format($grandTotal->sc_vat_exempt_sales, 2) }}</td>
+                    <td class="text-end">₱{{ number_format($grandTotal->tax_exempt, 2) }}</td>
+                    <td class="text-end">₱{{ number_format($grandTotal->other_tax, 2) }}</td>
+                </tr>
+            </tfoot>
+            @endif
         </table>
         @else
         <table id="transactionLogsTable" class="table table-striped table-hover table-head-fixed text-sm">
             <thead>
                 <tr>
                     <th>Transaction ID</th>
+                    <th>Receipt No</th>
                     <th>Tenant / Terminal</th>
-                    <th>Amount</th>
-                    <th>Status</th>
+                    <th>Gross Sales</th>
+                    <th>Net Sales</th>
+                    {{-- <th>Status</th> --}}
                     {{-- <th>Job Status</th> --}}
                     <!-- {{-- <th>Attempts</th> --}} -->
                     <!-- <th>Transaction Count</th> -->
-                    <th>Completed At</th>
-                    <th>Created At</th>
+                    <!-- Adjustment Columns -->
+                    <th>Promo Discount</th>
+                    <th>Senior Discount</th>
+                    <th>PWD Discount</th>
+                    <th>VIP Card Discount</th>
+                    <th>Employee Discount</th>
+                    <th>Service Charge (Employees)</th>
+                    <th>Service Charge (Management)</th>
+                    <!-- Tax Columns -->
+                    <th>VAT</th>
+                    <th>Vatable Sales</th>
+                    <th>SC VAT Exempt Sales</th>
+                    <th>Tax Exempt</th>
+                    <th>Other Tax</th>
+                    <th>Transaction Time</th>
+                    {{-- <th>Completed At</th>
+                    <th>Created At</th> --}}
                     <th>Actions</th>
                 </tr>
             </thead>
             <tbody>
                 @forelse($logs as $log)
-                <tr>
-                    <td class="text-break"><code style="white-space:normal;word-break:break-all;overflow-wrap:anywhere;">{{ $log->transaction_id }}</code></td>
+                <tr data-validation-status="{{ $log->validation_status }}" data-receipt="{{ $log->receipt_no ?? '' }}">
+                    <td class="text-break">
+                        <code style="white-space:normal;word-break:break-all;overflow-wrap:anywhere;">{{ $log->transaction_id }}</code>
+                        @if(isset($log->validation_status) && $log->validation_status === 'WITH_ISSUES')
+                            <span class="with-issues-badge" data-toggle="tooltip" title="This transaction was accepted but had validation/checksum issues. Please investigate submission events and logs.">WITH ISSUES</span>
+                        @endif
+                    </td>
+                    <td class="text-break"><code style="white-space:normal;word-break:break-all;overflow-wrap:anywhere;">{{ $log->receipt_no ?? '-' }}</code></td>
                     {{-- <td>{{ $log->terminal->identifier ?? 'N/A' }}</td>
                     <td> --}}
                     <td>
@@ -204,19 +390,50 @@ use App\Helpers\FormatHelper;
                     </td>
                     <!-- {{-- <td>{{ $log->terminal->terminal_uid ?? 'N/A' }}</td> --}} -->
                     <td class="text-end">₱{{ number_format($log->amount, 2) }}</td>
-                    <td class="text-center">
+                    <td class="text-end">{{ isset($log->net_sales) && $log->net_sales !== null ? \App\Helpers\FormatHelper::formatCurrency($log->net_sales) : '-' }}</td>
+                    {{-- <td class="text-center">
                         @if($log->latest_job_status === 'FAILED')
                             <span class="badge badge-danger">FAILED</span>
                         @else
                             {!! BadgeHelper::getValidationStatusBadge($log->validation_status) . ' + ' . BadgeHelper::getJobStatusBadge($log->latest_job_status, 'job') !!}
                         @endif
-                    </td>
+                    </td> --}}
+                    <!-- Adjustment Columns -->
+                    @php
+                        // Prefer denormalized columns when present; otherwise sum adjustments loaded from child table
+                        $promoVal = (isset($log->promo_discount) && $log->promo_discount !== null && $log->promo_discount != 0) ? $log->promo_discount : (isset($log->adjustments) ? $log->adjustments->where('adjustment_type', 'promo_discount')->sum('amount') : null);
+                        $seniorVal = (isset($log->senior_discount) && $log->senior_discount !== null && $log->senior_discount != 0) ? $log->senior_discount : (isset($log->adjustments) ? $log->adjustments->where('adjustment_type', 'senior_discount')->sum('amount') : null);
+                        $pwdVal = (isset($log->pwd_discount) && $log->pwd_discount !== null && $log->pwd_discount != 0) ? $log->pwd_discount : (isset($log->adjustments) ? $log->adjustments->where('adjustment_type', 'pwd_discount')->sum('amount') : null);
+                    @endphp
+                    <td class="text-end">{{ ($promoVal !== null && $promoVal != 0) ? \App\Helpers\FormatHelper::formatCurrency($promoVal) : '-' }}</td>
+                    <td class="text-end">{{ ($seniorVal !== null && $seniorVal != 0) ? \App\Helpers\FormatHelper::formatCurrency($seniorVal) : '-' }}</td>
+                    <td class="text-end">{{ ($pwdVal !== null && $pwdVal != 0) ? \App\Helpers\FormatHelper::formatCurrency($pwdVal) : '-' }}</td>
+                    <td class="text-end">-</td> <!-- VIP Card Discount - not available in database -->
+                    <td class="text-end">-</td> <!-- Employee Discount - not available in database -->
+                    @php
+                        $scVal = (isset($log->service_charge) && $log->service_charge !== null && $log->service_charge != 0) ? $log->service_charge : (isset($log->adjustments) ? $log->adjustments->where('adjustment_type', 'service_charge')->sum('amount') : null);
+                        $mngVal = (isset($log->management_service_charge) && $log->management_service_charge !== null && $log->management_service_charge != 0) ? $log->management_service_charge : (isset($log->adjustments) ? $log->adjustments->where('adjustment_type', 'management_service_charge')->sum('amount') : null);
+                    @endphp
+                    <td class="text-end">{{ ($scVal !== null && $scVal != 0) ? \App\Helpers\FormatHelper::formatCurrency($scVal) : '-' }}</td>
+                    <td class="text-end">{{ ($mngVal !== null && $mngVal != 0) ? \App\Helpers\FormatHelper::formatCurrency($mngVal) : '-' }}</td>
+                    <!-- Tax Columns -->
+                    <td class="text-end">{{ isset($log->vat) && $log->vat !== null ? \App\Helpers\FormatHelper::formatCurrency($log->vat) : '-' }}</td>
+                    <td class="text-end">{{ isset($log->vatable_sales) && $log->vatable_sales !== null ? \App\Helpers\FormatHelper::formatCurrency($log->vatable_sales) : '-' }}</td>
+                    <td class="text-end">{{ isset($log->sc_vat_exempt_sales) && $log->sc_vat_exempt_sales !== null ? \App\Helpers\FormatHelper::formatCurrency($log->sc_vat_exempt_sales) : '-' }}</td>
+                    <td class="text-end">{{ isset($log->tax_exempt) && $log->tax_exempt !== null ? \App\Helpers\FormatHelper::formatCurrency($log->tax_exempt) : '-' }}</td>
+                    <td class="text-end">-</td> <!-- Other Tax - not available in database -->
                     {{-- <td class="text-center">{!! BadgeHelper::getJobStatusBadge($log->latest_job_status, 'job') !!}</td> --}}
                     <!-- {{-- <td class="text-center">{{ $log->job_attempts }}</td> --}}
                     {{-- <td class="text-center">{{ FormatHelper::formatDate($log->completed_at) }}</td> --}} -->
                     <!-- <td class="text-center">{{ $log->transaction_count }}</td> -->
-                    <td class="text-center">{{ \Carbon\Carbon::parse($log->completed_at)->format('Y-m-d H:i:s') }}</td>
-                    <td class="text-center">{{ \Carbon\Carbon::parse($log->created_at)->format('Y-m-d H:i:s') }}</td>
+                    <td class="text-center">
+                        @php
+                            $txTime = $log->transaction_timestamp ?? $log->created_at;
+                        @endphp
+                        {{ \Carbon\Carbon::parse($txTime)->format('Y-m-d H:i:s') }}
+                    </td>
+                    {{-- <td class="text-center">{{ \Carbon\Carbon::parse($log->completed_at)->format('Y-m-d H:i:s') }}</td>
+                    <td class="text-center">{{ \Carbon\Carbon::parse($log->created_at)->format('Y-m-d H:i:s') }}</td> --}}
                     <td class="text-center">
                         <a href="{{ route('transactions.logs.show', $log->id) }}" class="btn btn-sm btn-outline-primary">View</a>
                         @if($log->validation_status === 'ERROR' && Gate::check('retry-transactions'))
@@ -324,6 +541,131 @@ $(function () {
 
     // Move DataTables buttons into our container for AdminLTE layout
     dt.buttons().container().appendTo('#dtBtnContainer');
+
+    // Initialize Bootstrap tooltips (used on badges / small UI hints)
+    try {
+        $('[data-toggle="tooltip"]').tooltip({ trigger: 'hover' });
+    } catch (e) {
+        // Tooltip initialization is best-effort; don't break page if bootstrap JS isn't present
+        console.debug('Tooltip init failed or not available', e && e.message ? e.message : e);
+    }
+
+    // Duplicate hiding: by default hide duplicate rows (same receipt_no) in
+    // the detailed table. Operators can toggle visibility using the
+    // #toggleDuplicates checkbox.
+    function applyDuplicateFilter() {
+        // Only operate on detailed table
+        if (isSummary) return;
+        const seen = {};
+        $('#transactionLogsTable tbody tr').each(function () {
+            const $tr = $(this);
+            const receipt = ($tr.data('receipt') || '').toString().trim();
+            const status = ($tr.data('validation-status') || '').toString();
+            if (!receipt) return; // no receipt to dedupe
+            // Always keep canonical VALID rows; hide subsequent rows with same receipt
+            if (seen[receipt]) {
+                $tr.addClass('duplicate-hidden').hide();
+            } else {
+                // mark first seen; prefer VALID as canonical but we only decide by order on page
+                seen[receipt] = true;
+                $tr.removeClass('duplicate-hidden').show();
+            }
+        });
+    }
+
+    // Toggle handler
+    $('#toggleDuplicates').on('change', function () {
+        if ($(this).is(':checked')) {
+            // show duplicates
+            $('#transactionLogsTable tbody tr.duplicate-hidden').show().removeClass('duplicate-hidden');
+        } else {
+            applyDuplicateFilter();
+        }
+        // Re-apply issues filter and update counter when duplicates toggle changes
+        applyIssuesFilter();
+        updateIssuesCounter();
+    });
+
+    // Apply filter on initial load (unless toggle is checked)
+    if (!$('#toggleDuplicates').is(':checked')) {
+        applyDuplicateFilter();
+    }
+
+    // Apply issues-only filter when toggled and update counter
+    function applyIssuesFilter() {
+        if (isSummary) return; // only relevant to detailed view
+        const onlyIssues = $('#toggleIssuesOnly').is(':checked');
+        $('#transactionLogsTable tbody tr').each(function () {
+            const $tr = $(this);
+            const isIssue = ($tr.data('validation-status') || '').toString() === 'WITH_ISSUES';
+            if (onlyIssues) {
+                if (!isIssue) {
+                    $tr.addClass('issues-hidden').hide();
+                } else {
+                    $tr.removeClass('issues-hidden').show();
+                }
+            } else {
+                // show rows that aren't hidden by duplicates logic
+                $tr.removeClass('issues-hidden');
+                // We do not forcibly show here, because duplicate filter controls visibility
+            }
+        });
+        // After applying issues filter, enforce duplicate hiding logic if applicable
+        if (!$('#toggleDuplicates').is(':checked')) {
+            applyDuplicateFilter();
+        }
+    }
+
+    $('#toggleIssuesOnly').on('change', function () {
+        applyIssuesFilter();
+        updateIssuesCounter();
+    });
+
+    function updateIssuesCounter() {
+        try {
+            // Count visible rows that are WITH_ISSUES
+            const visibleRows = $('#transactionLogsTable tbody tr:visible');
+            const issuesVisible = visibleRows.filter(function () {
+                return ($(this).data('validation-status') || '').toString() === 'WITH_ISSUES';
+            }).length;
+            const $badge = $('#issuesCountBadge');
+            if ($badge.length) {
+                $badge.find('strong').text(issuesVisible);
+            }
+        } catch (e) {
+            console.debug('updateIssuesCounter failed', e && e.message ? e.message : e);
+        }
+    }
+
+    // If admin badge is present, attempt to fetch an accurate server-side count
+    // that respects server-side filters/pagination. Falls back to client-side count
+    // if the request fails.
+    function fetchIssuesCountFromServer() {
+        const $badge = $('#issuesCountBadge');
+        if (!$badge.length) return;
+        try {
+            // Use current window.search to pass filters already present in the URL
+            const url = '{{ route('transactions.logs.issues.count') }}' + window.location.search;
+            $.get(url)
+                .done(function (data) {
+                    if (data && typeof data.count !== 'undefined') {
+                        $badge.find('strong').text(data.count);
+                    }
+                })
+                .fail(function () {
+                    // on failure, keep client-side visible count already set
+                    console.debug('Server issues count fetch failed, falling back to client-side count');
+                });
+        } catch (e) {
+            console.debug('fetchIssuesCountFromServer failed', e && e.message ? e.message : e);
+        }
+    }
+
+    // Update counter on initial load
+    applyIssuesFilter();
+    updateIssuesCounter();
+    // If admin, fetch authoritative server-side count (best-effort)
+    fetchIssuesCountFromServer();
 
     // Toastr notifications
     @if(session('success'))

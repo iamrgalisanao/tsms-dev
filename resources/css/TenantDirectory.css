@@ -1,0 +1,107 @@
+/* Tenant Directory Premium Styles */
+
+.tenant-directory-container {
+    background-color: #f8f6f6;
+    min-height: 100vh;
+}
+
+.grid-pattern {
+    background-image: radial-gradient(circle, #e2e8f0 1px, transparent 1px);
+    background-size: 24px 24px;
+}
+
+.glass {
+    background: rgba(255, 255, 255, 0.7);
+    backdrop-filter: blur(12px);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+}
+
+.sidebar-glass {
+    background: rgba(15, 23, 42, 0.95);
+    backdrop-filter: blur(8px);
+}
+
+.status-glow-green {
+    box-shadow: 0 0 10px rgba(34, 197, 94, 0.4);
+}
+
+.status-glow-amber {
+    box-shadow: 0 0 10px rgba(245, 158, 11, 0.4);
+}
+
+.status-glow-red {
+    box-shadow: 0 0 10px rgba(218, 22, 71, 0.4);
+}
+
+/* Bar Chart Styles */
+.sales-trend-chart {
+    display: flex;
+    align-items: flex-end;
+    gap: 4px;
+    height: 40px;
+}
+
+.bar-segment {
+    width: 6px;
+    border-radius: 2px 2px 0 0;
+    background-color: #f1f3f5;
+}
+
+.bar-segment.active {
+    background-color: #da1647;
+}
+
+/* Badge and Status Styles - Tailwind utility classes are preferred but these remain for specific needs */
+.badge-food {
+    background-color: #fff4e6 !important;
+    color: #d9480f !important;
+}
+
+.badge-retail {
+    background-color: #e7f5ff !important;
+    color: #1c7ed6 !important;
+}
+
+.badge-service {
+    background-color: #f3f0ff !important;
+    color: #7048e8 !important;
+}
+
+.badge-logistics {
+    background-color: #f8f0fc !important;
+    color: #ae3ec9 !important;
+}
+
+.status-active {
+    background-color: #ebfbee !important;
+    color: #2b8a3e !important;
+}
+
+.status-renovation {
+    background-color: #fff9db !important;
+    color: #f08c00 !important;
+}
+
+.status-notice {
+    background-color: #fff5f5 !important;
+    color: #fa5252 !important;
+}
+
+/* Sticky Header */
+.sticky-header {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: rgba(255, 255, 255, 0.8);
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+/* Fix for Material Symbols in Sidebar */
+.sidebar-glass .material-symbols-outlined {
+    font-size: 24px;
+}
+
+.fill-1 {
+    font-variation-settings: 'FILL' 1, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+}

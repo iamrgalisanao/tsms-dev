@@ -1,6 +1,7 @@
 <div class="card mb-4">
   <div class="card-body">
-    <div class="row g-3">
+    <!-- Basic Transaction Information -->
+    <div class="row g-3 mb-4">
       <div class="col-md-6">
         <dl class="row mb-0">
           <dt class="col-sm-4">Transaction ID</dt>
@@ -30,5 +31,43 @@
         </dl>
       </div>
     </div>
+
+    <!-- Adjustments Section -->
+    @if($log->adjustments && count($log->adjustments) > 0)
+    <div class="row mb-4">
+      <div class="col-12">
+        <h6 class="text-muted mb-3">Adjustments</h6>
+        <div class="row g-3">
+          @foreach($log->adjustments as $adjustment)
+          <div class="col-md-3 col-sm-6">
+            <dl class="row mb-0">
+              <dt class="col-12 small text-uppercase">{{ str_replace('_', ' ', $adjustment->adjustment_type) }}</dt>
+              <dd class="col-12 fw-bold">{{ number_format($adjustment->amount, 2) }}</dd>
+            </dl>
+          </div>
+          @endforeach
+        </div>
+      </div>
+    </div>
+    @endif
+
+    <!-- Taxes Section -->
+    @if($log->taxes && count($log->taxes) > 0)
+    <div class="row">
+      <div class="col-12">
+        <h6 class="text-muted mb-3">Taxes</h6>
+        <div class="row g-3">
+          @foreach($log->taxes as $tax)
+          <div class="col-md-3 col-sm-6">
+            <dl class="row mb-0">
+              <dt class="col-12 small text-uppercase">{{ str_replace('_', ' ', $tax->tax_type) }}</dt>
+              <dd class="col-12 fw-bold">{{ number_format($tax->amount, 2) }}</dd>
+            </dl>
+          </div>
+          @endforeach
+        </div>
+      </div>
+    </div>
+    @endif
   </div>
 </div>

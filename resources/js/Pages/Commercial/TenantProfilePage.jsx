@@ -1,0 +1,252 @@
+import React, { useState, useEffect } from 'react';
+import { useParams, Link } from 'react-router-dom';
+import axios from 'axios';
+import {
+    Container,
+    Grid,
+    Paper,
+    Typography,
+    Box,
+    Avatar,
+    Button,
+    Breadcrumbs,
+    Divider,
+    Table,
+    TableBody,
+    TableCell,
+    TableContainer,
+    TableHead,
+    TableRow,
+    CircularProgress,
+    Alert
+} from '@mui/material';
+import {
+    Store as StoreIcon,
+    Edit as EditIcon,
+    History as HistoryIcon,
+    TrendingUp as SalesIcon,
+    CalendarMonth as CalendarIcon,
+    EventBusy as ExpiryIcon,
+    ChevronRight as ChevronRightIcon,
+    ArrowBack as ArrowBackIcon
+} from '@mui/icons-material';
+import MetricCard from '../../Components/Commercial/MetricCard';
+
+const TenantProfilePage = () => {
+    const { uuid } = useParams();
+    const [tenant, setTenant] = useState(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
+
+    useEffect(() => {
+        const fetchTenantDetails = async () => {
+            try {
+                setLoading(true);
+                const response = await axios.get(`/commercial/reports/tenants/${uuid}`, {
+                    headers: { 'Accept': 'application/json' }
+                });
+                setTenant(response.data);
+            } catch (err) {
+                setError('Failed to load tenant details.');
+                console.error(err);
+            } finally {
+                setLoading(false);
+            }
+        };
+        fetchTenantDetails();
+    }, [uuid]);
+
+    const formatCurrency = (val) => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(val || 0);
+
+    const activeTerminalSerials = tenant?.active_terminals?.length
+        ? tenant.active_terminals.map((terminal) => terminal.serial_number).join(', ')
+        : '';
+
+    if (loading) return (
+        <Container maxWidth="xl" sx={{ py: 4 }}>
+            <Box sx={{ mb: 4 }}>
+                <Box sx={{ width: 120, height: 20, bgcolor: 'action.hover', borderRadius: 1, mb: 2, animation: 'pulse 1.5s infinite' }} />
+                <Box sx={{ width: 300, height: 40, bgcolor: 'action.hover', borderRadius: 1, animation: 'pulse 1.5s infinite' }} />
+            </Box>
+            <Grid container spacing={3} sx={{ mb: 4 }}>
+                {[1, 2, 3].map(i => (
+                    <Grid item xs={12} sm={4} key={i}>
+                        <Paper sx={{ p: 4, borderRadius: 4, height: 160, animation: 'pulse 1.5s infinite' }} />
+                    </Grid>
+                ))}
+            </Grid>
+            <Grid container spacing={3}>
+                <Grid item xs={12} md={4}>
+                    <Paper sx={{ p: 3, borderRadius: 4, height: 400, animation: 'pulse 1.5s infinite' }} />
+                </Grid>
+                <Grid item xs={12} md={8}>
+                    <Paper sx={{ p: 3, borderRadius: 4, height: 400, animation: 'pulse 1.5s infinite' }} />
+                </Grid>
+            </Grid>
+            <style>{`
+                @keyframes pulse { 0% { opacity: 0.6; } 50% { opacity: 1; } 100% { opacity: 0.6; } }
+            `}</style>
+        </Container>
+    );
+
+    if (error) return (
+        <Container sx={{ py: 4 }}>
+            <Alert severity="error">{error}</Alert>
+            <Button component={Link} to="/commercial/tenants" sx={{ mt: 2 }}>Back to Directory</Button>
+        </Container>
+    );
+
+    return (
+        <Container maxWidth="xl" sx={{ py: 4 }}>
+            <Box sx={{ mb: 3 }}>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 1, mb: 1 }}>
+                    <Button
+                        component={Link}
+                        to="/commercial/tenants"
+                        startIcon={<ArrowBackIcon />}
+                        variant="text"
+                        size="small"
+                        sx={{ textTransform: 'none', fontWeight: 600 }}
+                    >
+                        Back to Tenant Directory
+                    </Button>
+                </Box>
+                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mt: 1 }}>
+                    <Typography variant="h4" fontWeight="bold">{tenant?.trade_name}</Typography>
+                    <Button variant="outlined" startIcon={<EditIcon />} disabled>Edit Tenant</Button>
+                </Box>
+            </Box>
+
+            <Grid container spacing={3}>
+                {/* Left Column: Profile Card */}
+                <Grid item xs={12} md={4}>
+                    <Paper elevation={0} sx={{ p: 4, border: '1px solid', borderColor: 'divider', borderRadius: 2, textAlign: 'center' }}>
+                        <Avatar
+                            sx={{
+                                width: 120,
+                                height: 120,
+                                mx: 'auto',
+                                mb: 3,
+                                bgcolor: 'primary.light',
+                                border: '4px solid',
+                                borderColor: 'white',
+                                boxShadow: 2
+                            }}
+                        >
+                            <StoreIcon sx={{ fontSize: 60, color: 'primary.main' }} />
+                        </Avatar>
+                        <Typography variant="h6" fontWeight="bold">{tenant?.trade_name}</Typography>
+                        <Typography variant="body2" color="text.secondary" gutterBottom>
+                            Code: {tenant?.customer_code}
+                        </Typography>
+                        <Typography variant="body2" color="text.secondary" gutterBottom>
+                            Tenant ID: {tenant?.id}
+                        </Typography>
+
+                        {tenant && (
+                            <Typography variant="body2" color="text.secondary" gutterBottom>
+                                Active POS Terminals: {activeTerminalSerials || 'No active terminals registered'}
+                            </Typography>
+                        )}
+
+                        <Divider sx={{ my: 3 }} />
+
+                        <Box sx={{ textAlign: 'left', display: 'flex', flexDirection: 'column', gap: 1 }}>
+                            <Typography variant="subtitle2" color="text.secondary">Company</Typography>
+                            <Typography variant="body1" gutterBottom>{tenant?.name || 'N/A'}</Typography>
+
+                            <Typography variant="subtitle2" color="text.secondary" sx={{ mt: 2 }}>Location</Typography>
+                            <Typography variant="body1" gutterBottom>Level {tenant?.level}, Unit {tenant?.unit_no}</Typography>
+
+                            <Typography variant="subtitle2" color="text.secondary" sx={{ mt: 2 }}>Category</Typography>
+                            <Typography variant="body1">{tenant?.category || 'Retail'}</Typography>
+                        </Box>
+                    </Paper>
+                </Grid>
+
+                {/* Right Column: Metrics & Transactions */}
+                <Grid item xs={12} md={8}>
+                    <Grid container spacing={3} sx={{ mb: 3 }}>
+                        <Grid item xs={12} sm={4}>
+                            <MetricCard
+                                title="Total Sales YTD"
+                                value={formatCurrency(tenant?.ytd_sales)}
+                                icon={SalesIcon}
+                                color="primary.main"
+                            />
+                        </Grid>
+                        <Grid item xs={12} sm={4}>
+                            <MetricCard
+                                title="Current Month"
+                                value={formatCurrency(tenant?.month_sales)}
+                                icon={CalendarIcon}
+                                color="info.main"
+                            />
+                        </Grid>
+                        <Grid item xs={12} sm={4}>
+                            <MetricCard
+                                title="Lease Expiry"
+                                value={tenant?.lease_expiry || 'N/A'}
+                                icon={ExpiryIcon}
+                                color="error.main"
+                            />
+                        </Grid>
+                    </Grid>
+
+                    <Paper elevation={0} sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 2 }}>
+                        <Box sx={{ p: 3, display: 'flex', alignItems: 'center', gap: 1 }}>
+                            <HistoryIcon color="action" />
+                            <Typography variant="h6" fontWeight="bold">Recent Transactions</Typography>
+                        </Box>
+                        <TableContainer>
+                            <Table>
+                                <TableHead sx={{ bgcolor: 'grey.50' }}>
+                                    <TableRow>
+                                        <TableCell sx={{ fontWeight: 'bold' }}>Date</TableCell>
+                                        <TableCell sx={{ fontWeight: 'bold' }}>Reference No</TableCell>
+                                        <TableCell sx={{ fontWeight: 'bold' }} align="right">Amount</TableCell>
+                                        <TableCell sx={{ fontWeight: 'bold' }}>Status</TableCell>
+                                    </TableRow>
+                                </TableHead>
+                                <TableBody>
+                                    {/* Real transactions from the API */}
+                                    {tenant?.transactions?.length > 0 ? (
+                                        tenant.transactions.map((tx) => (
+                                            <TableRow key={tx.id || Math.random()} hover>
+                                                <TableCell>{tx.date}</TableCell>
+                                                <TableCell>{tx.reference_no}</TableCell>
+                                                <TableCell align="right">{formatCurrency(tx.amount)}</TableCell>
+                                                <TableCell>
+                                                    <Typography
+                                                        variant="caption"
+                                                        sx={{
+                                                            bgcolor: tx.status === 'VALID' ? 'success.light' : 'warning.light',
+                                                            color: tx.status === 'VALID' ? 'success.dark' : 'warning.dark',
+                                                            px: 1, py: 0.5, borderRadius: 1,
+                                                            fontWeight: 'bold'
+                                                        }}
+                                                    >
+                                                        {tx.status}
+                                                    </Typography>
+                                                </TableCell>
+                                            </TableRow>
+                                        ))
+                                    ) : (
+                                        <TableRow>
+                                            <TableCell colSpan={4} align="center">No recent transactions found.</TableCell>
+                                        </TableRow>
+                                    )}
+                                </TableBody>
+                            </Table>
+                        </TableContainer>
+                        <Box sx={{ p: 2, textAlign: 'center' }}>
+                            <Button size="small">View All Transactions</Button>
+                        </Box>
+                    </Paper>
+                </Grid>
+            </Grid>
+        </Container>
+    );
+};
+
+export default TenantProfilePage;

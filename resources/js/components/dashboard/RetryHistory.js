@@ -2,6 +2,7 @@
 /** @jsx React.createElement */
 
 import React from 'react';
+import { formatDate } from '../../utils/dateFormatter';
 
 function RetryHistory() {
     const [retries, setRetries] = React.useState([]);
@@ -15,7 +16,7 @@ function RetryHistory() {
 
     React.useEffect(() => {
         fetchRetryHistory();
-        const interval = setInterval(fetchRetryHistory, 15000); // Refresh every 15s
+        const interval = setInterval(fetchRetryHistory, 60000); // Poll every 60s
         return () => clearInterval(interval);
     }, [pagination.currentPage]);
 
@@ -84,15 +85,14 @@ function RetryHistory() {
                             ),
                             React.createElement('td', { className: 'px-6 py-4 whitespace-nowrap' },
                                 React.createElement('span', {
-                                    className: `px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${
-                                        retry.status === 'SUCCESS'
+                                    className: `px-2 inline-flex text-xs leading-5 font-semibold rounded-full ${retry.status === 'SUCCESS'
                                             ? 'bg-green-100 text-green-800'
                                             : 'bg-red-100 text-red-800'
-                                    }`
+                                        }`
                                 }, retry.status)
                             ),
                             React.createElement('td', { className: 'px-6 py-4 whitespace-nowrap text-sm text-gray-500' },
-                                new Date(retry.created_at).toLocaleString()
+                                formatDate(retry.created_at)
                             )
                         )
                     )
@@ -104,11 +104,10 @@ function RetryHistory() {
             React.createElement('button', {
                 onClick: () => setPagination(prev => ({ ...prev, currentPage: prev.currentPage - 1 })),
                 disabled: pagination.currentPage === 1,
-                className: `px-4 py-2 border rounded ${
-                    pagination.currentPage === 1
+                className: `px-4 py-2 border rounded ${pagination.currentPage === 1
                         ? 'bg-gray-100 text-gray-400'
                         : 'bg-white text-blue-500 hover:bg-blue-50'
-                }`
+                    }`
             }, 'Previous'),
             React.createElement('span', { className: 'text-sm text-gray-700' },
                 `Page ${pagination.currentPage} of ${pagination.totalPages}`
@@ -116,11 +115,10 @@ function RetryHistory() {
             React.createElement('button', {
                 onClick: () => setPagination(prev => ({ ...prev, currentPage: prev.currentPage + 1 })),
                 disabled: pagination.currentPage === pagination.totalPages,
-                className: `px-4 py-2 border rounded ${
-                    pagination.currentPage === pagination.totalPages
+                className: `px-4 py-2 border rounded ${pagination.currentPage === pagination.totalPages
                         ? 'bg-gray-100 text-gray-400'
                         : 'bg-white text-blue-500 hover:bg-blue-50'
-                }`
+                    }`
             }, 'Next')
         )
     );

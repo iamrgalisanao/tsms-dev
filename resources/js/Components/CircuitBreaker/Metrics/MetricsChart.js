@@ -67,22 +67,22 @@ const MetricsChart = ({ serviceName, tenantId }) => {
             console.warn('Missing required parameters:', { serviceName, tenantId });
             return;
         }
-        
+
         try {
             // Set loading state
-            setState(prev => ({ 
-                ...prev, 
-                loading: showLoading, 
+            setState(prev => ({
+                ...prev,
+                loading: showLoading,
                 isRefreshing: true,
                 error: null
             }));
-            
+
             const params = new URLSearchParams({
                 service: serviceName,
                 tenant_id: tenantId,
                 timeRange: selectedRange.seconds.toString()
             });
-            
+
             const token = localStorage.getItem('auth_token');
             if (!token) {
                 throw new Error('Authentication required');
@@ -94,13 +94,13 @@ const MetricsChart = ({ serviceName, tenantId }) => {
                     'Authorization': `Bearer ${token}`
                 }
             });
-            
+
             if (!response.ok) {
                 throw new Error('Failed to fetch metrics');
             }
 
             const data = await response.json();
-            
+
             // Update state with new data
             setState(prev => ({
                 ...prev,
@@ -146,7 +146,7 @@ const MetricsChart = ({ serviceName, tenantId }) => {
         if (!isPaused && serviceName && tenantId) {
             intervalId = setInterval(() => {
                 fetchMetrics(false);
-            }, 60000);
+            }, 300000); // 5 min interval
         }
 
         return () => {
@@ -245,7 +245,7 @@ const MetricsChart = ({ serviceName, tenantId }) => {
                 { className: 'text-center p-8' },
                 [
                     React.createElement('div',
-                        { 
+                        {
                             key: 'loading-spinner',
                             className: 'inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-gray-900'
                         }
@@ -354,7 +354,7 @@ const MetricsChart = ({ serviceName, tenantId }) => {
                                 {
                                     key: 'refresh',
                                     className: `px-3 py-1 rounded-md text-sm font-medium 
-                                        ${state.isRefreshing 
+                                        ${state.isRefreshing
                                             ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
                                             : 'bg-blue-50 text-blue-600 hover:bg-blue-100'}`,
                                     onClick: () => fetchMetrics(true),
@@ -379,12 +379,12 @@ const MetricsChart = ({ serviceName, tenantId }) => {
                                     }
                                 },
                                 [
-                                    React.createElement('span', 
-                                        { key: 'icon' }, 
+                                    React.createElement('span',
+                                        { key: 'icon' },
                                         isPaused ? '▶️' : '⏸️'
                                     ),
-                                    React.createElement('span', 
-                                        { key: 'text' }, 
+                                    React.createElement('span',
+                                        { key: 'text' },
                                         isPaused ? 'Resume' : 'Pause'
                                     )
                                 ]
@@ -414,14 +414,14 @@ const MetricsChart = ({ serviceName, tenantId }) => {
                 },
                 [
                     React.createElement('div',
-                        { 
+                        {
                             key: 'failure-rate',
                             className: 'p-2 rounded bg-red-50'
                         },
                         `Current Failure Rate: ${state.metrics.failureRates[state.metrics.failureRates.length - 1] || 0}%`
                     ),
                     React.createElement('div',
-                        { 
+                        {
                             key: 'response-time',
                             className: 'p-2 rounded bg-blue-50'
                         },

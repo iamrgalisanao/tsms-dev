@@ -11,9 +11,8 @@ function StatusBadge({ status }) {
     return React.createElement(
         "span",
         {
-            className: `inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                colorClasses[status] || "bg-gray-100 text-gray-800"
-            }`,
+            className: `inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${colorClasses[status] || "bg-gray-100 text-gray-800"
+                }`,
         },
         status
     );
@@ -59,7 +58,7 @@ function StateOverview({ tenantId, onServiceSelect }) {
         };
 
         fetchStates();
-        const interval = setInterval(fetchStates, 5000);
+        const interval = setInterval(fetchStates, 30000); // 30s polling to reduce load
         return () => clearInterval(interval);
     }, [tenantId]);
 
@@ -108,11 +107,10 @@ function StateOverview({ tenantId, onServiceSelect }) {
                         "div",
                         {
                             key: `${breaker.tenant_id}-${breaker.name}`,
-                            className: `relative rounded-lg border ${
-                                selectedBreaker === breaker.name
+                            className: `relative rounded-lg border ${selectedBreaker === breaker.name
                                     ? "border-blue-500 ring-2 ring-blue-200"
                                     : "border-gray-300"
-                            } 
+                                } 
                                     bg-white px-6 py-5 shadow-sm hover:shadow-md transition-all duration-150 cursor-pointer
                                     hover:border-blue-300 hover:scale-[1.02] active:scale-[0.98]`,
                             onClick: () => handleBreakerClick(breaker),
@@ -169,14 +167,14 @@ function StateOverview({ tenantId, onServiceSelect }) {
                                         `Trip Count: ${breaker.trip_count}`
                                     ),
                                     breaker.status === "OPEN" &&
-                                        breaker.cooldown_until &&
-                                        React.createElement(
-                                            "div",
-                                            { key: "cooldown" },
-                                            `Retry After: ${new Date(
-                                                breaker.cooldown_until
-                                            ).toLocaleTimeString()}`
-                                        ),
+                                    breaker.cooldown_until &&
+                                    React.createElement(
+                                        "div",
+                                        { key: "cooldown" },
+                                        `Retry After: ${new Date(
+                                            breaker.cooldown_until
+                                        ).toLocaleTimeString()}`
+                                    ),
                                 ]
                             ),
                         ]

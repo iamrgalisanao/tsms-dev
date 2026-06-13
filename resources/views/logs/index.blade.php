@@ -1,4 +1,4 @@
-@extends('layouts.app')
+@extends('layouts.master')
 
 @section('content')
 @php
@@ -122,11 +122,15 @@ use App\Helpers\BadgeHelper;
             <i class="fas fa-exchange-alt me-2"></i>Webhook Logs
           </a>
         </li>
+        <li class="nav-item">
+          <a class="nav-link fw-medium text-muted" href="#submission" data-bs-toggle="tab">
+            <i class="fas fa-inbox me-2"></i>Submission Events
+          </a>
+        </li>
       </ul>
     </div>
 
     <div class="card-body p-4">
-
       <!-- Tab Content -->
       <div class="tab-content">
         <div class="tab-pane fade show active" id="audit">
@@ -134,6 +138,9 @@ use App\Helpers\BadgeHelper;
         </div>
         <div class="tab-pane fade" id="webhook">
           @include('logs.partials.webhook-table')
+        </div>
+        <div class="tab-pane fade" id="submission">
+          @include('logs.partials.submission-events-table')
         </div>
         <!-- Empty State -->
         <div id="emptyState" class="text-center py-5" style="display:none;">
@@ -146,8 +153,8 @@ use App\Helpers\BadgeHelper;
 </div>
 
 @include('logs.partials.context-modal')
+@endsection
 
-@push('styles')
 @push('scripts')
 <script>
 $(document).ready(function() {
@@ -160,31 +167,36 @@ $(document).ready(function() {
     }
   });
 
+  // Refresh when switching tabs
+  $(document).on('shown.bs.tab', 'a[data-bs-toggle="tab"]', function () {
+    applyFilters();
+  });
+
   // Initial load
   applyFilters();
 });
-  // Log details modal handler
-  $(document).on('click', '.view-details-btn', function() {
-    const logId = $(this).data('log-id');
-    $('#contextModal .modal-body').html('<div class="text-center py-4"><i class="fas fa-spinner fa-spin fa-2x text-primary"></i></div>');
-    $('#contextModal').modal('show');
-    $.ajax({
-      url: '/logs/details/' + logId,
-      method: 'GET',
-      success: function(response) {
-        $('#contextModal .modal-body').html(response.html);
-      },
-      error: function() {
-        $('#contextModal .modal-body').html('<div class="text-danger">Failed to load log details.</div>');
-      }
-    });
+
+// Log details modal handler
+$(document).on('click', '.view-details-btn', function() {
+  const logId = $(this).data('log-id');
+  $('#contextModal .modal-body').html('<div class="text-center py-4"><i class="fas fa-spinner fa-spin fa-2x text-primary"></i></div>');
+  $('#contextModal').modal('show');
+  $.ajax({
+    url: '/logs/details/' + logId,
+    method: 'GET',
+    success: function(response) {
+      $('#contextModal .modal-body').html(response.html);
+    },
+    error: function() {
+      $('#contextModal .modal-body').html('<div class="text-danger">Failed to load log details.</div>');
+    }
   });
+});
 
 let liveUpdateInterval = null;
 
 function applyFilters() {
   $('#liveUpdateSpinner').show();
-  // Gather filter values
   const data = {
     tab: $('.nav-link.active').attr('href').replace('#','')
   };
@@ -199,19 +211,17 @@ function applyFilters() {
     data: data,
     headers: { 'X-Requested-With': 'XMLHttpRequest' },
     success: function(response) {
-      // Replace table partials with new data
       if (data.tab === 'audit') {
         $('#audit').html(response.auditHtml);
-        // Re-initialize DataTable after DOM replacement
         initAuditDataTable();
-        // Re-apply previous search term if any
         if (currentSearch) {
           try { $('#auditTable').DataTable().search(currentSearch).draw(); } catch (e) {}
         }
-      } else {
+      } else if (data.tab === 'webhook') {
         $('#webhook').html(response.webhookHtml);
+      } else if (data.tab === 'submission') {
+        $('#submission').html(response.submissionHtml);
       }
-      // Show/hide empty state
       if (response.isEmpty) {
         $('#emptyState').show();
       } else {
@@ -240,11 +250,9 @@ function stopLiveUpdates() {
   $('#liveUpdateSpinner').hide();
 }
 
-// Safe (idempotent) initializer for the audit table DataTable
 function initAuditDataTable() {
   const selector = '#auditTable';
-  if (!$.fn.DataTable) return; // plugins not loaded yet
-  // If a previous instance exists (edge: re-attach), destroy before re-init
+  if (!$.fn.DataTable) return;
   if ($.fn.DataTable.isDataTable(selector)) {
     try { $(selector).DataTable().clear().destroy(); } catch (e) {}
   }
@@ -258,18 +266,8 @@ function initAuditDataTable() {
     searching: true,
     pageLength: 10,
     order: [[0, 'desc']],
-    // Explicitly declare 8 columns to match <thead>
-    columns: [
-      { defaultContent: '' }, // Time
-      { defaultContent: '' }, // User
-      { defaultContent: '' }, // Action
-      { defaultContent: '' }, // Resource
-      { defaultContent: '' }, // Tenant
-      { defaultContent: '' }, // Details
-      { defaultContent: '' }, // IP Address
-      { defaultContent: '', orderable: false, searchable: false } // Actions
-    ],
     columnDefs: [
+      { targets: -1, orderable: false, searchable: false },
       { targets: '_all', defaultContent: '' }
     ],
     language: {
@@ -284,47 +282,16 @@ function initAuditDataTable() {
   });
 }
 </script>
-<style>
-.card {
-  transition: all 0.3s ease;
-}
-
-.card:hover {
-  transform: translateY(-2px);
-}
-
-.nav-tabs .nav-link {
-  color: #6c757d;
-  /* Light grey for inactive tabs */
-  font-weight: 500;
-  opacity: 0.75;
-  /* Slightly dimmed when inactive */
-  transition: all 0.2s ease;
-}
-
-.nav-tabs .nav-link:hover {
-  color: #0d6efd;
-  opacity: 0.9;
-}
-
-.nav-tabs .nav-link.active {
-  color: #0d6efd;
-  border-bottom: 2px solid #0d6efd;
-  font-weight: 600;
-  opacity: 1;
-  /* Full opacity when active */
-}
-
-.table th {
-  font-weight: 500;
-  color: #6c757d;
-}
-
-.badge {
-  font-weight: 500;
-  padding: 0.5em 0.8em;
-}
-</style>
 @endpush
 
-@endsection
+@push('styles')
+<style>
+.card { transition: all 0.3s ease; }
+.card:hover { transform: translateY(-2px); }
+.nav-tabs .nav-link { color: #6c757d; font-weight: 500; opacity: 0.75; transition: all 0.2s ease; }
+.nav-tabs .nav-link:hover { color: #0d6efd; opacity: 0.9; }
+.nav-tabs .nav-link.active { color: #0d6efd; border-bottom: 2px solid #0d6efd; font-weight: 600; opacity: 1; }
+.table th { font-weight: 500; color: #6c757d; }
+.badge { font-weight: 500; padding: 0.5em 0.8em; }
+</style>
+@endpush

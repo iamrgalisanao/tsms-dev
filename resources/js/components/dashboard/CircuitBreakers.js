@@ -2,6 +2,7 @@
 /** @jsx React.createElement */
 
 import React, { useState, useEffect } from "react";
+import { formatDate } from "../../utils/dateFormatter";
 
 function CircuitBreakers() {
     const [services, setServices] = useState([]);
@@ -97,9 +98,7 @@ function CircuitBreakers() {
                                 null,
                                 `Last Failure: ${
                                     service.last_failure_at
-                                        ? new Date(
-                                              service.last_failure_at
-                                          ).toLocaleString()
+                                        ? formatDate(service.last_failure_at)
                                         : "None"
                                 }`
                             ),
@@ -108,9 +107,7 @@ function CircuitBreakers() {
                                 null,
                                 `Cooldown Until: ${
                                     service.cooldown_until
-                                        ? new Date(
-                                              service.cooldown_until
-                                          ).toLocaleString()
+                                        ? formatDate(service.cooldown_until)
                                         : "N/A"
                                 }`
                             ),

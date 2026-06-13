@@ -1,4 +1,4 @@
-@extends('layouts.app')
+@extends('layouts.master')
 
 @section('content')
 <div class="card">
@@ -22,7 +22,7 @@
               <dd class="col-sm-8">{{ $log->transaction_id }}</dd>
 
               <dt class="col-sm-4">Terminal UID</dt>
-              <dd class="col-sm-8">{{ $log->posTerminal->terminal_uid ?? 'Unknown' }}</dd>
+              <dd class="col-sm-8">{{ $log->posTerminal->serial_number ?? $log->terminal_uid ?? 'Unknown' }}</dd>
 
               <dt class="col-sm-4">Tenant</dt>
               <dd class="col-sm-8">{{ $log->tenant->trade_name ?? 'Unknown' }}</dd>

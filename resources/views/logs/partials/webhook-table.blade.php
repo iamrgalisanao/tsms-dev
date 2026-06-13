@@ -24,7 +24,7 @@ use App\Helpers\BadgeHelper;
             {{ strtoupper($log->status) }}
           </span>
         </td>
-        <td class="text-nowrap">{{ $log->terminal?->terminal_uid ?? 'N/A' }}</td>
+  <td class="text-nowrap">{{ $log->terminal?->serial_number ?? $log->terminal_uid ?? 'N/A' }}</td>
         <td class="text-nowrap">{{ Str::limit($log->endpoint, 30) }}</td>
         <td class="text-wrap" style="max-width: 300px;">
           @if($log->status === 'FAILED')

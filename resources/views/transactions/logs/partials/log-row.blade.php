@@ -4,7 +4,7 @@ use App\Helpers\BadgeHelper;
 
 <tr>
   <td class="text-nowrap">{{ $log->transaction_id }}</td>
-  <td class="text-nowrap">{{ $log->terminal->terminal_uid ?? 'N/A' }}</td>
+  <td class="text-nowrap">{{ $log->terminal->serial_number ?? $log->terminal_uid ?? 'N/A' }}</td>
   <td>{{ number_format($log->amount, 2) }}</td>
   <td>{!! BadgeHelper::getValidationStatusBadge($log->validation_status ?: 'PENDING') !!}</td>
   <td>{!! BadgeHelper::getJobStatusBadge($log->job_status) !!}</td>

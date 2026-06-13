@@ -1,4 +1,5 @@
 import React from 'react';
+import { formatDate } from '../../../utils/dateFormatter';
 
 function TransactionLogs() {
     const [logs, setLogs] = React.useState([]);
@@ -87,7 +88,7 @@ function TransactionLogs() {
                                         </span>
                                     </td>
                                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
-                                        {new Date(log.created_at).toLocaleString()}
+                                        {formatDate(log.created_at)}
                                     </td>
                                 </tr>
                             ))

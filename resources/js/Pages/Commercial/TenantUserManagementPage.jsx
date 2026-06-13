@@ -1,0 +1,738 @@
+import React, { useState, useEffect, useCallback } from 'react';
+import {
+    Container,
+    Paper,
+    Typography,
+    Box,
+    TextField,
+    Button,
+    Grid,
+    Alert,
+    Table,
+    TableBody,
+    TableCell,
+    TableContainer,
+    TableHead,
+    TableRow,
+    IconButton,
+    Dialog,
+    DialogTitle,
+    DialogContent,
+    DialogActions,
+    Stack,
+    Chip,
+    CircularProgress,
+    Divider,
+    Tooltip,
+    InputAdornment,
+    MenuItem
+} from '@mui/material';
+import {
+    Add as AddIcon,
+    Edit as EditIcon,
+    Delete as DeleteIcon,
+    Group as GroupIcon,
+    Business as BusinessIcon,
+    PersonAdd as PersonAddIcon,
+    Refresh as RefreshIcon,
+    Badge as BadgeIcon,
+    Category as CategoryIcon,
+    LocationOn as LocationOnIcon,
+    MapsHomeWork as MapsHomeWorkIcon,
+    Search as SearchIcon,
+    Info as InfoIcon,
+    FileDownload as FileDownloadIcon
+} from '@mui/icons-material';
+import api from '../../services/api';
+import { useRole } from '../../Hooks/useRole';
+
+const TenantUserManagementPage = () => {
+    const isAuthorized = useRole();
+    const [tenants, setTenants] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
+    const [success, setSuccess] = useState(null);
+
+    // Filtering States
+    const [searchTerm, setSearchTerm] = useState('');
+    const [statusFilter, setStatusFilter] = useState('All');
+    const [categoryFilter, setCategoryFilter] = useState('All');
+
+    // Dialog States
+    const [tenantDialogOpen, setTenantDialogOpen] = useState(false);
+    const [userDialogOpen, setUserDialogOpen] = useState(false);
+    const [selectedTenant, setSelectedTenant] = useState(null);
+    const [tenantUsers, setTenantUsers] = useState([]);
+    const [usersLoading, setUsersLoading] = useState(false);
+
+    // Form States
+    const [tenantForm, setTenantForm] = useState({
+        trade_name: '',
+        customer_code: '',
+        company_id: 1, // Default for now
+        location_type: '',
+        location: '',
+        unit_no: '',
+        category: '',
+        status: 'Operational'
+    });
+
+    const [userForm, setUserForm] = useState({
+        name: '',
+        email: '',
+        password: ''
+    });
+
+    const fetchTenants = useCallback(async () => {
+        try {
+            setLoading(true);
+            const data = await api.getTenants();
+            setTenants(data);
+        } catch (err) {
+            setError('Failed to fetch tenants.');
+        } finally {
+            setLoading(false);
+        }
+    }, []);
+
+    useEffect(() => {
+        if (isAuthorized) {
+            fetchTenants();
+        }
+    }, [isAuthorized, fetchTenants]);
+
+    const filteredTenants = React.useMemo(() => {
+        return tenants.filter(tenant => {
+            const matchesSearch = !searchTerm ||
+                tenant.trade_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                tenant.customer_code.toLowerCase().includes(searchTerm.toLowerCase());
+
+            const matchesStatus = statusFilter === 'All' || tenant.status === statusFilter;
+            const matchesCategory = categoryFilter === 'All' || tenant.category === categoryFilter;
+
+            return matchesSearch && matchesStatus && matchesCategory;
+        });
+    }, [tenants, searchTerm, statusFilter, categoryFilter]);
+
+    const categories = React.useMemo(() => {
+        const cats = new Set(tenants.map(t => t.category).filter(Boolean));
+        return ['All', ...Array.from(cats)].sort();
+    }, [tenants]);
+
+    const getStatusConfig = (status) => {
+        switch (status) {
+            case 'Operational':
+                return { color: 'success', icon: <Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: 'success.main', mr: 1 }} /> };
+            case 'Closed':
+                return { color: 'error', icon: <Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: 'error.main', mr: 1 }} /> };
+            case 'Pending':
+                return { color: 'warning', icon: <Box sx={{ width: 6, height: 6, borderRadius: '50%', bgcolor: 'warning.main', mr: 1 }} /> };
+            default:
+                return { color: 'default', icon: null };
+        }
+    };
+
+    if (!isAuthorized) {
+        return (
+            <Container sx={{ py: 4 }}>
+                <Alert severity="error">Access denied. Only admin and commercial roles can manage tenants.</Alert>
+            </Container>
+        );
+    }
+
+    const handleTenantSubmit = async (e) => {
+        e.preventDefault();
+        try {
+            if (selectedTenant && !userDialogOpen) {
+                await api.updateTenant(selectedTenant.id, tenantForm);
+                setSuccess('Tenant updated successfully!');
+            } else {
+                await api.createTenant(tenantForm);
+                setSuccess('Tenant created successfully!');
+            }
+            setTenantDialogOpen(false);
+            fetchTenants();
+        } catch (err) {
+            setError(err.response?.data?.message || 'Operation failed.');
+        }
+    };
+
+    const handleUserSubmit = async (e) => {
+        e.preventDefault();
+        try {
+            await api.createTenantUser(selectedTenant.id, userForm);
+            setSuccess('User added successfully!');
+            setUserDialogOpen(false);
+            setUserForm({ name: '', email: '', password: '' });
+            handleManageUsers(selectedTenant);
+        } catch (err) {
+            setError(err.response?.data?.message || 'Failed to add user.');
+        }
+    };
+
+    const handleManageUsers = async (tenant) => {
+        setSelectedTenant(tenant);
+        setUsersLoading(true);
+        setUserDialogOpen(true);
+        try {
+            const users = await api.getTenantUsers(tenant.id);
+            setTenantUsers(users);
+        } catch (err) {
+            setError('Failed to fetch tenant users.');
+        } finally {
+            setUsersLoading(false);
+        }
+    };
+
+    const handleDeleteTenant = async (id) => {
+        if (window.confirm('Are you sure you want to delete this tenant?')) {
+            try {
+                await api.deleteTenant(id);
+                setSuccess('Tenant deleted successfully!');
+                fetchTenants();
+            } catch (err) {
+                setError('Failed to delete tenant.');
+            }
+        }
+    };
+
+    const handleDeleteUser = async (userId) => {
+        if (window.confirm('Are you sure you want to remove this user?')) {
+            try {
+                await api.deleteTenantUser(selectedTenant.id, userId);
+                handleManageUsers(selectedTenant);
+            } catch (err) {
+                setError('Failed to delete user.');
+            }
+        }
+    };
+    const handleExportCSV = async () => {
+        try {
+            await api.exportTenantsCSV();
+            setSuccess('Tenant database exported successfully.');
+        } catch (err) {
+            setError('Failed to export tenants.');
+        }
+    };
+
+    return (
+        <Container maxWidth="lg" sx={{ py: 4 }}>
+            <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 4 }}>
+                <Box>
+                    <Typography variant="h4" fontWeight="bold" sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                        <BusinessIcon color="primary" fontSize="large" />
+                        Tenant Management
+                    </Typography>
+                    <Typography color="text.secondary">Manage business entities and their associated users.</Typography>
+                </Box>
+                <Stack direction="row" spacing={2}>
+                    <Button
+                        variant="outlined"
+                        startIcon={<RefreshIcon />}
+                        onClick={fetchTenants}
+                    >
+                        Sync
+                    </Button>
+                    <Button
+                        variant="outlined"
+                        color="primary"
+                        startIcon={<FileDownloadIcon />}
+                        onClick={handleExportCSV}
+                    >
+                        Export CSV
+                    </Button>
+                    <Button
+                        variant="contained"
+                        startIcon={<AddIcon />}
+                        sx={{
+                            opacity: 0,
+                            cursor: 'pointer',
+                            pointerEvents: 'auto',
+                            boxShadow: 'none',
+                            '&:hover': { opacity: 0, boxShadow: 'none' }
+                        }}
+                        onClick={() => {
+                            setSelectedTenant(null);
+                            setTenantForm({
+                                trade_name: '',
+                                customer_code: '',
+                                company_id: 1,
+                                location_type: '',
+                                location: '',
+                                unit_no: '',
+                                category: '',
+                                status: 'Operational'
+                            });
+                            setTenantDialogOpen(true);
+                        }}
+                    >
+                        New Tenant
+                    </Button>
+                </Stack>
+            </Stack>
+
+            {error && <Alert severity="error" sx={{ mb: 3 }} onClose={() => setError(null)}>{error}</Alert>}
+            {success && <Alert severity="success" sx={{ mb: 3 }} onClose={() => setSuccess(null)}>{success}</Alert>}
+
+            {/* Filter Bar */}
+            <Paper sx={{ p: 2, mb: 3, borderRadius: 3, boxShadow: '0 2px 12px rgba(0,0,0,0.05)' }}>
+                <Grid container spacing={2} alignItems="center">
+                    <Grid item xs={12} md={4}>
+                        <TextField
+                            fullWidth
+                            size="small"
+                            placeholder="Search by name or code..."
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            InputProps={{
+                                startAdornment: (
+                                    <InputAdornment position="start">
+                                        <SearchIcon fontSize="small" color="action" />
+                                    </InputAdornment>
+                                ),
+                                endAdornment: searchTerm && (
+                                    <InputAdornment position="end">
+                                        <IconButton size="small" onClick={() => setSearchTerm('')}>
+                                            <InfoIcon sx={{ fontSize: 16, transform: 'rotate(45deg)' }} />
+                                        </IconButton>
+                                    </InputAdornment>
+                                )
+                            }}
+                        />
+                    </Grid>
+                    <Grid item xs={6} md={3}>
+                        <TextField
+                            fullWidth
+                            select
+                            size="small"
+                            label="Category"
+                            value={categoryFilter}
+                            onChange={(e) => setCategoryFilter(e.target.value)}
+                            InputProps={{
+                                startAdornment: (
+                                    <InputAdornment position="start">
+                                        <CategoryIcon fontSize="small" color="action" />
+                                    </InputAdornment>
+                                ),
+                            }}
+                        >
+                            {categories.map(cat => (
+                                <MenuItem key={cat} value={cat}>{cat}</MenuItem>
+                            ))}
+                        </TextField>
+                    </Grid>
+                    <Grid item xs={6} md={3}>
+                        <TextField
+                            fullWidth
+                            select
+                            size="small"
+                            label="Status"
+                            value={statusFilter}
+                            onChange={(e) => setStatusFilter(e.target.value)}
+                            InputProps={{
+                                startAdornment: (
+                                    <InputAdornment position="start">
+                                        <InfoIcon fontSize="small" color="action" />
+                                    </InputAdornment>
+                                ),
+                            }}
+                        >
+                            <MenuItem value="All">All Statuses</MenuItem>
+                            <MenuItem value="Operational">Operational</MenuItem>
+                            <MenuItem value="Closed">Closed</MenuItem>
+                            <MenuItem value="Pending">Pending</MenuItem>
+                        </TextField>
+                    </Grid>
+                    <Grid item xs={12} md={2}>
+                        <Button
+                            fullWidth
+                            variant="text"
+                            color="secondary"
+                            disabled={searchTerm === '' && statusFilter === 'All' && categoryFilter === 'All'}
+                            onClick={() => {
+                                setSearchTerm('');
+                                setStatusFilter('All');
+                                setCategoryFilter('All');
+                            }}
+                        >
+                            Clear Filters
+                        </Button>
+                    </Grid>
+                </Grid>
+            </Paper>
+
+            <TableContainer component={Paper} sx={{ borderRadius: 3, boxShadow: '0 4px 20px rgba(0,0,0,0.05)' }}>
+                <Table>
+                    <TableHead sx={{ bgcolor: 'grey.50', borderBottom: '2px solid', borderColor: 'grey.200' }}>
+                        <TableRow>
+                            <TableCell sx={{ fontWeight: 800, textTransform: 'uppercase', fontSize: '0.7rem', letterSpacing: '0.05em', color: 'text.secondary' }}>Trade Name</TableCell>
+                            <TableCell sx={{ fontWeight: 800, textTransform: 'uppercase', fontSize: '0.7rem', letterSpacing: '0.05em', color: 'text.secondary' }}>Code</TableCell>
+                            <TableCell sx={{ fontWeight: 800, textTransform: 'uppercase', fontSize: '0.7rem', letterSpacing: '0.05em', color: 'text.secondary' }}>Category</TableCell>
+                            <TableCell sx={{ fontWeight: 800, textTransform: 'uppercase', fontSize: '0.7rem', letterSpacing: '0.05em', color: 'text.secondary' }}>Users</TableCell>
+                            <TableCell sx={{ fontWeight: 800, textTransform: 'uppercase', fontSize: '0.7rem', letterSpacing: '0.05em', color: 'text.secondary' }}>Terminals</TableCell>
+                            <TableCell sx={{ fontWeight: 800, textTransform: 'uppercase', fontSize: '0.7rem', letterSpacing: '0.05em', color: 'text.secondary' }}>Status</TableCell>
+                            <TableCell align="right" sx={{ fontWeight: 800, textTransform: 'uppercase', fontSize: '0.7rem', letterSpacing: '0.05em', color: 'text.secondary' }}>Actions</TableCell>
+                        </TableRow>
+                    </TableHead>
+                    <TableBody>
+                        {loading ? (
+                            <TableRow>
+                                <TableCell colSpan={7} align="center" sx={{ py: 3 }}>
+                                    <CircularProgress size={24} />
+                                </TableCell>
+                            </TableRow>
+                        ) : filteredTenants.length === 0 ? (
+                            <TableRow>
+                                <TableCell colSpan={7} align="center" sx={{ py: 5 }}>
+                                    <Box sx={{ color: 'text.secondary' }}>
+                                        <SearchIcon sx={{ fontSize: 48, mb: 1, opacity: 0.5 }} />
+                                        <Typography variant="body1" fontWeight="bold">No results found</Typography>
+                                        <Typography variant="body2">Try adjusting your search or filters.</Typography>
+                                        <Button
+                                            size="small"
+                                            sx={{ mt: 2 }}
+                                            onClick={() => {
+                                                setSearchTerm('');
+                                                setStatusFilter('All');
+                                                setCategoryFilter('All');
+                                            }}
+                                        >
+                                            Reset Filters
+                                        </Button>
+                                    </Box>
+                                </TableCell>
+                            </TableRow>
+                        ) : filteredTenants.map((tenant) => (
+                            <TableRow key={tenant.id} hover sx={{ '&:last-child td, &:last-child th': { border: 0 } }}>
+                                <TableCell sx={{ fontWeight: 600, color: 'primary.main' }}>{tenant.trade_name}</TableCell>
+                                <TableCell>
+                                    <Typography variant="body2" sx={{ fontFamily: 'monospace', bgcolor: 'grey.100', px: 1, py: 0.5, borderRadius: 1, display: 'inline-block' }}>
+                                        {tenant.customer_code}
+                                    </Typography>
+                                </TableCell>
+                                <TableCell>
+                                    {tenant.category ? (
+                                        <Chip
+                                            label={tenant.category}
+                                            size="small"
+                                            variant="outlined"
+                                            sx={{ fontSize: '0.75rem', fontWeight: 600, borderColor: 'grey.300' }}
+                                        />
+                                    ) : 'N/A'}
+                                </TableCell>
+                                <TableCell>
+                                    <Chip
+                                        size="small"
+                                        label={tenant.users_count || 0}
+                                        icon={<GroupIcon sx={{ fontSize: '14px !important' }} />}
+                                        sx={{ fontWeight: 'bold' }}
+                                    />
+                                </TableCell>
+                                <TableCell>
+                                    <Typography variant="body2" fontWeight="bold">
+                                        {tenant.pos_terminals_count || 0}
+                                    </Typography>
+                                </TableCell>
+                                <TableCell>
+                                    {(() => {
+                                        const config = getStatusConfig(tenant.status);
+                                        return (
+                                            <Chip
+                                                size="small"
+                                                label={tenant.status}
+                                                color={config.color}
+                                                variant="outlined"
+                                                icon={config.icon}
+                                                sx={{
+                                                    fontWeight: 'bold',
+                                                    px: 1,
+                                                    '& .MuiChip-icon': { ml: 0 }
+                                                }}
+                                            />
+                                        );
+                                    })()}
+                                </TableCell>
+                                <TableCell align="right">
+                                    <Tooltip title="Manage Users">
+                                        <IconButton onClick={() => handleManageUsers(tenant)} color="primary">
+                                            <PersonAddIcon />
+                                        </IconButton>
+                                    </Tooltip>
+                                    <Tooltip title="Edit Tenant">
+                                        <IconButton onClick={() => {
+                                            setSelectedTenant(tenant);
+                                            setTenantForm(tenant);
+                                            setTenantDialogOpen(true);
+                                        }}>
+                                            <EditIcon />
+                                        </IconButton>
+                                    </Tooltip>
+                                    <Tooltip title="Delete">
+                                        <IconButton onClick={() => handleDeleteTenant(tenant.id)} color="error">
+                                            <DeleteIcon />
+                                        </IconButton>
+                                    </Tooltip>
+                                </TableCell>
+                            </TableRow>
+                        ))}
+                    </TableBody>
+                </Table>
+            </TableContainer>
+
+            {/* Tenant Dialog */}
+            <Dialog
+                open={tenantDialogOpen}
+                onClose={() => setTenantDialogOpen(false)}
+                maxWidth="sm"
+                fullWidth
+                PaperProps={{
+                    sx: { borderRadius: 4, boxShadow: '0 24px 48px rgba(0,0,0,0.1)' }
+                }}
+            >
+                <form onSubmit={handleTenantSubmit}>
+                    <DialogTitle sx={{ pb: 1 }}>
+                        <Stack direction="row" spacing={2} alignItems="center">
+                            <Box sx={{
+                                bgcolor: 'primary.main',
+                                color: 'white',
+                                p: 1,
+                                borderRadius: 2,
+                                display: 'flex'
+                            }}>
+                                <BusinessIcon />
+                            </Box>
+                            <Box>
+                                <Typography variant="h6" fontWeight="bold">
+                                    {selectedTenant ? 'Edit Tenant Profile' : 'Register New Tenant'}
+                                </Typography>
+                                <Typography variant="caption" color="text.secondary">
+                                    {selectedTenant ? 'Modify business details for this entity.' : 'Set up a new business entity in the commercial portal.'}
+                                </Typography>
+                            </Box>
+                        </Stack>
+                    </DialogTitle>
+                    <DialogContent dividers>
+                        <Box sx={{ py: 1 }}>
+                            <Typography variant="overline" fontWeight="bold" color="text.secondary" gutterBottom>
+                                Tenant Identity
+                            </Typography>
+                            <Grid container spacing={2.5} sx={{ mb: 3 }}>
+                                <Grid item xs={12}>
+                                    <TextField
+                                        fullWidth
+                                        label="Trade Name"
+                                        required
+                                        placeholder="e.g., Starbucks Coffee"
+                                        value={tenantForm.trade_name}
+                                        onChange={(e) => setTenantForm({ ...tenantForm, trade_name: e.target.value })}
+                                        InputProps={{
+                                            startAdornment: <InputAdornment position="start"><MapsHomeWorkIcon color="action" fontSize="small" /></InputAdornment>,
+                                        }}
+                                    />
+                                </Grid>
+                                <Grid item xs={6}>
+                                    <TextField
+                                        fullWidth
+                                        label="Customer Code"
+                                        required
+                                        placeholder="T-0001"
+                                        value={tenantForm.customer_code}
+                                        onChange={(e) => setTenantForm({ ...tenantForm, customer_code: e.target.value })}
+                                        InputProps={{
+                                            startAdornment: <InputAdornment position="start"><BadgeIcon color="action" fontSize="small" /></InputAdornment>,
+                                        }}
+                                    />
+                                </Grid>
+                                <Grid item xs={6}>
+                                    <TextField
+                                        fullWidth
+                                        select
+                                        label="Status"
+                                        value={tenantForm.status}
+                                        onChange={(e) => setTenantForm({ ...tenantForm, status: e.target.value })}
+                                    >
+                                        <MenuItem value="Operational">
+                                            <Stack direction="row" spacing={1} alignItems="center">
+                                                <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: 'success.main' }} />
+                                                <Typography variant="body2">Operational</Typography>
+                                            </Stack>
+                                        </MenuItem>
+                                        <MenuItem value="Closed">
+                                            <Stack direction="row" spacing={1} alignItems="center">
+                                                <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: 'error.main' }} />
+                                                <Typography variant="body2">Closed</Typography>
+                                            </Stack>
+                                        </MenuItem>
+                                        <MenuItem value="Pending">
+                                            <Stack direction="row" spacing={1} alignItems="center">
+                                                <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: 'warning.main' }} />
+                                                <Typography variant="body2">Pending</Typography>
+                                            </Stack>
+                                        </MenuItem>
+                                    </TextField>
+                                </Grid>
+                            </Grid>
+
+                            <Divider sx={{ mb: 3 }} />
+
+                            <Typography variant="overline" fontWeight="bold" color="text.secondary" gutterBottom>
+                                Settings & Location
+                            </Typography>
+                            <Grid container spacing={2.5}>
+                                <Grid item xs={12}>
+                                    <TextField
+                                        fullWidth
+                                        label="Category"
+                                        placeholder="e.g., Food & Beverage"
+                                        value={tenantForm.category}
+                                        onChange={(e) => setTenantForm({ ...tenantForm, category: e.target.value })}
+                                        InputProps={{
+                                            startAdornment: <InputAdornment position="start"><CategoryIcon color="action" fontSize="small" /></InputAdornment>,
+                                        }}
+                                    />
+                                </Grid>
+                                <Grid item xs={6}>
+                                    <TextField
+                                        fullWidth
+                                        label="Level"
+                                        placeholder="Level-2"
+                                        value={tenantForm.location_type}
+                                        onChange={(e) => setTenantForm({ ...tenantForm, location_type: e.target.value })}
+                                        InputProps={{
+                                            startAdornment: <InputAdornment position="start"><LocationOnIcon color="action" fontSize="small" /></InputAdornment>,
+                                        }}
+                                    />
+                                </Grid>
+                                <Grid item xs={6}>
+                                    <TextField
+                                        fullWidth
+                                        label="Unit No"
+                                        placeholder="U-201"
+                                        value={tenantForm.unit_no}
+                                        onChange={(e) => setTenantForm({ ...tenantForm, unit_no: e.target.value })}
+                                        InputProps={{
+                                            startAdornment: <InputAdornment position="start"><InfoIcon color="action" fontSize="small" /></InputAdornment>,
+                                        }}
+                                    />
+                                </Grid>
+                            </Grid>
+                        </Box>
+                    </DialogContent>
+                    <DialogActions sx={{ p: 3, bgcolor: 'grey.50' }}>
+                        <Button
+                            onClick={() => setTenantDialogOpen(false)}
+                            sx={{ color: 'text.secondary', fontWeight: 'bold' }}
+                        >
+                            Cancel
+                        </Button>
+                        <Button
+                            type="submit"
+                            variant="contained"
+                            size="large"
+                            sx={{
+                                fontWeight: 'bold',
+                                px: 4,
+                                borderRadius: 2,
+                                boxShadow: '0 8px 16px rgba(29, 67, 155, 0.2)'
+                            }}
+                        >
+                            {selectedTenant ? 'Update Entity' : 'Create Entity'}
+                        </Button>
+                    </DialogActions>
+                </form>
+            </Dialog>
+
+            {/* User Management Dialog */}
+            <Dialog open={userDialogOpen} onClose={() => setUserDialogOpen(false)} maxWidth="md" fullWidth>
+                <DialogTitle sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    Users for {selectedTenant?.trade_name}
+                    <Button startIcon={<AddIcon />} variant="outlined" size="small" onClick={() => {
+                        // Toggle sub-form or nested dialog logic
+                        // For simplicity, we'll just show the user add form directly
+                    }}>
+                        Add User
+                    </Button>
+                </DialogTitle>
+                <DialogContent dividers>
+                    <Box sx={{ mb: 4, p: 2, bgcolor: 'grey.50', borderRadius: 2 }}>
+                        <Typography variant="subtitle2" sx={{ mb: 2, fontWeight: 'bold' }}>Add New User Account</Typography>
+                        <form onSubmit={handleUserSubmit}>
+                            <Grid container spacing={2} alignItems="center">
+                                <Grid item xs={3}>
+                                    <TextField
+                                        size="small"
+                                        fullWidth
+                                        label="Name"
+                                        required
+                                        value={userForm.name}
+                                        onChange={(e) => setUserForm({ ...userForm, name: e.target.value })}
+                                    />
+                                </Grid>
+                                <Grid item xs={4}>
+                                    <TextField
+                                        size="small"
+                                        fullWidth
+                                        label="Email"
+                                        required
+                                        type="email"
+                                        value={userForm.email}
+                                        onChange={(e) => setUserForm({ ...userForm, email: e.target.value })}
+                                    />
+                                </Grid>
+                                <Grid item xs={3}>
+                                    <TextField
+                                        size="small"
+                                        fullWidth
+                                        label="Password"
+                                        required
+                                        type="password"
+                                        value={userForm.password}
+                                        onChange={(e) => setUserForm({ ...userForm, password: e.target.value })}
+                                    />
+                                </Grid>
+                                <Grid item xs={2}>
+                                    <Button type="submit" variant="contained" fullWidth>Add</Button>
+                                </Grid>
+                            </Grid>
+                        </form>
+                    </Box>
+
+                    <Typography variant="subtitle2" sx={{ mb: 2, fontWeight: 'bold' }}>Existing Users</Typography>
+                    <Table size="small">
+                        <TableHead>
+                            <TableRow>
+                                <TableCell>Name</TableCell>
+                                <TableCell>Email</TableCell>
+                                <TableCell>Created</TableCell>
+                                <TableCell align="right">Actions</TableCell>
+                            </TableRow>
+                        </TableHead>
+                        <TableBody>
+                            {usersLoading ? (
+                                <TableRow><TableCell colSpan={4} align="center"><CircularProgress size={20} /></TableCell></TableRow>
+                            ) : tenantUsers.length === 0 ? (
+                                <TableRow><TableCell colSpan={4} align="center">No users found for this tenant.</TableCell></TableRow>
+                            ) : tenantUsers.map(user => (
+                                <TableRow key={user.id}>
+                                    <TableCell>{user.name}</TableCell>
+                                    <TableCell>{user.email}</TableCell>
+                                    <TableCell>{new Date(user.created_at).toLocaleDateString()}</TableCell>
+                                    <TableCell align="right">
+                                        <IconButton size="small" color="error" onClick={() => handleDeleteUser(user.id)}>
+                                            <DeleteIcon fontSize="small" />
+                                        </IconButton>
+                                    </TableCell>
+                                </TableRow>
+                            ))}
+                        </TableBody>
+                    </Table>
+                </DialogContent>
+                <DialogActions sx={{ p: 2 }}>
+                    <Button onClick={() => setUserDialogOpen(false)}>Close</Button>
+                </DialogActions>
+            </Dialog>
+        </Container>
+    );
+};
+
+export default TenantUserManagementPage;

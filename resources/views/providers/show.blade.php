@@ -89,7 +89,7 @@
 @endsection
 
 @section('scripts')
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+{{-- Chart.js is provided by the master layout via Vite or fallback; remove duplicate include --}}
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     const canvas = document.getElementById('enrollmentChart');
