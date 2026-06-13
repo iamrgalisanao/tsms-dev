@@ -27,6 +27,7 @@ import { formatDate } from '../../utils/dateFormatter';
 
 const Row = ({ transaction, onViewDetails, getStatusColor, formatCurrency, formatDate }) => {
     const [open, setOpen] = useState(false);
+    const transactionDisplayTime = transaction.transaction_timestamp || transaction.completed_at || transaction.created_at;
     const operationStatus = transaction.voided_at
         ? 'ERROR'
         : (['INVALID', 'WITH_ISSUES'].includes((transaction.validation_status || '').toUpperCase())
@@ -111,7 +112,7 @@ const Row = ({ transaction, onViewDetails, getStatusColor, formatCurrency, forma
                 </TableCell>
                 <TableCell sx={{ minWidth: 130 }}>
                     <Typography variant="body2" sx={{ fontFamily: 'monospace', fontSize: '11px', color: 'text.secondary', fontWeight: 700 }}>
-                        {formatDate(transaction.completed_at || transaction.created_at)}
+                        {formatDate(transactionDisplayTime)}
                     </Typography>
                 </TableCell>
                 <TableCell>
@@ -203,9 +204,9 @@ const Row = ({ transaction, onViewDetails, getStatusColor, formatCurrency, forma
                                             <DetailItem
                                                 label="Transaction Timestamp"
                                                 value={
-                                                    <Tooltip title={`Raw: ${transaction.transaction_timestamp || 'N/A'}`} arrow>
+                                                    <Tooltip title={`Raw: ${transactionDisplayTime || 'N/A'}`} arrow>
                                                         <Typography variant="body2" sx={{ fontWeight: 700, color: 'text.primary', cursor: 'help' }}>
-                                                            {formatDate(transaction.transaction_timestamp || transaction.created_at)}
+                                                            {formatDate(transactionDisplayTime)}
                                                         </Typography>
                                                     </Tooltip>
                                                 }
