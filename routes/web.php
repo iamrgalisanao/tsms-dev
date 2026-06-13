@@ -78,13 +78,21 @@ Route::middleware(['auth'])->group(function () {
         Route::get('/test', [TestTransactionController::class, 'index'])->name('test');
         Route::post('/test/process', [TestTransactionController::class, 'process'])->name('test.process');
         
-        Route::get('/', [TransactionController::class, 'index'])->name('index');
+        Route::get('/', function () {
+            return view('app');
+        })->name('index');
         
-        // Transaction logs routes (admin/manager only)
-        Route::middleware(['role:admin|manager'])->prefix('logs')->name('logs.')->group(function () {
+        // Transaction logs data/action routes for the React archive page.
+        Route::middleware(['role:admin|manager|finance|commercial'])->prefix('logs')->name('logs.')->group(function () {
             Route::get('/', [TransactionLogController::class, 'index'])->name('index');
             Route::get('/summary', [TransactionLogController::class, 'summary'])->name('summary');
             Route::get('/issues-count', [TransactionLogController::class, 'issuesCount'])->name('issues.count');
+            Route::get('/terminals', [TransactionLogController::class, 'terminals'])->name('terminals');
+            Route::get('/tenants', [TransactionLogController::class, 'tenants'])->name('tenants');
+            Route::get('/export', [TransactionLogController::class, 'export'])->name('export.get');
+            Route::post('/reconcile', [TransactionLogController::class, 'reconcile'])
+                ->middleware(['role:admin|finance|commercial'])
+                ->name('reconcile');
             Route::get('/updates', [TransactionLogController::class, 'getUpdates'])->name('updates');
             Route::get('/{id}', [TransactionLogController::class, 'show'])->name('show');
             Route::post('/export', [TransactionLogController::class, 'export'])->name('export');

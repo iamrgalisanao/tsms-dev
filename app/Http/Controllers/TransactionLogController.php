@@ -13,6 +13,8 @@ use Maatwebsite\Excel\Facades\Excel;
 use App\Models\PosProvider;
 use App\Models\PosTerminal;
 use App\Models\Tenant;
+use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Facades\Log;
 
 class TransactionLogController extends Controller
 {
@@ -108,7 +110,7 @@ class TransactionLogController extends Controller
          return view('transactions.logs.index', compact('logs', 'terminals', 'tenants', 'filters', 'activeTab', 'summary'));
     }
 
-    public function show($id)
+    public function show(Request $request, $id)
     {
         try {
             $transaction = Transaction::with([
@@ -122,6 +124,30 @@ class TransactionLogController extends Controller
                     ->route('transactions.logs.index')
                     ->with('error', 'Transaction not found');
             }
+
+            if ($request->wantsJson()) {
+                return response()->json([
+                    'id' => $transaction->id,
+                    'transaction_id' => $transaction->transaction_id,
+                    'receipt_no' => $transaction->receipt_no ?? null,
+                    'amount' => (float) ($transaction->gross_sales ?? 0),
+                    'net_sales' => (float) ($transaction->net_sales ?? 0),
+                    'validation_status' => $transaction->validation_status,
+                    'voided_at' => $transaction->voided_at,
+                    'void_reason' => $transaction->void_reason,
+                    'is_refunded' => (bool) ($transaction->is_refunded ?? false),
+                    'refund_amount' => (float) ($transaction->refund_amount ?? 0),
+                    'refund_reason' => $transaction->refund_reason ?? null,
+                    'job_attempts' => (int) ($transaction->job_attempts ?? 0),
+                    'created_at' => $transaction->created_at,
+                    'completed_at' => $transaction->completed_at,
+                    'terminal' => $transaction->terminal,
+                    'tenant' => $transaction->tenant,
+                    'adjustments' => $transaction->adjustments,
+                    'taxes' => $transaction->taxes,
+                    'payload' => $transaction->original_payload ? json_decode($transaction->original_payload) : null,
+                ]);
+            }
             
             return view('transactions.logs.show', [
                 'transaction' => $transaction,
@@ -129,6 +155,10 @@ class TransactionLogController extends Controller
                 'timeline' => $this->detailService->getProcessingTimeline($transaction)
             ]);
         } catch (\Exception $e) {
+            if ($request->wantsJson()) {
+                return response()->json(['error' => $e->getMessage()], 404);
+            }
+
             return redirect()
                 ->route('transactions.logs.index')
                 ->with('error', 'Error loading transaction: ' . $e->getMessage());
@@ -153,6 +183,21 @@ class TransactionLogController extends Controller
         }
         
         return view('transactions.logs.partials.rows', compact('updates'));
+    }
+
+    public function terminals()
+    {
+        return response()->json(
+            PosTerminal::with('tenant:id,trade_name')
+                ->get(['id', 'serial_number', 'tenant_id', 'machine_number'])
+        );
+    }
+
+    public function tenants()
+    {
+        return response()->json(
+            Tenant::orderBy('trade_name')->get(['id', 'trade_name'])
+        );
     }
 
     /**
@@ -249,6 +294,80 @@ class TransactionLogController extends Controller
         $count = $query->where('validation_status', 'WITH_ISSUES')->count();
 
         return response()->json(['count' => (int) $count]);
+    }
+
+    /**
+     * Trigger manual reconciliation for stranded accepted intakes and missing
+     * processed transactions. Available to admin, finance, and commercial users.
+     */
+    public function reconcile(Request $request)
+    {
+        $user = $request->user();
+
+        try {
+            Log::info('Manual reconciliation triggered by user', [
+                'user_id' => $user?->id,
+                'email' => $user?->email,
+                'role' => $user?->role ?? null,
+            ]);
+
+            Artisan::call('tsms:reconcile-intake');
+            $strandedOutput = trim(Artisan::output());
+
+            Artisan::call('tsms:reconcile-intake', [
+                '--repair-missing' => true,
+            ]);
+            $repairOutput = trim(Artisan::output());
+
+            try {
+                \App\Models\AuditLog::create([
+                    'user_id' => $user?->id,
+                    'ip_address' => $request->ip(),
+                    'action' => 'MANUAL_RECONCILIATION_TRIGGERED',
+                    'action_type' => 'reconciliation',
+                    'resource_type' => 'transaction_intake',
+                    'resource_id' => 'all',
+                    'auditable_type' => 'system',
+                    'auditable_id' => null,
+                    'message' => 'Manual intake/transaction reconciliation triggered by ' . ($user?->email ?? 'unknown user'),
+                    'metadata' => [
+                        'stranded_output' => $strandedOutput,
+                        'repair_output' => $repairOutput,
+                    ],
+                ]);
+            } catch (\Throwable $auditEx) {
+                Log::error('Failed to write manual reconciliation AuditLog', [
+                    'error' => $auditEx->getMessage(),
+                ]);
+            }
+
+            $message = 'Reconciliation completed successfully.';
+            if ($strandedOutput) {
+                $message .= "\n" . $strandedOutput;
+            }
+            if ($repairOutput) {
+                $message .= "\n" . $repairOutput;
+            }
+
+            return response()->json([
+                'status' => 'success',
+                'message' => $message,
+                'details' => [
+                    'stranded' => $strandedOutput,
+                    'repair' => $repairOutput,
+                ],
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('Manual reconciliation failed', [
+                'error' => $e->getMessage(),
+                'user_id' => $user?->id,
+            ]);
+
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Manual reconciliation failed: ' . $e->getMessage(),
+            ], 500);
+        }
     }
 
     /**
