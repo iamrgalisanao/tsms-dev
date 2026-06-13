@@ -18,10 +18,10 @@ class RateLimitMonitor
             'timestamp' => now(),
         ]);
 
-        // Increment violation counter in Redis
+        // Initialize with TTL first; not every Laravel cache store supports expire().
         $key = "rate_limits:violations:{$type}:" . now()->format('Y-m-d:H');
+        Cache::add($key, 0, now()->addDay());
         Cache::increment($key);
-        Cache::expire($key, now()->addDay());
     }
 
     public function getViolationMetrics(string $type, int $hours = 24): array
