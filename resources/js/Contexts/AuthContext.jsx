@@ -54,9 +54,15 @@ export const AuthProvider = ({ children }) => {
 
     const login = async (email, password) => {
         try {
-            const response = await fetch('/api/auth/login', {
+            const token = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+            const response = await fetch('/login', {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
+                    ...(token ? { 'X-CSRF-TOKEN': token } : {})
+                },
+                credentials: 'include',
                 body: JSON.stringify({ email, password }),
             });
 
@@ -66,7 +72,7 @@ export const AuthProvider = ({ children }) => {
             }
 
             const data = await response.json();
-            localStorage.setItem('auth_token', data.token);
+            localStorage.removeItem('auth_token');
 
             // Sync window.authUser so role-based sidebar works immediately
             window.authUser = data.user;
@@ -82,20 +88,22 @@ export const AuthProvider = ({ children }) => {
 
     const logout = async () => {
         try {
-            const token = localStorage.getItem('auth_token');
-            if (token) {
-                await fetch('/api/auth/logout', {
-                    method: 'POST',
-                    headers: { 'Authorization': `Bearer ${token}` },
-                    credentials: 'include'
-                });
-            }
+            const token = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+            await fetch('/logout', {
+                method: 'POST',
+                headers: {
+                    'Accept': 'application/json',
+                    ...(token ? { 'X-CSRF-TOKEN': token } : {})
+                },
+                credentials: 'include'
+            });
         } catch (error) {
             console.error('Logout error:', error);
         } finally {
             localStorage.removeItem('auth_token');
             window.authUser = null;
             setUser(null);
+            window.location.href = '/login';
         }
     };
 

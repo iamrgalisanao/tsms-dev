@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { ThemeProvider } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import theme from '../Themes/MuiTheme';
@@ -19,7 +19,6 @@ import { useAuth } from '../Contexts/AuthContext';
 const MainLayout = ({ children }) => {
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
     const location = useLocation();
-    const navigate = useNavigate();
     const { user: authUser, logout } = useAuth();
 
     // Merge: prefer reactive AuthContext user, fall back to Blade-injected window.authUser
@@ -29,25 +28,25 @@ const MainLayout = ({ children }) => {
     const menuItems = [
         // ── Admin / Manager ──────────────────────────────────────────
         { name: 'Dashboard', path: '/dashboard', icon: DashboardIcon, roles: ['admin', 'manager'] },
-        { name: 'Transactions', path: '/transactions', icon: ReceiptIcon, roles: ['admin', 'manager'] },
-        { name: 'Terminal Tokens', path: '/terminal-tokens', icon: KeyIcon, roles: ['admin', 'commercial'] },
-        { name: 'User Management', path: '/users', icon: PeopleIcon, roles: ['admin'] },
-        { name: 'System Logs', path: '/system-logs', icon: DescriptionIcon, roles: ['admin'] },
-        { name: 'Intake Health', path: '/observability/intake', icon: FlashOnIcon, roles: ['admin', 'manager'] },
-        { name: 'Provider Activity', path: '/monitoring/activity', icon: QueryStatsIcon, roles: ['admin', 'manager'] },
+        { name: 'Transactions', path: '/transactions', icon: ReceiptIcon, roles: ['admin', 'manager'], legacy: true },
+        { name: 'Terminal Tokens', path: '/terminal-tokens', icon: KeyIcon, roles: ['admin', 'commercial'], legacy: true },
+        { name: 'User Management', path: '/users', icon: PeopleIcon, roles: ['admin'], legacy: true },
+        { name: 'System Logs', path: '/system-logs', icon: DescriptionIcon, roles: ['admin'], legacy: true },
+        { name: 'Intake Health', path: '/observability/intake', icon: FlashOnIcon, roles: ['admin', 'manager'], legacy: true },
+        { name: 'Provider Activity', path: '/monitoring/activity', icon: QueryStatsIcon, roles: ['admin', 'manager'], legacy: true },
         { name: 'Payload Sandbox', path: '/sandbox/payload', icon: FactCheckIcon, roles: ['admin', 'manager'] },
-        { name: 'Settings', path: '/settings', icon: SettingsIcon, roles: ['admin'] },
+        { name: 'Settings', path: '/admin/settings', icon: SettingsIcon, roles: ['admin'], legacy: true },
 
         // ── Finance (exclusive set) ───────────────────────────────────
         { name: 'Dashboard', path: '/finance', icon: DashboardIcon, roles: ['finance'] },
-        { name: 'Transaction Logs', path: '/transactions', icon: ReceiptIcon, roles: ['finance'] },
-        { name: 'Reports', path: '/reports', icon: DescriptionIcon, roles: ['finance'] },
+        { name: 'Transaction Logs', path: '/transactions', icon: ReceiptIcon, roles: ['finance'], legacy: true },
+        { name: 'Reports', path: '/reports', icon: DescriptionIcon, roles: ['finance'], legacy: true },
 
         // ── Commercial ───────────────────────────────────────────────
-        { name: 'Dashboard', path: '/commercial', icon: DashboardIcon, roles: ['commercial'] },
-        { name: 'Reports', path: '/commercial/reports', icon: DescriptionIcon, roles: ['commercial'] },
-        { name: 'Tenants', path: '/commercial/tenants', icon: PeopleIcon, roles: ['commercial'] },
-        { name: 'Tenant Management', path: '/commercial/tenants/manage', icon: DescriptionIcon, roles: ['admin', 'manager'] },
+        { name: 'Dashboard', path: '/commercial', icon: DashboardIcon, roles: ['commercial'], legacy: true },
+        { name: 'Reports', path: '/commercial/reports', icon: DescriptionIcon, roles: ['commercial'], legacy: true },
+        { name: 'Tenants', path: '/commercial/tenants', icon: PeopleIcon, roles: ['commercial'], legacy: true },
+        { name: 'Tenant Management', path: '/commercial/tenants/manage', icon: DescriptionIcon, roles: ['admin', 'manager'], legacy: true },
     ];
 
     const filteredItems = menuItems.filter(item => {
@@ -72,13 +71,13 @@ const MainLayout = ({ children }) => {
                     <div className="h-24 flex items-center justify-center p-1 bg-white flex-shrink-0">
                         {isSidebarOpen ? (
                             <img
-                                src="/images/pitx-logo.png"
+                                src="/images/pitx_logo.png"
                                 alt="PITX Logo"
                                 className="w-full h-full object-contain"
                             />
                         ) : (
                             <img
-                                src="/images/pitx-icon.png"
+                                src="/images/pitx_logo.png"
                                 alt="PITX"
                                 className="w-full h-full object-contain"
                             />
@@ -89,15 +88,12 @@ const MainLayout = ({ children }) => {
                         {filteredItems.map((item) => {
                             const isActive = location.pathname === item.path;
                             const IconComponent = item.icon;
-                            return (
-                                <Link
-                                    key={item.name}
-                                    to={item.path}
-                                    className={`flex items-center p-3 rounded-lg transition-all duration-200 group ${isActive
-                                        ? 'bg-white/15 text-white shadow-sm'
-                                        : 'text-white/70 hover:bg-white/10 hover:text-white'
-                                        }`}
-                                >
+                            const navClassName = `flex items-center p-3 rounded-lg transition-all duration-200 group ${isActive
+                                ? 'bg-white/15 text-white shadow-sm'
+                                : 'text-white/70 hover:bg-white/10 hover:text-white'
+                                }`;
+                            const content = (
+                                <>
                                     <IconComponent
                                         sx={{
                                             fontSize: 24,
@@ -108,6 +104,16 @@ const MainLayout = ({ children }) => {
                                     />
                                     {isSidebarOpen && <span className={`ml-3 text-[17px] ${isActive ? 'font-bold' : 'font-medium'}`}>{item.name}</span>}
                                     {isActive && isSidebarOpen && <div className="ml-auto w-1.5 h-1.5 rounded-full bg-brand-accent animate-pulse"></div>}
+                                </>
+                            );
+
+                            return item.legacy ? (
+                                <a key={item.name} href={item.path} className={navClassName}>
+                                    {content}
+                                </a>
+                            ) : (
+                                <Link key={item.name} to={item.path} className={navClassName}>
+                                    {content}
                                 </Link>
                             );
                         })}
@@ -117,7 +123,6 @@ const MainLayout = ({ children }) => {
                         <button
                             onClick={async () => {
                                 await logout();
-                                navigate('/login');
                             }}
                             className="flex items-center w-full p-3 rounded-lg text-white/50 hover:bg-brand-accent/10 hover:text-brand-accent transition-all duration-200"
                         >

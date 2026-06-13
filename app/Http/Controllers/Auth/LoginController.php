@@ -26,12 +26,28 @@ class LoginController extends Controller
             }
 
             Log::info('User logged in successfully', ['email' => $request->email]);
+
+            if ($request->wantsJson()) {
+                return response()->json([
+                    'user' => array_merge(
+                        $user->toArray(),
+                        ['roles' => $user->getRoleNames()->values()->toArray()]
+                    ),
+                    'redirect_url' => '/dashboard',
+                ]);
+            }
             
             return redirect()->intended('/dashboard');
         }
 
         Log::warning('Failed login attempt', ['email' => $request->email]);
         
+        if ($request->wantsJson()) {
+            return response()->json([
+                'message' => 'The provided credentials do not match our records.',
+            ], 422);
+        }
+
         return back()->withErrors([
             'email' => 'The provided credentials do not match our records.',
         ])->withInput($request->except('password'));
@@ -52,6 +68,10 @@ class LoginController extends Controller
             'email' => $user?->email,
             'ip_address' => $request->ip()
         ]);
+
+        if ($request->wantsJson()) {
+            return response()->json(['success' => true]);
+        }
         
         return redirect('/login');
     }
