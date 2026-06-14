@@ -16,7 +16,7 @@ class DuplicateReceiptReport extends Command
         {--limit=100 : Maximum duplicate groups or legacy conflicts to show per section}
         {--json : Emit machine-readable JSON instead of tables}';
 
-    protected $description = 'Report duplicate receipt numbers by tenant, terminal, receipt, and transaction date';
+    protected $description = 'Read-only duplicate receipt monitoring/audit report by tenant, terminal, receipt, and transaction date';
 
     public function handle(): int
     {
@@ -38,7 +38,7 @@ class DuplicateReceiptReport extends Command
             return self::SUCCESS;
         }
 
-        $this->info('Duplicate receipt monitoring report');
+        $this->info('Duplicate receipt monitoring / audit report');
 
         if ($duplicateGroups === []) {
             $this->line('No duplicate populated receipt groups found.');

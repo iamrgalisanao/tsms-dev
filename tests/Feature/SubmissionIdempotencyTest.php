@@ -131,4 +131,58 @@ class SubmissionIdempotencyTest extends TestCase
             'message' => 'Submission already processed (idempotent)'
         ]);
     }
+
+    public function test_duplicate_receipt_with_different_payload_is_rejected_as_conflict(): void
+    {
+        Queue::fake();
+
+        [$tenant, $terminal] = $this->seedTenantAndTerminal();
+        $firstPayload = $this->makePayload($tenant->id, $terminal->id, (string) Str::uuid());
+        $secondSubmissionUuid = (string) Str::uuid();
+        $secondPayload = $this->makePayload($tenant->id, $terminal->id, $secondSubmissionUuid);
+
+        $secondPayload['transaction']['receipt_no'] = $firstPayload['transaction']['receipt_no'];
+        $secondPayload['transaction']['transaction_timestamp'] = $firstPayload['transaction']['transaction_timestamp'];
+        $secondPayload['transaction']['gross_sales'] = 250.0;
+        $secondPayload['transaction']['net_sales'] = 250.0;
+        $secondPayload = $this->refreshChecksums($secondPayload);
+
+        $headers = [
+            'Content-Type' => 'application/json',
+            'Authorization' => 'Bearer ' . $terminal->generateAccessToken(),
+        ];
+
+        $this->postJson('/api/v1/transactions/official', $firstPayload, $headers)
+            ->assertStatus(200);
+
+        $this->postJson('/api/v1/transactions/official', $secondPayload, $headers)
+            ->assertStatus(409)
+            ->assertJson([
+                'success' => false,
+                'error_code' => 'DUPLICATE_RECEIPT_CONFLICT',
+            ]);
+
+        $this->assertSame(1, \App\Models\Transaction::where('terminal_id', $terminal->id)
+            ->where('receipt_no', $firstPayload['transaction']['receipt_no'])
+            ->count());
+        $this->assertDatabaseMissing('transaction_submissions', [
+            'submission_uuid' => $secondSubmissionUuid,
+            'terminal_id' => $terminal->id,
+        ]);
+    }
+
+    private function refreshChecksums(array $payload): array
+    {
+        $service = new PayloadChecksumService();
+
+        $transactionForChecksum = $payload['transaction'];
+        unset($transactionForChecksum['payload_checksum']);
+        $payload['transaction']['payload_checksum'] = $service->computeChecksum($transactionForChecksum);
+
+        $submissionForChecksum = $payload;
+        unset($submissionForChecksum['payload_checksum']);
+        $payload['payload_checksum'] = $service->computeChecksum($submissionForChecksum);
+
+        return $payload;
+    }
 }

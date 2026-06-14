@@ -1179,6 +1179,64 @@ class TransactionController extends Controller
                         }
                         continue;
                     }
+
+                    $receiptConflict = $this->findReceiptDateConflict($terminal, $transactionData);
+                    if ($receiptConflict) {
+                        $samePayload = hash_equals(
+                            (string) $receiptConflict->payload_checksum,
+                            (string) ($transactionData['payload_checksum'] ?? '')
+                        );
+
+                        if ($samePayload) {
+                            Log::info('storeOfficial: Returning existing transaction for duplicate receipt idempotency', [
+                                'incoming_transaction_id' => $transactionData['transaction_id'],
+                                'existing_transaction_id' => $receiptConflict->transaction_id,
+                                'receipt_no' => $transactionData['receipt_no'] ?? null,
+                                'terminal_id' => $terminal->id,
+                            ]);
+
+                            $processedTransactions[] = [
+                                'transaction_id' => $receiptConflict->transaction_id,
+                                'status' => 'success',
+                                'message' => 'Transaction already received for this receipt'
+                            ];
+
+                            continue;
+                        }
+
+                        Log::warning('storeOfficial: Duplicate receipt conflict detected', [
+                            'incoming_transaction_id' => $transactionData['transaction_id'],
+                            'existing_transaction_id' => $receiptConflict->transaction_id,
+                            'receipt_no' => $transactionData['receipt_no'] ?? null,
+                            'terminal_id' => $terminal->id,
+                            'tenant_id' => $terminal->tenant_id,
+                            'transaction_timestamp' => $transactionData['transaction_timestamp'] ?? null,
+                            'existing_transaction_timestamp' => $receiptConflict->transaction_timestamp,
+                            'incoming_checksum' => $transactionData['payload_checksum'] ?? null,
+                            'existing_checksum' => $receiptConflict->payload_checksum,
+                        ]);
+
+                        $this->safeRollBack('storeOfficial duplicate receipt conflict rollback', [
+                            'submission_uuid' => $request->submission_uuid,
+                            'terminal_id' => $terminal->id,
+                            'receipt_no' => $transactionData['receipt_no'] ?? null,
+                        ]);
+
+                        return response()->json([
+                            'success' => false,
+                            'message' => 'Duplicate receipt conflict',
+                            'error_code' => 'DUPLICATE_RECEIPT_CONFLICT',
+                            'conflict' => [
+                                'receipt_no' => $transactionData['receipt_no'] ?? null,
+                                'tenant_id' => $terminal->tenant_id,
+                                'terminal_id' => $terminal->id,
+                                'transaction_date' => $this->transactionDate($transactionData['transaction_timestamp'] ?? null),
+                                'existing_transaction_id' => $receiptConflict->transaction_id,
+                                'incoming_transaction_id' => $transactionData['transaction_id'],
+                            ],
+                        ], 409);
+                    }
+
                     Log::info('storeOfficial: Creating transaction record', ['transaction_id' => $transactionData['transaction_id']]);
                     
                     // Extract vatable_sales and vat_amount from taxes if present
@@ -1484,6 +1542,38 @@ class TransactionController extends Controller
 
             throw $e;
         }
+    }
+
+    private function findReceiptDateConflict(PosTerminal $terminal, array $transactionData): ?Transaction
+    {
+        if (! Schema::hasColumn('transactions', 'receipt_no')) {
+            return null;
+        }
+
+        $receiptNo = trim((string) ($transactionData['receipt_no'] ?? ''));
+        $transactionDate = $this->transactionDate($transactionData['transaction_timestamp'] ?? null);
+
+        if ($receiptNo === '' || $transactionDate === null) {
+            return null;
+        }
+
+        return Transaction::query()
+            ->where('tenant_id', $terminal->tenant_id)
+            ->where('terminal_id', $terminal->id)
+            ->whereRaw('TRIM(receipt_no) = TRIM(?)', [$receiptNo])
+            ->whereDate('transaction_timestamp', $transactionDate)
+            ->first();
+    }
+
+    private function transactionDate(?string $timestamp): ?string
+    {
+        if ($timestamp === null || trim($timestamp) === '') {
+            return null;
+        }
+
+        $parsed = strtotime($timestamp);
+
+        return $parsed === false ? null : date('Y-m-d', $parsed);
     }
 
     private function quarantineRejectedPayload(Request $request, string $rawPayload, array $checksumResults, string $reason): void
