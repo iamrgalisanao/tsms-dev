@@ -77,9 +77,11 @@ class TransactionValidationService
     //
 
     /**
-     * Entry point for validating “whatever” comes in:
-     *  - If $data is already a Transaction model, we run validateTransaction(...)
-     *  - If it is an array (e.g. JSON decoded or normalized text), we run validateSubmission(...)
+     * Entry point for validating intake payloads and parser outputs:
+     *  - If $data is already a Transaction model, we return a passive processing result
+     *    via validateTransaction(...). This does not enforce financial formulas.
+     *  - If it is an array (e.g. JSON decoded or normalized text), we run intake
+     *    validation for required fields, basic shapes, receipt format, and duplicates.
      *  - If it is a string, we try to detect JSON → line‐numbered → “free‐form text” formats,
      *    normalize field names, and then validateSubmission(...)
      *
@@ -503,79 +505,36 @@ class TransactionValidationService
     }
 
     /**
-     * Validate a fully‐hydrated Transaction model. Only tenant-based logic is used.
+     * Return the passive processing validation result for an already-ingested transaction.
+     *
+     * TSMS ingestion is intentionally passive. At this stage the transaction has already
+     * passed sender identity, payload structure, and checksum checks. Do not enforce or
+     * recalculate business/financial formulas here; those checks belong in reporting or
+     * audit diagnostics so submitted POS values remain immutable.
      *
      * @param  Transaction  $transaction
      * @return array   ['valid' => bool, 'errors' => array]
      */
     public function validateTransaction(Transaction $transaction): array
     {
-        // Temporary: disable all validation computations while keeping the function available.
-        // This short-circuits validation and returns success so the system continues to function.
-        Log::info('Validation temporarily disabled - skipping all checks', LogContext::fromTransaction($transaction));
+        Log::info('Passive transaction validation accepted', LogContext::fromTransaction($transaction));
 
         return [
             'valid' => true,
             'errors' => [],
         ];
-
-        /*
-        // Original validation logic (commented out for temporary disable) -----------------
-        Log::info('Starting transaction validation', LogContext::fromTransaction($transaction));
-
-        $errors = [];
-
-        // 1) Tenant rules (does tenant exist?)
-        $tenantErrors = $this->validateTenant($transaction);
-        if (! empty($tenantErrors)) {
-            $errors = array_merge($errors, $tenantErrors);
-        }
-
-        // 2) Terminal rules (does terminal exist? is it active?)
-        $terminalErrors = $this->validateTerminal($transaction);
-        if (! empty($terminalErrors)) {
-            $errors = array_merge($errors, $terminalErrors);
-        }
-
-        // 3) Amount checks (gross/net/vat/service/rounding)
-        $amountErrors = $this->validateAmounts($transaction);
-        if (! empty($amountErrors)) {
-            $errors = array_merge($errors, $amountErrors);
-        }
-
-        // 4) Transaction integrity (duplicate ID, sequence number, date bounds)
-        $integrityErrors = $this->validateTransactionIntegrity($transaction);
-        if (! empty($integrityErrors)) {
-            $errors = array_merge($errors, $integrityErrors);
-        }
-
-        // 5) High‐level business rules (tenant limits, daily totals, tax exemptions, etc.)
-        $businessErrors = $this->validateBusinessRules($transaction);
-        if (! empty($businessErrors)) {
-            $errors = array_merge($errors, $businessErrors);
-        }
-
-        // 6) Discount‐specific checks (sum of individual discounts, auth codes, etc.)
-        $discountErrors = $this->validateDiscounts($transaction);
-        if (! empty($discountErrors)) {
-            $errors = array_merge($errors, $discountErrors);
-        }
-
-        Log::info('Validation complete', array_merge(
-            LogContext::fromTransaction($transaction),
-            [
-                'has_errors'  => ! empty($errors),
-                'error_count' => count($errors),
-            ]
-        ));
-
-        return [
-            'valid'  => empty($errors),
-            'errors' => $errors,
-        ];
-        // -------------------------------------------------------------------------------
-        */
     }
+
+    // ────────────────────────────────────────────────────────────────────────────────
+    //    L E G A C Y   D I A G N O S T I C   H E L P E R S
+    // ────────────────────────────────────────────────────────────────────────────────
+
+    /*
+     * The helpers below are retained for diagnostics and existing targeted tests.
+     * They must not be wired back into ingestion processing as blocking formula or
+     * business-rule enforcement. If financial discrepancy detection is needed,
+     * expose it through reporting/audit diagnostics instead.
+     */
 
     // ────────────────────────────────────────────────────────────────────────────────
     //    “V A L I D A T E   T E R M I N A L”
