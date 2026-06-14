@@ -17,7 +17,7 @@ return new class extends Migration
         }
 
         DB::table('transactions')
-            ->select(['id', 'original_payload'])
+            ->select(['id', 'tenant_id', 'terminal_id', 'transaction_timestamp', 'original_payload'])
             ->whereNull('receipt_no')
             ->whereNotNull('original_payload')
             ->orderBy('id')
@@ -40,6 +40,10 @@ return new class extends Migration
                         continue;
                     }
 
+                    if ($this->wouldConflictWithExistingReceipt($transaction, $receiptNo)) {
+                        continue;
+                    }
+
                     DB::table('transactions')
                         ->where('id', $transaction->id)
                         ->whereNull('receipt_no')
@@ -49,6 +53,21 @@ return new class extends Migration
                         ]);
                 }
             });
+    }
+
+    private function wouldConflictWithExistingReceipt(object $transaction, string $receiptNo): bool
+    {
+        if (empty($transaction->transaction_timestamp)) {
+            return false;
+        }
+
+        return DB::table('transactions')
+            ->where('tenant_id', $transaction->tenant_id)
+            ->where('terminal_id', $transaction->terminal_id)
+            ->where('receipt_no', $receiptNo)
+            ->whereDate('transaction_timestamp', date('Y-m-d', strtotime((string) $transaction->transaction_timestamp)))
+            ->where('id', '<>', $transaction->id)
+            ->exists();
     }
 
     public function down(): void
