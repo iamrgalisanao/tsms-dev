@@ -12,6 +12,7 @@ import {
     Grid,
     Divider
 } from '@mui/material';
+import { useLocation } from 'react-router-dom';
 import ReceiptIcon from '@mui/icons-material/Receipt';
 import SummarizeIcon from '@mui/icons-material/Summarize';
 import FileDownloadIcon from '@mui/icons-material/FileDownload';
@@ -48,20 +49,29 @@ const formatCurrency = (amount) => {
 };
 
 const TransactionLogsPage = () => {
+    const location = useLocation();
     const [activeTab, setActiveTab] = useState('detailed');
     const getInitialReportingBasis = () => {
         const savedBasis = window.localStorage?.getItem(REPORTING_BASIS_STORAGE_KEY);
         return ['completed', 'transaction', 'created'].includes(savedBasis) ? savedBasis : 'transaction';
     };
 
+    const getInitialFilters = () => {
+        const query = new URLSearchParams(location.search);
+
+        return {
+            status: query.get('status') || '',
+            terminal_id: query.get('terminal_id') || '',
+            tenant_id: query.get('tenant_id') || '',
+            date_from: query.get('date_from') || '',
+            date_to: query.get('date_to') || '',
+            transaction_id: query.get('transaction_id') || query.get('search') || '',
+            date_basis: query.get('date_basis') || getInitialReportingBasis()
+        };
+    };
+
     const [filters, setFilters] = useState({
-        status: '',
-        terminal_id: '',
-        tenant_id: '',
-        date_from: '',
-        date_to: '',
-        transaction_id: '',
-        date_basis: getInitialReportingBasis()
+        ...getInitialFilters()
     });
 
     // Shared sort direction for date-based ordering (detailed & summary)

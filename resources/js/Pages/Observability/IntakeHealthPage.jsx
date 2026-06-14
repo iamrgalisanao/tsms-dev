@@ -58,6 +58,8 @@ import DnsIcon from '@mui/icons-material/Dns';
 import ToggleOffIcon from '@mui/icons-material/ToggleOff';
 import ToggleOnIcon from '@mui/icons-material/ToggleOn';
 import ReceiptLongIcon from '@mui/icons-material/ReceiptLong';
+import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
+import OpenInNewIcon from '@mui/icons-material/OpenInNew';
 
 import '../../../css/IntakeHealth.css';
 
@@ -302,6 +304,10 @@ const IntakeHealthPage = () => {
     const duplicateGroups = duplicateReport?.duplicate_groups || [];
     const legacyConflicts = duplicateReport?.legacy_payload_conflicts || [];
 
+    const transactionSearchUrl = (transactionId) => (
+        transactionId ? `/transactions?transaction_id=${encodeURIComponent(transactionId)}` : '/transactions'
+    );
+
     if (loading && !stats) {
         return (
             <Box sx={{ display: 'flex', flexDirection: 'column', justifyContent: 'center', alignItems: 'center', height: '100vh', bgcolor: '#101221' }}>
@@ -525,6 +531,14 @@ const IntakeHealthPage = () => {
                                         </Button>
                                     </Grid>
                                 </Grid>
+
+                                <Alert
+                                    severity="info"
+                                    icon={<InfoOutlinedIcon />}
+                                    sx={{ mt: 2, borderRadius: 2, fontWeight: 700 }}
+                                >
+                                    Legacy conflicts are historical transactions where the stored receipt number is blank, but the original payload contains a receipt number that would collide with an already stored transaction for the same tenant, terminal, and sale date. These rows are kept read-only so backfills do not overwrite or mutate old records.
+                                </Alert>
                             </Paper>
 
                             <Paper sx={{ borderRadius: 3, border: '1px solid', borderColor: 'divider', overflow: 'hidden' }}>
@@ -537,7 +551,7 @@ const IntakeHealthPage = () => {
                                     <Table size="small">
                                         <TableHead>
                                             <TableRow>
-                                                {['Tenant', 'Terminal', 'Receipt No.', 'Date', 'Count', 'Transaction IDs', 'Hardware IDs'].map((header) => (
+                                                {['Tenant', 'Terminal', 'Receipt No.', 'Date', 'Count', 'Transaction IDs', 'Hardware IDs', 'Actions'].map((header) => (
                                                     <TableCell key={header} sx={{ fontWeight: 1000, color: 'error.main', letterSpacing: '0.06em', textTransform: 'uppercase', fontSize: '0.7rem' }}>
                                                         {header}
                                                     </TableCell>
@@ -558,11 +572,27 @@ const IntakeHealthPage = () => {
                                                     <TableCell sx={{ maxWidth: 220, wordBreak: 'break-word', fontFamily: 'monospace', fontSize: '0.75rem' }}>
                                                         {(row.hardware_ids || []).join(', ')}
                                                     </TableCell>
+                                                    <TableCell>
+                                                        <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                                                            {(row.transaction_ids || []).slice(0, 3).map((transactionId) => (
+                                                                <Button
+                                                                    key={transactionId}
+                                                                    size="small"
+                                                                    variant="outlined"
+                                                                    href={transactionSearchUrl(transactionId)}
+                                                                    endIcon={<OpenInNewIcon fontSize="inherit" />}
+                                                                    sx={{ textTransform: 'none', fontWeight: 800, borderRadius: 2, whiteSpace: 'nowrap' }}
+                                                                >
+                                                                    View
+                                                                </Button>
+                                                            ))}
+                                                        </Stack>
+                                                    </TableCell>
                                                 </TableRow>
                                             ))}
                                             {duplicateGroups.length === 0 && (
                                                 <TableRow>
-                                                    <TableCell colSpan={7} sx={{ py: 5, textAlign: 'center', color: 'text.secondary', fontWeight: 800 }}>
+                                                    <TableCell colSpan={8} sx={{ py: 5, textAlign: 'center', color: 'text.secondary', fontWeight: 800 }}>
                                                         No populated duplicate receipt groups found.
                                                     </TableCell>
                                                 </TableRow>
@@ -577,12 +607,15 @@ const IntakeHealthPage = () => {
                                     <Typography variant="h6" sx={{ fontWeight: 1000, color: '#101221' }}>
                                         Legacy Payload Receipt Conflicts
                                     </Typography>
+                                    <Typography variant="body2" sx={{ color: 'text.secondary', fontWeight: 700, mt: 0.5 }}>
+                                        Use this list for audit review: the legacy row still has a blank stored receipt number, while the existing row already owns that receipt for the same tenant, terminal, and sale date.
+                                    </Typography>
                                 </Box>
                                 <TableContainer>
                                     <Table size="small">
                                         <TableHead>
                                             <TableRow>
-                                                {['Legacy TX PK', 'Tenant', 'Terminal', 'Receipt No.', 'Date', 'Legacy TXID', 'Existing TXID', 'Existing TX PK'].map((header) => (
+                                                {['Legacy TX PK', 'Tenant', 'Terminal', 'Receipt No.', 'Date', 'Legacy TXID', 'Existing TXID', 'Existing TX PK', 'Actions'].map((header) => (
                                                     <TableCell key={header} sx={{ fontWeight: 1000, color: 'warning.main', letterSpacing: '0.06em', textTransform: 'uppercase', fontSize: '0.7rem' }}>
                                                         {header}
                                                     </TableCell>
@@ -600,11 +633,34 @@ const IntakeHealthPage = () => {
                                                     <TableCell sx={{ maxWidth: 240, wordBreak: 'break-word', fontFamily: 'monospace', fontSize: '0.75rem' }}>{row.legacy_transaction_id}</TableCell>
                                                     <TableCell sx={{ maxWidth: 240, wordBreak: 'break-word', fontFamily: 'monospace', fontSize: '0.75rem' }}>{row.existing_transaction_id}</TableCell>
                                                     <TableCell>{row.existing_transaction_pk}</TableCell>
+                                                    <TableCell>
+                                                        <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                                                            <Button
+                                                                size="small"
+                                                                variant="outlined"
+                                                                href={transactionSearchUrl(row.legacy_transaction_id)}
+                                                                endIcon={<OpenInNewIcon fontSize="inherit" />}
+                                                                sx={{ textTransform: 'none', fontWeight: 800, borderRadius: 2, whiteSpace: 'nowrap' }}
+                                                            >
+                                                                Legacy
+                                                            </Button>
+                                                            <Button
+                                                                size="small"
+                                                                variant="outlined"
+                                                                color="warning"
+                                                                href={transactionSearchUrl(row.existing_transaction_id)}
+                                                                endIcon={<OpenInNewIcon fontSize="inherit" />}
+                                                                sx={{ textTransform: 'none', fontWeight: 800, borderRadius: 2, whiteSpace: 'nowrap' }}
+                                                            >
+                                                                Existing
+                                                            </Button>
+                                                        </Stack>
+                                                    </TableCell>
                                                 </TableRow>
                                             ))}
                                             {legacyConflicts.length === 0 && (
                                                 <TableRow>
-                                                    <TableCell colSpan={8} sx={{ py: 5, textAlign: 'center', color: 'text.secondary', fontWeight: 800 }}>
+                                                    <TableCell colSpan={9} sx={{ py: 5, textAlign: 'center', color: 'text.secondary', fontWeight: 800 }}>
                                                         No legacy payload receipt conflicts found.
                                                     </TableCell>
                                                 </TableRow>
