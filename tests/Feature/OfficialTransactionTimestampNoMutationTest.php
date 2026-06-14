@@ -41,6 +41,48 @@ class OfficialTransactionTimestampNoMutationTest extends TestCase
         $this->assertSame($payload['transaction']['receipt_no'], $transaction->receipt_no);
     }
 
+    public function test_official_ingestion_accepts_checksum_valid_financial_values_without_formula_enforcement(): void
+    {
+        Queue::fake();
+
+        $checksum = new PayloadChecksumService();
+        $tenant = Tenant::factory()->create();
+        $terminal = PosTerminal::factory()->create(['tenant_id' => $tenant->id]);
+        $timestamp = Carbon::now('UTC')->subMinute()->format('Y-m-d\TH:i:s\Z');
+        $payload = $this->makeOfficialPayload($tenant->id, $terminal->id, $timestamp);
+
+        $payload['transaction']['gross_sales'] = '100.00';
+        $payload['transaction']['net_sales'] = '84.74';
+        $payload['transaction']['taxes'] = [
+            ['tax_type' => 'VAT', 'amount' => '15.24'],
+            ['tax_type' => 'VATABLE_SALES', 'amount' => '84.74'],
+            ['tax_type' => 'SC_VAT_EXEMPT_SALES', 'amount' => '0.00'],
+            ['tax_type' => 'OTHER_TAX', 'amount' => '0.00'],
+        ];
+
+        $transactionForChecksum = $payload['transaction'];
+        unset($transactionForChecksum['payload_checksum']);
+        $payload['transaction']['payload_checksum'] = $checksum->computeChecksum($transactionForChecksum);
+
+        $submissionForChecksum = $payload;
+        unset($submissionForChecksum['payload_checksum']);
+        $payload['payload_checksum'] = $checksum->computeChecksum($submissionForChecksum);
+
+        $response = $this
+            ->withHeaders([
+                'Authorization' => 'Bearer '.$terminal->generateAccessToken(),
+                'Content-Type' => 'application/json',
+            ])
+            ->postJson('/api/v1/transactions/official', $payload);
+
+        $response->assertOk();
+
+        $transaction = Transaction::where('transaction_id', $payload['transaction']['transaction_id'])->firstOrFail();
+
+        $this->assertSame('100.00', number_format((float) $transaction->gross_sales, 2, '.', ''));
+        $this->assertSame('84.74', number_format((float) $transaction->net_sales, 2, '.', ''));
+    }
+
     private function makeOfficialPayload(int $tenantId, int $terminalId, string $timestamp): array
     {
         $checksum = new PayloadChecksumService();

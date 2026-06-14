@@ -160,9 +160,11 @@ class TSMSTransactionRequest extends FormRequest
         }
 
         /*
-         // Temporarily disabled: net_sales reconciliation check
-         // TODO: Re-enable after further testing; this short-circuits request-level
-         // reconciliation so server-side validation can be the authoritative check.
+         // Intentionally not enforced during ingestion.
+         // TSMS ingestion is passive: this request validates sender identity, required
+         // structure, allowed value shapes, and checksum integrity. It must not reject
+         // checksum-valid POS payloads by recalculating financial formulas here.
+         // Formula discrepancies belong in downstream reporting/audit diagnostics.
         // Calculate expected net_sales = gross_sales - adjustments - other_tax
         // Include service charges in adjustments to match server-side reconciliation.
         $adjustmentSum = 0.0;
