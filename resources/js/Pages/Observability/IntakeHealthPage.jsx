@@ -22,7 +22,16 @@ import {
     Card,
     CardContent,
     Divider,
-    Tooltip
+    Tooltip,
+    Tabs,
+    Tab,
+    TextField,
+    Table,
+    TableBody,
+    TableCell,
+    TableContainer,
+    TableHead,
+    TableRow
 } from '@mui/material';
 import { Line } from 'react-chartjs-2';
 import {
@@ -48,6 +57,7 @@ import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
 import DnsIcon from '@mui/icons-material/Dns';
 import ToggleOffIcon from '@mui/icons-material/ToggleOff';
 import ToggleOnIcon from '@mui/icons-material/ToggleOn';
+import ReceiptLongIcon from '@mui/icons-material/ReceiptLong';
 
 import '../../../css/IntakeHealth.css';
 
@@ -101,6 +111,16 @@ const IntakeHealthPage = () => {
     const [loading, setLoading] = useState(true);
     const [isRefreshing, setIsRefreshing] = useState(false);
     const [apiError, setApiError] = useState(false);
+    const [activeView, setActiveView] = useState('pipeline');
+    const [duplicateReport, setDuplicateReport] = useState({ duplicate_groups: [], legacy_payload_conflicts: [] });
+    const [duplicateLoading, setDuplicateLoading] = useState(false);
+    const [duplicateFilters, setDuplicateFilters] = useState({
+        from: '',
+        to: '',
+        tenant: '',
+        terminal: '',
+        limit: 100
+    });
     
     // Live feed mode & filters
     const [liveFeed, setLiveFeed] = useState(true);
@@ -132,6 +152,19 @@ const IntakeHealthPage = () => {
         }
     }, []);
 
+    const fetchDuplicateReceipts = useCallback(async () => {
+        try {
+            setDuplicateLoading(true);
+            const report = await api.getDuplicateReceiptReport(duplicateFilters);
+            setDuplicateReport(report);
+        } catch (error) {
+            console.error('Error fetching duplicate receipt report:', error);
+            setDuplicateReport({ duplicate_groups: [], legacy_payload_conflicts: [], error: true });
+        } finally {
+            setDuplicateLoading(false);
+        }
+    }, [duplicateFilters]);
+
     // 5-second polling interval controlled by the Live Feed toggle
     useEffect(() => {
         if (liveFeed) {
@@ -142,6 +175,12 @@ const IntakeHealthPage = () => {
             fetchData(true);
         }
     }, [fetchData, liveFeed]);
+
+    useEffect(() => {
+        if (activeView === 'duplicates') {
+            fetchDuplicateReceipts();
+        }
+    }, [activeView, fetchDuplicateReceipts]);
 
     const failRateValue = useMemo(() => {
         if (!stats?.metrics) return 0;
@@ -259,6 +298,9 @@ const IntakeHealthPage = () => {
         const now = new Date().getTime();
         return (now - lastTime) > 15 * 60 * 1000;
     }, [recentLogs, loading]);
+
+    const duplicateGroups = duplicateReport?.duplicate_groups || [];
+    const legacyConflicts = duplicateReport?.legacy_payload_conflicts || [];
 
     if (loading && !stats) {
         return (
@@ -385,6 +427,197 @@ const IntakeHealthPage = () => {
                         </Alert>
                     )}
 
+                    <Paper sx={{ mb: 3, borderRadius: 3, border: '1px solid', borderColor: 'divider', overflow: 'hidden' }}>
+                        <Tabs
+                            value={activeView}
+                            onChange={(_, value) => setActiveView(value)}
+                            sx={{
+                                px: 2,
+                                '& .MuiTab-root': {
+                                    minHeight: 56,
+                                    fontWeight: 900,
+                                    textTransform: 'none',
+                                    letterSpacing: '0.02em'
+                                }
+                            }}
+                        >
+                            <Tab value="pipeline" icon={<TerminalIcon />} iconPosition="start" label="Pipeline Health" />
+                            <Tab value="duplicates" icon={<ReceiptLongIcon />} iconPosition="start" label="Duplicate Receipts" />
+                        </Tabs>
+                    </Paper>
+
+                    {activeView === 'duplicates' && (
+                        <Stack spacing={3}>
+                            {duplicateReport?.error && (
+                                <Alert severity="error" sx={{ borderRadius: 3, fontWeight: 800 }}>
+                                    Duplicate receipt monitor could not load.
+                                </Alert>
+                            )}
+
+                            <Paper className="glass-container" sx={{ p: 3, borderRadius: 3 }}>
+                                <Stack direction={{ xs: 'column', lg: 'row' }} justifyContent="space-between" spacing={2} alignItems={{ xs: 'stretch', lg: 'center' }}>
+                                    <Box>
+                                        <Typography variant="h5" sx={{ fontWeight: 1000, color: '#101221', mb: 0.5 }}>
+                                            Duplicate Receipt Monitor
+                                        </Typography>
+                                        <Typography variant="body2" sx={{ color: 'text.secondary', fontWeight: 700 }}>
+                                            Read-only audit view for receipt conflicts by tenant, terminal, receipt number, and transaction date.
+                                        </Typography>
+                                    </Box>
+
+                                    <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+                                        <Chip label={`${duplicateGroups.length} Duplicate Groups`} color={duplicateGroups.length > 0 ? 'error' : 'success'} sx={{ fontWeight: 900 }} />
+                                        <Chip label={`${legacyConflicts.length} Legacy Conflicts`} color={legacyConflicts.length > 0 ? 'warning' : 'success'} sx={{ fontWeight: 900 }} />
+                                    </Stack>
+                                </Stack>
+
+                                <Grid container spacing={2} sx={{ mt: 2 }}>
+                                    <Grid item xs={12} sm={6} md={2.4}>
+                                        <TextField
+                                            fullWidth
+                                            label="From"
+                                            type="date"
+                                            size="small"
+                                            value={duplicateFilters.from}
+                                            onChange={(e) => setDuplicateFilters((prev) => ({ ...prev, from: e.target.value }))}
+                                            InputLabelProps={{ shrink: true }}
+                                        />
+                                    </Grid>
+                                    <Grid item xs={12} sm={6} md={2.4}>
+                                        <TextField
+                                            fullWidth
+                                            label="To"
+                                            type="date"
+                                            size="small"
+                                            value={duplicateFilters.to}
+                                            onChange={(e) => setDuplicateFilters((prev) => ({ ...prev, to: e.target.value }))}
+                                            InputLabelProps={{ shrink: true }}
+                                        />
+                                    </Grid>
+                                    <Grid item xs={12} sm={6} md={2.4}>
+                                        <TextField
+                                            fullWidth
+                                            label="Tenant ID"
+                                            size="small"
+                                            value={duplicateFilters.tenant}
+                                            onChange={(e) => setDuplicateFilters((prev) => ({ ...prev, tenant: e.target.value }))}
+                                        />
+                                    </Grid>
+                                    <Grid item xs={12} sm={6} md={2.4}>
+                                        <TextField
+                                            fullWidth
+                                            label="Terminal ID"
+                                            size="small"
+                                            value={duplicateFilters.terminal}
+                                            onChange={(e) => setDuplicateFilters((prev) => ({ ...prev, terminal: e.target.value }))}
+                                        />
+                                    </Grid>
+                                    <Grid item xs={12} sm={6} md={2.4}>
+                                        <Button
+                                            fullWidth
+                                            variant="contained"
+                                            onClick={fetchDuplicateReceipts}
+                                            disabled={duplicateLoading}
+                                            startIcon={duplicateLoading ? <CircularProgress size={16} color="inherit" /> : <RefreshIcon />}
+                                            sx={{ height: 40, borderRadius: 2, fontWeight: 900, textTransform: 'none', bgcolor: '#101221' }}
+                                        >
+                                            Refresh
+                                        </Button>
+                                    </Grid>
+                                </Grid>
+                            </Paper>
+
+                            <Paper sx={{ borderRadius: 3, border: '1px solid', borderColor: 'divider', overflow: 'hidden' }}>
+                                <Box sx={{ px: 3, py: 2, borderBottom: '1px solid', borderColor: 'divider' }}>
+                                    <Typography variant="h6" sx={{ fontWeight: 1000, color: '#101221' }}>
+                                        Populated Duplicate Receipt Groups
+                                    </Typography>
+                                </Box>
+                                <TableContainer>
+                                    <Table size="small">
+                                        <TableHead>
+                                            <TableRow>
+                                                {['Tenant', 'Terminal', 'Receipt No.', 'Date', 'Count', 'Transaction IDs', 'Hardware IDs'].map((header) => (
+                                                    <TableCell key={header} sx={{ fontWeight: 1000, color: 'error.main', letterSpacing: '0.06em', textTransform: 'uppercase', fontSize: '0.7rem' }}>
+                                                        {header}
+                                                    </TableCell>
+                                                ))}
+                                            </TableRow>
+                                        </TableHead>
+                                        <TableBody>
+                                            {duplicateGroups.map((row) => (
+                                                <TableRow key={`${row.tenant_id}-${row.terminal_id}-${row.receipt_no}-${row.transaction_date}`} hover>
+                                                    <TableCell>{row.tenant_id}</TableCell>
+                                                    <TableCell>{row.terminal_id}</TableCell>
+                                                    <TableCell sx={{ fontFamily: 'monospace', fontWeight: 900 }}>{row.receipt_no}</TableCell>
+                                                    <TableCell>{row.transaction_date}</TableCell>
+                                                    <TableCell><Chip size="small" color="error" label={row.count} sx={{ fontWeight: 900 }} /></TableCell>
+                                                    <TableCell sx={{ maxWidth: 300, wordBreak: 'break-word', fontFamily: 'monospace', fontSize: '0.75rem' }}>
+                                                        {(row.transaction_ids || []).join(', ')}
+                                                    </TableCell>
+                                                    <TableCell sx={{ maxWidth: 220, wordBreak: 'break-word', fontFamily: 'monospace', fontSize: '0.75rem' }}>
+                                                        {(row.hardware_ids || []).join(', ')}
+                                                    </TableCell>
+                                                </TableRow>
+                                            ))}
+                                            {duplicateGroups.length === 0 && (
+                                                <TableRow>
+                                                    <TableCell colSpan={7} sx={{ py: 5, textAlign: 'center', color: 'text.secondary', fontWeight: 800 }}>
+                                                        No populated duplicate receipt groups found.
+                                                    </TableCell>
+                                                </TableRow>
+                                            )}
+                                        </TableBody>
+                                    </Table>
+                                </TableContainer>
+                            </Paper>
+
+                            <Paper sx={{ borderRadius: 3, border: '1px solid', borderColor: 'divider', overflow: 'hidden' }}>
+                                <Box sx={{ px: 3, py: 2, borderBottom: '1px solid', borderColor: 'divider' }}>
+                                    <Typography variant="h6" sx={{ fontWeight: 1000, color: '#101221' }}>
+                                        Legacy Payload Receipt Conflicts
+                                    </Typography>
+                                </Box>
+                                <TableContainer>
+                                    <Table size="small">
+                                        <TableHead>
+                                            <TableRow>
+                                                {['Legacy TX PK', 'Tenant', 'Terminal', 'Receipt No.', 'Date', 'Legacy TXID', 'Existing TXID', 'Existing TX PK'].map((header) => (
+                                                    <TableCell key={header} sx={{ fontWeight: 1000, color: 'warning.main', letterSpacing: '0.06em', textTransform: 'uppercase', fontSize: '0.7rem' }}>
+                                                        {header}
+                                                    </TableCell>
+                                                ))}
+                                            </TableRow>
+                                        </TableHead>
+                                        <TableBody>
+                                            {legacyConflicts.map((row) => (
+                                                <TableRow key={`${row.legacy_transaction_pk}-${row.existing_transaction_pk}`} hover>
+                                                    <TableCell>{row.legacy_transaction_pk}</TableCell>
+                                                    <TableCell>{row.tenant_id}</TableCell>
+                                                    <TableCell>{row.terminal_id}</TableCell>
+                                                    <TableCell sx={{ fontFamily: 'monospace', fontWeight: 900 }}>{row.receipt_no}</TableCell>
+                                                    <TableCell>{row.transaction_date}</TableCell>
+                                                    <TableCell sx={{ maxWidth: 240, wordBreak: 'break-word', fontFamily: 'monospace', fontSize: '0.75rem' }}>{row.legacy_transaction_id}</TableCell>
+                                                    <TableCell sx={{ maxWidth: 240, wordBreak: 'break-word', fontFamily: 'monospace', fontSize: '0.75rem' }}>{row.existing_transaction_id}</TableCell>
+                                                    <TableCell>{row.existing_transaction_pk}</TableCell>
+                                                </TableRow>
+                                            ))}
+                                            {legacyConflicts.length === 0 && (
+                                                <TableRow>
+                                                    <TableCell colSpan={8} sx={{ py: 5, textAlign: 'center', color: 'text.secondary', fontWeight: 800 }}>
+                                                        No legacy payload receipt conflicts found.
+                                                    </TableCell>
+                                                </TableRow>
+                                            )}
+                                        </TableBody>
+                                    </Table>
+                                </TableContainer>
+                            </Paper>
+                        </Stack>
+                    )}
+
+                    {activeView === 'pipeline' && (
+                    <>
                     {/* Active Ingestion Source volume strip (Section 2) */}
                     <Box sx={{ mb: 3 }}>
                         <TenantVolumeStrip title="ACTIVE INGESTION SOURCES (24H)" tenants={tenants} />
@@ -762,6 +995,8 @@ const IntakeHealthPage = () => {
                             </Paper>
                         </Grid>
                     </Grid>
+                    </>
+                    )}
                 </Container>
             </Box>
         </Fade>

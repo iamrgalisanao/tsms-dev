@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\API\V1;
 
 use App\Http\Controllers\Controller;
+use App\Services\DuplicateReceiptMonitorService;
 use App\Support\Metrics;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -135,6 +136,23 @@ class ObservabilityController extends Controller
         return response()->json([
             'success' => true,
             'data' => $recent,
+        ]);
+    }
+
+    public function duplicateReceipts(Request $request, DuplicateReceiptMonitorService $monitor): JsonResponse
+    {
+        $report = $monitor->report([
+            'from' => $request->query('from'),
+            'to' => $request->query('to'),
+            'tenant' => $request->query('tenant'),
+            'terminal' => $request->query('terminal'),
+            'limit' => $request->query('limit', 100),
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'timestamp' => now()->toIso8601String(),
+            ...$report,
         ]);
     }
 }

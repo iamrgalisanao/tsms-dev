@@ -99,6 +99,13 @@ const api = {
         const response = await axios.get('/api/v1/observability/intake/recent');
         return response.data;
     },
+    getDuplicateReceiptReport: async (filters = {}) => {
+        const params = Object.fromEntries(
+            Object.entries(filters).filter(([, value]) => value !== '' && value !== null && value !== undefined)
+        );
+        const response = await axios.get('/api/v1/observability/intake/duplicate-receipts', { params });
+        return response.data;
+    },
     getProviderTenantActivity: async (thresholdMinutes = null) => {
         const params = thresholdMinutes ? { threshold_minutes: thresholdMinutes } : {};
         const response = await axios.get('/api/v1/monitoring/tenants/activity', { params });
