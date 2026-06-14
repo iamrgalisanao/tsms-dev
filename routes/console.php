@@ -148,6 +148,18 @@ Schedule::call(function () {
 })->everyFiveMinutes()->name('transactions-watchdog')->withoutOverlapping()->onOneServer();
 
 // --------------------------------------------------------------------------
+// Tenant inactivity alerts: notify admins/finance when monitored tenants or
+// terminals stop sending transactions within configured thresholds.
+// --------------------------------------------------------------------------
+Schedule::call(function () {
+    app(\App\Services\NotificationService::class)->checkTenantInactivity();
+})
+    ->everyFifteenMinutes()
+    ->name('tenant-inactivity-alerts')
+    ->withoutOverlapping()
+    ->onOneServer();
+
+// --------------------------------------------------------------------------
 // POS Terminal Idle Monitor (log-only phase)
 // Runs every N minutes when enabled. Detects terminals that have been idle
 // beyond configured thresholds, logs idle and recovery events with dedupe.

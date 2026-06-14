@@ -22,6 +22,21 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Tenant Inactivity Monitoring
+    |--------------------------------------------------------------------------
+    |
+    | Alerts when monitored tenants or terminals stop sending transactions
+    | within their configured activity windows.
+    |
+    */
+
+    'tenant_inactivity_enabled' => env('NOTIFICATION_TENANT_INACTIVITY_ENABLED', true),
+    'tenant_inactivity_threshold_minutes' => env('NOTIFICATION_TENANT_INACTIVITY_THRESHOLD_MINUTES', 60),
+    'tenant_inactivity_cooldown_minutes' => env('NOTIFICATION_TENANT_INACTIVITY_COOLDOWN_MINUTES', 60),
+    'tenant_inactivity_emails' => array_filter(explode(',', env('NOTIFICATION_TENANT_INACTIVITY_EMAILS', ''))),
+
+    /*
+    |--------------------------------------------------------------------------
     | Batch Processing Monitoring
     |--------------------------------------------------------------------------
     |
