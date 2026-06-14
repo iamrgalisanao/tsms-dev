@@ -2,8 +2,114 @@
 
 namespace App\Services\Reports;
 
+use Illuminate\Support\Collection;
+
 class FinanceCalculationService
 {
+    private const EXEMPT_TAX_TYPES = [
+        'SC_VAT_EXEMPT_SALES',
+        'VAT_EXEMPT_SALES',
+        'VATEXEMPT_SALES',
+        'VAT-EXEMPT',
+        'EXEMPT',
+        'VATEXEMPT',
+    ];
+
+    private const OTHER_TAX_TYPES = [
+        'OTHER_TAX',
+        'OTHER-TAX',
+    ];
+
+    private const NON_OTHER_TAX_TYPES = [
+        'VAT',
+        'VAT_AMOUNT',
+        'VATABLE_SALES',
+        'SC_VAT_EXEMPT_SALES',
+        'VAT-EXEMPT',
+        'EXEMPT',
+        'VATEXEMPT',
+        'VATEXEMPT_SALES',
+        'VAT_EXEMPT_SALES',
+        'ZERO_RATED',
+        'NON-VAT',
+        'NON_VAT',
+        'ZERO-RATED',
+        'OTHER_TAX',
+        'OTHER-TAX',
+    ];
+
+    /**
+     * Aggregates transactions into the raw components consumed by deriveMetrics().
+     */
+    public function aggregateComponents(Collection $transactions): array
+    {
+        $c = [
+            'vatable_sales' => 0.0,
+            'sc_vat_exempt_sales' => 0.0,
+            'vat_amount' => 0.0,
+            'promo_with_approval' => 0.0,
+            'promo_without_approval' => 0.0,
+            'employee_discount' => 0.0,
+            'senior_discount' => 0.0,
+            'pwd_discount' => 0.0,
+            'vip_discount' => 0.0,
+            'other_tax' => 0.0,
+            'service_charge_distributed' => 0.0,
+            'service_charge_retained' => 0.0,
+            'regular_discount' => 0.0,
+            'gross_sales' => 0.0,
+            'net_sales' => 0.0,
+        ];
+
+        $excludeVoids = config('tsms.reporting.exclude_voids_from_totals', true);
+
+        foreach ($transactions as $tx) {
+            if ($excludeVoids && method_exists($tx, 'isVoided') && $tx->isVoided()) {
+                continue;
+            }
+
+            $c['vatable_sales'] += (float) ($tx->vatable_sales ?? 0);
+            $c['sc_vat_exempt_sales'] += (float) ($tx->sc_vat_exempt_sales ?? 0);
+
+            if ((float) ($tx->sc_vat_exempt_sales ?? 0) === 0.0) {
+                $c['sc_vat_exempt_sales'] += $this->sumRelated($tx, 'taxes', 'tax_type', self::EXEMPT_TAX_TYPES);
+            }
+
+            $c['vat_amount'] += (float) ($tx->vat_amount ?? 0);
+            $c['other_tax'] += $this->sumRelated($tx, 'taxes', 'tax_type', self::OTHER_TAX_TYPES);
+
+            $promo = (float) ($tx->promo_discount ?? 0);
+            if (($tx->promo_status ?? null) === 'WITH_APPROVAL') {
+                $c['promo_with_approval'] += $promo;
+            } else {
+                $c['promo_without_approval'] += $promo;
+            }
+
+            $employeeDiscount = (float) ($tx->employee_discount ?? 0);
+            if ($employeeDiscount === 0.0) {
+                $employeeDiscount = $this->sumRelated($tx, 'adjustments', 'adjustment_type', ['employee_discount', 'EMPLOYEE']);
+            }
+
+            $vipDiscount = (float) ($tx->vip_card_discount ?? 0);
+            if ($vipDiscount === 0.0) {
+                $vipDiscount = $this->sumRelated($tx, 'adjustments', 'adjustment_type', ['vip_card_discount', 'VIP']);
+            }
+
+            $c['employee_discount'] += $employeeDiscount;
+            $c['senior_discount'] += (float) ($tx->senior_discount ?? 0);
+            $c['pwd_discount'] += (float) ($tx->pwd_discount ?? 0);
+            $c['vip_discount'] += $vipDiscount;
+            $c['other_tax'] += $this->sumRelated($tx, 'taxes', 'tax_type', self::NON_OTHER_TAX_TYPES, true);
+            $c['service_charge_distributed'] += (float) ($tx->service_charge ?? 0);
+            $c['service_charge_retained'] += (float) ($tx->management_service_charge ?? 0);
+            $c['regular_discount'] += (float) ($tx->discount_total ?? 0);
+            $c['gross_sales'] += (float) ($tx->gross_sales ?? 0);
+            $c['net_sales'] += (float) ($tx->net_sales ?? 0);
+        }
+
+        return $c;
+    }
+
     /**
      * Derives final financial metrics from raw CSMR components.
      *
@@ -58,7 +164,24 @@ class FinanceCalculationService
 
         $nominalGross = round($c['gross_sales'] ?? 0, 2);
         $grossBasis = $options['gross_sales_basis'] ?? 'raw';
-        $componentSum = round(
+        $rawVatableSales = (float) ($c['vatable_sales'] ?? 0);
+        $rawComponentSum = round(
+            $rawVatableSales
+            + $rawScVatExempt
+            + $rawVat
+            + ($c['promo_with_approval'] ?? 0)
+            + ($c['promo_without_approval'] ?? 0)
+            + ($c['employee_discount'] ?? 0)
+            + ($c['senior_discount'] ?? 0)
+            + ($c['pwd_discount'] ?? 0)
+            + ($c['other_tax'] ?? 0)
+            + ($c['vip_discount'] ?? 0)
+            + ($c['service_charge_distributed'] ?? 0)
+            + ($c['service_charge_retained'] ?? 0),
+            2
+        );
+
+        $normalizedComponentSum = round(
             $vatableForGross
             + $rawScVatExempt
             + $rawVat
@@ -73,6 +196,15 @@ class FinanceCalculationService
             + ($c['service_charge_retained'] ?? 0),
             2
         );
+
+        $componentSum = $normalizedComponentSum;
+        if ($grossBasis === 'pre_deduction') {
+            $rawMatchesNominal = $nominalGross > 0 && abs($rawComponentSum - $nominalGross) <= 0.10;
+            $normalizedMatchesNominal = $nominalGross > 0 && abs($normalizedComponentSum - $nominalGross) <= 0.10;
+            $componentSum = $rawMatchesNominal || ! $normalizedMatchesNominal
+                ? $rawComponentSum
+                : $normalizedComponentSum;
+        }
 
         $gross = $grossBasis === 'pre_deduction'
             ? $componentSum
@@ -147,5 +279,29 @@ class FinanceCalculationService
             'net_subject_to_rent' => $netSubjectToRent,
             'net_total' => round($netSales + $rawScVatExempt, 2),
         ]);
+    }
+
+    private function sumRelated(object $tx, string $relation, string $typeColumn, array $types, bool $exclude = false): float
+    {
+        if (method_exists($tx, 'relationLoaded') && $tx->relationLoaded($relation)) {
+            return (float) $tx->getRelation($relation)
+                ->filter(function ($row) use ($typeColumn, $types, $exclude) {
+                    $matches = in_array($row->{$typeColumn} ?? null, $types, true);
+
+                    return $exclude ? ! $matches : $matches;
+                })
+                ->sum('amount');
+        }
+
+        if (! method_exists($tx, $relation)) {
+            return 0.0;
+        }
+
+        $query = $tx->{$relation}();
+        $query = $exclude
+            ? $query->whereNotIn($typeColumn, $types)
+            : $query->whereIn($typeColumn, $types);
+
+        return (float) $query->sum('amount');
     }
 }
