@@ -38,6 +38,7 @@ class OfficialTransactionTimestampNoMutationTest extends TestCase
         $originalPayload = json_decode((string) $transaction->getRawOriginal('original_payload'), true);
 
         $this->assertSame($timestamp, $originalPayload['transaction_timestamp']);
+        $this->assertSame($payload['transaction']['receipt_no'], $transaction->receipt_no);
     }
 
     private function makeOfficialPayload(int $tenantId, int $terminalId, string $timestamp): array

@@ -371,6 +371,9 @@ class TransactionController extends Controller
                         'payload_checksum' => $transactionData['payload_checksum'] ?? md5(json_encode($transactionData)),
                         'validation_status' => 'PENDING',
                     ];
+                    if (Schema::hasColumn('transactions', 'receipt_no')) {
+                        $txPayload['receipt_no'] = $transactionData['receipt_no'] ?? null;
+                    }
                     if (Schema::hasColumn('transactions', 'original_payload')) {
                         $txPayload['original_payload'] = json_encode($transactionData, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
                     }
@@ -1217,6 +1220,9 @@ class TransactionController extends Controller
                         'submission_uuid' => $request->submission_uuid,
                         'submission_timestamp' => $request->submission_timestamp,
                     ];
+                    if (Schema::hasColumn('transactions', 'receipt_no')) {
+                        $txPayload['receipt_no'] = $transactionData['receipt_no'] ?? null;
+                    }
                     if (Schema::hasColumn('transactions', 'original_payload')) {
                         $txPayload['original_payload'] = json_encode($transactionData, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
                     }
@@ -1780,6 +1786,9 @@ class TransactionController extends Controller
                 'validation_status' => $validationStatus,
                 'submission_uuid' => $transaction['submission_uuid'] ?? null,
             ];
+            if (Schema::hasColumn('transactions', 'receipt_no')) {
+                $txPayload['receipt_no'] = $transaction['receipt_no'] ?? null;
+            }
             if (Schema::hasColumn('transactions', 'original_payload')) {
                 $txPayload['original_payload'] = json_encode($transaction, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
             }

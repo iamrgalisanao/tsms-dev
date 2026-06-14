@@ -109,6 +109,7 @@ class Transaction extends Model
         'tenant_id',
         'terminal_id', 
         'transaction_id',
+        'receipt_no',
         'hardware_id',
         'transaction_timestamp',
         'gross_sales',
