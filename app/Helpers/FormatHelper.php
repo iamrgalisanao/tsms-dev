@@ -15,4 +15,10 @@ class FormatHelper
             return $date;
         }
     }
+
+    public static function formatCurrency($amount)
+    {
+        if ($amount === null || $amount === '') return '-';
+        return '₱' . number_format((float) $amount, 2);
+    }
 }

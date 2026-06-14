@@ -122,7 +122,7 @@ class ObservabilityController extends Controller
             ->map(function ($intake) {
                 return [
                     'id' => $intake->id,
-                    'receipt_no' => $intake->payload['receipt_no'] ?? '---',
+                    'receipt_no' => data_get($intake->payload, 'transaction.receipt_no') ?? $intake->payload['receipt_no'] ?? '---',
                     'terminal_id' => $intake->terminal_id,
                     'payload' => $intake->payload,
                     'processing_status' => strtolower($intake->processing_status ?? 'pending'),

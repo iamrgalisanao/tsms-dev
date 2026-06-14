@@ -30,7 +30,6 @@ class TransactionFactory extends Factory
             'transaction_id' => 'TXN-' . $this->faker->unique()->uuid,
             'hardware_id' => 'HW-' . $this->faker->unique()->numberBetween(1000, 9999),
             'transaction_timestamp' => now(),
-            'base_amount' => $this->faker->randomFloat(2, 100, 10000),
             'gross_sales' => $this->faker->randomFloat(2, 100, 10000),
             'net_sales' => $this->faker->randomFloat(2, 80, 9500), // Slightly less than gross_sales
             'customer_code' => 'TEST001',
