@@ -3,7 +3,9 @@
 namespace App\Console\Commands;
 
 use App\Jobs\ProcessTransactionIntakeJob;
+use App\Jobs\ProcessTransactionJob;
 use App\Models\TransactionIntake;
+use App\Services\TransactionIngestService;
 use Illuminate\Console\Command;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
@@ -18,14 +20,14 @@ class ReconcileStrandedIntake extends Command
         {--terminal= : Limit missing processed intake scan to one terminal ID}
         {--limit=100 : Maximum processed intake records to inspect}
         {--dry-run : Report processed intakes without matching transactions, without repairing}
-        {--repair-missing : Re-queue processed intake records that have no matching transaction row}';
+        {--repair-missing : Re-ingest processed intake records that have no matching transaction row}';
 
-    protected $description = 'Scan for stranded intake records and reconcile processed intake records missing transaction rows';
+    protected $description = 'Scan for stranded intake records and repair processed intake records missing transaction rows';
 
-    public function handle(): int
+    public function handle(TransactionIngestService $ingestService): int
     {
         if ($this->option('dry-run') || $this->option('repair-missing')) {
-            return $this->reconcileProcessedMissingTransactions();
+            return $this->reconcileProcessedMissingTransactions($ingestService);
         }
 
         $threshold = now()->subMinutes(2);
@@ -64,7 +66,7 @@ class ReconcileStrandedIntake extends Command
         return self::SUCCESS;
     }
 
-    private function reconcileProcessedMissingTransactions(): int
+    private function reconcileProcessedMissingTransactions(TransactionIngestService $ingestService): int
     {
         $repair = (bool) $this->option('repair-missing');
         $limit = max(1, (int) $this->option('limit'));
@@ -74,13 +76,11 @@ class ReconcileStrandedIntake extends Command
         $skipped = 0;
         $failed = 0;
 
-        $ingestServiceAvailable = class_exists('App\\Services\\TransactionIngestService');
-
         $this->processedIntakeQuery()
             ->orderBy('id')
             ->limit($limit)
             ->get()
-            ->each(function (TransactionIntake $intake) use ($repair, $ingestServiceAvailable, &$missing, &$repaired, &$skipped, &$failed) {
+            ->each(function (TransactionIntake $intake) use ($ingestService, $repair, &$missing, &$repaired, &$skipped, &$failed) {
                 $transactionId = data_get($intake->payload, 'transaction.transaction_id');
 
                 if (!$transactionId) {
@@ -107,37 +107,13 @@ class ReconcileStrandedIntake extends Command
                     return;
                 }
 
-                if (!$ingestServiceAvailable) {
-                    $skipped++;
-                    Log::warning('ReconcileStrandedIntake: repair skipped because TransactionIngestService is unavailable', [
-                        'intake_id' => $intake->id,
-                        'submission_uuid' => $intake->submission_uuid,
-                        'transaction_id' => $transactionId,
-                    ]);
-                    return;
-                }
-
-                try {
-                    // Re-queue this intake for normal processing path.
-                    $intake->update([
-                        'intake_status' => TransactionIntake::INTAKE_STATUS_QUEUED,
-                        'processing_status' => TransactionIntake::PROCESSING_STATUS_FAILED_RETRYABLE,
-                        'queued_at' => now(),
-                    ]);
-
-                    ProcessTransactionIntakeJob::dispatch($intake->id)
-                        ->onQueue('transaction-intake')
-                        ->afterCommit();
-
+                $result = $this->repairProcessedIntake($intake, $transactionId, $ingestService);
+                if ($result === 'repaired') {
                     $repaired++;
-                } catch (\Throwable $e) {
+                } elseif ($result === 'skipped') {
+                    $skipped++;
+                } else {
                     $failed++;
-                    Log::error('ReconcileStrandedIntake: failed to re-queue missing processed intake', [
-                        'intake_id' => $intake->id,
-                        'submission_uuid' => $intake->submission_uuid,
-                        'transaction_id' => $transactionId,
-                        'error' => $e->getMessage(),
-                    ]);
                 }
             });
 
@@ -163,12 +139,9 @@ class ReconcileStrandedIntake extends Command
         $this->info('Missing processed intake records found: ' . count($missing));
 
         if ($repair) {
-            if (!$ingestServiceAvailable) {
-                $this->warn('Repair mode requested, but TransactionIngestService is unavailable in this build. Missing items were reported only.');
-            }
-            $this->info("Repair summary. Re-queued: {$repaired}. Skipped: {$skipped}. Failed: {$failed}.");
+            $this->info("Repair complete. Repaired: {$repaired}. Skipped: {$skipped}. Failed: {$failed}.");
         } else {
-            $this->warn('Dry run only. Re-run with --repair-missing to attempt re-queue.');
+            $this->warn('Dry run only. Re-run with --repair-missing to re-ingest and queue transaction processing.');
         }
 
         return $failed > 0 ? self::FAILURE : self::SUCCESS;
@@ -206,5 +179,72 @@ class ReconcileStrandedIntake extends Command
                     ->orWhere('submission_uuid', $intake->submission_uuid);
             })
             ->exists();
+    }
+
+    private function repairProcessedIntake(
+        TransactionIntake $intake,
+        string $transactionId,
+        TransactionIngestService $ingestService
+    ): string {
+        $transactionPayload = data_get($intake->payload, 'transaction');
+
+        if (! is_array($transactionPayload)) {
+            Log::warning('ReconcileStrandedIntake: missing transaction payload for processed intake repair', [
+                'intake_id' => $intake->id,
+                'submission_uuid' => $intake->submission_uuid,
+            ]);
+
+            return 'skipped';
+        }
+
+        try {
+            $payload = array_merge($transactionPayload, [
+                'submission_uuid' => $intake->submission_uuid,
+                'submission_timestamp' => data_get($intake->payload, 'submission_timestamp'),
+                'tenant_id' => $intake->tenant_id,
+                'terminal_id' => $intake->terminal_id,
+                'payload_checksum' => $intake->payload_checksum,
+            ]);
+
+            $result = $ingestService->ingest($payload);
+            $status = $result['status'] ?? 'failed';
+
+            if (in_array($status, ['accepted', 'success', 'already_processed'], true) && isset($result['id'])) {
+                if ($status === 'accepted') {
+                    $shard = (int) ($intake->tenant_id % 8);
+                    ProcessTransactionJob::dispatch($result['id'])
+                        ->onQueue('transaction-processing:s' . $shard)
+                        ->afterCommit();
+                }
+
+                Log::info('ReconcileStrandedIntake: repaired processed intake missing transaction row', [
+                    'intake_id' => $intake->id,
+                    'submission_uuid' => $intake->submission_uuid,
+                    'transaction_id' => $transactionId,
+                    'transaction_pk' => $result['id'],
+                    'status' => $status,
+                ]);
+
+                return 'repaired';
+            }
+
+            Log::warning('ReconcileStrandedIntake: failed to repair processed intake missing transaction row', [
+                'intake_id' => $intake->id,
+                'submission_uuid' => $intake->submission_uuid,
+                'transaction_id' => $transactionId,
+                'result' => $result,
+            ]);
+
+            return 'failed';
+        } catch (\Throwable $e) {
+            Log::error('ReconcileStrandedIntake: exception while repairing processed intake', [
+                'intake_id' => $intake->id,
+                'submission_uuid' => $intake->submission_uuid,
+                'transaction_id' => $transactionId,
+                'error' => $e->getMessage(),
+            ]);
+
+            return 'failed';
+        }
     }
 }

@@ -20,6 +20,25 @@ Schedule::call(function () {
 })->everyMinute();
 
 // --------------------------------------------------------------------------
+// Intake reconciliation: recover accepted intake records that were not queued.
+// --------------------------------------------------------------------------
+Schedule::command('tsms:reconcile-intake')
+    ->everyMinute()
+    ->name('tsms-reconcile-intake')
+    ->withoutOverlapping()
+    ->onOneServer();
+
+// --------------------------------------------------------------------------
+// Processed intake repair: recreate transaction rows missing after intake.
+// Runs at a non-peak hour and uses the same command exposed to manual repair.
+// --------------------------------------------------------------------------
+Schedule::command('tsms:reconcile-intake --repair-missing')
+    ->dailyAt('23:00')
+    ->name('tsms-repair-missing-transactions')
+    ->withoutOverlapping()
+    ->onOneServer();
+
+// --------------------------------------------------------------------------
 // Transaction pruning: remove stale PENDING (stuck) & aged FAILED transactions
 // Runs every hour; uses configurable retention in config('tsms.transactions').
 // --------------------------------------------------------------------------

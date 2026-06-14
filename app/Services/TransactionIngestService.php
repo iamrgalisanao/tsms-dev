@@ -147,7 +147,6 @@ final readonly class TransactionIngestService
             'terminal_id' => $payload['terminal_id'],
             'transaction_id' => $payload['transaction_id'],
             'hardware_id' => $payload['hardware_id'],
-            'receipt_no' => $payload['receipt_no'] ?? null,
             'transaction_timestamp' => $payload['transaction_timestamp'],
             'gross_sales' => (float) $payload['gross_sales'],
             'net_sales' => (float) ($payload['net_sales'] ?? 0.0),
@@ -160,6 +159,14 @@ final readonly class TransactionIngestService
             'created_at' => $payload['created_at'] ?? now(),
             'updated_at' => $payload['updated_at'] ?? now(),
         ];
+
+        if (Schema::hasColumn('transactions', 'base_amount')) {
+            $normalized['base_amount'] = (float) ($payload['base_amount'] ?? $payload['gross_sales']);
+        }
+
+        if (Schema::hasColumn('transactions', 'receipt_no')) {
+            $normalized['receipt_no'] = $payload['receipt_no'] ?? null;
+        }
 
         if (Schema::hasColumn('transactions', 'original_payload')) {
             $normalized['original_payload'] = json_encode(
@@ -176,7 +183,7 @@ final readonly class TransactionIngestService
 
     protected function findReceiptConflict(array $parent): ?object
     {
-        if (empty($parent['receipt_no'])) {
+        if (empty($parent['receipt_no']) || ! Schema::hasColumn('transactions', 'receipt_no')) {
             return null;
         }
 
@@ -202,11 +209,11 @@ final readonly class TransactionIngestService
             $type = strtoupper(trim((string) ($tax['tax_type'] ?? '')));
             $amount = (float) ($tax['amount'] ?? 0.0);
 
-            if ($type === 'VATABLE_SALES' || $type === 'VATABLE') {
+            if (($type === 'VATABLE_SALES' || $type === 'VATABLE') && Schema::hasColumn('transactions', 'vatable_sales')) {
                 $normalized['vatable_sales'] = $amount;
-            } elseif (in_array($type, ['SC_VAT_EXEMPT_SALES', 'VAT_EXEMPT_SALES', 'VATEXEMPT_SALES'], true)) {
+            } elseif (in_array($type, ['SC_VAT_EXEMPT_SALES', 'VAT_EXEMPT_SALES', 'VATEXEMPT_SALES'], true) && Schema::hasColumn('transactions', 'sc_vat_exempt_sales')) {
                 $normalized['sc_vat_exempt_sales'] = $amount;
-            } elseif ($type === 'VAT' || $type === 'VAT_AMOUNT') {
+            } elseif (($type === 'VAT' || $type === 'VAT_AMOUNT') && Schema::hasColumn('transactions', 'vat_amount')) {
                 $normalized['vat_amount'] = $amount;
             }
         }
@@ -218,15 +225,15 @@ final readonly class TransactionIngestService
             $type = strtolower(trim((string) ($adjustment['adjustment_type'] ?? '')));
             $amount = (float) ($adjustment['amount'] ?? 0.0);
 
-            if ($type === 'promo_discount') {
+            if ($type === 'promo_discount' && Schema::hasColumn('transactions', 'promo_discount')) {
                 $normalized['promo_discount'] = $amount;
-            } elseif ($type === 'senior_discount') {
+            } elseif ($type === 'senior_discount' && Schema::hasColumn('transactions', 'senior_discount')) {
                 $normalized['senior_discount'] = $amount;
-            } elseif ($type === 'pwd_discount') {
+            } elseif ($type === 'pwd_discount' && Schema::hasColumn('transactions', 'pwd_discount')) {
                 $normalized['pwd_discount'] = $amount;
-            } elseif ($type === 'service_charge' || $type === 'service_charge_distributed_to_employees') {
+            } elseif (($type === 'service_charge' || $type === 'service_charge_distributed_to_employees') && Schema::hasColumn('transactions', 'service_charge')) {
                 $normalized['service_charge'] = $amount;
-            } elseif ($type === 'management_service_charge' || $type === 'service_charge_retained_by_management') {
+            } elseif (($type === 'management_service_charge' || $type === 'service_charge_retained_by_management') && Schema::hasColumn('transactions', 'management_service_charge')) {
                 $normalized['management_service_charge'] = $amount;
             }
         }
@@ -243,13 +250,21 @@ final readonly class TransactionIngestService
                 continue;
             }
 
-            DB::table('transaction_adjustments')->insert([
-                'transaction_pk' => $transactionPk,
+            $row = [
                 'adjustment_type' => $adjustment['adjustment_type'],
                 'amount' => $adjustment['amount'],
-                'created_at' => now(),
-                'updated_at' => now(),
-            ]);
+            ];
+
+            $this->attachTransactionReference($row, 'transaction_adjustments', $transactionPk);
+
+            if (Schema::hasColumn('transaction_adjustments', 'created_at')) {
+                $row['created_at'] = now();
+            }
+            if (Schema::hasColumn('transaction_adjustments', 'updated_at')) {
+                $row['updated_at'] = now();
+            }
+
+            DB::table('transaction_adjustments')->insert($row);
         }
     }
 
@@ -264,13 +279,34 @@ final readonly class TransactionIngestService
                 continue;
             }
 
-            DB::table('transaction_taxes')->insert([
-                'transaction_pk' => $transactionPk,
+            $row = [
                 'tax_type' => $tax['tax_type'],
                 'amount' => $tax['amount'],
-                'created_at' => now(),
-                'updated_at' => now(),
-            ]);
+            ];
+
+            $this->attachTransactionReference($row, 'transaction_taxes', $transactionPk);
+
+            if (Schema::hasColumn('transaction_taxes', 'created_at')) {
+                $row['created_at'] = now();
+            }
+            if (Schema::hasColumn('transaction_taxes', 'updated_at')) {
+                $row['updated_at'] = now();
+            }
+
+            DB::table('transaction_taxes')->insert($row);
+        }
+    }
+
+    protected function attachTransactionReference(array &$row, string $table, int $transactionPk): void
+    {
+        if (Schema::hasColumn($table, 'transaction_pk')) {
+            $row['transaction_pk'] = $transactionPk;
+        }
+
+        if (Schema::hasColumn($table, 'transaction_id')) {
+            $row['transaction_id'] = DB::table('transactions')
+                ->where('id', $transactionPk)
+                ->value('transaction_id');
         }
     }
 }
