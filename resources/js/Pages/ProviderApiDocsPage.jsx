@@ -5,6 +5,8 @@ import ShieldOutlinedIcon from '@mui/icons-material/ShieldOutlined';
 import FactCheckIcon from '@mui/icons-material/FactCheck';
 import InfoIcon from '@mui/icons-material/Info';
 import SearchIcon from '@mui/icons-material/Search';
+import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+
 
 // Import newly refactored modular components
 import SectionHeader from '../Components/ApiDocs/SectionHeader';
