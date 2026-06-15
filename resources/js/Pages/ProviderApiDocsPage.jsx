@@ -96,6 +96,38 @@ const checksumGuidelineSnippet = `1. Build the transaction object without transa
 7. Canonicalize and SHA-256 hash the submission.
 8. Put the result in top-level payload_checksum.`;
 
+const rootPayloadStructure = [
+    ['submission_uuid', 'Yes', 'UUID string', 'Unique submission id. Resending the same UUID with the same checksum is idempotent; changing the payload is rejected.'],
+    ['tenant_id', 'Yes', 'Integer', 'Must be the tenant that owns the authenticated terminal.'],
+    ['terminal_id', 'Yes', 'Integer', 'Must match the terminal identity of the bearer token. Token sharing across terminals is rejected.'],
+    ['submission_timestamp', 'Yes', 'YYYY-MM-DDTHH:mm:ssZ', 'UTC timestamp with no fractional seconds.'],
+    ['transaction_count', 'Yes', 'Integer, minimum 1', 'Must exactly match the number of transaction objects submitted.'],
+    ['payload_checksum', 'Yes', '64-character SHA-256', 'Computed from the canonical submission after transaction payload checksums are already present.'],
+    ['transaction', 'When count is 1', 'Object', 'Required only when transaction_count is 1.'],
+    ['transactions', 'When count is more than 1', 'Array, minimum 1', 'Required for batches. The array length must equal transaction_count.']
+];
+
+const transactionPayloadStructure = [
+    ['transaction_id', 'Yes', 'UUID string', 'Unique transaction id inside the submitted payload.'],
+    ['hardware_id', 'Yes', 'String', 'Must equal the authenticated terminal serial_number. Mismatches are rejected with HARDWARE_ID_MISMATCH.'],
+    ['transaction_timestamp', 'Yes', 'YYYY-MM-DDTHH:mm:ssZ', 'UTC timestamp with no fractional seconds.'],
+    ['receipt_no', 'Yes', 'Letters, numbers, dash, dot; max 128', 'Receipt identity used for duplicate detection on the same terminal and date.'],
+    ['gross_sales', 'Yes', 'Numeric, minimum 0', 'Submitted value is stored after validation.'],
+    ['net_sales', 'Yes', 'Numeric, minimum 0', 'Submitted value is stored after validation; TSMS does not recompute this from gross sales.'],
+    ['promo_status', 'Yes', 'String', 'Submitted POS promo status.'],
+    ['customer_code', 'Yes', 'String', 'Submitted POS customer code.'],
+    ['payload_checksum', 'Yes', '64-character SHA-256', 'Computed from the canonical transaction object before adding this field.'],
+    ['adjustments', 'Yes', 'Array, minimum 7 rows', 'Each row requires adjustment_type and amount. Include zero-amount rows for unused adjustment types.'],
+    ['taxes', 'Yes', 'Array, minimum 4 rows', 'Each row requires tax_type and amount. Include VAT, VATABLE_SALES, SC_VAT_EXEMPT_SALES, and OTHER_TAX rows.']
+];
+
+const nestedPayloadStructure = [
+    ['adjustments[].adjustment_type', 'Yes', 'String', 'Examples: promo_discount, senior_discount, pwd_discount, vip_card_discount, employee_discount.'],
+    ['adjustments[].amount', 'Yes', 'Numeric', 'Use two-decimal numeric strings for stable checksum canonicalization.'],
+    ['taxes[].tax_type', 'Yes', 'String', 'Examples: VAT, VATABLE_SALES, SC_VAT_EXEMPT_SALES, OTHER_TAX.'],
+    ['taxes[].amount', 'Yes', 'Numeric', 'Use two-decimal numeric strings for stable checksum canonicalization.']
+];
+
 const curlTenantActivity = `curl --request GET \\
   --url https://stagingtsms.pitx.com.ph/api/v1/monitoring/tenants/activity?threshold_minutes=1440 \\
   --header "Accept: application/json" \\
@@ -537,6 +569,36 @@ const MethodBadge = ({ method }) => {
         </span>
     );
 };
+
+const PayloadStructureTable = ({ title, rows }) => (
+    <div className="border border-[#c6c6cd]/80 rounded-xl bg-white overflow-hidden">
+        <div className="px-4 py-3 bg-slate-50 border-b border-[#c6c6cd]/70">
+            <h4 className="text-[11px] font-black uppercase tracking-wider text-slate-600">{title}</h4>
+        </div>
+        <div className="overflow-x-auto">
+            <table className="min-w-full text-left">
+                <thead className="bg-slate-50/70">
+                    <tr>
+                        <th className="px-4 py-2 text-[10px] font-black uppercase tracking-wider text-slate-400">Field</th>
+                        <th className="px-4 py-2 text-[10px] font-black uppercase tracking-wider text-slate-400">Required</th>
+                        <th className="px-4 py-2 text-[10px] font-black uppercase tracking-wider text-slate-400">Validation</th>
+                        <th className="px-4 py-2 text-[10px] font-black uppercase tracking-wider text-slate-400">TSMS Behavior</th>
+                    </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                    {rows.map(([field, required, validation, behavior]) => (
+                        <tr key={field}>
+                            <td className="px-4 py-3 align-top text-[11px] font-mono text-slate-800 whitespace-nowrap">{field}</td>
+                            <td className="px-4 py-3 align-top text-[11px] font-semibold text-slate-600 whitespace-nowrap">{required}</td>
+                            <td className="px-4 py-3 align-top text-[11px] text-slate-500 min-w-[170px]">{validation}</td>
+                            <td className="px-4 py-3 align-top text-[11px] text-slate-500 min-w-[260px] leading-relaxed">{behavior}</td>
+                        </tr>
+                    ))}
+                </tbody>
+            </table>
+        </div>
+    </div>
+);
 
 const pathParameterNames = (path = '') => [...path.matchAll(/{([^}]+)}/g)].map((match) => match[1]);
 
@@ -1435,6 +1497,19 @@ const ProviderApiDocsPage = () => {
                                 transaction hardware_id, payload structure, and cryptographic checksums all align. The rules below reflect the live ingestion
                                 implementation used by the endpoint.
                             </p>
+
+                            <div className="space-y-4 mb-4">
+                                <div className="flex flex-col gap-1">
+                                    <span className="block text-[10px] font-black uppercase tracking-wider text-slate-400">Payload structure reference</span>
+                                    <p className="text-[11px] text-slate-500 leading-relaxed max-w-4xl">
+                                        These are the fields TSMS validates for official submissions. Single-transaction payloads use <code>transaction</code>;
+                                        batch payloads use <code>transactions</code>. Every transaction in either form must follow the same transaction object structure.
+                                    </p>
+                                </div>
+                                <PayloadStructureTable title="Root submission envelope" rows={rootPayloadStructure} />
+                                <PayloadStructureTable title="Transaction object" rows={transactionPayloadStructure} />
+                                <PayloadStructureTable title="Adjustment and tax rows" rows={nestedPayloadStructure} />
+                            </div>
 
                             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
                                 <div className="p-4 border border-[#c6c6cd]/80 rounded-xl bg-slate-50/50">
