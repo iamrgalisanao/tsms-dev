@@ -5,7 +5,6 @@ namespace App\Services;
 use App\Models\Transaction;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
-use Maatwebsite\Excel\Facades\Excel;
 use App\Exports\TransactionLogsExport;
 
 class TransactionLogService
@@ -62,16 +61,7 @@ class TransactionLogService
 
     public function exportLogs(array $filters)
     {
-        $query = Transaction::query()
-            ->with(['terminal', 'tenant'])
-            ->when($filters['status'] ?? null, function($q, $status) {
-                $q->where('validation_status', $status);
-            })
-            ->when($filters['date'] ?? null, function($q, $date) {
-                $q->whereDate('created_at', $date);
-            });
-
-        return Excel::download(new TransactionLogsExport($query), 'transaction-logs-' . now()->format('Y-m-d') . '.xlsx');
+        return (new TransactionLogsExport($filters))->download('transaction-logs-' . now()->format('Y-m-d') . '.xlsx');
     }
 
     public function getUpdatesAfter($lastId)

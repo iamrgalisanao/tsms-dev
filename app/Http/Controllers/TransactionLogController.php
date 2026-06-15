@@ -9,7 +9,6 @@ use Illuminate\Http\Request;
 use App\Services\TransactionLogService;
 use App\Services\TransactionDetailService;
 use Illuminate\Support\Facades\Gate;
-use Maatwebsite\Excel\Facades\Excel;
 use App\Models\PosProvider;
 use App\Models\PosTerminal;
 use App\Models\Tenant;
@@ -251,7 +250,7 @@ class TransactionLogController extends Controller
         Gate::authorize('export-transaction-logs');
         
         $filename = 'transaction-logs-' . now()->format('Y-m-d') . '.xlsx';
-        return Excel::download(new TransactionLogsExport($request->all()), $filename);
+        return (new TransactionLogsExport($request->all()))->download($filename);
     }
 
     public function getUpdates(Request $request)
