@@ -31,7 +31,13 @@ class TransactionLogsExport
         };
 
         return Transaction::query()
-            ->with(['terminal:id,serial_number,tenant_id,machine_number', 'terminal.tenant:id,trade_name', 'tenant:id,trade_name'])
+            ->with([
+                'terminal:id,serial_number,tenant_id,machine_number',
+                'terminal.tenant:id,trade_name',
+                'tenant:id,trade_name',
+                'adjustments',
+                'taxes',
+            ])
             ->when($this->filters['status'] ?? null, function($query, $status) {
                 $query->where('validation_status', $status);
             })
@@ -102,9 +108,21 @@ class TransactionLogsExport
             'Tenant',
             'Terminal',
             'Receipt No',
-            'Amount',
+            'Gross Sales',
             'Net Sales',
             'VAT',
+            'Vatable Sales',
+            'SC VAT Exempt Sales',
+            'Tax Exempt',
+            'Promo Discount',
+            'Senior Discount',
+            'PWD Discount',
+            'VIP Card Discount',
+            'Employee Discount',
+            'Regular Discount',
+            'Service Charge',
+            'Management Service Charge',
+            'Other Tax',
             'Validation Status',
             'Job Status',
             'Attempts',
@@ -124,6 +142,18 @@ class TransactionLogsExport
             number_format((float) ($transaction->gross_sales ?? 0), 2),
             number_format((float) ($transaction->net_sales ?? 0), 2),
             number_format((float) ($transaction->vat_amount ?? 0), 2),
+            number_format((float) ($transaction->vatable_sales ?? 0), 2),
+            number_format($this->scVatExemptSales($transaction), 2),
+            $this->taxExemptLabel($transaction),
+            number_format($this->promoDiscount($transaction), 2),
+            number_format($this->discountAmount($transaction, 'senior_discount', ['senior_discount', 'senior_citizen_discount', 'SENIOR']), 2),
+            number_format($this->discountAmount($transaction, 'pwd_discount', ['pwd_discount', 'PWD']), 2),
+            number_format($this->discountAmount($transaction, 'vip_card_discount', ['vip_card_discount', 'vip_discount', 'VIP']), 2),
+            number_format($this->discountAmount($transaction, 'employee_discount', ['employee_discount', 'EMPLOYEE']), 2),
+            number_format((float) ($transaction->discount_total ?? 0), 2),
+            number_format((float) ($transaction->service_charge ?? 0), 2),
+            number_format((float) ($transaction->management_service_charge ?? 0), 2),
+            number_format($this->otherTax($transaction), 2),
             $transaction->validation_status,
             $transaction->job_status ?? 'N/A',
             $transaction->job_attempts ?? 0,
@@ -131,6 +161,94 @@ class TransactionLogsExport
             $this->formatDate($transaction->completed_at),
             $this->formatDate($transaction->created_at)
         ];
+    }
+
+    private function promoDiscount(Transaction $transaction): float
+    {
+        return $this->discountAmount($transaction, 'promo_discount', [
+            'promo_discount',
+            'promo_discount_amount',
+            'PROMO',
+        ]);
+    }
+
+    private function discountAmount(Transaction $transaction, string $attribute, array $adjustmentTypes): float
+    {
+        $directAmount = (float) ($transaction->{$attribute} ?? 0);
+
+        if ($directAmount !== 0.0) {
+            return $directAmount;
+        }
+
+        return $this->sumRelatedAmounts($transaction, 'adjustments', 'adjustment_type', $adjustmentTypes);
+    }
+
+    private function scVatExemptSales(Transaction $transaction): float
+    {
+        $directAmount = (float) ($transaction->sc_vat_exempt_sales ?? 0);
+
+        if ($directAmount !== 0.0) {
+            return $directAmount;
+        }
+
+        return $this->sumRelatedAmounts($transaction, 'taxes', 'tax_type', [
+            'SC_VAT_EXEMPT_SALES',
+            'VAT_EXEMPT_SALES',
+            'VATEXEMPT_SALES',
+            'VAT-EXEMPT',
+            'EXEMPT',
+            'VATEXEMPT',
+        ]);
+    }
+
+    private function otherTax(Transaction $transaction): float
+    {
+        return $this->sumRelatedAmounts($transaction, 'taxes', 'tax_type', [
+            'VAT',
+            'VAT_AMOUNT',
+            'VATABLE_SALES',
+            'SC_VAT_EXEMPT_SALES',
+            'VAT_EXEMPT_SALES',
+            'VATEXEMPT_SALES',
+            'VAT-EXEMPT',
+            'EXEMPT',
+            'VATEXEMPT',
+            'ZERO_RATED',
+            'NON-VAT',
+            'NON_VAT',
+            'ZERO-RATED',
+        ], true);
+    }
+
+    private function sumRelatedAmounts(Transaction $transaction, string $relation, string $typeColumn, array $types, bool $exclude = false): float
+    {
+        $rows = $transaction->relationLoaded($relation)
+            ? $transaction->getRelation($relation)
+            : $transaction->{$relation};
+
+        if (!$rows) {
+            return 0.0;
+        }
+
+        $normalizedTypes = array_map(fn ($type) => strtoupper((string) $type), $types);
+
+        return (float) $rows
+            ->filter(function ($row) use ($typeColumn, $normalizedTypes, $exclude) {
+                $rowType = strtoupper((string) ($row->{$typeColumn} ?? ''));
+                $matches = in_array($rowType, $normalizedTypes, true);
+
+                return $exclude ? !$matches : $matches;
+            })
+            ->sum('amount');
+    }
+
+    private function taxExemptLabel(Transaction $transaction): string
+    {
+        if ($transaction->tax_exempt === null) {
+            return 'N/A';
+        }
+
+        return filter_var($transaction->tax_exempt, FILTER_VALIDATE_BOOLEAN) ? 'Yes' : 'No';
     }
 
     private function formatDate($value): string
@@ -168,7 +286,7 @@ class TransactionLogsExport
                 $row++;
             }
 
-            foreach (range('A', 'M') as $column) {
+            foreach (range('A', 'X') as $column) {
                 $sheet->getColumnDimension($column)->setAutoSize(true);
             }
 

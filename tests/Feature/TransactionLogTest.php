@@ -9,6 +9,7 @@ use App\Models\Tenant;
 use App\Models\User;
 use App\Exports\TransactionLogsExport;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Laravel\Sanctum\Sanctum;
 
@@ -128,7 +129,67 @@ class TransactionLogTest extends TestCase
             'gross_sales' => 1250.00,
             'net_sales' => 1120.00,
             'vat_amount' => 130.00,
+            'vatable_sales' => 1083.33,
+            'sc_vat_exempt_sales' => 0.00,
+            'tax_exempt' => false,
+            'service_charge' => 15.00,
+            'management_service_charge' => 25.00,
             'validation_status' => 'VALID',
+        ]);
+
+        DB::table('transaction_adjustments')->insert([
+            [
+                'transaction_pk' => $matchingTransaction->id,
+                'adjustment_type' => 'promo_discount',
+                'amount' => 11.00,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'transaction_pk' => $matchingTransaction->id,
+                'adjustment_type' => 'senior_discount',
+                'amount' => 22.00,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'transaction_pk' => $matchingTransaction->id,
+                'adjustment_type' => 'pwd_discount',
+                'amount' => 33.00,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'transaction_pk' => $matchingTransaction->id,
+                'adjustment_type' => 'VIP',
+                'amount' => 44.00,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'transaction_pk' => $matchingTransaction->id,
+                'adjustment_type' => 'EMPLOYEE',
+                'amount' => 55.00,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+        ]);
+
+        DB::table('transaction_taxes')->insert([
+            [
+                'transaction_pk' => $matchingTransaction->id,
+                'tax_type' => 'SC_VAT_EXEMPT_SALES',
+                'amount' => 66.00,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
+            [
+                'transaction_pk' => $matchingTransaction->id,
+                'tax_type' => 'LOCAL_TAX',
+                'amount' => 77.00,
+                'created_at' => now(),
+                'updated_at' => now(),
+            ],
         ]);
 
         Transaction::factory()->create([
@@ -161,8 +222,31 @@ class TransactionLogTest extends TestCase
         $exportedTransactions = $export->query()->get();
 
         $this->assertSame([$matchingTransaction->id], $exportedTransactions->pluck('id')->all());
-        $this->assertSame('Test Tenant', $export->map($matchingTransaction)[1]);
-        $this->assertNotSame('N/A', $export->map($matchingTransaction)[2]);
+        $matchingTransaction->load(['adjustments', 'taxes']);
+
+        $headings = $export->headings();
+        $mapped = $export->map($matchingTransaction);
+
+        $this->assertContains('Vatable Sales', $headings);
+        $this->assertContains('SC VAT Exempt Sales', $headings);
+        $this->assertContains('Promo Discount', $headings);
+        $this->assertContains('Senior Discount', $headings);
+        $this->assertContains('PWD Discount', $headings);
+        $this->assertContains('VIP Card Discount', $headings);
+        $this->assertContains('Employee Discount', $headings);
+        $this->assertSame('Test Tenant', $mapped[1]);
+        $this->assertNotSame('N/A', $mapped[2]);
+        $this->assertSame('1,083.33', $mapped[7]);
+        $this->assertSame('66.00', $mapped[8]);
+        $this->assertSame('No', $mapped[9]);
+        $this->assertSame('11.00', $mapped[10]);
+        $this->assertSame('22.00', $mapped[11]);
+        $this->assertSame('33.00', $mapped[12]);
+        $this->assertSame('44.00', $mapped[13]);
+        $this->assertSame('55.00', $mapped[14]);
+        $this->assertSame('15.00', $mapped[16]);
+        $this->assertSame('25.00', $mapped[17]);
+        $this->assertSame('77.00', $mapped[18]);
 
         $matchingTransaction->setRawAttributes(array_merge($matchingTransaction->getAttributes(), [
             'transaction_timestamp' => '2026-06-10 12:30:00',
@@ -172,8 +256,8 @@ class TransactionLogTest extends TestCase
 
         $mapped = $export->map($matchingTransaction);
 
-        $this->assertSame('2026-06-10 12:30:00', $mapped[10]);
-        $this->assertSame('2026-06-10 12:31:00', $mapped[11]);
-        $this->assertSame('2026-06-10 12:32:00', $mapped[12]);
+        $this->assertSame('2026-06-10 12:30:00', $mapped[22]);
+        $this->assertSame('2026-06-10 12:31:00', $mapped[23]);
+        $this->assertSame('2026-06-10 12:32:00', $mapped[24]);
     }
 }
