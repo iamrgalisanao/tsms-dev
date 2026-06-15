@@ -22,7 +22,7 @@ class IngestionQuarantineTest extends TestCase
 
         $tenant = Tenant::factory()->create();
         $terminal = PosTerminal::factory()->create(['tenant_id' => $tenant->id]);
-        $payload = $this->makePayload($tenant->id, $terminal->id);
+        $payload = $this->makePayload($tenant->id, $terminal->id, $terminal->serial_number);
         $payload['payload_checksum'] = str_repeat('f', 64);
 
         $response = $this
@@ -54,7 +54,7 @@ class IngestionQuarantineTest extends TestCase
         $this->assertSame($payload['submission_uuid'], json_decode($quarantine->payload, true)['submission_uuid']);
     }
 
-    private function makePayload(int $tenantId, int $terminalId): array
+    private function makePayload(int $tenantId, int $terminalId, string $hardwareId): array
     {
         $checksum = new PayloadChecksumService();
         $now = Carbon::now('UTC');
@@ -77,7 +77,7 @@ class IngestionQuarantineTest extends TestCase
 
         $transactionScalars = [
             'transaction_id' => (string) Str::uuid(),
-            'hardware_id' => 'QUARANTINE-001',
+            'hardware_id' => $hardwareId,
             'receipt_no' => 'Q-' . Str::upper(Str::random(8)),
             'transaction_timestamp' => $now->copy()->subMinute()->format('Y-m-d\TH:i:s\Z'),
             'gross_sales' => '100.00',

@@ -932,6 +932,7 @@ class TransactionController extends Controller
                 $request->validate([
                     'transaction' => 'required|array',
                     'transaction.transaction_id' => 'required|string|uuid',
+                    'transaction.hardware_id' => 'required|string',
                     'transaction.transaction_timestamp' => 'required|date_format:Y-m-d\TH:i:s\Z',
                     'transaction.gross_sales' => 'required|numeric|min:0',
                     'transaction.net_sales' => 'required|numeric|min:0',
@@ -950,6 +951,7 @@ class TransactionController extends Controller
                 $request->validate([
                     'transactions' => 'required|array|min:1',
                     'transactions.*.transaction_id' => 'required|string|uuid',
+                    'transactions.*.hardware_id' => 'required|string',
                     'transactions.*.transaction_timestamp' => 'required|date_format:Y-m-d\TH:i:s\Z',
                     'transactions.*.gross_sales' => 'required|numeric|min:0',
                     'transactions.*.net_sales' => 'required|numeric|min:0',
@@ -980,6 +982,33 @@ class TransactionController extends Controller
                     'message' => 'Transaction count mismatch',
                     'errors' => ['transaction_count' => ["Expected {$request->transaction_count} transactions, got {$actualCount}"]]
                 ], 422);
+            }
+
+            $declaredTransactions = $request->transaction_count === 1 ? [$request->transaction] : $request->transactions;
+            $hardwareMismatch = $this->findHardwareBindingMismatch($terminalFromToken, $declaredTransactions);
+            if ($hardwareMismatch !== null) {
+                Log::warning('storeOfficial: Hardware ID does not match authenticated terminal', [
+                    'submission_uuid' => $request->submission_uuid,
+                    'terminal_id' => $request->terminal_id,
+                    'registered_hardware_id' => $hardwareMismatch['registered_hardware_id'],
+                    'submitted_hardware_id' => $hardwareMismatch['submitted_hardware_id'],
+                    'transaction_id' => $hardwareMismatch['transaction_id'],
+                    'receipt_no' => $hardwareMismatch['receipt_no'],
+                ]);
+
+                $this->safeRollBack('storeOfficial hardware mismatch rollback', [
+                    'submission_uuid' => $request->submission_uuid,
+                    'terminal_id' => $request->terminal_id,
+                ]);
+
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Forbidden - hardware ID does not match terminal',
+                    'error_code' => 'HARDWARE_ID_MISMATCH',
+                    'errors' => [
+                        'hardware_id' => ['Transaction hardware_id does not match the authenticated terminal.'],
+                    ],
+                ], 403);
             }
 
             // Validate payload checksums using raw JSON for canonicalization
@@ -1542,6 +1571,35 @@ class TransactionController extends Controller
 
             throw $e;
         }
+    }
+
+    private function findHardwareBindingMismatch(?PosTerminal $terminal, array $transactions): ?array
+    {
+        $registeredHardwareId = trim((string) ($terminal?->serial_number ?? ''));
+
+        if ($registeredHardwareId === '') {
+            return [
+                'registered_hardware_id' => null,
+                'submitted_hardware_id' => null,
+                'transaction_id' => null,
+                'receipt_no' => null,
+            ];
+        }
+
+        foreach ($transactions as $transaction) {
+            $submittedHardwareId = trim((string) ($transaction['hardware_id'] ?? ''));
+
+            if ($submittedHardwareId !== $registeredHardwareId) {
+                return [
+                    'registered_hardware_id' => $registeredHardwareId,
+                    'submitted_hardware_id' => $submittedHardwareId,
+                    'transaction_id' => $transaction['transaction_id'] ?? null,
+                    'receipt_no' => $transaction['receipt_no'] ?? null,
+                ];
+            }
+        }
+
+        return null;
     }
 
     private function findReceiptDateConflict(PosTerminal $terminal, array $transactionData): ?Transaction

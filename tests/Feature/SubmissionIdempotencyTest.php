@@ -24,7 +24,7 @@ class SubmissionIdempotencyTest extends TestCase
         return [$tenant, $terminal];
     }
 
-    private function makePayload($tenantId, $terminalId, $submissionUuid): array
+    private function makePayload($tenantId, $terminalId, $submissionUuid, ?string $hardwareId = null): array
     {
         // minimal valid one-transaction payload matching controller expectations
         $txId = (string) Str::uuid();
@@ -33,6 +33,7 @@ class SubmissionIdempotencyTest extends TestCase
         // Build transaction scalars first
         $txnScalars = [
             'transaction_id' => (string) $txId,
+            'hardware_id' => $hardwareId ?? 'HW-TEST',
             'receipt_no' => 'IDEMP-'.Str::upper(Str::random(8)),
             'transaction_timestamp' => $now->copy()->subMinute()->format('Y-m-d\\TH:i:s\\Z'),
             'gross_sales' => 100.0,
@@ -106,7 +107,7 @@ class SubmissionIdempotencyTest extends TestCase
 
         [$tenant, $terminal] = $this->seedTenantAndTerminal();
         $uuid = (string) Str::uuid();
-        $payload = $this->makePayload($tenant->id, $terminal->id, $uuid);
+        $payload = $this->makePayload($tenant->id, $terminal->id, $uuid, $terminal->serial_number);
 
         // Issue a Sanctum token for the terminal with proper abilities
         $token = $terminal->generateAccessToken();
@@ -137,9 +138,9 @@ class SubmissionIdempotencyTest extends TestCase
         Queue::fake();
 
         [$tenant, $terminal] = $this->seedTenantAndTerminal();
-        $firstPayload = $this->makePayload($tenant->id, $terminal->id, (string) Str::uuid());
+        $firstPayload = $this->makePayload($tenant->id, $terminal->id, (string) Str::uuid(), $terminal->serial_number);
         $secondSubmissionUuid = (string) Str::uuid();
-        $secondPayload = $this->makePayload($tenant->id, $terminal->id, $secondSubmissionUuid);
+        $secondPayload = $this->makePayload($tenant->id, $terminal->id, $secondSubmissionUuid, $terminal->serial_number);
 
         $secondPayload['transaction']['receipt_no'] = $firstPayload['transaction']['receipt_no'];
         $secondPayload['transaction']['transaction_timestamp'] = $firstPayload['transaction']['transaction_timestamp'];
@@ -167,6 +168,34 @@ class SubmissionIdempotencyTest extends TestCase
             ->count());
         $this->assertDatabaseMissing('transaction_submissions', [
             'submission_uuid' => $secondSubmissionUuid,
+            'terminal_id' => $terminal->id,
+        ]);
+    }
+
+    public function test_hardware_id_must_match_authenticated_terminal(): void
+    {
+        Queue::fake();
+
+        [$tenant, $terminal] = $this->seedTenantAndTerminal();
+        $payload = $this->makePayload($tenant->id, $terminal->id, (string) Str::uuid(), 'FOREIGN-HARDWARE');
+        $payload = $this->refreshChecksums($payload);
+
+        $this->postJson('/api/v1/transactions/official', $payload, [
+            'Content-Type' => 'application/json',
+            'Authorization' => 'Bearer ' . $terminal->generateAccessToken(),
+        ])
+            ->assertStatus(403)
+            ->assertJson([
+                'success' => false,
+                'error_code' => 'HARDWARE_ID_MISMATCH',
+            ]);
+
+        $this->assertDatabaseMissing('transaction_submissions', [
+            'submission_uuid' => $payload['submission_uuid'],
+            'terminal_id' => $terminal->id,
+        ]);
+        $this->assertDatabaseMissing('transactions', [
+            'transaction_id' => $payload['transaction']['transaction_id'],
             'terminal_id' => $terminal->id,
         ]);
     }

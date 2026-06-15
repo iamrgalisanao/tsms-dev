@@ -23,7 +23,7 @@ class OfficialTransactionTimestampNoMutationTest extends TestCase
         $tenant = Tenant::factory()->create();
         $terminal = PosTerminal::factory()->create(['tenant_id' => $tenant->id]);
         $timestamp = Carbon::now('UTC')->subMinute()->format('Y-m-d\TH:i:s\Z');
-        $payload = $this->makeOfficialPayload($tenant->id, $terminal->id, $timestamp);
+        $payload = $this->makeOfficialPayload($tenant->id, $terminal->id, $timestamp, $terminal->serial_number);
 
         $response = $this
             ->withHeaders([
@@ -49,7 +49,7 @@ class OfficialTransactionTimestampNoMutationTest extends TestCase
         $tenant = Tenant::factory()->create();
         $terminal = PosTerminal::factory()->create(['tenant_id' => $tenant->id]);
         $timestamp = Carbon::now('UTC')->subMinute()->format('Y-m-d\TH:i:s\Z');
-        $payload = $this->makeOfficialPayload($tenant->id, $terminal->id, $timestamp);
+        $payload = $this->makeOfficialPayload($tenant->id, $terminal->id, $timestamp, $terminal->serial_number);
 
         $payload['transaction']['gross_sales'] = '100.00';
         $payload['transaction']['net_sales'] = '84.74';
@@ -83,7 +83,7 @@ class OfficialTransactionTimestampNoMutationTest extends TestCase
         $this->assertSame('84.74', number_format((float) $transaction->net_sales, 2, '.', ''));
     }
 
-    private function makeOfficialPayload(int $tenantId, int $terminalId, string $timestamp): array
+    private function makeOfficialPayload(int $tenantId, int $terminalId, string $timestamp, string $hardwareId): array
     {
         $checksum = new PayloadChecksumService();
 
@@ -105,7 +105,7 @@ class OfficialTransactionTimestampNoMutationTest extends TestCase
 
         $transactionScalars = [
             'transaction_id' => (string) Str::uuid(),
-            'hardware_id' => 'NO-MUTATION-001',
+            'hardware_id' => $hardwareId,
             'receipt_no' => 'NM-'.Str::upper(Str::random(8)),
             'transaction_timestamp' => $timestamp,
             'gross_sales' => '100.00',
