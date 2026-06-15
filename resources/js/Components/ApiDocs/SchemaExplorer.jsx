@@ -7,10 +7,10 @@ const ROOT_SCHEMA = [
     ['tenant_id', 'Yes', 'Integer', 'Must be the tenant that owns the authenticated terminal.'],
     ['terminal_id', 'Yes', 'Integer', 'Must match the terminal identity of the bearer token. Token sharing across terminals is rejected.'],
     ['submission_timestamp', 'Yes', 'YYYY-MM-DDTHH:mm:ssZ', 'UTC timestamp with no fractional seconds.'],
-    ['transaction_count', 'Yes', 'Integer, minimum 1', 'Must exactly match the number of transaction objects submitted.'],
+    ['transaction_count', 'Yes', 'Integer, exactly 1', 'Official ingestion accepts one transaction per submission.'],
     ['payload_checksum', 'Yes', '64-character SHA-256', 'Computed from the canonical submission after transaction payload checksums are already present.'],
-    ['transaction', 'When count is 1', 'Object', 'Required only when transaction_count is 1.'],
-    ['transactions', 'When count is more than 1', 'Array, minimum 1', 'Required for batches. The array length must equal transaction_count.']
+    ['transaction', 'Yes', 'Object', 'Required official transaction object.'],
+    ['transactions', 'No', 'Unsupported', 'Batch ingestion is not supported on the official provider endpoint.']
 ];
 
 const TRANSACTION_SCHEMA = [

@@ -17,10 +17,10 @@ tags:
   - name: Authentication
   - name: Ingestion
     description: >
-      Official transaction ingestion uses a submission envelope containing either
-      one transaction object or a transactions array. TSMS validates terminal
-      token binding, tenant ownership, payload structure, hardware identity, and
-      checksums before persisting records.
+      Official transaction ingestion uses a submission envelope containing one
+      transaction object. TSMS validates terminal token binding, tenant
+      ownership, payload structure, hardware identity, and checksums before
+      persisting records.
   - name: Payload Guidelines
     description: >
       Payload contract implemented by /transactions/official. The transaction
@@ -40,7 +40,7 @@ x-payload-guidelines:
   authentication: Bearer token issued to the same POS terminal as terminal_id.
   structure:
     single: transaction_count must be 1 and the payload must contain transaction.
-    batch: transaction_count must be greater than 1 and the payload must contain transactions.
+    batch: Not supported. Do not send transactions; submit each sale as its own official submission.
   timestamps: UTC format YYYY-MM-DDTHH:mm:ssZ. Fractional seconds are rejected.
   receipt_no: Non-empty string matching ^[A-Za-z0-9\-.]{1,128}$.
   hardware_binding: transaction.hardware_id must equal the authenticated terminal serial_number.
@@ -52,7 +52,7 @@ x-payload-guidelines:
   validation_order:
     - Bearer token must exist, be valid, match terminal_id, and belong to an active terminal.
     - Required submission and transaction fields must pass structure validation.
-    - transaction_count must match the submitted transaction object or transactions array.
+    - transaction_count must be 1 and the payload must contain transaction.
     - transaction hardware_id must match the terminal serial_number.
     - Transaction and submission payload checksums must match.
     - terminal_id must belong to tenant_id.
@@ -115,14 +115,14 @@ paths:
       tags: [Ingestion]
       summary: Submit official TSMS transaction payload
       description: >
-        Accepts a single official transaction when transaction_count is 1, or a
-        batch when transaction_count is greater than 1. Checksums are validated
-        before records are persisted and jobs are dispatched. The authenticated
-        terminal token must match terminal_id, and each transaction.hardware_id
-        must match that terminal's registered serial_number. Rate-limited per
-        authenticated terminal and tenant, not by shared public IP. The
-        submission_uuid must be globally unique; only identical retries from the
-        same terminal are treated as idempotent.
+        Accepts one official transaction per submission. Set transaction_count
+        to 1 and provide transaction. Batch ingestion via transactions is not
+        supported. Checksums are validated before records are persisted and jobs
+        are dispatched. The authenticated terminal token must match terminal_id,
+        and transaction.hardware_id must match that terminal's registered
+        serial_number. Rate-limited per authenticated terminal and tenant, not by
+        shared public IP. The submission_uuid must be globally unique; only
+        identical retries from the same terminal are treated as idempotent.
       security:
         - bearerAuth: ['transaction:create']
       requestBody:
@@ -190,24 +190,6 @@ paths:
                     conflict:
                       submission_uuid: dbb79529-c5b5-47a0-8863-add7af13b18c
                       terminal_id: 87
-        '422':
-          $ref: '#/components/responses/ValidationError'
-        '429':
-          $ref: '#/components/responses/RateLimited'
-  /transactions/batch:
-    post:
-      tags: [Ingestion]
-      summary: Submit legacy batch payload
-      description: Legacy batch ingestion endpoint. New providers should prefer /transactions/official.
-      security:
-        - bearerAuth: ['transaction:create']
-      responses:
-        '200':
-          description: Batch accepted.
-        '401':
-          $ref: '#/components/responses/Unauthenticated'
-        '403':
-          $ref: '#/components/responses/Forbidden'
         '422':
           $ref: '#/components/responses/ValidationError'
         '429':
@@ -547,9 +529,8 @@ components:
       type: object
       required: [submission_uuid, tenant_id, terminal_id, submission_timestamp, transaction_count, payload_checksum]
       description: >
-        Official ingestion envelope. Use transaction when transaction_count is 1.
-        Use transactions when transaction_count is greater than 1. The submitted
-        transaction_count must exactly match the number of transaction objects.
+        Official ingestion envelope. Use transaction and set transaction_count
+        to 1. Batch ingestion via transactions is not supported.
       properties:
         submission_uuid:
           type: string
@@ -572,8 +553,8 @@ components:
           description: UTC timestamp formatted as YYYY-MM-DDTHH:mm:ssZ. Fractional seconds/milliseconds are not accepted.
         transaction_count:
           type: integer
-          minimum: 1
-          description: Number of transactions represented by transaction or transactions.
+          enum: [1]
+          description: Official provider ingestion accepts one transaction per submission.
         payload_checksum:
           type: string
           minLength: 64
@@ -581,10 +562,6 @@ components:
           description: SHA-256 checksum for the submission payload, excluding this top-level payload_checksum field.
         transaction:
           $ref: '#/components/schemas/OfficialTransaction'
-        transactions:
-          type: array
-          items:
-            $ref: '#/components/schemas/OfficialTransaction'
     OfficialTransaction:
       type: object
       required: [transaction_id, hardware_id, receipt_no, transaction_timestamp, gross_sales, net_sales, promo_status, customer_code, payload_checksum, adjustments, taxes]

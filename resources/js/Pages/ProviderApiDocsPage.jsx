@@ -840,8 +840,8 @@ const ProviderApiDocsPage = () => {
                                     <div className="p-4 border border-[#c6c6cd]/50 rounded-xl bg-slate-50/50">
                                         <span className="block text-[10px] font-black uppercase tracking-wider text-slate-400 mb-3 select-none">Structure Requirements</span>
                                         <ul className="space-y-2 text-[11px] text-slate-500 leading-relaxed">
-                                            <li><strong>Single transaction:</strong> set <code>transaction_count</code> to <code>1</code> and provide <code>transaction</code>.</li>
-                                            <li><strong>Batch:</strong> set <code>transaction_count</code> to the exact number of records and provide <code>transactions</code>.</li>
+                                            <li><strong>Single transaction only:</strong> set <code>transaction_count</code> to <code>1</code> and provide <code>transaction</code>.</li>
+                                            <li><strong>No batch ingestion:</strong> do not send <code>transactions</code>; submit each sale as its own official submission.</li>
                                             <li><strong>Timestamps:</strong> use UTC <code>YYYY-MM-DDTHH:mm:ssZ</code>; fractional seconds are rejected.</li>
                                             <li><strong>Receipt number:</strong> letters, numbers, dash, and dot only; maximum 128 characters.</li>
                                         </ul>
