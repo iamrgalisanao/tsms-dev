@@ -75,6 +75,7 @@ class PayloadSandboxValidationService
                     'INVALID_AMOUNT_FORMAT',
                     'INVALID_CHECKSUM_FORMAT',
                     'BATCH_NOT_SUPPORTED',
+                    'INVALID_TIMESTAMP_FORMAT',
                 ]) ? 'failed' : 'passed',
                 'checksum' => (($checksums['transaction']['matches'] ?? false) && ($checksums['submission']['matches'] ?? false)) ? 'passed' : 'failed',
                 'contract' => $this->hasAnyErrorWithCodes($errors, [
@@ -121,6 +122,20 @@ class PayloadSandboxValidationService
 
         if (($payload['transaction_count'] ?? null) !== 1) {
             $errors[] = $this->error('BATCH_NOT_SUPPORTED', '/transaction_count', 'V2.1 Phase 1 requires transaction_count to be exactly 1.', 1, $payload['transaction_count'] ?? null);
+        }
+
+        if (
+            isset($payload['submission_timestamp']) &&
+            is_string($payload['submission_timestamp']) &&
+            !$this->isProductionTimestamp($payload['submission_timestamp'])
+        ) {
+            $errors[] = $this->error(
+                'INVALID_TIMESTAMP_FORMAT',
+                '/submission_timestamp',
+                'submission_timestamp must match production format Y-m-d\\TH:i:s\\Z without milliseconds.',
+                'YYYY-MM-DDTHH:MM:SSZ',
+                $payload['submission_timestamp']
+            );
         }
 
         if (array_key_exists('transactions', $payload)) {
@@ -171,6 +186,20 @@ class PayloadSandboxValidationService
                 'transaction.transaction_id must be a valid UUID v4.',
                 'UUID v4 string',
                 $transaction['transaction_id']
+            );
+        }
+
+        if (
+            isset($transaction['transaction_timestamp']) &&
+            is_string($transaction['transaction_timestamp']) &&
+            !$this->isProductionTimestamp($transaction['transaction_timestamp'])
+        ) {
+            $errors[] = $this->error(
+                'INVALID_TIMESTAMP_FORMAT',
+                '/transaction/transaction_timestamp',
+                'transaction.transaction_timestamp must match production format Y-m-d\\TH:i:s\\Z without milliseconds.',
+                'YYYY-MM-DDTHH:MM:SSZ',
+                $transaction['transaction_timestamp']
             );
         }
 
@@ -423,6 +452,11 @@ class PayloadSandboxValidationService
     private function isUuidV4(string $value): bool
     {
         return preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i', $value) === 1;
+    }
+
+    private function isProductionTimestamp(string $value): bool
+    {
+        return preg_match('/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/', $value) === 1;
     }
 
     private function matchesType(mixed $value, string $type): bool

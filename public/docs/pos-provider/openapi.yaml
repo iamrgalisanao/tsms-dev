@@ -358,7 +358,9 @@ components:
         submission_timestamp:
           type: string
           format: date-time
-          description: UTC timestamp formatted as YYYY-MM-DDTHH:mm:ssZ.
+          pattern: '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$'
+          example: '2026-06-15T02:21:52Z'
+          description: UTC timestamp formatted as YYYY-MM-DDTHH:mm:ssZ. Fractional seconds/milliseconds are not accepted.
         transaction_count:
           type: integer
           minimum: 1
@@ -386,7 +388,9 @@ components:
         transaction_timestamp:
           type: string
           format: date-time
-          description: UTC timestamp formatted as YYYY-MM-DDTHH:mm:ssZ.
+          pattern: '^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$'
+          example: '2026-06-12T21:07:28Z'
+          description: UTC timestamp formatted as YYYY-MM-DDTHH:mm:ssZ. Fractional seconds/milliseconds are not accepted.
         gross_sales:
           type: number
           format: decimal
