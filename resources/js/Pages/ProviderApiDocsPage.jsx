@@ -49,6 +49,53 @@ const curlSandbox = `curl --request POST \\
   --header "Content-Type: application/json" \\
   --data @payload.json`;
 
+const officialPayloadGuidelineExample = `{
+  "submission_uuid": "91b140fd-1f9c-4f47-b0d2-658d613bca7a",
+  "tenant_id": 44,
+  "terminal_id": 29,
+  "submission_timestamp": "2026-06-02T07:03:45Z",
+  "transaction_count": 1,
+  "payload_checksum": "{submission_sha256}",
+  "transaction": {
+    "transaction_id": "e27be0f2-6c6e-4826-8ff7-52a0eb1a25f4",
+    "hardware_id": "50026B7784FE2276",
+    "receipt_no": "0000054121",
+    "transaction_timestamp": "2026-06-02T07:03:45Z",
+    "gross_sales": "119.00",
+    "net_sales": "85.00",
+    "promo_status": "WITH_APPROVAL",
+    "customer_code": "C-F1008",
+    "payload_checksum": "{transaction_sha256}",
+    "adjustments": [
+      { "adjustment_type": "promo_discount", "amount": "12.75" },
+      { "adjustment_type": "senior_discount", "amount": "21.25" },
+      { "adjustment_type": "pwd_discount", "amount": "0.00" },
+      { "adjustment_type": "vip_card_discount", "amount": "0.00" },
+      { "adjustment_type": "service_charge_distributed_to_employees", "amount": "0.00" },
+      { "adjustment_type": "service_charge_retained_by_management", "amount": "0.00" },
+      { "adjustment_type": "employee_discount", "amount": "0.00" }
+    ],
+    "taxes": [
+      { "tax_type": "VAT", "amount": "0.00" },
+      { "tax_type": "VATABLE_SALES", "amount": "0.00" },
+      { "tax_type": "SC_VAT_EXEMPT_SALES", "amount": "106.25" },
+      { "tax_type": "OTHER_TAX", "amount": "0.00" }
+    ]
+  }
+}`;
+
+const checksumGuidelineSnippet = `1. Build the transaction object without transaction.payload_checksum.
+2. Canonicalize it:
+   - sort object keys recursively
+   - preserve array order
+   - format gross_sales, net_sales, and amount as two-decimal strings
+3. JSON encode with unescaped slashes/unicode, then SHA-256 hash.
+4. Put the result in transaction.payload_checksum.
+5. Build the submission without top-level payload_checksum.
+6. Include the transaction object with transaction.payload_checksum.
+7. Canonicalize and SHA-256 hash the submission.
+8. Put the result in top-level payload_checksum.`;
+
 const curlTenantActivity = `curl --request GET \\
   --url https://stagingtsms.pitx.com.ph/api/v1/monitoring/tenants/activity?threshold_minutes=1440 \\
   --header "Accept: application/json" \\
@@ -74,6 +121,17 @@ const terminalTokenMismatchResponse = `{
   "success": false,
   "message": "Terminal Identity Mismatch: The terminal_id provided in the payload does not match the identity of the authenticated API token. Token sharing across multiple terminals is strictly prohibited.",
   "error_code": "TERMINAL_TOKEN_MISMATCH"
+}`;
+
+const hardwareIdMismatchResponse = `{
+  "success": false,
+  "message": "Forbidden - hardware ID does not match terminal",
+  "error_code": "HARDWARE_ID_MISMATCH",
+  "errors": {
+    "hardware_id": [
+      "Transaction hardware_id does not match the authenticated terminal."
+    ]
+  }
 }`;
 
 const submissionUuidConflictResponse = `{
@@ -123,6 +181,7 @@ const rateLimitResponse = `{
 
 const sectionLinks = [
     ['access', 'Access'],
+    ['payload-guidelines', 'Payload Guidelines'],
     ['openapi', 'OpenAPI Viewer'],
     ['status', 'Status Lookup'],
     ['errors', 'Errors'],
@@ -1187,6 +1246,7 @@ const ProviderApiDocsPage = () => {
                                 {sectionLinks.map(([id, label]) => {
                                     let icon = <HelpOutlineIcon style={{ fontSize: 18 }} />;
                                     if (id === 'access') icon = <LockOutlinedIcon style={{ fontSize: 18 }} />;
+                                    if (id === 'payload-guidelines') icon = <FactCheckIcon style={{ fontSize: 18 }} />;
                                     if (id === 'openapi') icon = <ArticleIcon style={{ fontSize: 18 }} />;
                                     if (id === 'status') icon = <SearchIcon style={{ fontSize: 18 }} />;
                                     if (id === 'errors') icon = <ErrorOutlineIcon style={{ fontSize: 18 }} />;
@@ -1362,6 +1422,60 @@ const ProviderApiDocsPage = () => {
                             </div>
                         </div>
 
+                        {/* Payload Guidelines Section */}
+                        <EndpointSection
+                            id="payload-guidelines"
+                            icon={<FactCheckIcon />}
+                            title="Official Payload Guidelines"
+                            method="POST"
+                            path="/api/v1/transactions/official"
+                        >
+                            <p className="text-xs text-slate-500 leading-relaxed mb-4 max-w-4xl">
+                                TSMS currently accepts the official submission envelope only when the authenticated terminal, declared terminal_id,
+                                transaction hardware_id, payload structure, and cryptographic checksums all align. The rules below reflect the live ingestion
+                                implementation used by the endpoint.
+                            </p>
+
+                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+                                <div className="p-4 border border-[#c6c6cd]/80 rounded-xl bg-slate-50/50">
+                                    <span className="block text-[10px] font-black uppercase tracking-wider text-slate-400 mb-3">Structure requirements</span>
+                                    <ul className="space-y-2 text-[11px] text-slate-500 leading-relaxed">
+                                        <li><strong>Single transaction:</strong> set <code>transaction_count</code> to <code>1</code> and provide <code>transaction</code>.</li>
+                                        <li><strong>Batch:</strong> set <code>transaction_count</code> to the exact number of records and provide <code>transactions</code>.</li>
+                                        <li><strong>Timestamps:</strong> use UTC <code>YYYY-MM-DDTHH:mm:ssZ</code>; fractional seconds are rejected.</li>
+                                        <li><strong>Receipt number:</strong> letters, numbers, dash, and dot only; maximum 128 characters.</li>
+                                        <li><strong>Rows:</strong> at least seven adjustment rows and four tax rows are required per transaction.</li>
+                                    </ul>
+                                </div>
+
+                                <div className="p-4 border border-[#c6c6cd]/80 rounded-xl bg-slate-50/50">
+                                    <span className="block text-[10px] font-black uppercase tracking-wider text-slate-400 mb-3">Security and validation</span>
+                                    <ul className="space-y-2 text-[11px] text-slate-500 leading-relaxed">
+                                        <li>The bearer token must belong to the submitted <code>terminal_id</code>.</li>
+                                        <li>The terminal must be active and must belong to submitted <code>tenant_id</code>.</li>
+                                        <li>Each <code>transaction.hardware_id</code> must match the authenticated terminal <code>serial_number</code>.</li>
+                                        <li>Duplicate <code>submission_uuid</code> with the same payload is idempotent; payload drift is rejected.</li>
+                                        <li>Duplicate receipt conflicts on the same terminal/date are rejected.</li>
+                                    </ul>
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                                <div className="space-y-2">
+                                    <span className="block text-[10px] font-black uppercase tracking-wider text-slate-400">Minimal official payload shape</span>
+                                    <CodeBlock value={officialPayloadGuidelineExample} />
+                                </div>
+                                <div className="space-y-2">
+                                    <span className="block text-[10px] font-black uppercase tracking-wider text-slate-400">Checksum calculation order</span>
+                                    <CodeBlock value={checksumGuidelineSnippet} />
+                                    <div className="p-3 bg-blue-50 border border-blue-100 rounded-xl text-[11px] text-blue-900/80 leading-normal">
+                                        Official ingestion stores submitted financial values after validation. It does not recompute or enforce a gross-to-net
+                                        formula, so POS EOD totals should be represented directly in the payload fields.
+                                    </div>
+                                </div>
+                            </div>
+                        </EndpointSection>
+
                         {/* Dynamic OpenAPI Spec explorer */}
                         <OpenApiViewer />
 
@@ -1417,6 +1531,16 @@ const ProviderApiDocsPage = () => {
                                     </div>
                                     <p className="text-[11px] text-slate-500">Returned when the payload terminal_id does not match the authenticated terminal identity.</p>
                                     <CodeBlock value={terminalTokenMismatchResponse} />
+                                </div>
+
+                                {/* 403 Forbidden - Hardware ID Mismatch */}
+                                <div className="p-4 border border-[#c6c6cd]/80 rounded-xl bg-slate-50/50 space-y-3">
+                                    <div className="flex items-center justify-between gap-2 border-b border-[#c6c6cd]/50 pb-2">
+                                        <span className="text-[10px] font-black px-2 py-0.5 rounded bg-amber-50 text-amber-700 border border-amber-200 font-mono">403 FORBIDDEN</span>
+                                        <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">Hardware Mismatch</span>
+                                    </div>
+                                    <p className="text-[11px] text-slate-500">Returned when transaction.hardware_id differs from the authenticated terminal serial_number.</p>
+                                    <CodeBlock value={hardwareIdMismatchResponse} />
                                 </div>
 
                                 {/* 404 Not Found - Submission Not Found */}
