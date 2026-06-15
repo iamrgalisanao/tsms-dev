@@ -858,6 +858,33 @@ class TransactionController extends Controller
             // ------------------------------------------------------------------
             // Submission-level idempotency & drift detection
             // ------------------------------------------------------------------
+            $conflictingSubmission = \App\Models\TransactionSubmission::where('submission_uuid', $request->submission_uuid)
+                ->where('terminal_id', '!=', $request->terminal_id)
+                ->first();
+
+            if ($conflictingSubmission) {
+                Log::warning('storeOfficial: Submission UUID already belongs to a different terminal', [
+                    'submission_uuid' => $request->submission_uuid,
+                    'declared_terminal_id' => $request->terminal_id,
+                    'existing_terminal_id' => $conflictingSubmission->terminal_id,
+                    'existing_tenant_id' => $conflictingSubmission->tenant_id,
+                ]);
+
+                $this->safeRollBack('storeOfficial submission UUID conflict rollback', [
+                    'submission_uuid' => $request->submission_uuid,
+                    'terminal_id' => $request->terminal_id,
+                ]);
+
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Submission UUID conflict',
+                    'conflict' => [
+                        'submission_uuid' => $request->submission_uuid,
+                        'terminal_id' => $request->terminal_id,
+                    ],
+                ], 409);
+            }
+
             $submission = \App\Models\TransactionSubmission::where('terminal_id', $request->terminal_id)
                 ->where('submission_uuid', $request->submission_uuid)
                 ->first();
@@ -1063,7 +1090,9 @@ class TransactionController extends Controller
                 $existing = \App\Models\TransactionSubmission::where('terminal_id', $request->terminal_id)
                     ->where('submission_uuid', $request->submission_uuid)
                     ->first();
-                $existingTransactions = \App\Models\Transaction::where('submission_uuid', $request->submission_uuid)->get();
+                $existingTransactions = \App\Models\Transaction::where('terminal_id', $request->terminal_id)
+                    ->where('submission_uuid', $request->submission_uuid)
+                    ->get();
                 // Touch terminal liveness on idempotent duplicate via cache lock
                 try {
                     if ($terminalFromToken instanceof \App\Models\PosTerminal) {
@@ -1116,7 +1145,9 @@ class TransactionController extends Controller
                     $existing = \App\Models\TransactionSubmission::where('terminal_id', $request->terminal_id)
                         ->where('submission_uuid', $request->submission_uuid)
                         ->first();
-                    $existingTransactions = \App\Models\Transaction::where('submission_uuid', $request->submission_uuid)->get();
+                    $existingTransactions = \App\Models\Transaction::where('terminal_id', $request->terminal_id)
+                        ->where('submission_uuid', $request->submission_uuid)
+                        ->get();
 
                     // Touch terminal liveness on duplicate submission insert
                     try {

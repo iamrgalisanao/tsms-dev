@@ -7,6 +7,8 @@ use Illuminate\Support\Str;
 use Illuminate\Support\Carbon;
 use App\Models\Tenant;
 use App\Models\PosTerminal;
+use App\Models\Transaction;
+use App\Models\TransactionSubmission;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use App\Services\PayloadChecksumService;
 use Illuminate\Support\Facades\Queue;
@@ -198,6 +200,130 @@ class SubmissionIdempotencyTest extends TestCase
             'transaction_id' => $payload['transaction']['transaction_id'],
             'terminal_id' => $terminal->id,
         ]);
+    }
+
+    public function test_tenant_id_must_match_authenticated_terminal_tenant(): void
+    {
+        Queue::fake();
+
+        [$tenant, $terminal] = $this->seedTenantAndTerminal();
+        $otherTenant = Tenant::factory()->create();
+        $payload = $this->makePayload($otherTenant->id, $terminal->id, (string) Str::uuid(), $terminal->serial_number);
+        $payload = $this->refreshChecksums($payload);
+
+        $this->postJson('/api/v1/transactions/official', $payload, [
+            'Content-Type' => 'application/json',
+            'Authorization' => 'Bearer ' . $terminal->generateAccessToken(),
+        ])
+            ->assertStatus(422)
+            ->assertJson([
+                'success' => false,
+                'message' => 'Validation failed',
+                'errors' => [
+                    'tenant_id' => ['Terminal does not belong to the specified tenant'],
+                ],
+            ]);
+
+        $this->assertDatabaseMissing('transaction_submissions', [
+            'submission_uuid' => $payload['submission_uuid'],
+            'terminal_id' => $terminal->id,
+        ]);
+        $this->assertDatabaseMissing('transactions', [
+            'transaction_id' => $payload['transaction']['transaction_id'],
+            'terminal_id' => $terminal->id,
+        ]);
+
+        $this->assertNotSame($tenant->id, $otherTenant->id);
+    }
+
+    public function test_same_submission_uuid_is_rejected_for_different_terminal(): void
+    {
+        Queue::fake();
+
+        [$firstTenant, $firstTerminal] = $this->seedTenantAndTerminal();
+        [$secondTenant, $secondTerminal] = $this->seedTenantAndTerminal();
+        $submissionUuid = (string) Str::uuid();
+
+        $firstPayload = $this->makePayload($firstTenant->id, $firstTerminal->id, $submissionUuid, $firstTerminal->serial_number);
+        $secondPayload = $this->makePayload($secondTenant->id, $secondTerminal->id, $submissionUuid, $secondTerminal->serial_number);
+
+        $this->postJson('/api/v1/transactions/official', $firstPayload, [
+            'Content-Type' => 'application/json',
+            'Authorization' => 'Bearer ' . $firstTerminal->generateAccessToken(),
+        ])->assertStatus(200);
+
+        $this->postJson('/api/v1/transactions/official', $secondPayload, [
+            'Content-Type' => 'application/json',
+            'Authorization' => 'Bearer ' . $secondTerminal->generateAccessToken(),
+        ])
+            ->assertStatus(409)
+            ->assertJson([
+                'success' => false,
+                'message' => 'Submission UUID conflict',
+            ]);
+
+        $this->assertDatabaseHas('transaction_submissions', [
+            'submission_uuid' => $submissionUuid,
+            'tenant_id' => $firstTenant->id,
+            'terminal_id' => $firstTerminal->id,
+        ]);
+        $this->assertDatabaseMissing('transaction_submissions', [
+            'submission_uuid' => $submissionUuid,
+            'tenant_id' => $secondTenant->id,
+            'terminal_id' => $secondTerminal->id,
+        ]);
+        $this->assertDatabaseHas('transactions', [
+            'transaction_id' => $firstPayload['transaction']['transaction_id'],
+            'tenant_id' => $firstTenant->id,
+            'terminal_id' => $firstTerminal->id,
+        ]);
+        $this->assertDatabaseMissing('transactions', [
+            'transaction_id' => $secondPayload['transaction']['transaction_id'],
+            'tenant_id' => $secondTenant->id,
+            'terminal_id' => $secondTerminal->id,
+        ]);
+    }
+
+    public function test_transaction_submission_transactions_are_scoped_by_terminal(): void
+    {
+        [$firstTenant, $firstTerminal] = $this->seedTenantAndTerminal();
+        [$secondTenant, $secondTerminal] = $this->seedTenantAndTerminal();
+        $submissionUuid = (string) Str::uuid();
+
+        $firstSubmission = TransactionSubmission::create([
+            'tenant_id' => $firstTenant->id,
+            'terminal_id' => $firstTerminal->id,
+            'submission_uuid' => $submissionUuid,
+            'submission_timestamp' => now(),
+            'transaction_count' => 1,
+            'payload_checksum' => hash('sha256', 'first-submission'),
+            'status' => TransactionSubmission::STATUS_COMPLETED,
+        ]);
+        TransactionSubmission::create([
+            'tenant_id' => $secondTenant->id,
+            'terminal_id' => $secondTerminal->id,
+            'submission_uuid' => $submissionUuid,
+            'submission_timestamp' => now(),
+            'transaction_count' => 1,
+            'payload_checksum' => hash('sha256', 'second-submission'),
+            'status' => TransactionSubmission::STATUS_COMPLETED,
+        ]);
+
+        $firstTransaction = Transaction::factory()->create([
+            'tenant_id' => $firstTenant->id,
+            'terminal_id' => $firstTerminal->id,
+            'submission_uuid' => $submissionUuid,
+        ]);
+        $secondTransaction = Transaction::factory()->create([
+            'tenant_id' => $secondTenant->id,
+            'terminal_id' => $secondTerminal->id,
+            'submission_uuid' => $submissionUuid,
+        ]);
+
+        $relatedIds = $firstSubmission->transactions()->pluck('transaction_id')->all();
+
+        $this->assertContains($firstTransaction->transaction_id, $relatedIds);
+        $this->assertNotContains($secondTransaction->transaction_id, $relatedIds);
     }
 
     private function refreshChecksums(array $payload): array

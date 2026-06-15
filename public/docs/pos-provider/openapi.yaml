@@ -56,7 +56,8 @@ x-payload-guidelines:
     - transaction hardware_id must match the terminal serial_number.
     - Transaction and submission payload checksums must match.
     - terminal_id must belong to tenant_id.
-    - Duplicate submission_uuid with the same checksum is idempotent; duplicate receipt conflicts are rejected.
+    - submission_uuid must be globally unique. Reusing the same submission_uuid on the same terminal with the same checksum is idempotent; reusing it on a different terminal is rejected with 409 Submission UUID conflict.
+    - Duplicate receipt conflicts are rejected.
 paths:
   /auth/terminal:
     post:
@@ -119,7 +120,9 @@ paths:
         before records are persisted and jobs are dispatched. The authenticated
         terminal token must match terminal_id, and each transaction.hardware_id
         must match that terminal's registered serial_number. Rate-limited per
-        authenticated terminal and tenant, not by shared public IP.
+        authenticated terminal and tenant, not by shared public IP. The
+        submission_uuid must be globally unique; only identical retries from the
+        same terminal are treated as idempotent.
       security:
         - bearerAuth: ['transaction:create']
       requestBody:
@@ -159,11 +162,34 @@ paths:
                     success: false
                     message: Forbidden - token does not match terminal
         '409':
-          description: Same submission_uuid already exists with different payload characteristics.
+          description: Same submission_uuid already exists with different payload characteristics or belongs to another terminal.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/SubmissionConflictResponse'
+              examples:
+                payloadDrift:
+                  summary: Same terminal reused submission_uuid with changed payload details.
+                  value:
+                    success: false
+                    message: Submission conflict (payload drift)
+                    conflict:
+                      submission_uuid: dbb79529-c5b5-47a0-8863-add7af13b18c
+                      terminal_id: 87
+                      original:
+                        payload_checksum: 00b65fec3c82aef9362bdc94c5093c28d29947816bca41e86826b21297c7cdd9
+                        transaction_count: 1
+                      incoming:
+                        payload_checksum: 11b65fec3c82aef9362bdc94c5093c28d29947816bca41e86826b21297c7cdd9
+                        transaction_count: 1
+                uuidTerminalConflict:
+                  summary: submission_uuid already belongs to a different terminal.
+                  value:
+                    success: false
+                    message: Submission UUID conflict
+                    conflict:
+                      submission_uuid: dbb79529-c5b5-47a0-8863-add7af13b18c
+                      terminal_id: 87
         '422':
           $ref: '#/components/responses/ValidationError'
         '429':
@@ -528,6 +554,10 @@ components:
         submission_uuid:
           type: string
           format: uuid
+          description: >
+            Globally unique submission envelope identifier. Retry the identical
+            payload with the same submission_uuid only from the same terminal.
+            Reuse by a different terminal is rejected with HTTP 409.
         tenant_id:
           type: integer
           description: Tenant ID assigned by TSMS. Must match the tenant of terminal_id.

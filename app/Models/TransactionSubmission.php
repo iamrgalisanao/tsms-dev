@@ -10,9 +10,10 @@ use Illuminate\Database\Eloquent\Model;
  * identified by a submission_uuid originating from a single terminal.
  *
  * Idempotency rules:
- *  - (terminal_id, submission_uuid) must be unique
- *  - Replays with identical payload_checksum & transaction_count are treated as SUCCESS (idempotent)
- *  - Replays with differing payload_checksum or transaction_count are treated as CONFLICT
+ *  - submission_uuid must be globally unique across terminals
+ *  - Same-terminal replays with identical payload_checksum & transaction_count are treated as SUCCESS (idempotent)
+ *  - Same-terminal replays with differing payload_checksum or transaction_count are treated as CONFLICT
+ *  - Cross-terminal submission_uuid reuse is treated as CONFLICT
  */
 class TransactionSubmission extends Model
 {
@@ -50,6 +51,7 @@ class TransactionSubmission extends Model
 
     public function transactions()
     {
-        return $this->hasMany(Transaction::class, 'submission_uuid', 'submission_uuid');
+        return $this->hasMany(Transaction::class, 'terminal_id', 'terminal_id')
+            ->where('submission_uuid', $this->submission_uuid);
     }
 }

@@ -37,6 +37,6 @@ Provider action:
 | --- | --- | --- |
 | 401 | Missing, invalid, or expired token | Re-authenticate or request a valid terminal token. |
 | 403 | Token lacks ability, terminal mismatch, or inactive terminal | Check terminal token ownership and status. |
-| 409 | Same submission UUID with different payload details | Use a new `submission_uuid` only after correcting the payload. |
+| 409 | Same submission UUID with different payload details, or submission UUID already belongs to another terminal | For identical retry from the same terminal, resend the same payload. For corrected payloads or a new terminal submission, generate a new `submission_uuid`. |
 | 422 | Validation or checksum failure | Correct the payload or checksum before retrying. |
 | 429 | Rate limit exceeded | Back off using `Retry-After`; retry the same payload. |
