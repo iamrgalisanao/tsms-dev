@@ -163,5 +163,17 @@ class TransactionLogTest extends TestCase
         $this->assertSame([$matchingTransaction->id], $exportedTransactions->pluck('id')->all());
         $this->assertSame('Test Tenant', $export->map($matchingTransaction)[1]);
         $this->assertNotSame('N/A', $export->map($matchingTransaction)[2]);
+
+        $matchingTransaction->setRawAttributes(array_merge($matchingTransaction->getAttributes(), [
+            'transaction_timestamp' => '2026-06-10 12:30:00',
+            'completed_at' => '2026-06-10 12:31:00',
+            'created_at' => '2026-06-10 12:32:00',
+        ]), true);
+
+        $mapped = $export->map($matchingTransaction);
+
+        $this->assertSame('2026-06-10 12:30:00', $mapped[10]);
+        $this->assertSame('2026-06-10 12:31:00', $mapped[11]);
+        $this->assertSame('2026-06-10 12:32:00', $mapped[12]);
     }
 }

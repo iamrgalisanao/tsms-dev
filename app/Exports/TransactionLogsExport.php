@@ -3,6 +3,8 @@
 namespace App\Exports;
 
 use App\Models\Transaction;
+use Carbon\Carbon;
+use DateTimeInterface;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -125,10 +127,31 @@ class TransactionLogsExport
             $transaction->validation_status,
             $transaction->job_status ?? 'N/A',
             $transaction->job_attempts ?? 0,
-            $transaction->transaction_timestamp?->format('Y-m-d H:i:s') ?? 'N/A',
-            $transaction->completed_at?->format('Y-m-d H:i:s') ?? 'N/A',
-            $transaction->created_at?->format('Y-m-d H:i:s') ?? 'N/A'
+            $this->formatDate($transaction->transaction_timestamp),
+            $this->formatDate($transaction->completed_at),
+            $this->formatDate($transaction->created_at)
         ];
+    }
+
+    private function formatDate($value): string
+    {
+        if (empty($value)) {
+            return 'N/A';
+        }
+
+        if ($value instanceof DateTimeInterface) {
+            return $value->format('Y-m-d H:i:s');
+        }
+
+        if (is_string($value)) {
+            try {
+                return Carbon::parse($value)->format('Y-m-d H:i:s');
+            } catch (\Throwable $e) {
+                return 'N/A';
+            }
+        }
+
+        return 'N/A';
     }
 
     public function download(string $filename): StreamedResponse
