@@ -25,17 +25,32 @@ class TransactionController extends Controller
      * Refund a transaction
      *
      * @param Request $request
-     * @param int $id
+     * @param string $transaction_id
      * @return \Illuminate\Http\JsonResponse
      */
-    public function refund(Request $request, $id)
+    public function refund(Request $request, $transaction_id)
     {
-        $transaction = Transaction::findOrFail($id);
         $refundData = $request->validate([
             'refund_amount' => 'required|numeric|min:0.01',
             'refund_reason' => 'required|string',
             'refund_reference_id' => 'nullable|string',
         ]);
+
+        $query = Transaction::where('transaction_id', $transaction_id);
+        $posTerminal = $request->user();
+
+        if ($posTerminal instanceof PosTerminal) {
+            $query->where('terminal_id', $posTerminal->id);
+        }
+
+        $transaction = $query->first();
+        if (!$transaction) {
+            return response()->json([
+                'status' => 'error',
+                'message' => 'Transaction not found or does not belong to this terminal',
+            ], 404);
+        }
+
         $refundData['refund_status'] = 'REFUNDED';
         $refundData['refund_processed_at'] = now();
         try {

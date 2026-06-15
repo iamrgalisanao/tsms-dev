@@ -166,8 +166,8 @@ Route::prefix('v1')->middleware(['auth:sanctum', 'capture.terminal.ip', AttachCo
             ->middleware('circuit.breaker:transaction-intake');
         Route::post('/transactions/official', [TransactionController::class, 'storeOfficial'])
             ->middleware('circuit.breaker:transaction-intake');
-        Route::post('/transactions/{transaction}/refund', [TransactionController::class, 'refund']);
-        Route::post('/transactions/{transaction}/void', [TransactionController::class, 'voidFromPOS']);
+        Route::post('/transactions/{transaction_id}/refund', [TransactionController::class, 'refund']);
+        Route::post('/transactions/{transaction_id}/void', [TransactionController::class, 'voidFromPOS']);
     });
 
     Route::middleware(['abilities:transaction:read', 'throttle:pos-read'])->group(function () {

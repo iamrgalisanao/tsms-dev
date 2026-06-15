@@ -138,4 +138,45 @@ class VoidTransactionTest extends TestCase
                     'message' => 'Transaction not found or does not belong to this terminal',
                 ]);
     }
+
+    public function test_refund_transaction_uses_provider_transaction_id()
+    {
+        $this->actingAs($this->terminal, 'sanctum');
+
+        $response = $this->postJson("/api/v1/transactions/{$this->transaction->transaction_id}/refund", [
+            'refund_amount' => '25.00',
+            'refund_reason' => 'Customer returned item',
+            'refund_reference_id' => $this->transaction->transaction_id,
+        ]);
+
+        $response->assertStatus(200)
+            ->assertJson([
+                'status' => 'success',
+            ]);
+
+        $this->transaction->refresh();
+        $this->assertEquals('REFUNDED', $this->transaction->refund_status);
+        $this->assertEquals(25.00, (float) $this->transaction->refund_amount);
+        $this->assertEquals('Customer returned item', $this->transaction->refund_reason);
+        $this->assertEquals($this->transaction->transaction_id, $this->transaction->refund_reference_id);
+    }
+
+    public function test_refund_transaction_not_owned_by_terminal()
+    {
+        $otherTerminal = PosTerminal::factory()->create([
+            'status_id' => 1,
+        ]);
+        $this->actingAs($otherTerminal, 'sanctum');
+
+        $response = $this->postJson("/api/v1/transactions/{$this->transaction->transaction_id}/refund", [
+            'refund_amount' => '25.00',
+            'refund_reason' => 'Unauthorized refund attempt',
+        ]);
+
+        $response->assertStatus(404)
+            ->assertJson([
+                'status' => 'error',
+                'message' => 'Transaction not found or does not belong to this terminal',
+            ]);
+    }
 }

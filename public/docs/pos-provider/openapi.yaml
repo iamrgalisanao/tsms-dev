@@ -29,6 +29,10 @@ tags:
       TSMS stores submitted financial values and does not recompute net_sales
       from gross_sales during ingestion.
   - name: Status
+  - name: Reversals
+    description: >
+      POS-initiated transaction reversal endpoints. These endpoints require the
+      same terminal bearer token ability used for transaction creation.
   - name: Monitoring
   - name: Sandbox
 x-payload-guidelines:
@@ -241,6 +245,120 @@ paths:
           $ref: '#/components/responses/Forbidden'
         '404':
           description: Transaction not found.
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /transactions/{transaction_id}/void:
+    post:
+      tags: [Reversals]
+      summary: Void a submitted transaction
+      description: >
+        Voids a transaction previously submitted by the authenticated POS
+        terminal. The path parameter and request body transaction_id must match.
+        The payload_checksum is the SHA-256 checksum of the canonical JSON object
+        containing only transaction_id and void_reason. The authenticated
+        terminal can void only its own transactions.
+      security:
+        - bearerAuth: ['transaction:create']
+      parameters:
+        - in: path
+          name: transaction_id
+          required: true
+          description: Provider transaction_id UUID of the transaction to void.
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VoidTransactionRequest'
+            example:
+              transaction_id: 6d5f415a-b61b-417a-b75e-6923b7d94a24
+              void_reason: Customer requested cancellation
+              payload_checksum: a1b2c3d4e5f6789012345678901234567890123456789012345678901234567890
+      responses:
+        '200':
+          description: Transaction voided successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VoidTransactionResponse'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: Transaction not found or does not belong to the authenticated terminal.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: Transaction is already voided or currently being processed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          $ref: '#/components/responses/ValidationError'
+        '429':
+          $ref: '#/components/responses/RateLimited'
+  /transactions/{transaction_id}/refund:
+    post:
+      tags: [Reversals]
+      summary: Refund a transaction
+      description: >
+        Records refund details for an existing transaction. Current TSMS
+        implementation resolves the path parameter using the provider
+        transaction_id UUID and scopes the lookup to the authenticated POS
+        terminal. Refunds are allowed only once and only when the original
+        transaction has positive gross_sales.
+      security:
+        - bearerAuth: ['transaction:create']
+      parameters:
+        - in: path
+          name: transaction_id
+          required: true
+          description: Provider transaction_id UUID of the transaction to refund.
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefundTransactionRequest'
+            example:
+              refund_amount: '92.00'
+              refund_reason: Customer returned item
+              refund_reference_id: 6d5f415a-b61b-417a-b75e-6923b7d94a24
+      responses:
+        '200':
+          description: Refund processed successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RefundTransactionResponse'
+        '400':
+          description: Transaction cannot be refunded.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '401':
+          $ref: '#/components/responses/Unauthenticated'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          description: Transaction not found or does not belong to the authenticated terminal.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '422':
+          $ref: '#/components/responses/ValidationError'
         '429':
           $ref: '#/components/responses/RateLimited'
   /monitoring/tenants/activity:
@@ -510,6 +628,63 @@ components:
         amount:
           type: number
           format: decimal
+    VoidTransactionRequest:
+      type: object
+      required: [transaction_id, void_reason, payload_checksum]
+      properties:
+        transaction_id:
+          type: string
+          format: uuid
+          description: Must match the transaction path parameter.
+        void_reason:
+          type: string
+          maxLength: 255
+        payload_checksum:
+          type: string
+          minLength: 64
+          maxLength: 64
+          description: SHA-256 checksum of the canonical object containing transaction_id and void_reason only.
+    VoidTransactionResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          example: true
+        message:
+          type: string
+          example: Transaction voided successfully by POS
+        transaction_id:
+          type: string
+          format: uuid
+        voided_at:
+          type: string
+          format: date-time
+        void_reason:
+          type: string
+    RefundTransactionRequest:
+      type: object
+      required: [refund_amount, refund_reason]
+      properties:
+        refund_amount:
+          type: number
+          format: decimal
+          minimum: 0.01
+        refund_reason:
+          type: string
+        refund_reference_id:
+          type: string
+          nullable: true
+          description: Optional provider reference for the refund, commonly the original transaction_id.
+    RefundTransactionResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          enum: [success, error]
+        message:
+          type: string
+        transaction:
+          type: object
     OfficialSubmissionResponse:
       type: object
       properties:
