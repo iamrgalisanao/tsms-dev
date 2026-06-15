@@ -50,25 +50,23 @@ const curlSandbox = `curl --request POST \\
   --data @payload.json`;
 
 const officialPayloadGuidelineExample = `{
-  "submission_uuid": "91b140fd-1f9c-4f47-b0d2-658d613bca7a",
-  "tenant_id": 44,
-  "terminal_id": 29,
-  "submission_timestamp": "2026-06-02T07:03:45Z",
+  "submission_uuid": "f8c1a35a-90db-41ab-8c05-1b27cc7a40a9",
+  "tenant_id": 16,
+  "terminal_id": 97,
+  "submission_timestamp": "2026-05-14T08:59:28Z",
   "transaction_count": 1,
-  "payload_checksum": "{submission_sha256}",
   "transaction": {
-    "transaction_id": "e27be0f2-6c6e-4826-8ff7-52a0eb1a25f4",
-    "hardware_id": "50026B7784FE2276",
-    "receipt_no": "0000054121",
-    "transaction_timestamp": "2026-06-02T07:03:45Z",
-    "gross_sales": "119.00",
-    "net_sales": "85.00",
-    "promo_status": "WITH_APPROVAL",
-    "customer_code": "C-F1008",
-    "payload_checksum": "{transaction_sha256}",
+    "hardware_id": "BUI-XTM80213",
+    "receipt_no": "000001072840",
+    "transaction_id": "f9c5dd6a-2d71-40b8-903c-df0a02b417ed",
+    "transaction_timestamp": "2026-05-14T08:59:28Z",
+    "gross_sales": "140.00",
+    "net_sales": "140.00",
+    "promo_status": "WITHOUT_APPROVAL",
+    "customer_code": "C-B1028",
     "adjustments": [
-      { "adjustment_type": "promo_discount", "amount": "12.75" },
-      { "adjustment_type": "senior_discount", "amount": "21.25" },
+      { "adjustment_type": "promo_discount", "amount": "0.00" },
+      { "adjustment_type": "senior_discount", "amount": "0.00" },
       { "adjustment_type": "pwd_discount", "amount": "0.00" },
       { "adjustment_type": "vip_card_discount", "amount": "0.00" },
       { "adjustment_type": "service_charge_distributed_to_employees", "amount": "0.00" },
@@ -76,12 +74,14 @@ const officialPayloadGuidelineExample = `{
       { "adjustment_type": "employee_discount", "amount": "0.00" }
     ],
     "taxes": [
-      { "tax_type": "VAT", "amount": "0.00" },
-      { "tax_type": "VATABLE_SALES", "amount": "0.00" },
-      { "tax_type": "SC_VAT_EXEMPT_SALES", "amount": "106.25" },
+      { "tax_type": "VAT", "amount": "15.00" },
+      { "tax_type": "VATABLE_SALES", "amount": "125.00" },
+      { "tax_type": "SC_VAT_EXEMPT_SALES", "amount": "0.00" },
       { "tax_type": "OTHER_TAX", "amount": "0.00" }
-    ]
-  }
+    ],
+    "payload_checksum": "748d059d894a6c3617f287211cb919b5f184a4406e96309c3be4ac601719eba0"
+  },
+  "payload_checksum": "63e79f5d31adfe69acfebdb213b7cd2b28bfc80309a9cc4740c30cb8b5d7c4a7"
 }`;
 
 const checksumGuidelineSnippet = `1. Build the transaction object without transaction.payload_checksum.
