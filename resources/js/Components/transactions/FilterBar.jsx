@@ -27,15 +27,60 @@ import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import { transactionLogService } from '../../services/transactionLogService';
 
+const formatLocalDate = (date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+
+    return `${year}-${month}-${day}`;
+};
+
+const getPresetRange = (preset) => {
+    const today = new Date();
+    const yesterday = new Date(today);
+    yesterday.setDate(yesterday.getDate() - 1);
+    const last7Days = new Date(today);
+    last7Days.setDate(last7Days.getDate() - 7);
+    const thisMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+
+    switch (preset) {
+        case 'today':
+            return { date_from: formatLocalDate(today), date_to: formatLocalDate(today) };
+        case 'yesterday':
+            return { date_from: formatLocalDate(yesterday), date_to: formatLocalDate(yesterday) };
+        case 'last7days':
+            return { date_from: formatLocalDate(last7Days), date_to: formatLocalDate(today) };
+        case 'thismonth':
+            return { date_from: formatLocalDate(thisMonth), date_to: formatLocalDate(today) };
+        default:
+            return null;
+    }
+};
+
+const resolveDatePreset = (filters) => {
+    for (const preset of ['today', 'yesterday', 'last7days', 'thismonth']) {
+        const range = getPresetRange(preset);
+        if (filters.date_from === range.date_from && filters.date_to === range.date_to) {
+            return preset;
+        }
+    }
+
+    return 'custom';
+};
+
 const FilterBar = ({ filters, onFilterChange, onReset }) => {
     const [terminals, setTerminals] = useState([]);
     const [tenants, setTenants] = useState([]);
     const [loading, setLoading] = useState(true);
-    const [datePreset, setDatePreset] = useState('custom');
+    const [datePreset, setDatePreset] = useState(resolveDatePreset(filters));
 
     useEffect(() => {
         loadFilterOptions();
     }, []);
+
+    useEffect(() => {
+        setDatePreset(resolveDatePreset(filters));
+    }, [filters.date_from, filters.date_to]);
 
     const loadFilterOptions = async () => {
         try {
@@ -58,33 +103,10 @@ const FilterBar = ({ filters, onFilterChange, onReset }) => {
 
     const handleDatePreset = (preset) => {
         setDatePreset(preset);
-        const today = new Date();
-        const yesterday = new Date(today);
-        yesterday.setDate(yesterday.getDate() - 1);
-        const last7Days = new Date(today);
-        last7Days.setDate(last7Days.getDate() - 7);
-        const thisMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+        const range = getPresetRange(preset);
 
-        const formatDateStr = (date) => {
-            // Use ISO string but cut off time part for date picker
-            return date.toISOString().split('T')[0];
-        };
-
-        switch (preset) {
-            case 'today':
-                onFilterChange({ ...filters, date_from: formatDateStr(today), date_to: formatDateStr(today) });
-                break;
-            case 'yesterday':
-                onFilterChange({ ...filters, date_from: formatDateStr(yesterday), date_to: formatDateStr(yesterday) });
-                break;
-            case 'last7days':
-                onFilterChange({ ...filters, date_from: formatDateStr(last7Days), date_to: formatDateStr(today) });
-                break;
-            case 'thismonth':
-                onFilterChange({ ...filters, date_from: formatDateStr(thisMonth), date_to: formatDateStr(today) });
-                break;
-            case 'custom':
-                break;
+        if (range) {
+            onFilterChange({ ...filters, ...range });
         }
     };
 
