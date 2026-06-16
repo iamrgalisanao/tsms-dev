@@ -14,6 +14,7 @@ use App\Models\PosTerminal;
 use App\Models\Tenant;
 use App\Models\TransactionIntake;
 use App\Services\Reports\FinanceCalculationService;
+use Carbon\Carbon;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -39,6 +40,7 @@ class TransactionLogController extends Controller
 
     public function index(Request $request)
     {
+        $startedAt = microtime(true);
         $filters = $request->only([
             'status',
             'date_from',
@@ -51,7 +53,7 @@ class TransactionLogController extends Controller
 
         // Determine pagination size. If a date filter is applied and per_page is not explicitly set,
         // load a larger page (e.g., 1000) to reflect all transactions for that range (e.g., today's 289).
-        $perPage = (int) $request->input('per_page', 15);
+        $perPage = $this->resolvePerPage($request);
         if (($request->filled('date_from') || $request->filled('date_to')) && !$request->has('per_page')) {
             $perPage = 1000;
         }
@@ -62,7 +64,8 @@ class TransactionLogController extends Controller
         }
 
         $hasDateWindow = $request->filled('date_from') || $request->filled('date_to');
-        $needsExactPaginationTotal = $hasDateWindow || $request->filled('transaction_id');
+        $needsExactPaginationTotal = $request->filled('transaction_id');
+        $usesDateOrdering = $hasDateWindow || $request->filled('transaction_id');
 
         $basis = in_array($request->input('date_basis'), ['created', 'completed', 'transaction'], true)
             ? $request->input('date_basis')
@@ -154,16 +157,16 @@ class TransactionLogController extends Controller
             ->when(isset($filters['amount_max']), function ($query) use ($filters) {
             return $query->where('gross_sales', '<=', $filters['amount_max']);
             })
-            ->when(! $needsExactPaginationTotal, function ($query) {
+            ->when(! $usesDateOrdering, function ($query) {
                 return $query->orderByDesc('id');
             })
-            ->when($needsExactPaginationTotal && $dateColumn === 'transaction_date', function ($query) {
+            ->when($usesDateOrdering && $dateColumn === 'transaction_date', function ($query) {
                 return $query->orderByDesc('transaction_date')->orderByDesc('id');
             })
-            ->when($needsExactPaginationTotal && $dateColumn === 'transaction_timestamp', function ($query) {
+            ->when($usesDateOrdering && $dateColumn === 'transaction_timestamp', function ($query) {
                 return $query->orderByRaw('COALESCE(transaction_timestamp, created_at) desc');
             })
-            ->when($needsExactPaginationTotal && ! in_array($dateColumn, ['transaction_date', 'transaction_timestamp'], true), function ($query) use ($dateColumn) {
+            ->when($usesDateOrdering && ! in_array($dateColumn, ['transaction_date', 'transaction_timestamp'], true), function ($query) use ($dateColumn) {
                 return $query->orderBy($dateColumn, 'desc');
             });
 
@@ -176,6 +179,8 @@ class TransactionLogController extends Controller
             if (! $needsExactPaginationTotal) {
                 $payload['total'] = -1;
             }
+
+            $this->logSlowTransactionLogOperation('index', $request, $startedAt);
 
             return response()->json($payload);
         }
@@ -190,6 +195,8 @@ class TransactionLogController extends Controller
     $summary = null; // populated by summary() route
 
     // return view('transactions.logs.index', compact('logs', 'providers', 'terminals', 'filters'));
+         $this->logSlowTransactionLogOperation('index', $request, $startedAt);
+
          return view('transactions.logs.index', compact('logs', 'terminals', 'tenants', 'filters', 'activeTab', 'summary'));
     }
 
@@ -284,6 +291,21 @@ class TransactionLogController extends Controller
     public function export(Request $request)
     {
         Gate::authorize('export-transaction-logs');
+
+        $validator = $this->dateWindowValidator($request, 'Export');
+        if ($validator->fails()) {
+            if ($request->wantsJson()) {
+                return response()->json([
+                    'message' => 'Export requires a bounded date range.',
+                    'errors' => $validator->errors(),
+                ], 422);
+            }
+
+            return redirect()
+                ->route('transactions.logs.index')
+                ->withErrors($validator)
+                ->withInput();
+        }
         
         $filename = 'transaction-logs-' . now()->format('Y-m-d') . '.xlsx';
         return (new TransactionLogsExport($request->all()))->download($filename);
@@ -588,14 +610,8 @@ class TransactionLogController extends Controller
      */
     public function summary(Request $request)
     {
-        $validator = Validator::make($request->all(), [
-            'date_from' => ['required', 'date_format:Y-m-d'],
-            'date_to' => ['required', 'date_format:Y-m-d', 'after_or_equal:date_from'],
-        ], [
-            'date_from.required' => 'Summary view requires a From date.',
-            'date_to.required' => 'Summary view requires a To date.',
-            'date_to.after_or_equal' => 'Summary To date must be the same as or later than the From date.',
-        ]);
+        $startedAt = microtime(true);
+        $validator = $this->dateWindowValidator($request, 'Summary view');
 
         if ($validator->fails()) {
             if ($request->wantsJson()) {
@@ -641,7 +657,7 @@ class TransactionLogController extends Controller
         $sortDirection = strtolower($request->input('sort_direction', 'desc')) === 'asc' ? 'asc' : 'desc';
 
         // Determine pagination size like index(): if date filter provided and no per_page set, use 1000
-        $perPage = (int) $request->input('per_page', 15);
+        $perPage = $this->resolvePerPage($request);
         if (($request->filled('date_from') || $request->filled('date_to')) && !$request->has('per_page')) {
             $perPage = 1000;
         }
@@ -1017,6 +1033,8 @@ class TransactionLogController extends Controller
             $summaryPayload = $summary->toArray();
             $summaryPayload['total'] = -1;
 
+            $this->logSlowTransactionLogOperation('summary', $request, $startedAt);
+
             return response()->json([
                 'summary' => $summaryPayload,
                 'grandTotal' => $grandTotal,
@@ -1031,6 +1049,72 @@ class TransactionLogController extends Controller
         $activeTab = 'summary';
         $logs = collect(); // not needed on summary route
 
+        $this->logSlowTransactionLogOperation('summary', $request, $startedAt);
+
         return view('transactions.logs.index', compact('logs', 'terminals', 'tenants', 'filters', 'activeTab', 'summary', 'grandTotal'));
+    }
+
+    private function resolvePerPage(Request $request): int
+    {
+        $perPage = max(1, (int) $request->input('per_page', 15));
+
+        return min($perPage, (int) config('tsms.transaction_logs.max_per_page', 1000));
+    }
+
+    private function dateWindowValidator(Request $request, string $label)
+    {
+        $maxDays = (int) config('tsms.transaction_logs.max_date_range_days', 31);
+
+        $validator = Validator::make($request->all(), [
+            'date_from' => ['required', 'date_format:Y-m-d'],
+            'date_to' => ['required', 'date_format:Y-m-d', 'after_or_equal:date_from'],
+        ], [
+            'date_from.required' => $label . ' requires a From date.',
+            'date_to.required' => $label . ' requires a To date.',
+            'date_to.after_or_equal' => $label . ' To date must be the same as or later than the From date.',
+        ]);
+
+        $validator->after(function ($validator) use ($request, $maxDays, $label) {
+            if ($validator->errors()->isNotEmpty()) {
+                return;
+            }
+
+            $from = Carbon::createFromFormat('Y-m-d', $request->input('date_from'))->startOfDay();
+            $to = Carbon::createFromFormat('Y-m-d', $request->input('date_to'))->startOfDay();
+
+            if ($from->diffInDays($to) + 1 > $maxDays) {
+                $validator->errors()->add(
+                    'date_to',
+                    sprintf('%s date range cannot exceed %d days.', $label, $maxDays)
+                );
+            }
+        });
+
+        return $validator;
+    }
+
+    private function logSlowTransactionLogOperation(string $operation, Request $request, float $startedAt): void
+    {
+        $elapsedMs = (int) round((microtime(true) - $startedAt) * 1000);
+        $thresholdMs = (int) config('tsms.transaction_logs.slow_query_threshold_ms', 3000);
+
+        if ($elapsedMs < $thresholdMs) {
+            return;
+        }
+
+        Log::warning('Slow transaction log operation', [
+            'operation' => $operation,
+            'elapsed_ms' => $elapsedMs,
+            'threshold_ms' => $thresholdMs,
+            'date_from' => $request->input('date_from'),
+            'date_to' => $request->input('date_to'),
+            'date_basis' => $request->input('date_basis', 'transaction'),
+            'tenant_id' => $request->input('tenant_id'),
+            'terminal_id' => $request->input('terminal_id'),
+            'status' => $request->input('status'),
+            'has_transaction_search' => $request->filled('transaction_id'),
+            'per_page' => $request->input('per_page'),
+            'path' => $request->path(),
+        ]);
     }
 }

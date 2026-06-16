@@ -5,6 +5,7 @@ namespace App\Exports;
 use App\Models\Transaction;
 use Carbon\Carbon;
 use DateTimeInterface;
+use Illuminate\Support\Facades\Log;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\Writer\Xlsx;
 use Symfony\Component\HttpFoundation\StreamedResponse;
@@ -275,6 +276,8 @@ class TransactionLogsExport
     public function download(string $filename): StreamedResponse
     {
         return response()->streamDownload(function () {
+            $startedAt = microtime(true);
+            $rowCount = 0;
             $spreadsheet = new Spreadsheet();
             $sheet = $spreadsheet->getActiveSheet();
             $sheet->setTitle('Transaction Logs');
@@ -284,6 +287,7 @@ class TransactionLogsExport
             foreach ($this->query()->lazy(1000) as $transaction) {
                 $sheet->fromArray($this->map($transaction), null, 'A' . $row);
                 $row++;
+                $rowCount++;
             }
 
             foreach (range('A', 'X') as $column) {
@@ -292,8 +296,34 @@ class TransactionLogsExport
 
             (new Xlsx($spreadsheet))->save('php://output');
             $spreadsheet->disconnectWorksheets();
+
+            $this->logSlowExport($startedAt, $rowCount);
         }, $filename, [
             'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        ]);
+    }
+
+    private function logSlowExport(float $startedAt, int $rowCount): void
+    {
+        $elapsedMs = (int) round((microtime(true) - $startedAt) * 1000);
+        $thresholdMs = (int) config('tsms.transaction_logs.slow_query_threshold_ms', 3000);
+
+        if ($elapsedMs < $thresholdMs) {
+            return;
+        }
+
+        Log::warning('Slow transaction log operation', [
+            'operation' => 'export',
+            'elapsed_ms' => $elapsedMs,
+            'threshold_ms' => $thresholdMs,
+            'row_count' => $rowCount,
+            'date_from' => $this->filters['date_from'] ?? null,
+            'date_to' => $this->filters['date_to'] ?? null,
+            'date_basis' => $this->filters['date_basis'] ?? 'transaction',
+            'tenant_id' => $this->filters['tenant_id'] ?? null,
+            'terminal_id' => $this->filters['terminal_id'] ?? null,
+            'status' => $this->filters['status'] ?? null,
+            'has_transaction_search' => ! empty($this->filters['transaction_id'] ?? null),
         ]);
     }
 }

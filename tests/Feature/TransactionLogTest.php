@@ -178,6 +178,26 @@ class TransactionLogTest extends TestCase
     }
 
     /** @test */
+    public function test_detailed_endpoint_with_date_range_uses_lightweight_pagination()
+    {
+        Transaction::factory()->create([
+            'tenant_id' => $this->tenant->id,
+            'terminal_id' => $this->terminal->id,
+            'receipt_no' => 'REC-DETAIL-DATE',
+            'transaction_timestamp' => '2026-06-15 09:01:00',
+            'gross_sales' => 35.00,
+            'net_sales' => 31.25,
+        ]);
+
+        Sanctum::actingAs($this->adminUser);
+
+        $response = $this->getJson('/api/transactions/logs?date_basis=transaction&date_from=2026-06-15&date_to=2026-06-15');
+
+        $response->assertOk();
+        $this->assertSame(-1, $response->json('total'));
+    }
+
+    /** @test */
     public function test_summary_endpoint_returns_react_summary_contract()
     {
         $secondTerminal = PosTerminal::factory()->create([
@@ -280,6 +300,19 @@ class TransactionLogTest extends TestCase
                 'message' => 'Summary view requires a bounded date range.',
             ])
             ->assertJsonValidationErrors(['date_from', 'date_to']);
+    }
+
+    /** @test */
+    public function test_summary_endpoint_rejects_ranges_beyond_configured_limit()
+    {
+        config(['tsms.transaction_logs.max_date_range_days' => 31]);
+
+        Sanctum::actingAs($this->adminUser);
+
+        $response = $this->getJson('/api/transactions/logs/summary?date_basis=transaction&date_from=2026-06-01&date_to=2026-07-31');
+
+        $response->assertStatus(422)
+            ->assertJsonValidationErrors(['date_to']);
     }
 
     /** @test */
@@ -468,5 +501,52 @@ class TransactionLogTest extends TestCase
         $this->assertSame('2026-06-10 12:30:00', $mapped[22]);
         $this->assertSame('2026-06-10 12:31:00', $mapped[23]);
         $this->assertSame('2026-06-10 12:32:00', $mapped[24]);
+    }
+
+    /** @test */
+    public function test_export_requires_bounded_dates()
+    {
+        \Spatie\Permission\Models\Role::firstOrCreate([
+            'name' => 'finance',
+            'guard_name' => 'web',
+        ]);
+
+        $financeUser = User::factory()->create([
+            'name' => 'Finance User',
+        ]);
+        $financeUser->assignRole('finance');
+
+        Sanctum::actingAs($financeUser);
+
+        $response = $this->getJson('/api/transactions/logs/export?date_basis=transaction');
+
+        $response->assertStatus(422)
+            ->assertJsonFragment([
+                'message' => 'Export requires a bounded date range.',
+            ])
+            ->assertJsonValidationErrors(['date_from', 'date_to']);
+    }
+
+    /** @test */
+    public function test_export_rejects_ranges_beyond_configured_limit()
+    {
+        config(['tsms.transaction_logs.max_date_range_days' => 31]);
+
+        \Spatie\Permission\Models\Role::firstOrCreate([
+            'name' => 'finance',
+            'guard_name' => 'web',
+        ]);
+
+        $financeUser = User::factory()->create([
+            'name' => 'Finance User',
+        ]);
+        $financeUser->assignRole('finance');
+
+        Sanctum::actingAs($financeUser);
+
+        $response = $this->getJson('/api/transactions/logs/export?date_basis=transaction&date_from=2026-06-01&date_to=2026-07-31');
+
+        $response->assertStatus(422)
+            ->assertJsonValidationErrors(['date_to']);
     }
 }

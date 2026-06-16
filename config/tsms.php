@@ -53,6 +53,12 @@ return [
         'exclude_voids_from_totals' => (bool) env('TSMS_REPORTING_EXCLUDE_VOIDS', true),
     ],
 
+    'transaction_logs' => [
+        'max_date_range_days' => (int) env('TSMS_TRANSACTION_LOGS_MAX_RANGE_DAYS', 31),
+        'max_per_page' => (int) env('TSMS_TRANSACTION_LOGS_MAX_PER_PAGE', 1000),
+        'slow_query_threshold_ms' => (int) env('TSMS_TRANSACTION_LOGS_SLOW_QUERY_MS', 3000),
+    ],
+
     'dlq' => [
         'alert_threshold' => (int) env('TSMS_DLQ_ALERT_THRESHOLD', 10),
     ],

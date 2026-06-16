@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
     Box,
     TextField,
@@ -68,19 +68,41 @@ const resolveDatePreset = (filters) => {
     return 'custom';
 };
 
-const FilterBar = ({ filters, onFilterChange, onReset }) => {
+const FilterBar = ({ filters, onFilterChange, onReset, actionDisabled = false }) => {
     const [terminals, setTerminals] = useState([]);
     const [tenants, setTenants] = useState([]);
     const [loading, setLoading] = useState(true);
     const [datePreset, setDatePreset] = useState(resolveDatePreset(filters));
+    const [localSearch, setLocalSearch] = useState(filters.transaction_id || '');
+    const latestFiltersRef = useRef(filters);
 
     useEffect(() => {
         loadFilterOptions();
     }, []);
 
     useEffect(() => {
+        latestFiltersRef.current = filters;
+    }, [filters]);
+
+    useEffect(() => {
         setDatePreset(resolveDatePreset(filters));
     }, [filters.date_from, filters.date_to]);
+
+    useEffect(() => {
+        setLocalSearch(filters.transaction_id || '');
+    }, [filters.transaction_id]);
+
+    useEffect(() => {
+        if (localSearch === (filters.transaction_id || '')) {
+            return undefined;
+        }
+
+        const timer = window.setTimeout(() => {
+            onFilterChange({ ...latestFiltersRef.current, transaction_id: localSearch });
+        }, 400);
+
+        return () => window.clearTimeout(timer);
+    }, [localSearch]);
 
     const loadFilterOptions = async () => {
         try {
@@ -146,8 +168,8 @@ const FilterBar = ({ filters, onFilterChange, onReset }) => {
                 <TextField
                     fullWidth
                     placeholder="Search by transaction ID, receipt number, tenant, or terminal..."
-                    value={filters.transaction_id || ''}
-                    onChange={(e) => handleChange('transaction_id', e.target.value)}
+                    value={localSearch}
+                    onChange={(e) => setLocalSearch(e.target.value)}
                     variant="outlined"
                     InputProps={{
                         startAdornment: (
@@ -256,6 +278,7 @@ const FilterBar = ({ filters, onFilterChange, onReset }) => {
                             variant="contained"
                             startIcon={<CheckCircleIcon />}
                             onClick={() => onFilterChange(filters)}
+                            disabled={actionDisabled}
                             sx={{
                                 borderRadius: 2,
                                 textTransform: 'none',

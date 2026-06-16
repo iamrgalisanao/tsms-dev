@@ -56,6 +56,17 @@ const formatLocalDate = (date) => {
     return `${year}-${month}-${day}`;
 };
 
+const apiErrorMessage = (err, fallback) => {
+    const data = err?.response?.data;
+
+    if (data?.errors && typeof data.errors === 'object') {
+        const firstError = Object.values(data.errors).flat().find(Boolean);
+        if (firstError) return firstError;
+    }
+
+    return data?.message || err?.message || fallback;
+};
+
 const TransactionLogsPage = () => {
     const location = useLocation();
     const [activeTab, setActiveTab] = useState('detailed');
@@ -175,7 +186,7 @@ const TransactionLogsPage = () => {
             if (requestId !== requestIdRef.current) return;
 
             console.error('Error loading data:', err);
-            setError('Failed to load transaction data');
+            setError(apiErrorMessage(err, 'Failed to load transaction data'));
         } finally {
             if (requestId === requestIdRef.current) {
                 setLoading(false);
@@ -224,7 +235,7 @@ const TransactionLogsPage = () => {
             await transactionLogService.exportToExcel(cleanFilters);
         } catch (err) {
             console.error('Error exporting:', err);
-            setError('Failed to export data');
+            setError(apiErrorMessage(err, 'Failed to export data'));
         }
     };
 
@@ -295,6 +306,7 @@ const TransactionLogsPage = () => {
                             variant="outlined"
                             startIcon={<FileDownloadIcon />}
                             onClick={handleExport}
+                            disabled={loading}
                             sx={{ borderRadius: 3, px: 2.5, py: 1.2, fontWeight: 700, textTransform: 'none' }}
                         >
                             Export
@@ -318,6 +330,7 @@ const TransactionLogsPage = () => {
                     filters={filters}
                     onFilterChange={handleFilterChange}
                     onReset={handleReset}
+                    actionDisabled={loading}
                 />
             </Box>
 

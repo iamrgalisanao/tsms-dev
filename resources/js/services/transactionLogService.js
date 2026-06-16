@@ -66,10 +66,23 @@ export const transactionLogService = {
      * @param {Object} filters - Filter parameters
      */
     exportToExcel: async (filters = {}) => {
-        const response = await axios.get(`${API_BASE}/transactions/logs/export`, {
-            params: filters,
-            responseType: 'blob'
-        });
+        let response;
+
+        try {
+            response = await axios.get(`${API_BASE}/transactions/logs/export`, {
+                params: filters,
+                responseType: 'blob'
+            });
+        } catch (error) {
+            const blob = error?.response?.data;
+
+            if (blob instanceof Blob && blob.type?.includes('application/json')) {
+                const payload = JSON.parse(await blob.text());
+                error.response.data = payload;
+            }
+
+            throw error;
+        }
 
         const dateBasis = filters.date_basis || 'transaction';
 
