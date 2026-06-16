@@ -80,39 +80,8 @@ class TSMSTransactionRequest extends FormRequest
     public function withValidator(Validator $validator): void
     {
         $validator->after(function ($validator) {
-            if (!$this->validateStandardStructure()) {
-                $validator->errors()->add('structure', 'Payload does not follow standard TSMS structure');
-            }
-
-            // Validate transaction structure and required fields
             $this->validateAmountRelationship($validator);
         });
-    }
-
-    /**
-     * Validate that the payload follows the standard TSMS structure
-     */
-    private function validateStandardStructure(): bool
-    {
-        $payload = $this->all();
-        
-        // Check submission-level structure
-        if (!$this->validateSubmissionStructure($payload)) {
-            return false;
-        }
-        
-        // Check transaction-level structure
-        if ($this->input('transaction_count') === 1) {
-            return $this->validateTransactionStructure($payload['transaction'] ?? []);
-        } else {
-            foreach ($payload['transactions'] ?? [] as $transaction) {
-                if (!$this->validateTransactionStructure($transaction)) {
-                    return false;
-                }
-            }
-        }
-        
-        return true;
     }
 
     /**
@@ -271,63 +240,6 @@ class TSMSTransactionRequest extends FormRequest
                 );
             }
         }
-    }
-
-    /**
-     * Validate submission-level field ordering
-     */
-    private function validateSubmissionStructure(array $payload): bool
-    {
-        $keys = array_keys($payload);
-        
-        // Find positions of key fields
-        $payloadChecksumPos = array_search('payload_checksum', $keys);
-        $transactionPos = array_search('transaction', $keys) ?: array_search('transactions', $keys);
-        
-        // payload_checksum should come after transaction_count but before transaction/transactions
-        if ($payloadChecksumPos === false || $transactionPos === false) {
-            return false;
-        }
-        
-        return $payloadChecksumPos < $transactionPos;
-    }
-
-    /**
-     * Validate transaction-level field ordering
-     */
-    private function validateTransactionStructure(array $transaction): bool
-    {
-        $keys = array_keys($transaction);
-        
-        // Find positions of key fields
-        $payloadChecksumPos = array_search('payload_checksum', $keys);
-        $adjustmentsPos = array_search('adjustments', $keys);
-        $taxesPos = array_search('taxes', $keys);
-        
-        // payload_checksum must come before adjustments and taxes
-        if ($payloadChecksumPos === false) {
-            return false;
-        }
-        
-        if ($adjustmentsPos !== false && $payloadChecksumPos > $adjustmentsPos) {
-            return false;
-        }
-        
-        if ($taxesPos !== false && $payloadChecksumPos > $taxesPos) {
-            return false;
-        }
-        
-        // Validate required field order: scalar fields before payload_checksum before arrays
-        $scalarFields = ['transaction_id', 'transaction_timestamp', 'gross_sales', 'net_sales', 'promo_status', 'customer_code'];
-        
-        foreach ($scalarFields as $field) {
-            $fieldPos = array_search($field, $keys);
-            if ($fieldPos !== false && $fieldPos > $payloadChecksumPos) {
-                return false; // Scalar field comes after payload_checksum
-            }
-        }
-        
-        return true;
     }
 
     /**

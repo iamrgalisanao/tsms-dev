@@ -83,6 +83,38 @@ class OfficialTransactionTimestampNoMutationTest extends TestCase
         $this->assertSame('84.74', number_format((float) $transaction->net_sales, 2, '.', ''));
     }
 
+    public function test_official_ingestion_accepts_payload_checksum_fields_at_end(): void
+    {
+        Queue::fake();
+
+        $tenant = Tenant::factory()->create();
+        $terminal = PosTerminal::factory()->create(['tenant_id' => $tenant->id]);
+        $timestamp = Carbon::now('UTC')->subMinute()->format('Y-m-d\TH:i:s\Z');
+        $payload = $this->makeOfficialPayload($tenant->id, $terminal->id, $timestamp, $terminal->serial_number);
+
+        $transaction = $payload['transaction'];
+        $transactionChecksum = $transaction['payload_checksum'];
+        unset($transaction['payload_checksum']);
+        $transaction['payload_checksum'] = $transactionChecksum;
+        $payload['transaction'] = $transaction;
+
+        $payloadChecksum = $payload['payload_checksum'];
+        unset($payload['payload_checksum']);
+        $payload['payload_checksum'] = $payloadChecksum;
+
+        $response = $this
+            ->withHeaders([
+                'Authorization' => 'Bearer '.$terminal->generateAccessToken(),
+                'Content-Type' => 'application/json',
+            ])
+            ->postJson('/api/v1/transactions/official', $payload);
+
+        $response->assertOk();
+        $this->assertDatabaseHas('transactions', [
+            'transaction_id' => $payload['transaction']['transaction_id'],
+        ]);
+    }
+
     private function makeOfficialPayload(int $tenantId, int $terminalId, string $timestamp, string $hardwareId): array
     {
         $checksum = new PayloadChecksumService();
