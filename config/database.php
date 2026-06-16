@@ -56,6 +56,23 @@ return [
             'engine' => null,
         ],
 
+        'reporting' => [
+            'driver' => env('REPORTING_DB_CONNECTION', env('DB_CONNECTION', 'mysql')),
+            'url' => env('REPORTING_DATABASE_URL'),
+            'host' => env('REPORTING_DB_HOST', env('DB_HOST', '127.0.0.1')),
+            'port' => env('REPORTING_DB_PORT', env('DB_PORT', '3306')),
+            'database' => env('REPORTING_DB_DATABASE', env('DB_DATABASE', 'tsms_db')),
+            'username' => env('REPORTING_DB_USERNAME', env('DB_USERNAME', 'root')),
+            'password' => env('REPORTING_DB_PASSWORD', env('DB_PASSWORD', '')),
+            'unix_socket' => env('REPORTING_DB_SOCKET', env('DB_SOCKET', '')),
+            'charset' => env('REPORTING_DB_CHARSET', env('DB_CHARSET', 'utf8mb4')),
+            'collation' => env('REPORTING_DB_COLLATION', env('DB_COLLATION', 'utf8mb4_unicode_ci')),
+            'prefix' => '',
+            'prefix_indexes' => true,
+            'strict' => false,
+            'engine' => null,
+        ],
+
         'mariadb' => [
             'driver' => 'mariadb',
             'url' => env('DB_URL'),

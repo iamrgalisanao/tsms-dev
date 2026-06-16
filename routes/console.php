@@ -38,6 +38,14 @@ Schedule::command('tsms:reconcile-intake --repair-missing')
     ->withoutOverlapping()
     ->onOneServer();
 
+// Keep derived daily report summaries warm for dashboards/reports. This is
+// intentionally incremental; historical ranges should be refreshed manually.
+Schedule::command('reports:refresh-daily-transaction-summaries --days=2')
+    ->everyFifteenMinutes()
+    ->name('reports-refresh-daily-transaction-summaries')
+    ->withoutOverlapping()
+    ->onOneServer();
+
 // --------------------------------------------------------------------------
 // Transaction pruning: remove stale PENDING (stuck) & aged FAILED transactions
 // Runs every hour; uses configurable retention in config('tsms.transactions').

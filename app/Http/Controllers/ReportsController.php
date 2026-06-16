@@ -7,6 +7,7 @@ use App\Models\Tenant;
 use App\Models\Transaction;
 use Carbon\Carbon;
 use Illuminate\Support\Arr;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 class ReportsController extends Controller
@@ -55,23 +56,45 @@ class ReportsController extends Controller
             ? 'transactions.transaction_date'
             : 'DATE(transactions.transaction_timestamp)';
 
+        if ($summaryPayload = $this->dailySummaryPayload($startDate, $endDate, $tenantId, $year, $month)) {
+            return response()->json($summaryPayload);
+        }
+
+        $grossExpr = Schema::hasColumn('transactions', 'gross_sales') ? 'SUM(gross_sales)' : '0';
+        $netExpr = Schema::hasColumn('transactions', 'net_sales') ? 'SUM(net_sales)' : '0';
+        $vatableExpr = Schema::hasColumn('transactions', 'vatable_sales') ? 'SUM(vatable_sales)' : '0';
+        $scVatExpr = Schema::hasColumn('transactions', 'sc_vat_exempt_sales') ? 'SUM(sc_vat_exempt_sales)' : '0';
+        $vatExpr = Schema::hasColumn('transactions', 'vat_amount') ? 'SUM(vat_amount)' : '0';
+        $promoWithExpr = (Schema::hasColumn('transactions', 'promo_discount') && Schema::hasColumn('transactions', 'promo_status'))
+            ? "SUM(IF(promo_status = 'WITH_APPROVAL', promo_discount, 0))"
+            : '0';
+        $promoWithoutExpr = Schema::hasColumn('transactions', 'promo_discount')
+            ? (Schema::hasColumn('transactions', 'promo_status')
+                ? "SUM(IF(promo_status != 'WITH_APPROVAL' OR promo_status IS NULL, promo_discount, 0))"
+                : 'SUM(promo_discount)')
+            : '0';
+        $seniorExpr = Schema::hasColumn('transactions', 'senior_discount') ? 'SUM(senior_discount)' : '0';
+        $pwdExpr = Schema::hasColumn('transactions', 'pwd_discount') ? 'SUM(pwd_discount)' : '0';
+        $regularExpr = Schema::hasColumn('transactions', 'discount_total') ? 'SUM(discount_total)' : '0';
+        $serviceChargeExpr = Schema::hasColumn('transactions', 'service_charge') ? 'SUM(service_charge)' : '0';
+        $managementServiceChargeExpr = Schema::hasColumn('transactions', 'management_service_charge') ? 'SUM(management_service_charge)' : '0';
+
         // 1. Optimized Main Transaction Aggregation
         $query = Transaction::query()
             ->selectRaw("
                 {$reportDateExpr} as report_date,
-                SUM(gross_sales) as gross_sales,
-                SUM(net_sales) as net_sales,
-                SUM(vatable_sales) as vatable_sales,
-                SUM(sc_vat_exempt_sales) as sc_vat_exempt_sales,
-                SUM(vat_amount) as vat_amount,
-                SUM(promo_discount) as promo_discount,
-                SUM(senior_discount) as senior_discount,
-                SUM(pwd_discount) as pwd_discount,
-                SUM(discount_total) as regular_discount,
-                SUM(service_charge) as service_charge_distributed,
-                SUM(management_service_charge) as service_charge_retained,
-                SUM(IF(promo_status = 'WITH_APPROVAL', promo_discount, 0)) as promo_with_approval,
-                SUM(IF(promo_status != 'WITH_APPROVAL', promo_discount, 0)) as promo_without_approval
+                {$grossExpr} as gross_sales,
+                {$netExpr} as net_sales,
+                {$vatableExpr} as vatable_sales,
+                {$scVatExpr} as sc_vat_exempt_sales,
+                {$vatExpr} as vat_amount,
+                {$seniorExpr} as senior_discount,
+                {$pwdExpr} as pwd_discount,
+                {$regularExpr} as regular_discount,
+                {$serviceChargeExpr} as service_charge_distributed,
+                {$managementServiceChargeExpr} as service_charge_retained,
+                {$promoWithExpr} as promo_with_approval,
+                {$promoWithoutExpr} as promo_without_approval
             ")
             ->whereRaw("{$reportDateExpr} BETWEEN ? AND ?", [$startDate, $endDate]);
 
@@ -179,6 +202,100 @@ class ReportsController extends Controller
             'month' => $month,
             'daily_totals' => $dailyTotals,
             'totals' => $totals,
+            'source' => 'raw_transactions',
         ]);
+    }
+
+    private function dailySummaryPayload(string $startDate, string $endDate, $tenantId, int $year, string $month): ?array
+    {
+        if (! Schema::hasTable('daily_transaction_summaries') || ! Schema::hasTable('report_refresh_states')) {
+            return null;
+        }
+
+        if (! $this->hasCompleteDailySummaryRefresh($startDate, $endDate, $tenantId)) {
+            return null;
+        }
+
+        $rows = DB::table('daily_transaction_summaries')
+            ->selectRaw('business_date as report_date')
+            ->selectRaw('SUM(gross_sales) as gross_sales')
+            ->selectRaw('SUM(net_sales) as net_sales')
+            ->selectRaw('SUM(vatable_sales) as vatable_sales')
+            ->selectRaw('SUM(sc_vat_exempt_sales) as sc_vat_exempt_sales')
+            ->selectRaw('SUM(vat_amount) as vat_amount')
+            ->selectRaw('SUM(promo_with_approval) as promo_with_approval')
+            ->selectRaw('SUM(promo_without_approval) as promo_without_approval')
+            ->selectRaw('SUM(employee_discount) as employee_discount')
+            ->selectRaw('SUM(senior_discount) as senior_discount')
+            ->selectRaw('SUM(pwd_discount) as pwd_discount')
+            ->selectRaw('SUM(vip_discount) as vip_discount')
+            ->selectRaw('SUM(other_tax) as other_tax')
+            ->selectRaw('SUM(service_charge_distributed) as service_charge_distributed')
+            ->selectRaw('SUM(service_charge_retained) as service_charge_retained')
+            ->whereBetween('business_date', [$startDate, $endDate])
+            ->when($tenantId && $tenantId !== 'all', fn ($query) => $query->where('tenant_id', $tenantId))
+            ->groupBy('business_date')
+            ->orderBy('business_date')
+            ->get()
+            ->keyBy('report_date');
+
+        $service = app(\App\Services\Reports\FinanceCalculationService::class);
+        $dailyTotals = [];
+        $allComponents = [];
+
+        foreach ($rows as $date => $row) {
+            $components = [
+                'vatable_sales' => (float) ($row->vatable_sales ?? 0),
+                'sc_vat_exempt_sales' => (float) ($row->sc_vat_exempt_sales ?? 0),
+                'vat_amount' => (float) ($row->vat_amount ?? 0),
+                'promo_with_approval' => (float) ($row->promo_with_approval ?? 0),
+                'promo_without_approval' => (float) ($row->promo_without_approval ?? 0),
+                'employee_discount' => (float) ($row->employee_discount ?? 0),
+                'senior_discount' => (float) ($row->senior_discount ?? 0),
+                'pwd_discount' => (float) ($row->pwd_discount ?? 0),
+                'vip_discount' => (float) ($row->vip_discount ?? 0),
+                'other_tax' => (float) ($row->other_tax ?? 0),
+                'service_charge_distributed' => (float) ($row->service_charge_distributed ?? 0),
+                'service_charge_retained' => (float) ($row->service_charge_retained ?? 0),
+                'regular_discount' => 0.0,
+                'gross_sales' => (float) ($row->gross_sales ?? 0),
+                'net_sales' => (float) ($row->net_sales ?? 0),
+            ];
+
+            foreach ($components as $key => $value) {
+                $allComponents[$key] = ($allComponents[$key] ?? 0) + $value;
+            }
+
+            $dailyTotals[$date] = $service->deriveMetrics($components, ['gross_sales_basis' => 'pre_deduction']);
+        }
+
+        return [
+            'status' => 'success',
+            'year' => $year,
+            'month' => $month,
+            'daily_totals' => $dailyTotals,
+            'totals' => $service->deriveMetrics($allComponents, ['gross_sales_basis' => 'pre_deduction']),
+            'source' => 'daily_transaction_summaries',
+            'generated_at' => now()->toIso8601String(),
+        ];
+    }
+
+    private function hasCompleteDailySummaryRefresh(string $startDate, string $endDate, $tenantId): bool
+    {
+        $expectedDays = Carbon::parse($startDate)->diffInDays(Carbon::parse($endDate)) + 1;
+        $query = DB::table('report_refresh_states')
+            ->where('report_type', 'daily_transaction_summaries')
+            ->where('status', 'completed')
+            ->whereBetween('business_date', [$startDate, $endDate]);
+
+        if ($tenantId && $tenantId !== 'all') {
+            $query->where(function ($nested) use ($tenantId) {
+                $nested->whereNull('tenant_id')->orWhere('tenant_id', $tenantId);
+            });
+        } else {
+            $query->whereNull('tenant_id');
+        }
+
+        return (int) $query->distinct('business_date')->count('business_date') >= $expectedDays;
     }
 }
