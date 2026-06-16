@@ -9,7 +9,6 @@ use App\Support\Metrics;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\Redis;
 
 class ObservabilityController extends Controller
 {
@@ -32,20 +31,12 @@ class ObservabilityController extends Controller
             'worker_time_avg_ms' => Metrics::get('intake.worker_time:avg', 0),
         ];
 
-        // Get current queue size if using Redis
-        $queueSize = 0;
-        try {
-            $queueSize = Redis::connection()->llen('queues:transaction-intake');
-        } catch (\Throwable $e) {
-            // Fallback for non-redis queue
-        }
-
         return response()->json([
             'success' => true,
             'timestamp' => now()->toIso8601String(),
             'metrics' => $metrics,
             'latencies' => $latencies,
-            'queue_size' => $queueSize,
+            'queue_size' => null,
         ]);
     }
 
@@ -112,6 +103,7 @@ class ObservabilityController extends Controller
         $recent = \App\Models\TransactionIntake::select([
                 'id', 
                 'payload',
+                'tenant_id',
                 'terminal_id', 
                 'processing_status', 
                 'last_error_message', 
@@ -122,11 +114,24 @@ class ObservabilityController extends Controller
             ->limit(15)
             ->get()
             ->map(function ($intake) {
+                $payload = is_array($intake->payload) ? $intake->payload : [];
+                $payloadPreview = [
+                    'submission_uuid' => $payload['submission_uuid'] ?? null,
+                    'tenant_id' => $payload['tenant_id'] ?? $intake->tenant_id,
+                    'terminal_id' => $payload['terminal_id'] ?? $intake->terminal_id,
+                    'transaction_count' => $payload['transaction_count'] ?? null,
+                    'transaction' => [
+                        'transaction_id' => data_get($payload, 'transaction.transaction_id'),
+                        'receipt_no' => data_get($payload, 'transaction.receipt_no'),
+                        'hardware_id' => data_get($payload, 'transaction.hardware_id'),
+                    ],
+                ];
+
                 return [
                     'id' => $intake->id,
-                    'receipt_no' => data_get($intake->payload, 'transaction.receipt_no') ?? $intake->payload['receipt_no'] ?? '---',
+                    'receipt_no' => data_get($payload, 'transaction.receipt_no') ?? $payload['receipt_no'] ?? '---',
                     'terminal_id' => $intake->terminal_id,
-                    'payload' => $intake->payload,
+                    'payload' => $payloadPreview,
                     'processing_status' => strtolower($intake->processing_status ?? 'pending'),
                     'last_error_message' => $intake->last_error_message,
                     'processed_at' => $intake->processed_at,

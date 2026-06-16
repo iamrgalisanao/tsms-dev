@@ -109,6 +109,84 @@ class TransactionLogTest extends TestCase
     }
 
     /** @test */
+    public function test_summary_endpoint_returns_react_summary_contract()
+    {
+        $secondTerminal = PosTerminal::factory()->create([
+            'tenant_id' => $this->tenant->id,
+        ]);
+
+        Transaction::factory()->create([
+            'tenant_id' => $this->tenant->id,
+            'terminal_id' => $this->terminal->id,
+            'receipt_no' => 'REC-SUMMARY-1',
+            'transaction_timestamp' => '2026-06-15 09:01:00',
+            'gross_sales' => 35.00,
+            'net_sales' => 31.25,
+            'vat_amount' => 3.75,
+            'vatable_sales' => 31.25,
+            'validation_status' => 'VALID',
+        ]);
+
+        Transaction::factory()->create([
+            'tenant_id' => $this->tenant->id,
+            'terminal_id' => $secondTerminal->id,
+            'receipt_no' => 'REC-SUMMARY-2',
+            'transaction_timestamp' => '2026-06-15 10:01:00',
+            'gross_sales' => 35.00,
+            'net_sales' => 31.25,
+            'vat_amount' => 3.75,
+            'vatable_sales' => 31.25,
+            'validation_status' => 'VALID',
+        ]);
+
+        Sanctum::actingAs($this->adminUser);
+
+        $response = $this->getJson('/api/transactions/logs/summary?date_from=2026-06-15&date_to=2026-06-15&date_basis=transaction');
+
+        $response->assertOk()
+            ->assertJsonStructure([
+                'summary' => [
+                    'data' => [
+                        '*' => [
+                            'date',
+                            'tenant_id',
+                            'terminal_id',
+                            'trade_name',
+                            'serial_number',
+                            'tx_count',
+                            'unique_receipts',
+                            'gross',
+                            'vat',
+                            'vatable_sales',
+                            'sc_vat_exempt_sales',
+                            'tax_exempt',
+                            'net',
+                            'refund',
+                            'service_charge_distributed',
+                            'service_charge_retained',
+                        ],
+                    ],
+                    'total',
+                ],
+                'grandTotal' => [
+                    'tx_count',
+                    'unique_receipts',
+                    'gross',
+                    'vat',
+                    'net',
+                    'refund',
+                ],
+                'dateBasisDiscrepancy',
+            ]);
+
+        $this->assertSame(2, $response->json('summary.total'));
+        $this->assertEquals(70.00, (float) $response->json('grandTotal.gross'));
+        $this->assertEquals(62.50, (float) $response->json('grandTotal.net'));
+        $this->assertSame(2, $response->json('grandTotal.tx_count'));
+        $this->assertSame(2, $response->json('grandTotal.unique_receipts'));
+    }
+
+    /** @test */
     public function test_finance_users_can_export_transaction_logs_with_table_filters()
     {
         \Spatie\Permission\Models\Role::firstOrCreate([
