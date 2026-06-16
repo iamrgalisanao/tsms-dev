@@ -106,6 +106,15 @@ const TransactionLogsPage = () => {
         setError(null);
 
         try {
+            if (activeTab === 'summary' && (!filters.date_from || !filters.date_to)) {
+                setSummary([]);
+                setTotalCount(0);
+                setGrandTotal(null);
+                setDateBasisDiscrepancy(null);
+                setError('Summary View requires both From and To dates. Select a preset or enter a custom date range.');
+                return;
+            }
+
             // Include sort_direction so backend can control ASC/DESC
             const filtersWithSort = {
                 ...filters,

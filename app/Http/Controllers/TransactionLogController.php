@@ -18,6 +18,7 @@ use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Validator;
 
 class TransactionLogController extends Controller
 {
@@ -587,6 +588,29 @@ class TransactionLogController extends Controller
      */
     public function summary(Request $request)
     {
+        $validator = Validator::make($request->all(), [
+            'date_from' => ['required', 'date_format:Y-m-d'],
+            'date_to' => ['required', 'date_format:Y-m-d', 'after_or_equal:date_from'],
+        ], [
+            'date_from.required' => 'Summary view requires a From date.',
+            'date_to.required' => 'Summary view requires a To date.',
+            'date_to.after_or_equal' => 'Summary To date must be the same as or later than the From date.',
+        ]);
+
+        if ($validator->fails()) {
+            if ($request->wantsJson()) {
+                return response()->json([
+                    'message' => 'Summary view requires a bounded date range.',
+                    'errors' => $validator->errors(),
+                ], 422);
+            }
+
+            return redirect()
+                ->route('transactions.logs.index')
+                ->withErrors($validator)
+                ->withInput();
+        }
+
         $filters = $request->only([
             'status',
             'date_from',

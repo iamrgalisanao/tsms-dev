@@ -257,7 +257,7 @@ class TransactionLogTest extends TestCase
     }
 
     /** @test */
-    public function test_summary_endpoint_without_filters_uses_lightweight_pagination()
+    public function test_summary_endpoint_without_dates_is_rejected()
     {
         Transaction::factory()->create([
             'tenant_id' => $this->tenant->id,
@@ -275,24 +275,15 @@ class TransactionLogTest extends TestCase
 
         $response = $this->getJson('/api/transactions/logs/summary?date_basis=transaction');
 
-        $response->assertOk()
-            ->assertJsonStructure([
-                'summary' => [
-                    'data',
-                    'total',
-                ],
-                'grandTotal',
-                'dateBasisDiscrepancy',
-            ]);
-
-        $this->assertNotEmpty($response->json('summary.data'));
-        $this->assertSame(-1, $response->json('summary.total'));
-        $this->assertNull($response->json('grandTotal'));
-        $this->assertNull($response->json('dateBasisDiscrepancy'));
+        $response->assertStatus(422)
+            ->assertJsonFragment([
+                'message' => 'Summary view requires a bounded date range.',
+            ])
+            ->assertJsonValidationErrors(['date_from', 'date_to']);
     }
 
     /** @test */
-    public function test_summary_endpoint_with_tenant_only_uses_lightweight_pagination()
+    public function test_summary_endpoint_with_tenant_and_dates_returns_bounded_results()
     {
         Transaction::factory()->create([
             'tenant_id' => $this->tenant->id,
@@ -318,12 +309,12 @@ class TransactionLogTest extends TestCase
 
         Sanctum::actingAs($this->adminUser);
 
-        $response = $this->getJson('/api/transactions/logs/summary?date_basis=transaction&tenant_id=' . $this->tenant->id);
+        $response = $this->getJson('/api/transactions/logs/summary?date_basis=transaction&date_from=2026-06-15&date_to=2026-06-15&tenant_id=' . $this->tenant->id);
 
         $response->assertOk();
         $this->assertNotEmpty($response->json('summary.data'));
-        $this->assertSame(-1, $response->json('summary.total'));
-        $this->assertNull($response->json('grandTotal'));
+        $this->assertSame(1, $response->json('summary.total'));
+        $this->assertEquals(35.00, (float) $response->json('grandTotal.gross'));
     }
 
     /** @test */
