@@ -32,7 +32,9 @@ const TenantAuditTable = ({
     onSelectRow,
     onInspect,
     onReplay,
-    onViewLogs
+    onViewLogs,
+    onBulkReplay,
+    onGenerateReport
 }) => {
     const [selectedRowIds, setSelectedRowIds] = useState([]);
     const [menuAnchor, setMenuAnchor] = useState(null);
@@ -100,7 +102,11 @@ const TenantAuditTable = ({
     // Bulk action handlers
     const handleBulkReplay = () => {
         if (selectedRowIds.length === 0) return;
-        alert(`Queueing ingestion replay for ${selectedRowIds.length} selected tenants...`);
+        if (onBulkReplay) {
+            onBulkReplay(selectedRowIds);
+        } else {
+            alert(`Queueing ingestion replay for ${selectedRowIds.length} selected tenants...`);
+        }
         setSelectedRowIds([]);
     };
 
@@ -130,7 +136,11 @@ const TenantAuditTable = ({
     };
 
     const handleGenerateAuditReport = () => {
-        alert('Generating compliance audit report. Check your browser downloads shortly.');
+        if (onGenerateReport) {
+            onGenerateReport();
+        } else {
+            alert('Generating compliance audit report. Check your browser downloads shortly.');
+        }
         handleExportCSV();
     };
 
