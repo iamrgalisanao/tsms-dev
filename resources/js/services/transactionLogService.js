@@ -9,14 +9,17 @@ export const transactionLogService = {
      * @param {number} page - Page number
      * @param {number} perPage - Items per page
      */
-    getTransactions: async (filters = {}, page = 1, perPage = 15) => {
+    getTransactions: async (filters = {}, page = 1, perPage = 15, options = {}) => {
         const params = {
             ...filters,
             page,
             per_page: perPage
         };
 
-        const response = await axios.get(`${API_BASE}/transactions/logs`, { params });
+        const response = await axios.get(`${API_BASE}/transactions/logs`, {
+            params,
+            signal: options.signal
+        });
         return response.data;
     },
 
@@ -26,14 +29,17 @@ export const transactionLogService = {
      * @param {number} page - Page number
      * @param {number} perPage - Items per page
      */
-    getSummary: async (filters = {}, page = 1, perPage = 15) => {
+    getSummary: async (filters = {}, page = 1, perPage = 15, options = {}) => {
         const params = {
             ...filters,
             page,
             per_page: perPage
         };
 
-        const response = await axios.get(`${API_BASE}/transactions/logs/summary`, { params });
+        const response = await axios.get(`${API_BASE}/transactions/logs/summary`, {
+            params,
+            signal: options.signal
+        });
         return response.data;
     },
 

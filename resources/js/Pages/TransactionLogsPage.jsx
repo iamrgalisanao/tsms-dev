@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
     Box,
     Card,
@@ -105,12 +105,19 @@ const TransactionLogsPage = () => {
 
     const [detailPanelOpen, setDetailPanelOpen] = useState(false);
     const [selectedTransaction, setSelectedTransaction] = useState(null);
+    const requestIdRef = useRef(0);
 
     useEffect(() => {
-        loadData();
+        const controller = new AbortController();
+        loadData({ signal: controller.signal });
+
+        return () => {
+            controller.abort();
+        };
     }, [activeTab, filters, page, rowsPerPage, sortDirection]);
 
-    const loadData = async () => {
+    const loadData = async ({ signal } = {}) => {
+        const requestId = ++requestIdRef.current;
         setLoading(true);
         setError(null);
 
@@ -138,8 +145,10 @@ const TransactionLogsPage = () => {
                 const response = await transactionLogService.getTransactions(
                     cleanFilters,
                     page + 1,
-                    rowsPerPage
+                    rowsPerPage,
+                    { signal }
                 );
+                if (requestId !== requestIdRef.current) return;
                 setTransactions(response.data || []);
                 setTotalCount(response.total || 0);
                 setDateBasisDiscrepancy(null);
@@ -147,8 +156,10 @@ const TransactionLogsPage = () => {
                 const response = await transactionLogService.getSummary(
                     cleanFilters,
                     page + 1,
-                    rowsPerPage
+                    rowsPerPage,
+                    { signal }
                 );
+                if (requestId !== requestIdRef.current) return;
                 // Extract summary list and global grand total from structured response
                 const summaryData = response.summary || {};
                 setSummary(summaryData.data || []);
@@ -157,10 +168,18 @@ const TransactionLogsPage = () => {
                 setDateBasisDiscrepancy(response.dateBasisDiscrepancy || null);
             }
         } catch (err) {
+            if (err?.code === 'ERR_CANCELED' || err?.name === 'CanceledError') {
+                return;
+            }
+
+            if (requestId !== requestIdRef.current) return;
+
             console.error('Error loading data:', err);
             setError('Failed to load transaction data');
         } finally {
-            setLoading(false);
+            if (requestId === requestIdRef.current) {
+                setLoading(false);
+            }
         }
     };
 
