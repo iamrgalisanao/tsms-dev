@@ -188,6 +188,41 @@ class TransactionLogTest extends TestCase
     }
 
     /** @test */
+    public function test_summary_endpoint_without_filters_uses_lightweight_pagination()
+    {
+        Transaction::factory()->create([
+            'tenant_id' => $this->tenant->id,
+            'terminal_id' => $this->terminal->id,
+            'receipt_no' => 'REC-SUMMARY-UNFILTERED',
+            'transaction_timestamp' => '2026-06-15 09:01:00',
+            'gross_sales' => 35.00,
+            'net_sales' => 31.25,
+            'vat_amount' => 3.75,
+            'vatable_sales' => 31.25,
+            'validation_status' => 'VALID',
+        ]);
+
+        Sanctum::actingAs($this->adminUser);
+
+        $response = $this->getJson('/api/transactions/logs/summary?date_basis=transaction');
+
+        $response->assertOk()
+            ->assertJsonStructure([
+                'summary' => [
+                    'data',
+                    'total',
+                ],
+                'grandTotal',
+                'dateBasisDiscrepancy',
+            ]);
+
+        $this->assertNotEmpty($response->json('summary.data'));
+        $this->assertSame(-1, $response->json('summary.total'));
+        $this->assertNull($response->json('grandTotal'));
+        $this->assertNull($response->json('dateBasisDiscrepancy'));
+    }
+
+    /** @test */
     public function test_finance_users_can_export_transaction_logs_with_table_filters()
     {
         \Spatie\Permission\Models\Role::firstOrCreate([

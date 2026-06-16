@@ -596,6 +596,10 @@ class TransactionLogController extends Controller
             $perPage = 1000;
         }
 
+        $hasBoundedFilters = collect($filters)->contains(function ($value) {
+            return $value !== null && $value !== '';
+        });
+
         $hasReceiptNo = Schema::hasColumn('transactions', 'receipt_no');
         $hasTaxExempt = Schema::hasColumn('transactions', 'tax_exempt');
         $hasEmployeeDiscount = Schema::hasColumn('transactions', 'employee_discount');
@@ -814,74 +818,77 @@ class TransactionLogController extends Controller
             ];
         }
 
-        $grandTotalRaw = (clone $baseQuery)
-            ->selectRaw('COUNT(*) as tx_count')
-            ->when($hasReceiptNo, function ($q) {
-                $q->selectRaw("COUNT(DISTINCT NULLIF(t.receipt_no, '')) as unique_receipts");
-            }, function ($q) {
-                $q->selectRaw('COUNT(*) as unique_receipts');
-            })
-            ->selectRaw('COALESCE(SUM(t.gross_sales),0) as gross_sales')
-            ->selectRaw('COALESCE(SUM(t.net_sales),0) as raw_net_sales')
-            ->selectRaw('COALESCE(SUM(t.vat_amount),0) as raw_vat_amount')
-            ->selectRaw('COALESCE(SUM(t.vatable_sales),0) as raw_vatable_sales')
-            ->selectRaw('COALESCE(SUM(t.sc_vat_exempt_sales),0) as raw_sc_vat_exempt_sales')
-            ->selectRaw($refundExpression . ' as refund')
-            ->selectRaw($promoWithApprovalExpression . ' as promo_with_approval')
-            ->selectRaw($promoWithoutApprovalExpression . ' as promo_without_approval')
-            ->selectRaw($seniorDiscountExpression . ' as senior_discount')
-            ->selectRaw($pwdDiscountExpression . ' as pwd_discount')
-            ->selectRaw($regularDiscountExpression . ' as regular_discount')
-            ->selectRaw($serviceChargeExpression . ' as service_charge_distributed')
-            ->selectRaw($managementServiceChargeExpression . ' as service_charge_retained')
-            ->when($hasTaxExempt, function ($q) {
-                $q->selectRaw('COALESCE(SUM(t.tax_exempt),0) as other_tax');
-            }, function ($q) {
-                $q->selectRaw('0 as other_tax');
-            })
-            ->selectRaw($employeeDiscountExpression . ' as employee_discount')
-            ->selectRaw($vipDiscountExpression . ' as vip_discount')
-            ->first();
+        $grandTotal = null;
+        if ($hasBoundedFilters) {
+            $grandTotalRaw = (clone $baseQuery)
+                ->selectRaw('COUNT(*) as tx_count')
+                ->when($hasReceiptNo, function ($q) {
+                    $q->selectRaw("COUNT(DISTINCT NULLIF(t.receipt_no, '')) as unique_receipts");
+                }, function ($q) {
+                    $q->selectRaw('COUNT(*) as unique_receipts');
+                })
+                ->selectRaw('COALESCE(SUM(t.gross_sales),0) as gross_sales')
+                ->selectRaw('COALESCE(SUM(t.net_sales),0) as raw_net_sales')
+                ->selectRaw('COALESCE(SUM(t.vat_amount),0) as raw_vat_amount')
+                ->selectRaw('COALESCE(SUM(t.vatable_sales),0) as raw_vatable_sales')
+                ->selectRaw('COALESCE(SUM(t.sc_vat_exempt_sales),0) as raw_sc_vat_exempt_sales')
+                ->selectRaw($refundExpression . ' as refund')
+                ->selectRaw($promoWithApprovalExpression . ' as promo_with_approval')
+                ->selectRaw($promoWithoutApprovalExpression . ' as promo_without_approval')
+                ->selectRaw($seniorDiscountExpression . ' as senior_discount')
+                ->selectRaw($pwdDiscountExpression . ' as pwd_discount')
+                ->selectRaw($regularDiscountExpression . ' as regular_discount')
+                ->selectRaw($serviceChargeExpression . ' as service_charge_distributed')
+                ->selectRaw($managementServiceChargeExpression . ' as service_charge_retained')
+                ->when($hasTaxExempt, function ($q) {
+                    $q->selectRaw('COALESCE(SUM(t.tax_exempt),0) as other_tax');
+                }, function ($q) {
+                    $q->selectRaw('0 as other_tax');
+                })
+                ->selectRaw($employeeDiscountExpression . ' as employee_discount')
+                ->selectRaw($vipDiscountExpression . ' as vip_discount')
+                ->first();
 
-        $grandTotalComponents = [
-            'vatable_sales' => (float) $grandTotalRaw->raw_vatable_sales,
-            'sc_vat_exempt_sales' => (float) $grandTotalRaw->raw_sc_vat_exempt_sales,
-            'vat_amount' => (float) $grandTotalRaw->raw_vat_amount,
-            'promo_with_approval' => (float) $grandTotalRaw->promo_with_approval,
-            'promo_without_approval' => (float) $grandTotalRaw->promo_without_approval,
-            'employee_discount' => (float) ($grandTotalRaw->employee_discount ?? 0),
-            'senior_discount' => (float) $grandTotalRaw->senior_discount,
-            'pwd_discount' => (float) $grandTotalRaw->pwd_discount,
-            'vip_discount' => (float) ($grandTotalRaw->vip_discount ?? 0),
-            'other_tax' => (float) ($grandTotalRaw->other_tax ?? 0),
-            'service_charge_distributed' => (float) $grandTotalRaw->service_charge_distributed,
-            'service_charge_retained' => (float) $grandTotalRaw->service_charge_retained,
-            'regular_discount' => (float) $grandTotalRaw->regular_discount,
-            'gross_sales' => (float) $grandTotalRaw->gross_sales,
-            'net_sales' => (float) $grandTotalRaw->raw_net_sales,
-        ];
-        $grandTotalDerived = $this->financeService->deriveMetrics($grandTotalComponents);
-        $grandTotal = (object) [
-            'tx_count' => (int) $grandTotalRaw->tx_count,
-            'unique_receipts' => (int) ($grandTotalRaw->unique_receipts ?? 0),
-            'gross' => $grandTotalDerived['gross_sales'],
-            'net' => $grandTotalDerived['net_total'],
-            'refund' => (float) $grandTotalRaw->refund,
-            'promo_discount' => $grandTotalDerived['total_promotions'],
-            'senior_discount' => (float) $grandTotalRaw->senior_discount,
-            'pwd_discount' => (float) $grandTotalRaw->pwd_discount,
-            'vip_discount' => (float) ($grandTotalRaw->vip_discount ?? 0),
-            'employee_discount' => (float) ($grandTotalRaw->employee_discount ?? 0),
-            'service_charge' => $grandTotalDerived['service_charge_distributed'],
-            'service_charge_distributed' => $grandTotalDerived['service_charge_distributed'],
-            'management_service_charge' => $grandTotalDerived['service_charge_retained'],
-            'service_charge_retained' => $grandTotalDerived['service_charge_retained'],
-            'vat' => $grandTotalDerived['vat_amount'],
-            'vatable_sales' => $grandTotalDerived['vatable_sales'],
-            'sc_vat_exempt_sales' => $grandTotalDerived['sc_vat_exempt_sales'],
-            'tax_exempt' => $grandTotalDerived['other_tax'],
-            'other_tax' => $grandTotalDerived['other_tax'],
-        ];
+            $grandTotalComponents = [
+                'vatable_sales' => (float) $grandTotalRaw->raw_vatable_sales,
+                'sc_vat_exempt_sales' => (float) $grandTotalRaw->raw_sc_vat_exempt_sales,
+                'vat_amount' => (float) $grandTotalRaw->raw_vat_amount,
+                'promo_with_approval' => (float) $grandTotalRaw->promo_with_approval,
+                'promo_without_approval' => (float) $grandTotalRaw->promo_without_approval,
+                'employee_discount' => (float) ($grandTotalRaw->employee_discount ?? 0),
+                'senior_discount' => (float) $grandTotalRaw->senior_discount,
+                'pwd_discount' => (float) $grandTotalRaw->pwd_discount,
+                'vip_discount' => (float) ($grandTotalRaw->vip_discount ?? 0),
+                'other_tax' => (float) ($grandTotalRaw->other_tax ?? 0),
+                'service_charge_distributed' => (float) $grandTotalRaw->service_charge_distributed,
+                'service_charge_retained' => (float) $grandTotalRaw->service_charge_retained,
+                'regular_discount' => (float) $grandTotalRaw->regular_discount,
+                'gross_sales' => (float) $grandTotalRaw->gross_sales,
+                'net_sales' => (float) $grandTotalRaw->raw_net_sales,
+            ];
+            $grandTotalDerived = $this->financeService->deriveMetrics($grandTotalComponents);
+            $grandTotal = (object) [
+                'tx_count' => (int) $grandTotalRaw->tx_count,
+                'unique_receipts' => (int) ($grandTotalRaw->unique_receipts ?? 0),
+                'gross' => $grandTotalDerived['gross_sales'],
+                'net' => $grandTotalDerived['net_total'],
+                'refund' => (float) $grandTotalRaw->refund,
+                'promo_discount' => $grandTotalDerived['total_promotions'],
+                'senior_discount' => (float) $grandTotalRaw->senior_discount,
+                'pwd_discount' => (float) $grandTotalRaw->pwd_discount,
+                'vip_discount' => (float) ($grandTotalRaw->vip_discount ?? 0),
+                'employee_discount' => (float) ($grandTotalRaw->employee_discount ?? 0),
+                'service_charge' => $grandTotalDerived['service_charge_distributed'],
+                'service_charge_distributed' => $grandTotalDerived['service_charge_distributed'],
+                'management_service_charge' => $grandTotalDerived['service_charge_retained'],
+                'service_charge_retained' => $grandTotalDerived['service_charge_retained'],
+                'vat' => $grandTotalDerived['vat_amount'],
+                'vatable_sales' => $grandTotalDerived['vatable_sales'],
+                'sc_vat_exempt_sales' => $grandTotalDerived['sc_vat_exempt_sales'],
+                'tax_exempt' => $grandTotalDerived['other_tax'],
+                'other_tax' => $grandTotalDerived['other_tax'],
+            ];
+        }
 
         $summaryDateSelect = $dateColumn === 't.transaction_date'
             ? $dateExpr . ' as date'
@@ -922,7 +929,9 @@ class TransactionLogController extends Controller
             ->groupBy('date', 't.tenant_id', 't.terminal_id', 'trade_name', 'term.serial_number', 'term.machine_number')
             ->orderBy('date', $sortDirection);
 
-        $summary = $query->paginate($perPage)->appends($request->all());
+        $summary = $hasBoundedFilters
+            ? $query->paginate($perPage)->appends($request->all())
+            : $query->simplePaginate($perPage)->appends($request->all());
 
         $summary->getCollection()->transform(function ($row) {
             $components = [
@@ -959,8 +968,13 @@ class TransactionLogController extends Controller
         });
 
         if ($request->wantsJson()) {
+            $summaryPayload = $summary->toArray();
+            if (! $hasBoundedFilters) {
+                $summaryPayload['total'] = -1;
+            }
+
             return response()->json([
-                'summary' => $summary,
+                'summary' => $summaryPayload,
                 'grandTotal' => $grandTotal,
                 'dateBasisDiscrepancy' => $dateBasisDiscrepancy,
             ]);
