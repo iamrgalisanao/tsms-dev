@@ -513,8 +513,10 @@ const IntakeHealthPage = () => {
                                             />
                                         </Stack>
                                         <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 800, fontSize: '0.68rem' }}>
-                                            Recalculated: {auditReport?.window || 'Just now'}
-                                        </Typography>
+                                            Window: {typeof auditReport?.window === 'object' && auditReport?.window?.from
+                                                ? `${auditReport.window.from.split(' ')[0]} to ${auditReport.window.to.split(' ')[0]}`
+                                                : 'Just now'}
+                                         </Typography>
                                     </Paper>
 
                                     {/* Split Pane: Audit Table & Tenant Inspector */}
