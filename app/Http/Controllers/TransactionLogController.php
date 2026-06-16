@@ -60,9 +60,8 @@ class TransactionLogController extends Controller
             $filters['transaction_id'] = trim($request->transaction_id);
         }
 
-        $hasBoundedFilters = collect($filters)->contains(function ($value) {
-            return $value !== null && $value !== '';
-        });
+        $hasDateWindow = $request->filled('date_from') || $request->filled('date_to');
+        $needsExactPaginationTotal = $hasDateWindow || $request->filled('transaction_id');
 
         $basis = in_array($request->input('date_basis'), ['created', 'completed', 'transaction'], true)
             ? $request->input('date_basis')
@@ -154,26 +153,26 @@ class TransactionLogController extends Controller
             ->when(isset($filters['amount_max']), function ($query) use ($filters) {
             return $query->where('gross_sales', '<=', $filters['amount_max']);
             })
-            ->when(! $hasBoundedFilters, function ($query) {
+            ->when(! $needsExactPaginationTotal, function ($query) {
                 return $query->orderByDesc('id');
             })
-            ->when($hasBoundedFilters && $dateColumn === 'transaction_date', function ($query) {
+            ->when($needsExactPaginationTotal && $dateColumn === 'transaction_date', function ($query) {
                 return $query->orderByDesc('transaction_date')->orderByDesc('id');
             })
-            ->when($hasBoundedFilters && $dateColumn === 'transaction_timestamp', function ($query) {
+            ->when($needsExactPaginationTotal && $dateColumn === 'transaction_timestamp', function ($query) {
                 return $query->orderByRaw('COALESCE(transaction_timestamp, created_at) desc');
             })
-            ->when($hasBoundedFilters && ! in_array($dateColumn, ['transaction_date', 'transaction_timestamp'], true), function ($query) use ($dateColumn) {
+            ->when($needsExactPaginationTotal && ! in_array($dateColumn, ['transaction_date', 'transaction_timestamp'], true), function ($query) use ($dateColumn) {
                 return $query->orderBy($dateColumn, 'desc');
             });
 
-        $logs = $hasBoundedFilters
+        $logs = $needsExactPaginationTotal
             ? $logs->paginate($perPage)->appends($request->all())
             : $logs->simplePaginate($perPage)->appends($request->all());
 
         if ($request->wantsJson()) {
             $payload = $logs->toArray();
-            if (! $hasBoundedFilters) {
+            if (! $needsExactPaginationTotal) {
                 $payload['total'] = -1;
             }
 
@@ -623,9 +622,8 @@ class TransactionLogController extends Controller
             $perPage = 1000;
         }
 
-        $hasBoundedFilters = collect($filters)->contains(function ($value) {
-            return $value !== null && $value !== '';
-        });
+        $hasDateWindow = $request->filled('date_from') || $request->filled('date_to');
+        $needsExactPaginationTotal = $hasDateWindow;
 
         $hasReceiptNo = Schema::hasColumn('transactions', 'receipt_no');
         $hasTaxExempt = Schema::hasColumn('transactions', 'tax_exempt');
@@ -846,7 +844,7 @@ class TransactionLogController extends Controller
         }
 
         $grandTotal = null;
-        if ($hasBoundedFilters) {
+        if ($hasDateWindow) {
             $grandTotalRaw = (clone $baseQuery)
                 ->selectRaw('COUNT(*) as tx_count')
                 ->when($hasReceiptNo, function ($q) {
@@ -956,7 +954,7 @@ class TransactionLogController extends Controller
             ->groupBy('date', 't.tenant_id', 't.terminal_id', 'trade_name', 'term.serial_number', 'term.machine_number')
             ->orderBy('date', $sortDirection);
 
-        $summary = $hasBoundedFilters
+        $summary = $needsExactPaginationTotal
             ? $query->paginate($perPage)->appends($request->all())
             : $query->simplePaginate($perPage)->appends($request->all());
 
@@ -996,7 +994,7 @@ class TransactionLogController extends Controller
 
         if ($request->wantsJson()) {
             $summaryPayload = $summary->toArray();
-            if (! $hasBoundedFilters) {
+            if (! $needsExactPaginationTotal) {
                 $summaryPayload['total'] = -1;
             }
 
