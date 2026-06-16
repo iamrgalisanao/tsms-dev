@@ -647,7 +647,6 @@ class TransactionLogController extends Controller
         }
 
         $hasDateWindow = $request->filled('date_from') || $request->filled('date_to');
-        $needsExactPaginationTotal = $hasDateWindow;
 
         $hasReceiptNo = Schema::hasColumn('transactions', 'receipt_no');
         $hasTaxExempt = Schema::hasColumn('transactions', 'tax_exempt');
@@ -978,9 +977,7 @@ class TransactionLogController extends Controller
             ->groupBy('date', 't.tenant_id', 't.terminal_id', 'trade_name', 'term.serial_number', 'term.machine_number')
             ->orderBy('date', $sortDirection);
 
-        $summary = $needsExactPaginationTotal
-            ? $query->paginate($perPage)->appends($request->all())
-            : $query->simplePaginate($perPage)->appends($request->all());
+        $summary = $query->simplePaginate($perPage)->appends($request->all());
 
         $summary->getCollection()->transform(function ($row) {
             $components = [
@@ -1018,9 +1015,7 @@ class TransactionLogController extends Controller
 
         if ($request->wantsJson()) {
             $summaryPayload = $summary->toArray();
-            if (! $needsExactPaginationTotal) {
-                $summaryPayload['total'] = -1;
-            }
+            $summaryPayload['total'] = -1;
 
             return response()->json([
                 'summary' => $summaryPayload,

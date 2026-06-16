@@ -248,7 +248,7 @@ class TransactionLogTest extends TestCase
                 'dateBasisDiscrepancy',
             ]);
 
-        $this->assertSame(2, $response->json('summary.total'));
+        $this->assertSame(-1, $response->json('summary.total'));
         $this->assertEquals(70.00, (float) $response->json('grandTotal.gross'));
         $this->assertEquals(62.50, (float) $response->json('grandTotal.net'));
         $this->assertSame(2, $response->json('grandTotal.tx_count'));
@@ -313,7 +313,7 @@ class TransactionLogTest extends TestCase
 
         $response->assertOk();
         $this->assertNotEmpty($response->json('summary.data'));
-        $this->assertSame(1, $response->json('summary.total'));
+        $this->assertSame(-1, $response->json('summary.total'));
         $this->assertEquals(35.00, (float) $response->json('grandTotal.gross'));
     }
 
