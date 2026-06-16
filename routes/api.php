@@ -207,6 +207,7 @@ Route::prefix('v1')->middleware(['auth:sanctum', 'capture.terminal.ip', AttachCo
             Route::get('/intake/history',  [\App\Http\Controllers\API\V1\ObservabilityController::class, 'history']);
             Route::get('/intake/tenants',  [\App\Http\Controllers\API\V1\ObservabilityController::class, 'tenants']);
             Route::get('/intake/recent',   [\App\Http\Controllers\API\V1\ObservabilityController::class, 'recent']);
+            Route::get('/intake/tenant-audit', [\App\Http\Controllers\API\V1\ObservabilityController::class, 'tenantIngestionAudit']);
             Route::get('/intake/duplicate-receipts', [\App\Http\Controllers\API\V1\ObservabilityController::class, 'duplicateReceipts']);
         });
     });

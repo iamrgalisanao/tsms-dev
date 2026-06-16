@@ -4,6 +4,7 @@ namespace App\Http\Controllers\API\V1;
 
 use App\Http\Controllers\Controller;
 use App\Services\DuplicateReceiptMonitorService;
+use App\Services\TenantIngestionAuditService;
 use App\Support\Metrics;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -147,6 +148,24 @@ class ObservabilityController extends Controller
             'tenant' => $request->query('tenant'),
             'terminal' => $request->query('terminal'),
             'limit' => $request->query('limit', 100),
+        ]);
+
+        return response()->json([
+            'success' => true,
+            'timestamp' => now()->toIso8601String(),
+            ...$report,
+        ]);
+    }
+
+    public function tenantIngestionAudit(Request $request, TenantIngestionAuditService $audit): JsonResponse
+    {
+        $report = $audit->report([
+            'from' => $request->query('from'),
+            'to' => $request->query('to'),
+            'tenant' => $request->query('tenant'),
+            'terminal' => $request->query('terminal'),
+            'limit' => $request->query('limit', 200),
+            'only_issues' => $request->boolean('only_issues'),
         ]);
 
         return response()->json([

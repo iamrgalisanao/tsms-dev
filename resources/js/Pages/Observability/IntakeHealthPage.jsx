@@ -60,6 +60,7 @@ import ToggleOnIcon from '@mui/icons-material/ToggleOn';
 import ReceiptLongIcon from '@mui/icons-material/ReceiptLong';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import OpenInNewIcon from '@mui/icons-material/OpenInNew';
+import FactCheckIcon from '@mui/icons-material/FactCheck';
 
 import '../../../css/IntakeHealth.css';
 
@@ -123,6 +124,17 @@ const IntakeHealthPage = () => {
         terminal: '',
         limit: 100
     });
+    const today = new Date().toISOString().split('T')[0];
+    const [auditReport, setAuditReport] = useState({ rows: [], window: null });
+    const [auditLoading, setAuditLoading] = useState(false);
+    const [auditFilters, setAuditFilters] = useState({
+        from: today,
+        to: today,
+        tenant: '',
+        terminal: '',
+        limit: 200,
+        only_issues: true
+    });
     
     // Live feed mode & filters
     const [liveFeed, setLiveFeed] = useState(true);
@@ -167,6 +179,19 @@ const IntakeHealthPage = () => {
         }
     }, [duplicateFilters]);
 
+    const fetchTenantAudit = useCallback(async () => {
+        try {
+            setAuditLoading(true);
+            const report = await api.getTenantIngestionAudit(auditFilters);
+            setAuditReport(report);
+        } catch (error) {
+            console.error('Error fetching tenant ingestion audit:', error);
+            setAuditReport({ rows: [], error: true });
+        } finally {
+            setAuditLoading(false);
+        }
+    }, [auditFilters]);
+
     // 5-second polling interval controlled by the Live Feed toggle
     useEffect(() => {
         if (liveFeed) {
@@ -182,7 +207,10 @@ const IntakeHealthPage = () => {
         if (activeView === 'duplicates') {
             fetchDuplicateReceipts();
         }
-    }, [activeView, fetchDuplicateReceipts]);
+        if (activeView === 'tenant-audit') {
+            fetchTenantAudit();
+        }
+    }, [activeView, fetchDuplicateReceipts, fetchTenantAudit]);
 
     const failRateValue = useMemo(() => {
         if (!stats?.metrics) return 0;
@@ -303,6 +331,10 @@ const IntakeHealthPage = () => {
 
     const duplicateGroups = duplicateReport?.duplicate_groups || [];
     const legacyConflicts = duplicateReport?.legacy_payload_conflicts || [];
+    const auditRows = auditReport?.rows || [];
+    const auditIssueCount = auditRows.filter((row) => (row.flags || []).length > 0).length;
+    const noPersistedCount = auditRows.filter((row) => (row.flags || []).includes('NO_PERSISTED_TX_WITH_ACTIVITY')).length;
+    const driftCount = auditRows.filter((row) => (row.flags || []).includes('TENANT_TERMINAL_DRIFT')).length;
 
     const transactionSearchUrl = (transactionId) => (
         transactionId ? `/transactions?transaction_id=${encodeURIComponent(transactionId)}` : '/transactions'
@@ -447,12 +479,170 @@ const IntakeHealthPage = () => {
                                 }
                             }}
                         >
-                            <Tab value="pipeline" icon={<TerminalIcon />} iconPosition="start" label="Pipeline Health" />
-                            <Tab value="duplicates" icon={<ReceiptLongIcon />} iconPosition="start" label="Duplicate Receipts" />
-                        </Tabs>
-                    </Paper>
+	                            <Tab value="pipeline" icon={<TerminalIcon />} iconPosition="start" label="Pipeline Health" />
+	                            <Tab value="tenant-audit" icon={<FactCheckIcon />} iconPosition="start" label="Tenant Audit" />
+	                            <Tab value="duplicates" icon={<ReceiptLongIcon />} iconPosition="start" label="Duplicate Receipts" />
+	                        </Tabs>
+	                    </Paper>
 
-                    {activeView === 'duplicates' && (
+	                    {activeView === 'tenant-audit' && (
+	                        <Stack spacing={3}>
+	                            {auditReport?.error && (
+	                                <Alert severity="error" sx={{ borderRadius: 3, fontWeight: 800 }}>
+	                                    Tenant ingestion audit could not load.
+	                                </Alert>
+	                            )}
+
+	                            <Paper className="glass-container" sx={{ p: 3, borderRadius: 3 }}>
+	                                <Stack direction={{ xs: 'column', lg: 'row' }} justifyContent="space-between" spacing={2} alignItems={{ xs: 'stretch', lg: 'center' }}>
+	                                    <Box>
+	                                        <Typography variant="h5" sx={{ fontWeight: 1000, color: '#101221', mb: 0.5 }}>
+	                                            Tenant Ingestion Audit
+	                                        </Typography>
+	                                        <Typography variant="body2" sx={{ color: 'text.secondary', fontWeight: 700 }}>
+	                                            Reconcile submissions, quarantines, intake, persisted transactions, and terminal ownership for variance investigations.
+	                                        </Typography>
+	                                    </Box>
+
+	                                    <Stack direction="row" spacing={1} flexWrap="wrap" useFlexGap>
+	                                        <Chip label={`${auditIssueCount} Tenants With Flags`} color={auditIssueCount > 0 ? 'warning' : 'success'} sx={{ fontWeight: 900 }} />
+	                                        <Chip label={`${noPersistedCount} No Persisted Tx`} color={noPersistedCount > 0 ? 'error' : 'success'} sx={{ fontWeight: 900 }} />
+	                                        <Chip label={`${driftCount} Drift`} color={driftCount > 0 ? 'error' : 'success'} sx={{ fontWeight: 900 }} />
+	                                    </Stack>
+	                                </Stack>
+
+	                                <Grid container spacing={2} sx={{ mt: 2 }}>
+	                                    <Grid item xs={12} sm={6} md={2}>
+	                                        <TextField
+	                                            fullWidth
+	                                            label="From"
+	                                            type="date"
+	                                            size="small"
+	                                            value={auditFilters.from}
+	                                            onChange={(e) => setAuditFilters((prev) => ({ ...prev, from: e.target.value }))}
+	                                            InputLabelProps={{ shrink: true }}
+	                                        />
+	                                    </Grid>
+	                                    <Grid item xs={12} sm={6} md={2}>
+	                                        <TextField
+	                                            fullWidth
+	                                            label="To"
+	                                            type="date"
+	                                            size="small"
+	                                            value={auditFilters.to}
+	                                            onChange={(e) => setAuditFilters((prev) => ({ ...prev, to: e.target.value }))}
+	                                            InputLabelProps={{ shrink: true }}
+	                                        />
+	                                    </Grid>
+	                                    <Grid item xs={12} sm={6} md={2}>
+	                                        <TextField
+	                                            fullWidth
+	                                            label="Tenant ID"
+	                                            size="small"
+	                                            value={auditFilters.tenant}
+	                                            onChange={(e) => setAuditFilters((prev) => ({ ...prev, tenant: e.target.value }))}
+	                                        />
+	                                    </Grid>
+	                                    <Grid item xs={12} sm={6} md={2}>
+	                                        <TextField
+	                                            fullWidth
+	                                            label="Terminal ID"
+	                                            size="small"
+	                                            value={auditFilters.terminal}
+	                                            onChange={(e) => setAuditFilters((prev) => ({ ...prev, terminal: e.target.value }))}
+	                                        />
+	                                    </Grid>
+	                                    <Grid item xs={12} sm={6} md={2}>
+	                                        <Button
+	                                            fullWidth
+	                                            variant={auditFilters.only_issues ? 'contained' : 'outlined'}
+	                                            color={auditFilters.only_issues ? 'warning' : 'inherit'}
+	                                            onClick={() => setAuditFilters((prev) => ({ ...prev, only_issues: !prev.only_issues }))}
+	                                            sx={{ height: '40px', borderRadius: 2, fontWeight: 900, textTransform: 'none' }}
+	                                        >
+	                                            Issue Only
+	                                        </Button>
+	                                    </Grid>
+	                                    <Grid item xs={12} sm={6} md={2}>
+	                                        <Button
+	                                            fullWidth
+	                                            variant="contained"
+	                                            onClick={fetchTenantAudit}
+	                                            disabled={auditLoading}
+	                                            startIcon={auditLoading ? <CircularProgress size={16} color="inherit" /> : <RefreshIcon />}
+	                                            sx={{ height: '40px', borderRadius: 2, fontWeight: 900, textTransform: 'none', bgcolor: '#101221' }}
+	                                        >
+	                                            Run Audit
+	                                        </Button>
+	                                    </Grid>
+	                                </Grid>
+	                            </Paper>
+
+	                            <TableContainer component={Paper} sx={{ borderRadius: 3, border: '1px solid', borderColor: 'divider' }}>
+	                                <Table size="small">
+	                                    <TableHead>
+	                                        <TableRow>
+	                                            <TableCell>Tenant</TableCell>
+	                                            <TableCell>Terminals</TableCell>
+	                                            <TableCell align="right">Submissions</TableCell>
+	                                            <TableCell align="right">Quarantine</TableCell>
+	                                            <TableCell align="right">Intake</TableCell>
+	                                            <TableCell align="right">Tx</TableCell>
+	                                            <TableCell align="right">Valid</TableCell>
+	                                            <TableCell align="right">Pending</TableCell>
+	                                            <TableCell align="right">Invalid/Failed</TableCell>
+	                                            <TableCell align="right">Gross</TableCell>
+	                                            <TableCell>Last Tx</TableCell>
+	                                            <TableCell>Flags</TableCell>
+	                                        </TableRow>
+	                                    </TableHead>
+	                                    <TableBody>
+	                                        {auditRows.map((row) => (
+	                                            <TableRow key={row.tenant_id} hover>
+	                                                <TableCell>
+	                                                    <Typography sx={{ fontWeight: 900, fontSize: '0.82rem' }}>{row.tenant}</Typography>
+	                                                    <Typography sx={{ color: 'text.secondary', fontSize: '0.72rem', fontWeight: 800 }}>#{row.tenant_id} · {row.status || 'n/a'}</Typography>
+	                                                </TableCell>
+	                                                <TableCell>{row.active_terminals}/{row.terminals} active · {row.terminals_without_tx} no tx</TableCell>
+	                                                <TableCell align="right">{row.submissions}</TableCell>
+	                                                <TableCell align="right">{row.quarantined}</TableCell>
+	                                                <TableCell align="right">{row.intake_received}</TableCell>
+	                                                <TableCell align="right">{row.transactions}</TableCell>
+	                                                <TableCell align="right">{row.valid}</TableCell>
+	                                                <TableCell align="right">{row.pending}</TableCell>
+	                                                <TableCell align="right">{row.invalid_or_failed}</TableCell>
+	                                                <TableCell align="right">{Number(row.gross_sales || 0).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</TableCell>
+	                                                <TableCell>{row.last_transaction_at || '-'}</TableCell>
+	                                                <TableCell>
+	                                                    <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap>
+	                                                        {(row.flags || []).map((flag) => (
+	                                                            <Chip
+	                                                                key={flag}
+	                                                                size="small"
+	                                                                label={flag}
+	                                                                color={flag.includes('DRIFT') || flag.includes('NO_PERSISTED') ? 'error' : 'warning'}
+	                                                                sx={{ fontWeight: 900, fontSize: '0.62rem' }}
+	                                                            />
+	                                                        ))}
+	                                                        {(row.flags || []).length === 0 && <Chip size="small" label="OK" color="success" sx={{ fontWeight: 900 }} />}
+	                                                    </Stack>
+	                                                </TableCell>
+	                                            </TableRow>
+	                                        ))}
+	                                        {auditRows.length === 0 && (
+	                                            <TableRow>
+	                                                <TableCell colSpan={12} sx={{ py: 5, textAlign: 'center', color: 'text.secondary', fontWeight: 800 }}>
+	                                                    No tenant audit rows matched the selected filters.
+	                                                </TableCell>
+	                                            </TableRow>
+	                                        )}
+	                                    </TableBody>
+	                                </Table>
+	                            </TableContainer>
+	                        </Stack>
+	                    )}
+
+	                    {activeView === 'duplicates' && (
                         <Stack spacing={3}>
                             {duplicateReport?.error && (
                                 <Alert severity="error" sx={{ borderRadius: 3, fontWeight: 800 }}>
