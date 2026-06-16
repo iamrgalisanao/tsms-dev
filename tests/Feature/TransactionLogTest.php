@@ -109,6 +109,47 @@ class TransactionLogTest extends TestCase
     }
 
     /** @test */
+    public function test_detailed_endpoint_without_filters_uses_lightweight_pagination()
+    {
+        $olderTransaction = Transaction::factory()->create([
+            'tenant_id' => $this->tenant->id,
+            'terminal_id' => $this->terminal->id,
+            'receipt_no' => 'REC-DETAIL-OLDER',
+            'transaction_timestamp' => '2026-06-15 09:01:00',
+            'gross_sales' => 35.00,
+            'net_sales' => 31.25,
+        ]);
+
+        $newerTransaction = Transaction::factory()->create([
+            'tenant_id' => $this->tenant->id,
+            'terminal_id' => $this->terminal->id,
+            'receipt_no' => 'REC-DETAIL-NEWER',
+            'transaction_timestamp' => '2026-06-15 10:01:00',
+            'gross_sales' => 45.00,
+            'net_sales' => 40.18,
+        ]);
+
+        Sanctum::actingAs($this->adminUser);
+
+        $response = $this->getJson('/api/transactions/logs?date_basis=transaction');
+
+        $response->assertOk()
+            ->assertJsonStructure([
+                'data' => [
+                    '*' => [
+                        'id',
+                        'transaction_id',
+                        'receipt_no',
+                    ],
+                ],
+                'total',
+            ]);
+
+        $this->assertSame(-1, $response->json('total'));
+        $this->assertSame($newerTransaction->id, $response->json('data.0.id'));
+    }
+
+    /** @test */
     public function test_summary_endpoint_returns_react_summary_contract()
     {
         $secondTerminal = PosTerminal::factory()->create([
@@ -141,7 +182,7 @@ class TransactionLogTest extends TestCase
 
         Sanctum::actingAs($this->adminUser);
 
-        $response = $this->getJson('/api/transactions/logs/summary?date_from=2026-06-15&date_to=2026-06-15&date_basis=transaction');
+        $response = $this->getJson('/api/transactions/logs/summary?date_from=2026-06-15&date_to=2026-06-15&date_basis=transaction&tenant_id=' . $this->tenant->id);
 
         $response->assertOk()
             ->assertJsonStructure([

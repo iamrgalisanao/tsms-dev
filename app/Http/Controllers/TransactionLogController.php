@@ -60,14 +60,19 @@ class TransactionLogController extends Controller
             $filters['transaction_id'] = trim($request->transaction_id);
         }
 
+        $hasBoundedFilters = collect($filters)->contains(function ($value) {
+            return $value !== null && $value !== '';
+        });
+
         $basis = in_array($request->input('date_basis'), ['created', 'completed', 'transaction'], true)
             ? $request->input('date_basis')
             : 'transaction';
 
+        $hasTransactionDate = Schema::hasColumn('transactions', 'transaction_date');
         $dateColumn = match ($basis) {
             'created' => 'created_at',
             'completed' => 'completed_at',
-            default => 'transaction_timestamp',
+            default => $hasTransactionDate ? 'transaction_date' : 'transaction_timestamp',
         };
 
         $logs = Transaction::select([
@@ -100,6 +105,10 @@ class TransactionLogController extends Controller
             return $query->where('validation_status', $filters['status']);
             })
             ->when(isset($filters['date_from']), function ($query) use ($filters, $dateColumn) {
+                if ($dateColumn === 'transaction_date') {
+                    return $query->where($dateColumn, '>=', $filters['date_from']);
+                }
+
                 if ($dateColumn === 'transaction_timestamp') {
                     return $query->where(function ($q) use ($filters) {
                         $q->where(function ($subQ) use ($filters) {
@@ -115,6 +124,10 @@ class TransactionLogController extends Controller
                 return $query->where($dateColumn, '>=', $filters['date_from'] . ' 00:00:00');
             })
             ->when(isset($filters['date_to']), function ($query) use ($filters, $dateColumn) {
+                if ($dateColumn === 'transaction_date') {
+                    return $query->where($dateColumn, '<=', $filters['date_to']);
+                }
+
                 if ($dateColumn === 'transaction_timestamp') {
                     return $query->where(function ($q) use ($filters) {
                         $q->where(function ($subQ) use ($filters) {
@@ -141,16 +154,30 @@ class TransactionLogController extends Controller
             ->when(isset($filters['amount_max']), function ($query) use ($filters) {
             return $query->where('gross_sales', '<=', $filters['amount_max']);
             })
-            ->when($dateColumn === 'transaction_timestamp', function ($query) {
-                return $query->orderByRaw('COALESCE(transaction_timestamp, created_at) desc');
-            }, function ($query) use ($dateColumn) {
-                return $query->orderBy($dateColumn, 'desc');
+            ->when(! $hasBoundedFilters, function ($query) {
+                return $query->orderByDesc('id');
             })
-            ->paginate($perPage)
-            ->appends($request->all());
+            ->when($hasBoundedFilters && $dateColumn === 'transaction_date', function ($query) {
+                return $query->orderByDesc('transaction_date')->orderByDesc('id');
+            })
+            ->when($hasBoundedFilters && $dateColumn === 'transaction_timestamp', function ($query) {
+                return $query->orderByRaw('COALESCE(transaction_timestamp, created_at) desc');
+            })
+            ->when($hasBoundedFilters && ! in_array($dateColumn, ['transaction_date', 'transaction_timestamp'], true), function ($query) use ($dateColumn) {
+                return $query->orderBy($dateColumn, 'desc');
+            });
+
+        $logs = $hasBoundedFilters
+            ? $logs->paginate($perPage)->appends($request->all())
+            : $logs->simplePaginate($perPage)->appends($request->all());
 
         if ($request->wantsJson()) {
-            return response()->json($logs);
+            $payload = $logs->toArray();
+            if (! $hasBoundedFilters) {
+                $payload['total'] = -1;
+            }
+
+            return response()->json($payload);
         }
 
         // $providers = PosProvider::all();
