@@ -721,7 +721,8 @@ class TransactionLogController extends Controller
         }
 
         $dateBasisDiscrepancy = null;
-        if ($basis === 'transaction' && (isset($filters['date_from']) || isset($filters['date_to']))) {
+        $includeDateBasisDiscrepancy = $request->boolean('include_date_basis_discrepancy', false);
+        if ($includeDateBasisDiscrepancy && $basis === 'transaction' && (isset($filters['date_from']) || isset($filters['date_to']))) {
             $discrepancyBaseQuery = DB::table('transactions as t')
                 ->leftJoin('pos_terminals as term', 'term.id', '=', 't.terminal_id')
                 ->when(isset($filters['status']), function ($q) use ($filters) {
@@ -800,11 +801,14 @@ class TransactionLogController extends Controller
                 });
             }
 
+            $transactionDateCount = (int) (clone $baseQuery)->count();
+            $completedDateCount = (int) $completedDateQuery->count();
+
             $dateBasisDiscrepancy = [
                 'basis' => 'transaction',
-                'transaction_date_count' => (int) (clone $baseQuery)->count(),
-                'completed_date_count' => (int) $completedDateQuery->count(),
-                'net_difference' => (int) $completedDateQuery->count() - (int) (clone $baseQuery)->count(),
+                'transaction_date_count' => $transactionDateCount,
+                'completed_date_count' => $completedDateCount,
+                'net_difference' => $completedDateCount - $transactionDateCount,
                 'event_date_rows_completed_outside_range' => (int) $completedOutsideRangeQuery->count(),
                 'completed_date_rows_with_event_outside_range' => (int) $eventOutsideRangeQuery->count(),
             ];

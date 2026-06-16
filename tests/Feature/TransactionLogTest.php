@@ -184,6 +184,7 @@ class TransactionLogTest extends TestCase
         $this->assertEquals(62.50, (float) $response->json('grandTotal.net'));
         $this->assertSame(2, $response->json('grandTotal.tx_count'));
         $this->assertSame(2, $response->json('grandTotal.unique_receipts'));
+        $this->assertNull($response->json('dateBasisDiscrepancy'));
     }
 
     /** @test */
