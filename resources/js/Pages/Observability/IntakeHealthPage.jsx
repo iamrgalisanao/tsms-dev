@@ -84,6 +84,7 @@ const IntakeHealthPage = () => {
     const [apiError, setApiError] = useState(false);
     const [activeView, setActiveView] = useState('monitor'); // workflows: 'monitor', 'investigate', 'reconcile'
     const [selectedTenant, setSelectedTenant] = useState(null);
+    const [auditStatusFilter, setAuditStatusFilter] = useState('all'); // 'all', 'critical', 'warning', 'healthy'
 
     // Dedicated React/MUI dialog & toast states
     const [dialogState, setDialogState] = useState({
@@ -199,6 +200,8 @@ const IntakeHealthPage = () => {
                 const updated = report.rows?.find(r => r.tenant_id === selectedTenant.tenant_id);
                 setSelectedTenant(updated || null);
             }
+            // Reset status filter on fresh audit load to avoid confusing empty states
+            setAuditStatusFilter('all');
         } catch (error) {
             console.error('Error fetching tenant ingestion audit:', error);
             setAuditReport({ rows: [], error: true });
@@ -352,6 +355,19 @@ const IntakeHealthPage = () => {
     const noPersistedCount = auditRows.filter((row) => (row.flags || []).includes('NO_PERSISTED_TX_WITH_ACTIVITY')).length;
     const driftCount = auditRows.filter((row) => (row.flags || []).includes('TENANT_TERMINAL_DRIFT')).length;
     const warningCount = Math.max(0, auditIssueCount - driftCount - noPersistedCount);
+
+    const getRowHealthLabel = (flags = []) => {
+        if (flags.length === 0) return 'healthy';
+        if (flags.some(f => f.includes('DRIFT') || f.includes('NO_PERSISTED'))) {
+            return 'critical';
+        }
+        return 'warning';
+    };
+
+    const filteredAuditRows = useMemo(() => {
+        if (auditStatusFilter === 'all') return auditRows;
+        return auditRows.filter(row => getRowHealthLabel(row.flags) === auditStatusFilter);
+    }, [auditRows, auditStatusFilter]);
 
     const transactionSearchUrl = (transactionId) => (
         transactionId ? `/transactions?transaction_id=${encodeURIComponent(transactionId)}` : '/transactions'
@@ -535,26 +551,61 @@ const IntakeHealthPage = () => {
                                     >
                                         <Stack direction="row" spacing={1.5} alignItems="center" sx={{ flexWrap: 'wrap', gap: 1 }}>
                                             <Typography variant="body2" sx={{ fontWeight: 1000, color: '#101221', fontSize: '0.75rem', letterSpacing: '0.05em' }}>
-                                                AUDIT SNAPSHOT: {auditRows.length} TENANTS
+                                                {auditStatusFilter === 'all' 
+                                                    ? `AUDIT SNAPSHOT: ${auditRows.length} TENANTS` 
+                                                    : `SHOWING: ${filteredAuditRows.length} OF ${auditRows.length} TENANTS`}
                                             </Typography>
                                             <Divider orientation="vertical" flexItem sx={{ display: { xs: 'none', sm: 'block' } }} />
                                             <Chip 
                                                 label={`${driftCount + noPersistedCount} CRITICAL`} 
                                                 color="error" 
                                                 size="small" 
-                                                sx={{ fontWeight: 900, borderRadius: '6px', fontSize: '0.62rem' }} 
+                                                onClick={() => setAuditStatusFilter(prev => prev === 'critical' ? 'all' : 'critical')}
+                                                sx={{ 
+                                                    fontWeight: 900, 
+                                                    borderRadius: '6px', 
+                                                    fontSize: '0.62rem',
+                                                    cursor: 'pointer',
+                                                    transition: 'all 0.2s',
+                                                    opacity: auditStatusFilter === 'all' || auditStatusFilter === 'critical' ? 1.0 : 0.4,
+                                                    border: auditStatusFilter === 'critical' ? '2px solid #b91c1c' : '2px solid transparent',
+                                                    boxShadow: auditStatusFilter === 'critical' ? '0 0 8px rgba(244,67,54,0.4)' : 'none',
+                                                    '&:hover': { opacity: 1.0 }
+                                                }} 
                                             />
                                             <Chip 
                                                 label={`${warningCount} WARNINGS`} 
                                                 color="warning" 
                                                 size="small" 
-                                                sx={{ fontWeight: 900, borderRadius: '6px', fontSize: '0.62rem' }} 
+                                                onClick={() => setAuditStatusFilter(prev => prev === 'warning' ? 'all' : 'warning')}
+                                                sx={{ 
+                                                    fontWeight: 900, 
+                                                    borderRadius: '6px', 
+                                                    fontSize: '0.62rem',
+                                                    cursor: 'pointer',
+                                                    transition: 'all 0.2s',
+                                                    opacity: auditStatusFilter === 'all' || auditStatusFilter === 'warning' ? 1.0 : 0.4,
+                                                    border: auditStatusFilter === 'warning' ? '2px solid #c2410c' : '2px solid transparent',
+                                                    boxShadow: auditStatusFilter === 'warning' ? '0 0 8px rgba(255,152,0,0.4)' : 'none',
+                                                    '&:hover': { opacity: 1.0 }
+                                                }} 
                                             />
                                             <Chip 
                                                 label={`${auditRows.length - auditIssueCount} HEALTHY`} 
                                                 color="success" 
                                                 size="small" 
-                                                sx={{ fontWeight: 900, borderRadius: '6px', fontSize: '0.62rem' }} 
+                                                onClick={() => setAuditStatusFilter(prev => prev === 'healthy' ? 'all' : 'healthy')}
+                                                sx={{ 
+                                                    fontWeight: 900, 
+                                                    borderRadius: '6px', 
+                                                    fontSize: '0.62rem',
+                                                    cursor: 'pointer',
+                                                    transition: 'all 0.2s',
+                                                    opacity: auditStatusFilter === 'all' || auditStatusFilter === 'healthy' ? 1.0 : 0.4,
+                                                    border: auditStatusFilter === 'healthy' ? '2px solid #15803d' : '2px solid transparent',
+                                                    boxShadow: auditStatusFilter === 'healthy' ? '0 0 8px rgba(76,175,80,0.4)' : 'none',
+                                                    '&:hover': { opacity: 1.0 }
+                                                }} 
                                             />
                                         </Stack>
                                         <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 800, fontSize: '0.68rem' }}>
@@ -563,12 +614,12 @@ const IntakeHealthPage = () => {
                                                 : 'Just now'}
                                          </Typography>
                                     </Paper>
-
+ 
                                     {/* Split Pane: Audit Table & Tenant Inspector */}
                                     <Grid container spacing={3}>
                                         <Grid item xs={12} lg={8.5}>
                                             <TenantAuditTable
-                                                auditRows={auditRows}
+                                                auditRows={filteredAuditRows}
                                                 selectedTenantId={selectedTenant?.tenant_id}
                                                 onSelectRow={(row) => {
                                                     setSelectedTenant(row);
