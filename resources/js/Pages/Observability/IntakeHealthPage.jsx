@@ -12,7 +12,9 @@ import {
     Paper,
     Tabs,
     Tab,
-    Grid
+    Grid,
+    Alert,
+    Chip
 } from '@mui/material';
 import NavigateNextIcon from '@mui/icons-material/NavigateNext';
 import HomeIcon from '@mui/icons-material/Home';
@@ -27,6 +29,7 @@ import PipelineHealthPanel from '../../Components/IntakeHealth/PipelineHealthPan
 import TenantAuditFilters from '../../Components/IntakeHealth/TenantAuditFilters';
 import TenantAuditSummary from '../../Components/IntakeHealth/TenantAuditSummary';
 import TenantAuditTable from '../../Components/IntakeHealth/TenantAuditTable';
+import TenantInspector from '../../Components/IntakeHealth/TenantInspector';
 import DuplicateReceiptCenter from '../../Components/IntakeHealth/DuplicateReceiptCenter';
 
 import '../../../css/IntakeHealth.css';
@@ -72,6 +75,7 @@ const IntakeHealthPage = () => {
     const [isRefreshing, setIsRefreshing] = useState(false);
     const [apiError, setApiError] = useState(false);
     const [activeView, setActiveView] = useState('monitor'); // workflows: 'monitor', 'investigate', 'reconcile'
+    const [selectedTenant, setSelectedTenant] = useState(null);
     
     const [duplicateReport, setDuplicateReport] = useState({ duplicate_groups: [], legacy_payload_conflicts: [] });
     const [duplicateLoading, setDuplicateLoading] = useState(false);
@@ -143,13 +147,19 @@ const IntakeHealthPage = () => {
             setAuditLoading(true);
             const report = await api.getTenantIngestionAudit(auditFilters);
             setAuditReport(report);
+            
+            // Auto-update selected tenant if it's currently selected
+            if (selectedTenant) {
+                const updated = report.rows?.find(r => r.tenant_id === selectedTenant.tenant_id);
+                setSelectedTenant(updated || null);
+            }
         } catch (error) {
             console.error('Error fetching tenant ingestion audit:', error);
             setAuditReport({ rows: [], error: true });
         } finally {
             setAuditLoading(false);
         }
-    }, [auditFilters]);
+    }, [auditFilters, selectedTenant]);
 
     // 5-second polling interval controlled by the Live Feed toggle
     useEffect(() => {
@@ -295,6 +305,7 @@ const IntakeHealthPage = () => {
     const auditIssueCount = auditRows.filter((row) => (row.flags || []).length > 0).length;
     const noPersistedCount = auditRows.filter((row) => (row.flags || []).includes('NO_PERSISTED_TX_WITH_ACTIVITY')).length;
     const driftCount = auditRows.filter((row) => (row.flags || []).includes('TENANT_TERMINAL_DRIFT')).length;
+    const warningCount = Math.max(0, auditIssueCount - driftCount - noPersistedCount);
 
     const transactionSearchUrl = (transactionId) => (
         transactionId ? `/transactions?transaction_id=${encodeURIComponent(transactionId)}` : '/transactions'
@@ -322,18 +333,44 @@ const IntakeHealthPage = () => {
                             <Typography color="primary" sx={{ fontWeight: 900, fontSize: '0.7rem', letterSpacing: '0.05em' }}>SYSTEM_CORE</Typography>
                         </Breadcrumbs>
 
-                        <Stack direction="row" spacing={3} alignItems="center">
-                            <Box className="glass-container" sx={{ p: 2, bgcolor: '#101221', color: '#00f2ff', borderRadius: '20px', display: 'flex', boxShadow: '0 0 20px rgba(0,242,255,0.2)' }} aria-hidden="true">
-                                <TerminalIcon sx={{ fontSize: 40 }} />
-                            </Box>
-                            <Box>
-                                <Typography variant="h2" sx={{ fontWeight: 1000, letterSpacing: '-0.05em', color: '#101221', mb: 0.5 }}>
-                                    Pipeline Command Console
-                                </Typography>
-                                <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 800, fontSize: '0.75rem', letterSpacing: '0.02em' }}>
-                                    Operations command center for real-time validation, latency diagnostics, and transactional drift reconciliation.
-                                </Typography>
-                            </Box>
+                        <Stack direction={{ xs: 'column', md: 'row' }} justifyContent="space-between" alignItems={{ xs: 'flex-start', md: 'center' }} spacing={2}>
+                            <Stack direction="row" spacing={3} alignItems="center">
+                                <Box className="glass-container" sx={{ p: 2, bgcolor: '#101221', color: '#00f2ff', borderRadius: '20px', display: 'flex', boxShadow: '0 0 20px rgba(0,242,255,0.2)' }} aria-hidden="true">
+                                    <TerminalIcon sx={{ fontSize: 40 }} />
+                                </Box>
+                                <Box>
+                                    <Typography variant="h2" sx={{ fontWeight: 1000, letterSpacing: '-0.05em', color: '#101221', mb: 0.5 }}>
+                                        Pipeline Command Console
+                                    </Typography>
+                                    <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 800, fontSize: '0.75rem', letterSpacing: '0.02em' }}>
+                                        Operations command center for real-time validation, latency diagnostics, and transactional drift reconciliation.
+                                    </Typography>
+                                </Box>
+                            </Stack>
+                            <Stack direction="row" spacing={1} sx={{ alignSelf: { xs: 'flex-start', md: 'center' }, flexWrap: 'wrap', gap: 1 }}>
+                                <Chip label="v2.4.1" size="small" sx={{ fontWeight: 900, bgcolor: 'rgba(0, 0, 0, 0.05)', color: '#101221', borderRadius: '6px' }} />
+                                <Chip label="PRODUCTION" size="small" sx={{ fontWeight: 900, bgcolor: '#e0f2fe', color: '#0369a1', borderRadius: '6px' }} />
+                                <Chip 
+                                    label={`PIPELINE: ${systemStatus}`} 
+                                    size="small" 
+                                    sx={{ 
+                                        fontWeight: 900, 
+                                        bgcolor: systemStatus === 'OPERATIONAL' ? '#dcfce7' : systemStatus === 'DEGRADED' ? '#fef9c3' : '#fee2e2', 
+                                        color: systemStatus === 'OPERATIONAL' ? '#15803d' : systemStatus === 'DEGRADED' ? '#a16207' : '#b91c1c',
+                                        borderRadius: '6px'
+                                    }} 
+                                />
+                                <Chip 
+                                    label={liveFeed ? "🔴 LIVE POLLING" : "⏸ PAUSED"} 
+                                    size="small" 
+                                    sx={{ 
+                                        fontWeight: 900, 
+                                        bgcolor: liveFeed ? '#ecfdf5' : '#f3f4f6', 
+                                        color: liveFeed ? '#059669' : '#4b5563', 
+                                        borderRadius: '6px'
+                                    }} 
+                                />
+                            </Stack>
                         </Stack>
                     </Box>
 
@@ -427,41 +464,96 @@ const IntakeHealthPage = () => {
                                         </Alert>
                                     )}
 
-                                    {/* Split Pane filters and summary */}
+                                    {/* Filters above the table */}
+                                    <TenantAuditFilters
+                                        filters={auditFilters}
+                                        setFilters={setAuditFilters}
+                                        onRunAudit={fetchTenantAudit}
+                                        loading={auditLoading}
+                                    />
+
+                                    {/* Results Counter Bar */}
+                                    <Paper 
+                                        sx={{ 
+                                            p: 2, 
+                                            borderRadius: '16px', 
+                                            border: '1px solid', 
+                                            borderColor: 'divider', 
+                                            display: 'flex', 
+                                            justifyContent: 'space-between', 
+                                            alignItems: 'center', 
+                                            bgcolor: '#f8fafc',
+                                            flexDirection: { xs: 'column', md: 'row' },
+                                            gap: 2
+                                        }}
+                                    >
+                                        <Stack direction="row" spacing={1.5} alignItems="center" sx={{ flexWrap: 'wrap', gap: 1 }}>
+                                            <Typography variant="body2" sx={{ fontWeight: 1000, color: '#101221', fontSize: '0.75rem', letterSpacing: '0.05em' }}>
+                                                AUDIT SNAPSHOT: {auditRows.length} TENANTS
+                                            </Typography>
+                                            <Divider orientation="vertical" flexItem sx={{ display: { xs: 'none', sm: 'block' } }} />
+                                            <Chip 
+                                                label={`${driftCount + noPersistedCount} CRITICAL`} 
+                                                color="error" 
+                                                size="small" 
+                                                sx={{ fontWeight: 900, borderRadius: '6px', fontSize: '0.62rem' }} 
+                                            />
+                                            <Chip 
+                                                label={`${warningCount} WARNINGS`} 
+                                                color="warning" 
+                                                size="small" 
+                                                sx={{ fontWeight: 900, borderRadius: '6px', fontSize: '0.62rem' }} 
+                                            />
+                                            <Chip 
+                                                label={`${auditRows.length - auditIssueCount} HEALTHY`} 
+                                                color="success" 
+                                                size="small" 
+                                                sx={{ fontWeight: 900, borderRadius: '6px', fontSize: '0.62rem' }} 
+                                            />
+                                        </Stack>
+                                        <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 800, fontSize: '0.68rem' }}>
+                                            Recalculated: {auditReport?.window || 'Just now'}
+                                        </Typography>
+                                    </Paper>
+
+                                    {/* Split Pane: Audit Table & Tenant Inspector */}
                                     <Grid container spacing={3}>
-                                        <Grid item xs={12} md={6}>
-                                            <TenantAuditFilters
-                                                filters={auditFilters}
-                                                setFilters={setAuditFilters}
-                                                onRunAudit={fetchTenantAudit}
-                                                loading={auditLoading}
+                                        <Grid item xs={12} lg={8.5}>
+                                            <TenantAuditTable
+                                                auditRows={auditRows}
+                                                selectedTenantId={selectedTenant?.tenant_id}
+                                                onSelectRow={(row) => {
+                                                    setSelectedTenant(row);
+                                                }}
+                                                onInspect={(row) => {
+                                                    alert(`Inspecting configuration audit details for ${row.tenant} (ID: ${row.tenant_id}). No schema anomalies detected.`);
+                                                }}
+                                                onReplay={async (row) => {
+                                                    alert(`Queueing replay actions for Tenant: ${row.tenant}...`);
+                                                }}
+                                                onViewLogs={(row) => {
+                                                    setFeedFilter('all');
+                                                    setActiveView('monitor');
+                                                }}
                                             />
                                         </Grid>
-                                        <Grid item xs={12} md={6}>
-                                            <TenantAuditSummary
-                                                auditIssueCount={auditIssueCount}
-                                                driftCount={driftCount}
-                                                noPersistedCount={noPersistedCount}
+                                        
+                                        <Grid item xs={12} lg={3.5}>
+                                            <TenantInspector
+                                                tenant={selectedTenant}
+                                                onReplay={(row) => {
+                                                    alert(`Replaying queue for Tenant: ${row.tenant}`);
+                                                }}
+                                                onInspect={(row) => {
+                                                    alert(`Opening drift inspector dialog for ${row.tenant}`);
+                                                }}
+                                                onViewLogs={(row) => {
+                                                    setFeedFilter('all');
+                                                    setActiveView('monitor');
+                                                }}
                                             />
                                         </Grid>
                                     </Grid>
-
-                                    {/* Actionable Audit Table */}
-                                    <TenantAuditTable
-                                        auditRows={auditRows}
-                                        onInspect={(row) => {
-                                            // Pre-fill terminal filters and trigger search or console
-                                            alert(`Inspecting configuration audit details for ${row.tenant} (ID: ${row.tenant_id}). No schema anomalies detected.`);
-                                        }}
-                                        onReplay={async (row) => {
-                                            alert(`Queueing replay actions for Tenant: ${row.tenant}...`);
-                                        }}
-                                        onViewLogs={(row) => {
-                                            // Switch to Monitor timeline and filter by tenant log events
-                                            setFeedFilter('all');
-                                            setActiveView('monitor');
-                                        }}
-                                    />
                                 </Stack>
                             </div>
                         )}

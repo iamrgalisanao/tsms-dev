@@ -79,33 +79,36 @@ const PipelineOverviewCard = ({
                     <Grid item xs={12} sm={6} md={2.4} key={m.title}>
                         <Box 
                             sx={{ 
-                                p: 2.5, 
-                                borderRadius: '18px', 
+                                p: 3, 
+                                borderRadius: '20px', 
                                 border: '1px solid', 
                                 borderColor: 'divider', 
                                 bgcolor: 'white',
-                                minHeight: '115px',
+                                minHeight: '145px',
                                 display: 'flex',
                                 flexDirection: 'column',
                                 justifyContent: 'space-between',
                                 transition: 'all 0.3s',
                                 '&:hover': {
-                                    boxShadow: '0 10px 20px rgba(0,0,0,0.02)',
-                                    transform: 'translateY(-2px)'
+                                    boxShadow: '0 12px 24px rgba(0,0,0,0.03)',
+                                    transform: 'translateY(-3px)',
+                                    borderColor: 'rgba(0, 242, 255, 0.3)'
                                 }
                             }}
                         >
-                            <Stack direction="row" justifyContent="space-between" alignItems="center">
-                                <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 900, fontSize: '0.65rem', letterSpacing: '0.08em', textTransform: 'uppercase' }}>
-                                    {m.title}
-                                </Typography>
-                                {m.icon}
-                            </Stack>
-                            <Box sx={{ mt: 1.5 }}>
-                                <Typography variant="h4" sx={{ fontWeight: 1000, color: '#101221', letterSpacing: '-0.02em', fontSize: '1.75rem' }}>
+                            <Stack direction="row" justifyContent="space-between" alignItems="flex-start">
+                                <Typography variant="h3" sx={{ fontWeight: 1000, color: m.color || '#101221', letterSpacing: '-0.03em', fontSize: '2.5rem', lineHeight: 1 }}>
                                     {m.value}
                                 </Typography>
-                                <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.62rem', fontWeight: 700, mt: 0.5, display: 'block' }}>
+                                <Box sx={{ opacity: 0.85 }}>
+                                    {m.icon}
+                                </Box>
+                            </Stack>
+                            <Box sx={{ mt: 2 }}>
+                                <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 900, fontSize: '0.68rem', letterSpacing: '0.08em', textTransform: 'uppercase', display: 'block', mb: 0.5 }}>
+                                    {m.title}
+                                </Typography>
+                                <Typography variant="caption" sx={{ color: 'text.secondary', fontSize: '0.62rem', fontWeight: 700, display: 'block', opacity: 0.8, lineHeight: 1.3 }}>
                                     {m.sub}
                                 </Typography>
                             </Box>
