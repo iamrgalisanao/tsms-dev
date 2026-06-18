@@ -51,12 +51,7 @@ class TransactionLogController extends Controller
             'amount_max'
         ]);
 
-        // Determine pagination size. If a date filter is applied and per_page is not explicitly set,
-        // load a larger page (e.g., 1000) to reflect all transactions for that range (e.g., today's 289).
         $perPage = $this->resolvePerPage($request);
-        if (($request->filled('date_from') || $request->filled('date_to')) && !$request->has('per_page')) {
-            $perPage = 1000;
-        }
 
         // Add transaction_id search handling
         if ($request->filled('transaction_id')) {
@@ -108,42 +103,10 @@ class TransactionLogController extends Controller
             return $query->where('validation_status', $filters['status']);
             })
             ->when(isset($filters['date_from']), function ($query) use ($filters, $dateColumn) {
-                if ($dateColumn === 'transaction_date') {
-                    return $query->where($dateColumn, '>=', $filters['date_from']);
-                }
-
-                if ($dateColumn === 'transaction_timestamp') {
-                    return $query->where(function ($q) use ($filters) {
-                        $q->where(function ($subQ) use ($filters) {
-                            $subQ->whereNotNull('transaction_timestamp')
-                                ->where('transaction_timestamp', '>=', $filters['date_from'] . ' 00:00:00');
-                        })->orWhere(function ($subQ) use ($filters) {
-                            $subQ->whereNull('transaction_timestamp')
-                                ->where('created_at', '>=', $filters['date_from'] . ' 00:00:00');
-                        });
-                    });
-                }
-
-                return $query->where($dateColumn, '>=', $filters['date_from'] . ' 00:00:00');
+                return $query->where($dateColumn, '>=', $this->dateFilterValue($dateColumn, $filters['date_from'], false));
             })
             ->when(isset($filters['date_to']), function ($query) use ($filters, $dateColumn) {
-                if ($dateColumn === 'transaction_date') {
-                    return $query->where($dateColumn, '<=', $filters['date_to']);
-                }
-
-                if ($dateColumn === 'transaction_timestamp') {
-                    return $query->where(function ($q) use ($filters) {
-                        $q->where(function ($subQ) use ($filters) {
-                            $subQ->whereNotNull('transaction_timestamp')
-                                ->where('transaction_timestamp', '<=', $filters['date_to'] . ' 23:59:59');
-                        })->orWhere(function ($subQ) use ($filters) {
-                            $subQ->whereNull('transaction_timestamp')
-                                ->where('created_at', '<=', $filters['date_to'] . ' 23:59:59');
-                        });
-                    });
-                }
-
-                return $query->where($dateColumn, '<=', $filters['date_to'] . ' 23:59:59');
+                return $query->where($dateColumn, '<=', $this->dateFilterValue($dateColumn, $filters['date_to'], true));
             })
             ->when(isset($filters['tenant_id']), function ($query) use ($filters) {
             return $query->where('tenant_id', $filters['tenant_id']);
@@ -164,10 +127,10 @@ class TransactionLogController extends Controller
                 return $query->orderByDesc('transaction_date')->orderByDesc('id');
             })
             ->when($usesDateOrdering && $dateColumn === 'transaction_timestamp', function ($query) {
-                return $query->orderByRaw('COALESCE(transaction_timestamp, created_at) desc');
+                return $query->orderByDesc('transaction_timestamp')->orderByDesc('id');
             })
             ->when($usesDateOrdering && ! in_array($dateColumn, ['transaction_date', 'transaction_timestamp'], true), function ($query) use ($dateColumn) {
-                return $query->orderBy($dateColumn, 'desc');
+                return $query->orderByDesc($dateColumn)->orderByDesc('id');
             });
 
         $logs = $needsExactPaginationTotal
@@ -478,35 +441,11 @@ class TransactionLogController extends Controller
         }
 
         if (isset($filters['date_from'])) {
-            if ($dateColumn === 'transaction_timestamp') {
-                $query->where(function ($q) use ($filters) {
-                    $q->where(function ($subQ) use ($filters) {
-                        $subQ->whereNotNull('transaction_timestamp')
-                            ->where('transaction_timestamp', '>=', $filters['date_from'] . ' 00:00:00');
-                    })->orWhere(function ($subQ) use ($filters) {
-                        $subQ->whereNull('transaction_timestamp')
-                            ->where('created_at', '>=', $filters['date_from'] . ' 00:00:00');
-                    });
-                });
-            } else {
-                $query->where($dateColumn, '>=', $filters['date_from'] . ' 00:00:00');
-            }
+            $query->where($dateColumn, '>=', $this->dateFilterValue($dateColumn, $filters['date_from'], false));
         }
 
         if (isset($filters['date_to'])) {
-            if ($dateColumn === 'transaction_timestamp') {
-                $query->where(function ($q) use ($filters) {
-                    $q->where(function ($subQ) use ($filters) {
-                        $subQ->whereNotNull('transaction_timestamp')
-                            ->where('transaction_timestamp', '<=', $filters['date_to'] . ' 23:59:59');
-                    })->orWhere(function ($subQ) use ($filters) {
-                        $subQ->whereNull('transaction_timestamp')
-                            ->where('created_at', '<=', $filters['date_to'] . ' 23:59:59');
-                    });
-                });
-            } else {
-                $query->where($dateColumn, '<=', $filters['date_to'] . ' 23:59:59');
-            }
+            $query->where($dateColumn, '<=', $this->dateFilterValue($dateColumn, $filters['date_to'], true));
         }
 
         if (isset($filters['tenant_id'])) {
@@ -656,11 +595,7 @@ class TransactionLogController extends Controller
 
         $sortDirection = strtolower($request->input('sort_direction', 'desc')) === 'asc' ? 'asc' : 'desc';
 
-        // Determine pagination size like index(): if date filter provided and no per_page set, use 1000
         $perPage = $this->resolvePerPage($request);
-        if (($request->filled('date_from') || $request->filled('date_to')) && !$request->has('per_page')) {
-            $perPage = 1000;
-        }
 
         $hasDateWindow = $request->filled('date_from') || $request->filled('date_to');
 
@@ -724,42 +659,10 @@ class TransactionLogController extends Controller
                 }
             })
             ->when(isset($filters['date_from']), function ($q) use ($filters, $dateColumn) {
-                if ($dateColumn === 't.transaction_date') {
-                    $q->where($dateColumn, '>=', $filters['date_from']);
-                } elseif ($dateColumn === 't.transaction_timestamp') {
-                    $q->where(function ($nested) use ($filters) {
-                        $nested->where(function ($subQ) use ($filters) {
-                            $subQ->whereNotNull('t.transaction_timestamp')
-                                ->where('t.transaction_timestamp', '>=', $filters['date_from'] . ' 00:00:00');
-                        })->orWhere(function ($subQ) use ($filters) {
-                            $subQ->whereNull('t.transaction_timestamp')
-                                ->where('t.created_at', '>=', $filters['date_from'] . ' 00:00:00');
-                        });
-                    });
-
-                    return;
-                }
-
-                $q->where($dateColumn, '>=', $filters['date_from'] . ' 00:00:00');
+                $q->where($dateColumn, '>=', $this->dateFilterValue($dateColumn, $filters['date_from'], false));
             })
             ->when(isset($filters['date_to']), function ($q) use ($filters, $dateColumn) {
-                if ($dateColumn === 't.transaction_date') {
-                    $q->where($dateColumn, '<=', $filters['date_to']);
-                } elseif ($dateColumn === 't.transaction_timestamp') {
-                    $q->where(function ($nested) use ($filters) {
-                        $nested->where(function ($subQ) use ($filters) {
-                            $subQ->whereNotNull('t.transaction_timestamp')
-                                ->where('t.transaction_timestamp', '<=', $filters['date_to'] . ' 23:59:59');
-                        })->orWhere(function ($subQ) use ($filters) {
-                            $subQ->whereNull('t.transaction_timestamp')
-                                ->where('t.created_at', '<=', $filters['date_to'] . ' 23:59:59');
-                        });
-                    });
-
-                    return;
-                }
-
-                $q->where($dateColumn, '<=', $filters['date_to'] . ' 23:59:59');
+                $q->where($dateColumn, '<=', $this->dateFilterValue($dateColumn, $filters['date_to'], true));
             })
             ->when(isset($filters['tenant_id']), function ($q) use ($filters) {
                 $q->where(function ($sub) use ($filters) {
@@ -1059,6 +962,15 @@ class TransactionLogController extends Controller
         $perPage = max(1, (int) $request->input('per_page', 15));
 
         return min($perPage, (int) config('tsms.transaction_logs.max_per_page', 1000));
+    }
+
+    private function dateFilterValue(string $dateColumn, string $date, bool $endOfDay): string
+    {
+        if (str_ends_with($dateColumn, 'transaction_date')) {
+            return $date;
+        }
+
+        return $date . ($endOfDay ? ' 23:59:59' : ' 00:00:00');
     }
 
     private function dateWindowValidator(Request $request, string $label)
