@@ -233,8 +233,9 @@ class FinanceCalculationService
             }
         }
 
-        $derivedVat = round(($netSales / 1.12) * 0.12, 2);
         $reportedVatableSales = round((float) ($c['vatable_sales'] ?? 0), 2);
+        $hasTaxableBasis = $reportedVatableSales > 0 || $rawVat > 0;
+        $derivedVat = $hasTaxableBasis ? round(($netSales / 1.12) * 0.12, 2) : 0.0;
 
         $capturedVatableIsTaxableInclusive = $rawVat > 0
             && abs($reportedVatableSales - $derivedNetSales) <= 0.05;

@@ -60,6 +60,33 @@ class FinanceCalculationServiceTest extends TestCase
         $this->assertEqualsWithDelta(94746.54, $metrics['gross_sales'], 0.001);
     }
 
+    public function test_csmr_does_not_derive_vat_when_taxable_buckets_are_zero(): void
+    {
+        $service = new FinanceCalculationService();
+
+        $metrics = $service->deriveMetrics([
+            'vatable_sales' => 0.0,
+            'sc_vat_exempt_sales' => 0.0,
+            'vat_amount' => 0.0,
+            'promo_with_approval' => 0.0,
+            'promo_without_approval' => 0.0,
+            'employee_discount' => 0.0,
+            'senior_discount' => 0.0,
+            'pwd_discount' => 0.0,
+            'vip_discount' => 0.0,
+            'other_tax' => 0.0,
+            'service_charge_distributed' => 0.0,
+            'service_charge_retained' => 0.0,
+            'regular_discount' => 0.0,
+            'gross_sales' => 45255.0,
+            'net_sales' => 45255.0,
+        ], ['gross_sales_basis' => 'pre_deduction']);
+
+        $this->assertSame(0.0, $metrics['vat_amount']);
+        $this->assertSame(0.0, $metrics['vatable_sales']);
+        $this->assertSame(45255.0, $metrics['net_ex_vat']);
+    }
+
     public function test_aggregate_components_maps_related_taxes_adjustments_and_excludes_voids(): void
     {
         config(['tsms.reporting.exclude_voids_from_totals' => true]);
