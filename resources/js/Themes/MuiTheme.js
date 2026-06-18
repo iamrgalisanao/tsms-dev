@@ -17,6 +17,8 @@ const theme = createTheme({
     },
     typography: {
         fontFamily: [
+            '"Geist Variable"',
+            'Inter',
             '"Helvetica Neue"',
             'Helvetica',
             'Arial',
@@ -28,12 +30,12 @@ const theme = createTheme({
             letterSpacing: '-0.05em',
         },
         h2: {
-            fontSize: '24px',
-            fontWeight: 800,
-            letterSpacing: '-0.02em',
+            fontSize: '22px',
+            fontWeight: 850,
+            letterSpacing: 0,
         },
         body1: {
-            fontSize: '18px',
+            fontSize: '16px',
         },
     },
     components: {
@@ -51,7 +53,7 @@ const theme = createTheme({
         MuiCard: {
             styleOverrides: {
                 root: {
-                    borderRadius: '32px',
+                    borderRadius: '8px',
                     boxShadow: '0 4px 20px 0 rgba(0,0,0,0.05)',
                 },
             },
@@ -59,7 +61,22 @@ const theme = createTheme({
         MuiPaper: {
             styleOverrides: {
                 root: {
-                    borderRadius: '32px',
+                    borderRadius: '8px',
+                },
+            },
+        },
+        MuiSkeleton: {
+            styleOverrides: {
+                root: {
+                    borderRadius: '8px',
+                },
+            },
+        },
+        MuiChip: {
+            styleOverrides: {
+                root: {
+                    borderRadius: '6px',
+                    fontWeight: 800,
                 },
             },
         },

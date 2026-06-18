@@ -1,10 +1,9 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import {
     Box,
     Typography,
     Grid,
     Button,
-    CircularProgress,
     Stack,
     Breadcrumbs,
     Link as MuiLink,
@@ -27,8 +26,7 @@ import {
     Select,
     MenuItem,
     FormControl,
-    InputLabel,
-    Tooltip
+    InputLabel
 } from '@mui/material';
 import NavigateNextIcon from '@mui/icons-material/NavigateNext';
 import HomeIcon from '@mui/icons-material/Home';
@@ -47,210 +45,24 @@ import VisibilityIcon from '@mui/icons-material/Visibility';
 import ErrorIcon from '@mui/icons-material/Error';
 import WarningIcon from '@mui/icons-material/Warning';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
-import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
-import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
-import InfoIcon from '@mui/icons-material/Info';
 
 import TransactionChart from '../../Components/dashboard/TransactionChart';
-import axios from 'axios';
-
-// Custom Premium Metric Card Component with Tooltip support
-const CustomMetricCard = ({ title, value, subtitle, trend, trendDirection, trendColor, icon, gradient, onClick, tooltip }) => {
-    return (
-        <Box
-            onClick={onClick}
-            sx={{
-                p: 3,
-                borderRadius: '24px',
-                background: gradient || 'rgba(255, 255, 255, 0.7)',
-                backdropFilter: 'blur(20px)',
-                border: '1px solid rgba(255, 255, 255, 0.4)',
-                boxShadow: '0 8px 30px rgba(0, 0, 0, 0.04)',
-                transition: 'transform 0.25s cubic-bezier(0.4, 0, 0.2, 1), box-shadow 0.25s ease',
-                cursor: onClick ? 'pointer' : 'default',
-                '&:hover': {
-                    transform: onClick || trend ? 'translateY(-6px)' : 'none',
-                    boxShadow: onClick || trend ? '0 20px 35px rgba(29, 67, 155, 0.08)' : '0 8px 30px rgba(0, 0, 0, 0.04)',
-                },
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                color: gradient ? 'white' : 'text.primary',
-                height: '100%',
-                boxSizing: 'border-box'
-            }}
-        >
-            <Box sx={{ width: '100%' }}>
-                <Stack direction="row" alignItems="center" spacing={0.5} sx={{ mb: 1 }}>
-                    <Typography variant="caption" sx={{ fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em', opacity: gradient ? 0.8 : 0.6 }}>
-                        {title}
-                    </Typography>
-                    {tooltip && (
-                        <Tooltip title={tooltip} arrow placement="top">
-                            <InfoIcon sx={{ fontSize: 13, opacity: gradient ? 0.8 : 0.5, cursor: 'help', color: gradient ? 'white' : 'action.active' }} />
-                        </Tooltip>
-                    )}
-                </Stack>
-                <Typography variant="h4" sx={{ fontWeight: 950, tracking: '-0.02em', mb: 0.5 }}>
-                    {value}
-                </Typography>
-                <Stack direction="row" spacing={1} alignItems="center">
-                    {trend !== null && trend !== undefined && (
-                        <Stack direction="row" alignItems="center" spacing={0.25} sx={{ 
-                            color: trendColor || 'success.main', 
-                            bgcolor: gradient ? 'rgba(255,255,255,0.2)' : (trendDirection === 'down' ? 'error.light' : 'success.light'), 
-                            px: 1, 
-                            py: 0.25, 
-                            borderRadius: '8px',
-                            fontWeight: 900,
-                            fontSize: '0.65rem'
-                        }}>
-                            {trendDirection === 'down' ? <ArrowDownwardIcon sx={{ fontSize: 10 }} /> : <ArrowUpwardIcon sx={{ fontSize: 10 }} />}
-                            <span>{Math.abs(trend)}%</span>
-                        </Stack>
-                    )}
-                    <Typography variant="caption" sx={{ fontWeight: 600, opacity: gradient ? 0.9 : 0.7 }}>
-                        {subtitle}
-                    </Typography>
-                </Stack>
-            </Box>
-            <Box sx={{ 
-                p: 1.5, 
-                borderRadius: '16px', 
-                bgcolor: gradient ? 'rgba(255, 255, 255, 0.2)' : 'rgba(29, 67, 155, 0.05)', 
-                color: gradient ? 'white' : 'primary.main', 
-                display: 'flex',
-                boxShadow: gradient ? 'none' : 'inset 0 2px 4px rgba(0,0,0,0.02)',
-                flexShrink: 0
-            }}>
-                {icon}
-            </Box>
-        </Box>
-    );
-};
-
-// Custom SVG Donut Chart Component
-const RevenueCompositionChart = ({ data }) => {
-    const categories = useMemo(() => [
-        { name: 'Net Sales', value: data?.net_sales || 0, color: '#10B981' },
-        { name: 'VAT', value: data?.vat || 0, color: '#F59E0B' },
-        { name: 'Tax Exempt', value: data?.tax_exempt || 0, color: '#3B82F6' },
-        { name: 'Refunds', value: data?.refunds || 0, color: '#EF4444' },
-        { name: 'Discounts', value: data?.discounts || 0, color: '#8B5CF6' },
-    ], [data]);
-
-    const total = useMemo(() => categories.reduce((sum, c) => sum + c.value, 0), [categories]);
-    const r = 50;
-    const circ = 2 * Math.PI * r;
-
-    let accumulatedPercent = 0;
-
-    const formatCurrency = (val) => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(val);
-
-    return (
-        <Box sx={{ display: 'flex', flexDirection: { xs: 'column', md: 'row' }, alignItems: 'center', gap: 4, height: '100%', py: 2 }}>
-            <Box sx={{ position: 'relative', width: 180, height: 180, display: 'flex', justifyContent: 'center', alignItems: 'center', flexShrink: 0 }}>
-                <svg width="100%" height="100%" viewBox="0 0 120 120" style={{ transform: 'rotate(-90deg)' }}>
-                    <circle cx="60" cy="60" r={r} fill="transparent" stroke="rgba(229, 231, 245, 0.5)" strokeWidth="12" />
-                    {total > 0 && categories.map((cat, idx) => {
-                        if (cat.value <= 0) return null;
-                        const pct = (cat.value / total) * 100;
-                        const strokeDashoffset = circ - (pct * circ) / 100;
-                        const strokeDasharray = circ;
-                        const rotation = (accumulatedPercent / 100) * 360;
-                        accumulatedPercent += pct;
-                        return (
-                            <circle
-                                key={idx}
-                                cx="60"
-                                cy="60"
-                                r={r}
-                                fill="transparent"
-                                stroke={cat.color}
-                                strokeWidth="12"
-                                strokeDasharray={strokeDasharray}
-                                strokeDashoffset={strokeDashoffset}
-                                style={{
-                                    transformOrigin: '60px 60px',
-                                    transform: `rotate(${rotation}deg)`,
-                                    transition: 'stroke-dashoffset 0.5s ease',
-                                }}
-                            />
-                        );
-                    })}
-                </svg>
-                <Box sx={{ position: 'absolute', textAlign: 'center', width: 120 }}>
-                    <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 800, textTransform: 'uppercase', fontSize: '0.6rem', letterSpacing: '0.05em' }}>
-                        Total Revenue
-                    </Typography>
-                    <Typography variant="body2" sx={{ fontWeight: 950, color: 'text.primary', fontSize: '0.9rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {formatCurrency(total)}
-                    </Typography>
-                </Box>
-            </Box>
-            <Stack spacing={1.5} sx={{ flex: 1, width: '100%' }}>
-                {categories.map((cat, idx) => {
-                    const pct = total > 0 ? ((cat.value / total) * 100).toFixed(1) : 0;
-                    return (
-                        <Box key={idx} sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid rgba(229, 231, 245, 0.4)', pb: 0.75 }}>
-                            <Stack direction="row" spacing={1.5} alignItems="center">
-                                <Box sx={{ width: 10, height: 10, borderRadius: '50%', bgcolor: cat.color }} />
-                                <Typography variant="body2" sx={{ fontWeight: 750, color: 'text.primary' }}>{cat.name}</Typography>
-                            </Stack>
-                            <Typography variant="body2" sx={{ fontWeight: 800, color: 'text.secondary' }}>
-                                {formatCurrency(cat.value)} <Box component="span" sx={{ color: 'text.disabled', fontWeight: 600, fontSize: '0.75rem', ml: 0.5 }}>({pct}%)</Box>
-                            </Typography>
-                        </Box>
-                    );
-                })}
-            </Stack>
-        </Box>
-    );
-};
+import FinanceKpiCard from '../../features/finance/components/FinanceKpiCard';
+import FinanceLoadingSkeleton from '../../features/finance/components/FinanceLoadingSkeleton';
+import RevenueCompositionChart from '../../features/finance/components/RevenueCompositionChart';
+import { formatCurrency } from '../../features/finance/components/financeFormat';
+import { useFinanceDashboard } from '../../features/finance/hooks/useFinanceDashboard';
 
 const FinanceDashboardPage = () => {
-    const [metrics, setMetrics] = useState(null);
-    const [charts, setCharts] = useState(null);
-    const [loading, setLoading] = useState(true);
-    const [refreshing, setRefreshing] = useState(false);
     const [dateRange, setDateRange] = useState('7'); // '7' or '30' days
+    const { data, isLoading, isFetching, refetch } = useFinanceDashboard(dateRange);
 
-    const formatCurrency = (val) => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(val);
-
-    const fetchData = useCallback(async (days = dateRange) => {
-        setRefreshing(true);
-        try {
-            const today = new Date();
-            const start = new Date();
-            start.setDate(today.getDate() - (parseInt(days) - 1));
-
-            const params = {
-                start_date: start.toISOString().split('T')[0],
-                end_date: today.toISOString().split('T')[0]
-            };
-
-            const [metricsResp, chartsResp] = await Promise.all([
-                axios.get('/api/dashboard/metrics', { params }),
-                axios.get('/api/dashboard/charts', { params: { days } })
-            ]);
-
-            setMetrics(metricsResp.data);
-            setCharts(chartsResp.data);
-        } catch (error) {
-            console.error('Error fetching finance metrics:', error);
-        } finally {
-            setLoading(false);
-            setRefreshing(false);
-        }
-    }, [dateRange]);
-
-    useEffect(() => {
-        fetchData();
-    }, [fetchData]);
+    const metrics = data?.metrics;
+    const charts = data?.charts;
 
     const handleForceSync = useCallback(() => {
-        fetchData();
-    }, [fetchData]);
+        refetch();
+    }, [refetch]);
 
     const handleExport = (endpoint, params = {}) => {
         const query = new URLSearchParams(params).toString();
@@ -305,12 +117,8 @@ const FinanceDashboardPage = () => {
         return { peakSales, peakSalesDay, avgDailyRevenue };
     }, [charts]);
 
-    if (loading) {
-        return (
-            <Box sx={{ display: 'flex', height: '80vh', alignItems: 'center', justifyContent: 'center' }}>
-                <CircularProgress color="primary" size={50} />
-            </Box>
-        );
+    if (isLoading) {
+        return <FinanceLoadingSkeleton />;
     }
 
     return (
@@ -369,7 +177,6 @@ const FinanceDashboardPage = () => {
                                     label="Period"
                                     onChange={(e) => {
                                         setDateRange(e.target.value);
-                                        fetchData(e.target.value);
                                     }}
                                     sx={{ borderRadius: '12px', bgcolor: 'background.paper' }}
                                 >
@@ -382,8 +189,8 @@ const FinanceDashboardPage = () => {
                             <Button
                                 variant="contained"
                                 onClick={handleForceSync}
-                                disabled={refreshing}
-                                startIcon={refreshing ? <CircularProgress size={16} color="inherit" /> : <SyncIcon />}
+                                disabled={isFetching}
+                                startIcon={<SyncIcon />}
                                 className="pitx-gradient"
                                 sx={{
                                     borderRadius: '16px',
@@ -398,7 +205,7 @@ const FinanceDashboardPage = () => {
                                     '&:hover': { opacity: 0.9 }
                                 }}
                             >
-                                {refreshing ? 'Syncing...' : 'Force Sync'}
+                                {isFetching ? 'Syncing...' : 'Force Sync'}
                             </Button>
                         </Stack>
                     </Stack>
@@ -408,7 +215,7 @@ const FinanceDashboardPage = () => {
             {/* KPI Cards Row */}
             <Grid container spacing={4} sx={{ mb: 4 }}>
                 <Grid item xs={12} sm={6} lg={3}>
-                    <CustomMetricCard
+                    <FinanceKpiCard
                         title="Gross Sales"
                         value={formatCurrency(metrics?.total_sales?.current || 0)}
                         subtitle={`vs previous ${dateRange} days`}
@@ -420,7 +227,7 @@ const FinanceDashboardPage = () => {
                     />
                 </Grid>
                 <Grid item xs={12} sm={6} lg={3}>
-                    <CustomMetricCard
+                    <FinanceKpiCard
                         title="Net Sales"
                         value={formatCurrency(metrics?.total_net_sales?.current || 0)}
                         subtitle={`vs previous ${dateRange} days`}
@@ -432,7 +239,7 @@ const FinanceDashboardPage = () => {
                     />
                 </Grid>
                 <Grid item xs={12} sm={6} lg={3}>
-                    <CustomMetricCard
+                    <FinanceKpiCard
                         title="Reconciled"
                         value={`${metrics?.reconciliation?.reconciled?.toLocaleString() || 0} / ${metrics?.reconciliation?.total?.toLocaleString() || 0}`}
                         subtitle="Queue completion rate"
@@ -444,7 +251,7 @@ const FinanceDashboardPage = () => {
                     />
                 </Grid>
                 <Grid item xs={12} sm={6} lg={3}>
-                    <CustomMetricCard
+                    <FinanceKpiCard
                         title="Validation Exceptions"
                         value={metrics?.exceptions?.total_exceptions || 0}
                         subtitle="Unresolved anomalies"
@@ -460,7 +267,7 @@ const FinanceDashboardPage = () => {
             {/* Secondary KPI Row: Financial Leakage Metrics */}
             <Grid container spacing={4} sx={{ mb: 6 }}>
                 <Grid item xs={12} sm={4}>
-                    <CustomMetricCard
+                    <FinanceKpiCard
                         title="Refunds"
                         value={formatCurrency(metrics?.revenue_composition?.refunds || 0)}
                         subtitle={`${refundsPercentage} of gross revenue`}
@@ -469,7 +276,7 @@ const FinanceDashboardPage = () => {
                     />
                 </Grid>
                 <Grid item xs={12} sm={4}>
-                    <CustomMetricCard
+                    <FinanceKpiCard
                         title="Discounts"
                         value={formatCurrency(metrics?.revenue_composition?.discounts || 0)}
                         subtitle={`${discountsPercentage} of gross revenue`}
@@ -478,7 +285,7 @@ const FinanceDashboardPage = () => {
                     />
                 </Grid>
                 <Grid item xs={12} sm={4}>
-                    <CustomMetricCard
+                    <FinanceKpiCard
                         title="Voided Transactions"
                         value={metrics?.voided_transactions?.current?.toLocaleString() || 0}
                         subtitle={`${voidsPercentage} of total volume`}

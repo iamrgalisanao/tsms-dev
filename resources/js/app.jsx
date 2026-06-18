@@ -1,6 +1,7 @@
 import React from 'react';
 import { createRoot } from 'react-dom/client';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider } from './Contexts/AuthContext.jsx';
 import MainLayout from './Layouts/MainLayout';
 import Login from './Pages/Auth/Login.jsx';
@@ -32,12 +33,14 @@ import '../css/app.css';
 import ProtectedRoute from './Components/Auth/ProtectedRoute';
 import UnauthorizedPage from './Pages/Auth/UnauthorizedPage';
 import NotFoundPage from './Pages/Auth/NotFoundPage';
+import { queryClient } from './lib/queryClient';
 
 const App = () => {
   return (
-    <AuthProvider>
-      <Router>
-        <Routes>
+    <QueryClientProvider client={queryClient}>
+      <AuthProvider>
+        <Router>
+          <Routes>
           {/* Public — no layout wrapper */}
           <Route path="/login" element={<Login />} />
           <Route path="/unauthorized" element={<UnauthorizedPage />} />
@@ -190,9 +193,10 @@ const App = () => {
           />
           {/* Catch-all for top-level unknown routes */}
           <Route path="*" element={<NotFoundPage />} />
-        </Routes>
-      </Router>
-    </AuthProvider>
+          </Routes>
+        </Router>
+      </AuthProvider>
+    </QueryClientProvider>
   );
 };
 

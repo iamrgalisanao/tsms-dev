@@ -113,7 +113,13 @@ const MainLayout = ({ children }) => {
                         })}
                     </nav>
 
-                    <div className="p-4 border-t border-white/10 mt-auto">
+                    <div className="p-4 border-t border-white/10 mt-auto space-y-3">
+                        {isSidebarOpen && (
+                            <div className="rounded-lg bg-white/10 px-3 py-2">
+                                <p className="text-xs font-bold uppercase text-white/55 truncate">{roles.join(', ') || 'User'}</p>
+                                <p className="text-sm font-semibold text-white truncate">{user.email || user.name}</p>
+                            </div>
+                        )}
                         <button
                             onClick={async () => {
                                 await logout();
@@ -151,7 +157,7 @@ const MainLayout = ({ children }) => {
 
                     {/* Scrollable Page Content */}
                     <main className="flex-1 overflow-y-auto p-8 relative bg-gray-50/50">
-                        <div className="max-w-7xl mx-auto">
+                        <div className="max-w-screen-2xl mx-auto">
                             {children}
                         </div>
                     </main>
