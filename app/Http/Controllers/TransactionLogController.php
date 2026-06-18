@@ -587,7 +587,7 @@ class TransactionLogController extends Controller
             $dateExpr = 't.transaction_date';
         } elseif ($basis === 'transaction') {
             $dateColumn = 't.transaction_timestamp';
-            $dateExpr = 'COALESCE(t.transaction_timestamp, t.created_at)';
+            $dateExpr = 't.transaction_timestamp';
         } else {
             $dateColumn = 't.created_at';
             $dateExpr = 't.created_at';
@@ -611,6 +611,7 @@ class TransactionLogController extends Controller
         $hasRefundAmount = Schema::hasColumn('transactions', 'refund_amount');
         $hasServiceCharge = Schema::hasColumn('transactions', 'service_charge');
         $hasManagementServiceCharge = Schema::hasColumn('transactions', 'management_service_charge');
+        $hasTransactionTenant = Schema::hasColumn('transactions', 'tenant_id');
         $hasAdjustmentAggregates = Schema::hasTable('transaction_adjustments')
             && Schema::hasColumn('transaction_adjustments', 'transaction_pk');
 
@@ -664,22 +665,54 @@ class TransactionLogController extends Controller
             ->when(isset($filters['date_to']), function ($q) use ($filters, $dateColumn) {
                 $q->where($dateColumn, '<=', $this->dateFilterValue($dateColumn, $filters['date_to'], true));
             })
-            ->when(isset($filters['tenant_id']), function ($q) use ($filters) {
-                $q->where(function ($sub) use ($filters) {
-                    $sub->where('t.tenant_id', $filters['tenant_id'])
-                        ->orWhere('term.tenant_id', $filters['tenant_id']);
-                });
+            ->when(isset($filters['tenant_id']), function ($q) use ($filters, $hasTransactionTenant) {
+                if ($hasTransactionTenant) {
+                    $q->where('t.tenant_id', $filters['tenant_id']);
+                    return;
+                }
+
+                $q->where('term.tenant_id', $filters['tenant_id']);
             })
             ->when(isset($filters['terminal_id']), function ($q) use ($filters) {
                 $q->where('t.terminal_id', $filters['terminal_id']);
             });
 
         if ($hasAdjustmentAggregates) {
-            $adjustmentTotals = DB::table('transaction_adjustments')
-                ->selectRaw('transaction_pk')
+            $adjustmentDateColumn = str_replace('t.', 'at.', $dateColumn);
+
+            $adjustmentTotals = DB::table('transaction_adjustments as ta')
+                ->join('transactions as at', 'at.id', '=', 'ta.transaction_pk')
+                ->selectRaw('ta.transaction_pk')
                 ->selectRaw("SUM(CASE WHEN adjustment_type IN ('employee_discount', 'EMPLOYEE') THEN amount ELSE 0 END) as employee_discount")
                 ->selectRaw("SUM(CASE WHEN adjustment_type IN ('vip_card_discount', 'VIP') THEN amount ELSE 0 END) as vip_discount")
-                ->groupBy('transaction_pk');
+                ->when(isset($filters['status']), function ($q) use ($filters) {
+                    if ($filters['status'] === 'VOIDED') {
+                        $q->whereNotNull('at.voided_at');
+                    } elseif ($filters['status'] === 'REFUNDED') {
+                        $q->where('at.is_refunded', true);
+                    } else {
+                        $q->where('at.validation_status', $filters['status']);
+                    }
+                })
+                ->when(isset($filters['date_from']), function ($q) use ($filters, $adjustmentDateColumn) {
+                    $q->where($adjustmentDateColumn, '>=', $this->dateFilterValue($adjustmentDateColumn, $filters['date_from'], false));
+                })
+                ->when(isset($filters['date_to']), function ($q) use ($filters, $adjustmentDateColumn) {
+                    $q->where($adjustmentDateColumn, '<=', $this->dateFilterValue($adjustmentDateColumn, $filters['date_to'], true));
+                })
+                ->when(isset($filters['tenant_id']) && $hasTransactionTenant, function ($q) use ($filters) {
+                    $q->where('at.tenant_id', $filters['tenant_id']);
+                })
+                ->when(isset($filters['terminal_id']), function ($q) use ($filters) {
+                    $q->where('at.terminal_id', $filters['terminal_id']);
+                });
+
+            if ($hasReceiptNo && !isset($filters['status'])) {
+                $adjustmentTotals->where('at.validation_status', '!=', 'DUPLICATE')
+                    ->whereNull('at.voided_at');
+            }
+
+            $adjustmentTotals->groupBy('ta.transaction_pk');
 
             $baseQuery->leftJoinSub($adjustmentTotals, 'adj_totals', function ($join) {
                 $join->on('adj_totals.transaction_pk', '=', 't.id');
@@ -705,11 +738,13 @@ class TransactionLogController extends Controller
                         $q->where('t.validation_status', $filters['status']);
                     }
                 })
-                ->when(isset($filters['tenant_id']), function ($q) use ($filters) {
-                    $q->where(function ($sub) use ($filters) {
-                        $sub->where('t.tenant_id', $filters['tenant_id'])
-                            ->orWhere('term.tenant_id', $filters['tenant_id']);
-                    });
+                ->when(isset($filters['tenant_id']), function ($q) use ($filters, $hasTransactionTenant) {
+                    if ($hasTransactionTenant) {
+                        $q->where('t.tenant_id', $filters['tenant_id']);
+                        return;
+                    }
+
+                    $q->where('term.tenant_id', $filters['tenant_id']);
                 })
                 ->when(isset($filters['terminal_id']), function ($q) use ($filters) {
                     $q->where('t.terminal_id', $filters['terminal_id']);
