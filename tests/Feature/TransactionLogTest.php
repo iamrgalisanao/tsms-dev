@@ -198,6 +198,38 @@ class TransactionLogTest extends TestCase
     }
 
     /** @test */
+    public function test_transaction_date_filter_uses_manila_business_day_for_utc_timestamps()
+    {
+        $matchingTransaction = Transaction::factory()->create([
+            'tenant_id' => $this->tenant->id,
+            'terminal_id' => $this->terminal->id,
+            'receipt_no' => 'REC-MANILA-JUNE-18',
+            'transaction_timestamp' => '2026-06-17 22:03:54',
+            'gross_sales' => 120.00,
+            'net_sales' => 107.14,
+            'validation_status' => 'VALID',
+        ]);
+
+        Transaction::factory()->create([
+            'tenant_id' => $this->tenant->id,
+            'terminal_id' => $this->terminal->id,
+            'receipt_no' => 'REC-MANILA-JUNE-17',
+            'transaction_timestamp' => '2026-06-17 15:59:59',
+            'gross_sales' => 99.00,
+            'net_sales' => 88.39,
+            'validation_status' => 'VALID',
+        ]);
+
+        Sanctum::actingAs($this->adminUser);
+
+        $response = $this->getJson('/api/transactions/logs?date_basis=transaction&date_from=2026-06-18&date_to=2026-06-18&tenant_id=' . $this->tenant->id);
+
+        $response->assertOk();
+        $this->assertContains($matchingTransaction->id, collect($response->json('data'))->pluck('id')->all());
+        $this->assertSame(['REC-MANILA-JUNE-18'], collect($response->json('data'))->pluck('receipt_no')->all());
+    }
+
+    /** @test */
     public function test_summary_endpoint_returns_react_summary_contract()
     {
         $secondTerminal = PosTerminal::factory()->create([
@@ -274,6 +306,32 @@ class TransactionLogTest extends TestCase
         $this->assertSame(2, $response->json('grandTotal.tx_count'));
         $this->assertSame(2, $response->json('grandTotal.unique_receipts'));
         $this->assertNull($response->json('dateBasisDiscrepancy'));
+    }
+
+    /** @test */
+    public function test_summary_endpoint_groups_utc_timestamps_by_manila_business_day()
+    {
+        Transaction::factory()->create([
+            'tenant_id' => $this->tenant->id,
+            'terminal_id' => $this->terminal->id,
+            'receipt_no' => 'REC-SUMMARY-MANILA-JUNE-18',
+            'transaction_timestamp' => '2026-06-17 22:03:54',
+            'gross_sales' => 120.00,
+            'net_sales' => 107.14,
+            'vat_amount' => 12.86,
+            'vatable_sales' => 107.14,
+            'validation_status' => 'VALID',
+        ]);
+
+        Sanctum::actingAs($this->adminUser);
+
+        $response = $this->getJson('/api/transactions/logs/summary?date_from=2026-06-18&date_to=2026-06-18&date_basis=transaction&tenant_id=' . $this->tenant->id);
+
+        $response->assertOk();
+
+        $this->assertSame('2026-06-18', $response->json('summary.data.0.date'));
+        $this->assertSame(1, $response->json('summary.data.0.tx_count'));
+        $this->assertEquals(120.00, (float) $response->json('grandTotal.gross'));
     }
 
     /** @test */

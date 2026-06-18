@@ -66,11 +66,10 @@ class TransactionLogController extends Controller
             ? $request->input('date_basis')
             : 'transaction';
 
-        $hasTransactionDate = Schema::hasColumn('transactions', 'transaction_date');
         $dateColumn = match ($basis) {
             'created' => 'created_at',
             'completed' => 'completed_at',
-            default => $hasTransactionDate ? 'transaction_date' : 'transaction_timestamp',
+            default => 'transaction_timestamp',
         };
 
         $logs = Transaction::select([
@@ -578,16 +577,12 @@ class TransactionLogController extends Controller
             ? $request->input('date_basis')
             : 'transaction';
 
-        $hasTransactionDate = Schema::hasColumn('transactions', 'transaction_date');
         if ($basis === 'completed') {
             $dateColumn = 't.completed_at';
             $dateExpr = 't.completed_at';
-        } elseif ($basis === 'transaction' && $hasTransactionDate) {
-            $dateColumn = 't.transaction_date';
-            $dateExpr = 't.transaction_date';
         } elseif ($basis === 'transaction') {
             $dateColumn = 't.transaction_timestamp';
-            $dateExpr = 'COALESCE(t.transaction_timestamp, t.created_at)';
+            $dateExpr = $this->localDateExpression('COALESCE(t.transaction_timestamp, t.created_at)');
         } else {
             $dateColumn = 't.created_at';
             $dateExpr = 't.created_at';
@@ -740,37 +735,26 @@ class TransactionLogController extends Controller
             });
 
             $eventOutsideRangeQuery = clone $completedDateQuery;
-            if ($hasTransactionDate) {
-                $eventOutsideRangeQuery->where(function ($q) use ($filters) {
-                    if (isset($filters['date_from'])) {
-                        $q->orWhere('t.transaction_date', '<', $filters['date_from']);
-                    }
-                    if (isset($filters['date_to'])) {
-                        $q->orWhere('t.transaction_date', '>', $filters['date_to']);
-                    }
-                });
-            } else {
-                $eventOutsideRangeQuery->where(function ($q) use ($filters) {
-                    if (isset($filters['date_from'])) {
-                        $q->orWhere(function ($subQ) use ($filters) {
-                            $subQ->whereNotNull('t.transaction_timestamp')
-                                ->where('t.transaction_timestamp', '<', $filters['date_from'] . ' 00:00:00');
-                        })->orWhere(function ($subQ) use ($filters) {
-                            $subQ->whereNull('t.transaction_timestamp')
-                                ->where('t.created_at', '<', $filters['date_from'] . ' 00:00:00');
-                        });
-                    }
-                    if (isset($filters['date_to'])) {
-                        $q->orWhere(function ($subQ) use ($filters) {
-                            $subQ->whereNotNull('t.transaction_timestamp')
-                                ->where('t.transaction_timestamp', '>', $filters['date_to'] . ' 23:59:59');
-                        })->orWhere(function ($subQ) use ($filters) {
-                            $subQ->whereNull('t.transaction_timestamp')
-                                ->where('t.created_at', '>', $filters['date_to'] . ' 23:59:59');
-                        });
-                    }
-                });
-            }
+            $eventOutsideRangeQuery->where(function ($q) use ($filters) {
+                if (isset($filters['date_from'])) {
+                    $q->orWhere(function ($subQ) use ($filters) {
+                        $subQ->whereNotNull('t.transaction_timestamp')
+                            ->where('t.transaction_timestamp', '<', $this->dateFilterValue('t.transaction_timestamp', $filters['date_from'], false));
+                    })->orWhere(function ($subQ) use ($filters) {
+                        $subQ->whereNull('t.transaction_timestamp')
+                            ->where('t.created_at', '<', $this->dateFilterValue('t.created_at', $filters['date_from'], false));
+                    });
+                }
+                if (isset($filters['date_to'])) {
+                    $q->orWhere(function ($subQ) use ($filters) {
+                        $subQ->whereNotNull('t.transaction_timestamp')
+                            ->where('t.transaction_timestamp', '>', $this->dateFilterValue('t.transaction_timestamp', $filters['date_to'], true));
+                    })->orWhere(function ($subQ) use ($filters) {
+                        $subQ->whereNull('t.transaction_timestamp')
+                            ->where('t.created_at', '>', $this->dateFilterValue('t.created_at', $filters['date_to'], true));
+                    });
+                }
+            });
 
             $transactionDateCount = (int) (clone $baseQuery)->count();
             $completedDateCount = (int) $completedDateQuery->count();
@@ -857,7 +841,7 @@ class TransactionLogController extends Controller
             ];
         }
 
-        $summaryDateSelect = $dateColumn === 't.transaction_date'
+        $summaryDateSelect = $basis === 'transaction'
             ? $dateExpr . ' as date'
             : 'DATE(' . $dateExpr . ') as date';
 
@@ -966,11 +950,43 @@ class TransactionLogController extends Controller
 
     private function dateFilterValue(string $dateColumn, string $date, bool $endOfDay): string
     {
-        if (str_ends_with($dateColumn, 'transaction_date')) {
-            return $date;
+        if (str_ends_with($dateColumn, 'transaction_timestamp')) {
+            $boundary = Carbon::createFromFormat('Y-m-d', $date, $this->transactionLogTimezone());
+            $boundary = $endOfDay ? $boundary->endOfDay() : $boundary->startOfDay();
+
+            return $boundary->setTimezone('UTC')->format('Y-m-d H:i:s');
         }
 
         return $date . ($endOfDay ? ' 23:59:59' : ' 00:00:00');
+    }
+
+    private function transactionLogTimezone(): string
+    {
+        return config('tsms.transaction_logs.timezone', 'Asia/Manila') ?: 'Asia/Manila';
+    }
+
+    private function localDateExpression(string $timestampExpression): string
+    {
+        $offsetMinutes = Carbon::now($this->transactionLogTimezone())->utcOffset();
+        $driver = DB::connection()->getDriverName();
+
+        if ($driver === 'sqlite') {
+            $modifier = sprintf('%+d minutes', $offsetMinutes);
+
+            return "DATE(datetime({$timestampExpression}, '{$modifier}'))";
+        }
+
+        if ($driver === 'pgsql') {
+            $operator = $offsetMinutes >= 0 ? '+' : '-';
+            $minutes = abs($offsetMinutes);
+
+            return "DATE({$timestampExpression} {$operator} INTERVAL '{$minutes} minutes')";
+        }
+
+        $function = $offsetMinutes >= 0 ? 'DATE_ADD' : 'DATE_SUB';
+        $minutes = abs($offsetMinutes);
+
+        return "DATE({$function}({$timestampExpression}, INTERVAL {$minutes} MINUTE))";
     }
 
     private function dateWindowValidator(Request $request, string $label)

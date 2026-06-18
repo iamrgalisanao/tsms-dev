@@ -84,7 +84,10 @@ class FinanceCalculationServiceTest extends TestCase
 
         $this->assertSame(0.0, $metrics['vat_amount']);
         $this->assertSame(0.0, $metrics['vatable_sales']);
-        $this->assertSame(45255.0, $metrics['net_ex_vat']);
+        $this->assertSame(45255.0, $metrics['sc_vat_exempt_sales']);
+        $this->assertSame(45255.0, $metrics['gross_sales']);
+        $this->assertSame(45255.0, $metrics['net_total']);
+        $this->assertSame(0.0, $metrics['net_ex_vat']);
     }
 
     public function test_aggregate_components_maps_related_taxes_adjustments_and_excludes_voids(): void
