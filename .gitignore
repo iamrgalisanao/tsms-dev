@@ -50,3 +50,9 @@ docs/DAILY_ACTIVITY_*.md
 # Local test dumps
 tmp_valid_tx_errors.json
 
+# Documentation and spreadsheet artifacts are kept locally, not in Git.
+*.md
+*.markdown
+*.xls
+*.xlsx
+*.xlsm
