@@ -99,8 +99,12 @@ class TestTransactionController extends Controller
                 'job_attempts' => 0
             ]);
             
-            // Dispatch job for processing
-            ProcessTransactionJob::dispatch($transaction->id)->afterCommit();
+            // Dispatch job for processing on tenant-sharded queue
+            $tenantId = $transaction->tenant_id ?? ($terminal->tenant_id ?? 0);
+            $shard = $tenantId % 8;
+            ProcessTransactionJob::dispatch($transaction->id)
+                ->afterCommit()
+                ->onQueue('transaction-processing:s' . $shard);
             
             DB::commit();
             
@@ -197,11 +201,13 @@ class TestTransactionController extends Controller
                 ]);
             }
 
-            // Dispatch job with proper queue
+            // Dispatch job on tenant-sharded queue with a small delay to prevent race conditions
+            $tenantId = $transaction->tenant_id ?? optional($transaction->terminal)->tenant_id ?? 0;
+            $shard = $tenantId % 8;
             ProcessTransactionJob::dispatch($transaction->id)
                 ->afterCommit()
-                ->onQueue('transactions')
-                ->delay(now()->addSeconds(5)); // Add small delay to prevent race conditions
+                ->onQueue('transaction-processing:s' . $shard)
+                ->delay(now()->addSeconds(5));
 
             DB::commit();
             return response()->json([

@@ -156,10 +156,12 @@ class RetryHistoryController extends Controller
                 ])
             ]);
 
-            // Queue for processing
+            // Queue for processing on tenant-sharded queue
+            $tenantId = $transaction->tenant_id ?? optional($transaction->terminal)->tenant_id ?? 0;
+            $shard = $tenantId % 8;
             ProcessTransactionJob::dispatch($transaction->id)
                 ->afterCommit()
-                ->onQueue('transactions');
+                ->onQueue('transaction-processing:s' . $shard);
 
             DB::commit();
 
@@ -199,10 +201,12 @@ class RetryHistoryController extends Controller
                 'completed_at' => null
             ]);
 
-            // Dispatch new job
+            // Dispatch new job on tenant-sharded queue
+            $tenantId = $transaction->tenant_id ?? optional($transaction->terminal)->tenant_id ?? 0;
+            $shard = $tenantId % 8;
             ProcessTransactionJob::dispatch($transaction->id)
                 ->afterCommit()
-                ->onQueue('default');
+                ->onQueue('transaction-processing:s' . $shard);
 
             return response()->json([
                 'status' => 'success',

@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Transaction;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 
 class TransactionProcessingService
 {
@@ -45,6 +46,7 @@ class TransactionProcessingService
             DB::rollBack();
             Log::error('Transaction processing error', [
                 'error' => $e->getMessage(),
+                'transaction_id' => $data['transaction_id'] ?? null,
                 'data' => $data
             ]);
             throw $e;

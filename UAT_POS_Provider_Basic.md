@@ -101,7 +101,7 @@ Steps:
 2. PUT /api/v1/transactions/{uuid}/void with body containing identical transaction_id, void_reason, checksum.
 3. Assert 200; success=true; void_reason echoed; voided_at present.
 4. DB: transaction voided_at not null, void_reason stored.
-5. Confirm forward/notification job queued (if integration enabled).
+5. NOTE: Forwarding to the WebApp is ignored by default in staging. If `tsms.web_app.enabled` is `true` in your environment, confirm forward/notification job queued; otherwise confirm no forward job was enqueued.
 
 ### TC-08 Void ID Mismatch
 1. Use same VALID transaction UUID in URL.

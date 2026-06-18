@@ -31,7 +31,7 @@ class RegisterTerminalController extends Controller
          */
         
         $validated = $request->validate([
-            'tenant_code'   => 'required|string|exists:tenants,code',
+            'tenant_code'   => 'required|string|exists:tenants,customer_code',
             'serial_number'  => 'required|string|unique:pos_terminals,serial_number',
             'provider_code' => 'required|string|exists:pos_providers,code',
             'pos_type_id' => 'nullable|exists:pos_types,id',
@@ -48,7 +48,7 @@ class RegisterTerminalController extends Controller
          *
          * @throws \Illuminate\Database\Eloquent\ModelNotFoundException If the tenant with the specified code does not exist.
          */
-        $tenant = Tenant::where('code', $validated['tenant_code'])->firstOrFail();
+    $tenant = Tenant::where('customer_code', $validated['tenant_code'])->firstOrFail();
         $provider = PosProvider::where('code', $validated['provider_code'])->firstOrFail();
 
         /**

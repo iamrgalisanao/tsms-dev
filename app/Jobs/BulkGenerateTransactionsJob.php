@@ -44,7 +44,10 @@ class BulkGenerateTransactionsJob implements ShouldQueue
                         'retry_count' => 0
                     ]));
 
-                    ProcessTransactionJob::dispatch($transaction->id)->afterCommit();
+                    $shard = ($transaction->tenant_id ?? 0) % 8;
+                    ProcessTransactionJob::dispatch($transaction->id)
+                        ->onQueue('transaction-processing:s'.$shard)
+                        ->afterCommit();
                     $this->successCount++;
 
                 } catch (\Throwable $e) {

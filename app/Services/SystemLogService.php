@@ -97,6 +97,109 @@ class SystemLogService
             ->get();
     }
 
+    /**
+     * Prune system logs by date or age.
+     *
+     * Options array may contain:
+     *  - before: (string) date string (Y-m-d) to delete logs strictly before this date
+     *  - days: (int) delete logs older than N days
+     *  - type: (string) optional log type filter
+     *  - dry_run: (bool) if true, only return counts and sample ids
+     *  - chunk: (int) chunk size for deletion
+     *
+     * Returns array with summary information.
+     */
+    public function prune(array $opts = []): array
+    {
+        $before = $opts['before'] ?? null;
+        $days = isset($opts['days']) ? (int) $opts['days'] : null;
+        $type = $opts['type'] ?? null;
+    $dry = !empty($opts['dry_run']);
+    $hard = !empty($opts['hard']);
+        $chunk = isset($opts['chunk']) ? (int) $opts['chunk'] : 500;
+
+        $query = SystemLog::query();
+
+        if ($type) {
+            $query->where('type', $type);
+        }
+
+        if ($before) {
+            try {
+                $dt = \Carbon\Carbon::parse($before)->startOfDay();
+                $query->where('created_at', '<', $dt);
+            } catch (\Exception $e) {
+                // ignore parse errors; let caller validate
+            }
+        } elseif ($days) {
+            $dt = now()->subDays($days)->startOfDay();
+            $query->where('created_at', '<', $dt);
+        } else {
+            // No pruning criteria — don't allow accidental full-table deletion
+            return ['error' => 'No prune criteria provided (use days or before)'];
+        }
+
+        $count = $query->count();
+
+        if ($dry) {
+            $sample = $query->limit(10)->pluck('id')->toArray();
+            return [
+                'dry_run' => true,
+                'count' => $count,
+                'sample_ids' => $sample,
+            ];
+        }
+
+        $deleted = 0;
+        // Use chunking to avoid locking huge sets in one query
+        $query->orderBy('id')->chunkById($chunk, function($rows) use (&$deleted) {
+            $ids = $rows->pluck('id')->toArray();
+            if (!empty($ids)) {
+                if ($hard) {
+                    // Permanently delete rows
+                    try {
+                        $affected = SystemLog::whereIn('id', $ids)->forceDelete();
+                        $deleted += is_int($affected) ? $affected : count($ids);
+                    } catch (\Exception $e) {
+                        // Fallback: delete via query builder if forceDelete isn't available
+                        try {
+                            $affected = \DB::table((new SystemLog)->getTable())->whereIn('id', $ids)->delete();
+                            $deleted += is_int($affected) ? $affected : count($ids);
+                        } catch (\Exception $ex) {
+                            // best-effort; skip
+                        }
+                    }
+                } else {
+                    // Perform a soft-delete by setting deleted_at instead of hard-deleting
+                    $affected = SystemLog::whereIn('id', $ids)->update(['deleted_at' => now()]);
+                    $deleted += $affected;
+                }
+            }
+        });
+
+        // Write an audit record for the prune operation
+        try {
+            SystemLog::create([
+                'type' => 'system',
+                'log_type' => 'prune',
+                'message' => 'Pruned system logs via SystemLogService',
+                'context' => [
+                        'deleted' => $deleted,
+                        'hard' => $hard,
+                        'criteria' => ['before' => $before, 'days' => $days, 'type' => $type]
+                    ],
+                'severity' => 'info'
+            ]);
+        } catch (\Exception $e) {
+            // best-effort; do not fail the prune operation
+        }
+
+        return [
+            'dry_run' => false,
+            'deleted' => $deleted
+        ];
+    }
+
     public function getAuditHistory(array $filters = []): Collection
     {
         return SystemLog::where('type', 'audit')

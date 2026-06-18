@@ -16,24 +16,11 @@ class CircuitBreakerTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        // Use the trait helper to create tenants with required company relationship
+        $this->createTestTenants();
         
-        // Create tenants for tests, checking if they exist first
-        $tenant1 = Tenant::firstOrCreate(
-            ['code' => 'TEST1'],
-            [
-                'name' => 'Test Tenant 1',
-                'code' => 'TEST1'
-            ]
-        );
-        
-        // Create a second tenant for multi-tenant tests
-        $tenant2 = Tenant::firstOrCreate(
-            ['code' => 'TEST2'],
-            [
-                'name' => 'Test Tenant 2',
-                'code' => 'TEST2'
-            ]
-        );
+        // Ensure no leftover circuit breakers from other tests (test isolation)
+        \App\Models\CircuitBreaker::query()->delete();
     }
 
     public function test_starts_in_closed_state_when_created()
@@ -145,8 +132,8 @@ class CircuitBreakerTest extends TestCase
     public function test_creates_unique_circuit_breakers_per_tenant_and_service()
     {
         // Get the actual tenant IDs from the database to avoid foreign key issues
-        $tenant1 = Tenant::where('code', 'TEST1')->first();
-        $tenant2 = Tenant::where('code', 'TEST2')->first();
+    $tenant1 = Tenant::where('customer_code', 'TEST1')->first();
+    $tenant2 = Tenant::where('customer_code', 'TEST2')->first();
         
         $cb1 = CircuitBreaker::forService('api.transactions', $tenant1->id);
         $cb2 = CircuitBreaker::forService('api.transactions', $tenant2->id);

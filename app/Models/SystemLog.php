@@ -5,10 +5,12 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\SoftDeletes;
 
 class SystemLog extends Model
 {
     use HasFactory;
+    use SoftDeletes;
 
     protected $fillable = [
         'type',
@@ -33,7 +35,14 @@ class SystemLog extends Model
 
     public function terminal()
     {
-        return $this->belongsTo(PosTerminal::class, 'terminal_uid', 'terminal_uid');
+        // Local key (SystemLog.terminal_uid) maps to PosTerminal.serial_number per normalized schema
+        return $this->belongsTo(PosTerminal::class, 'terminal_uid', 'serial_number');
+    }
+
+    // Backward-compatible alias used by some legacy views
+    public function posTerminal()
+    {
+        return $this->belongsTo(PosTerminal::class, 'terminal_uid', 'serial_number');
     }
 
     public function user(): BelongsTo

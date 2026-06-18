@@ -123,7 +123,11 @@ Schedule::call(function () {
 
     foreach ($candidates as $txn) {
         if (($txn->job_attempts ?? 0) >= $maxRequeues) { $skipped++; continue; }
-        \App\Jobs\ProcessTransactionJob::dispatch($txn->id)->afterCommit();
+        $tenantId = $txn->tenant_id ?? optional($txn->terminal)->tenant_id ?? 0;
+        $shard = $tenantId % 8;
+        \App\Jobs\ProcessTransactionJob::dispatch($txn->id)
+            ->afterCommit()
+            ->onQueue('transaction-processing:s' . $shard);
         $txn->job_attempts = ($txn->job_attempts ?? 0) + 1;
         $txn->save();
         $requeued++;
@@ -166,6 +170,40 @@ Schedule::call(function () {
     ->name('tenant-inactivity-alerts')
     ->withoutOverlapping()
     ->onOneServer();
+
+// --------------------------------------------------------------------------
+// SystemLog pruning: scheduled safe prune (uses systemlogs:prune command)
+// Default: keep 90 days of logs; scheduled daily at 02:00. Can be toggled
+// via config key `tsms.logs.enable_prune`.
+// --------------------------------------------------------------------------
+Schedule::command('systemlogs:prune --days=90 --force')
+    ->dailyAt('02:00')
+    ->name('systemlogs-prune-daily')
+    ->onOneServer()
+    ->when(fn () => (bool) (config('tsms.logs.enable_prune') ?? true));
+
+// --------------------------------------------------------------------------
+// Reporting refresh: keep summary tables warm and consistent
+// Runs once daily; can be enabled/disabled via config('tsms.reporting.enabled')
+// Adjust --hours for hourly refresh window as desired.
+// --------------------------------------------------------------------------
+// NOTE: `reporting:refresh` expects the table as a positional argument (table)
+// (signature: reporting:refresh {table=transactions_hourly} {--hours=3})
+// Previous invocations used a non-existent --table option which causes errors.
+Schedule::command('reporting:refresh transactions_hourly --hours=6')
+    ->dailyAt('02:30')
+    ->name('reporting-refresh-daily')
+    ->withoutOverlapping()
+    ->onOneServer()
+    ->when(fn () => (bool) (config('tsms.reporting.enabled') ?? true));
+
+// Incremental dispatch every 5 minutes: split the last N minutes into chunk jobs
+Schedule::command('reporting:dispatch --minutes=15 --chunk=5')
+    ->everyFiveMinutes()
+    ->name('reporting-dispatch-incremental')
+    ->withoutOverlapping()
+    ->onOneServer()
+    ->when(fn () => (bool) (config('tsms.reporting.enabled') ?? true));
 
 // --------------------------------------------------------------------------
 // POS Terminal Idle Monitor (log-only phase)

@@ -1,18 +1,18 @@
 {
-    "submission_uuid": "29673a56-92a5-4e3d-8fae-bca77b3b3400",
-    "tenant_id": 125,
-    "terminal_id": 1,
-    "submission_timestamp": "2025-09-13T07:35:45Z",
+    "submission_uuid": "59f6af15-4ec9-40be-92b7-df14ce87cc40",
+    "tenant_id": 127,
+    "terminal_id": 25,
+    "submission_timestamp": "2025-09-29T15:49:38Z",
     "transaction_count": 1,
-    "payload_checksum": "fe29b08ef7d3d0b104a3fc7bcc82c3a225819cc5a51da75ed1fd084f074bef43",
+    "payload_checksum": "8651e445f7252d505970abf87f61d41c1f6423960dadf5f10bfaaddebe09a3d1",
     "transaction": {
-        "transaction_id": "49d803dd-47a6-4eec-8b6b-a3ffe300866e",
-        "transaction_timestamp": "2025-09-13T07:35:45Z",
-        "gross_sales": 465,
-        "net_sales": 415.18,
+        "transaction_id": "b0691517-6f26-4b3c-936e-56b4609a7666",
+        "transaction_timestamp": "2025-09-29T15:49:38Z",
+        "gross_sales": 100,
+        "net_sales": 82.14,
         "promo_status": "WITH_APPROVAL",
         "customer_code": "C-C1045",
-        "payload_checksum": "5345b985f41bdf5fe766fdf20557dc35c10934462ebafd857020e859aa61d4ae",
+        "payload_checksum": "5447a9acdd23aeccd121f63f9ad84865b914ffcc3ad4c6f923cc66da7491691d",
         "adjustments": [
             {
                 "adjustment_type": "promo_discount",
@@ -24,7 +24,7 @@
             },
             {
                 "adjustment_type": "senior_discount",
-                "amount": 0
+                "amount": 17.86
             },
             {
                 "adjustment_type": "pwd_discount",
@@ -46,15 +46,15 @@
         "taxes": [
             {
                 "tax_type": "VAT",
-                "amount": 49.82
+                "amount": 0
             },
             {
                 "tax_type": "VATABLE_SALES",
-                "amount": 415.18
+                "amount": 0
             },
             {
                 "tax_type": "SC_VAT_EXEMPT_SALES",
-                "amount": 0
+                "amount": 89.29
             },
             {
                 "tax_type": "OTHER_TAX",

@@ -36,6 +36,14 @@ return new class extends Migration {
 
         if (Schema::hasColumn('transactions', 'transaction_timestamp')) {
             $addIndex(['transaction_timestamp', 'id'], 'idx_tx_logs_timestamp_id');
+
+            if (Schema::hasColumn('transactions', 'tenant_id')) {
+                $addIndex(['tenant_id', 'transaction_timestamp', 'id'], 'idx_tx_logs_tenant_timestamp');
+            }
+
+            if (Schema::hasColumn('transactions', 'terminal_id')) {
+                $addIndex(['terminal_id', 'transaction_timestamp', 'id'], 'idx_tx_logs_terminal_timestamp');
+            }
         }
 
         if (Schema::hasColumn('transactions', 'completed_at')) {
@@ -70,6 +78,8 @@ return new class extends Migration {
         $dropIndex('idx_tx_logs_status_id');
         $dropIndex('idx_tx_logs_created_id');
         $dropIndex('idx_tx_logs_completed_id');
+        $dropIndex('idx_tx_logs_terminal_timestamp');
+        $dropIndex('idx_tx_logs_tenant_timestamp');
         $dropIndex('idx_tx_logs_timestamp_id');
         $dropIndex('idx_tx_logs_terminal_transaction_date');
         $dropIndex('idx_tx_logs_tenant_transaction_date');

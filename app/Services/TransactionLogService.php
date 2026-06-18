@@ -13,10 +13,10 @@ class TransactionLogService
     {
         return Cache::remember($this->getCacheKey($filters), 300, function() use ($filters) {
             return Transaction::with(['terminal.provider', 'tenant'])
-                ->when($filters['date_from'] ?? null, fn($q, $date) => 
-                    $q->whereDate('created_at', '>=', $date))
-                ->when($filters['date_to'] ?? null, fn($q, $date) => 
-                    $q->whereDate('created_at', '<=', $date))
+                ->when($filters['date_from'] ?? null, fn($q, $date) =>
+                    $q->where('created_at', '>=', $date . ' 00:00:00'))
+                ->when($filters['date_to'] ?? null, fn($q, $date) =>
+                    $q->where('created_at', '<=', $date . ' 23:59:59'))
                 ->when($filters['amount_min'] ?? null, fn($q, $amount) => 
                     $q->where('gross_sales', '>=', $amount))
                 ->when($filters['amount_max'] ?? null, fn($q, $amount) => 

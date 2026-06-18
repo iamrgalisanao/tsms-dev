@@ -41,8 +41,8 @@ trait CircuitBreakerTestHelpers
             // Run migrations
             Artisan::call('migrate:fresh', ['--force' => true]);
             
-            // Create test tenants
-            $this->createTestTenants();
+        // Create test tenants
+        $this->createTestTenants();
         } catch (\Exception $e) {
             Log::error('Circuit breaker test setup failed: ' . $e->getMessage());
             throw $e;
@@ -54,21 +54,30 @@ trait CircuitBreakerTestHelpers
      */
     protected function createTestTenants()
     {
+        // Ensure a company exists for tenant foreign key
+        // Use the actual columns defined on companies (company_name, customer_code, tin)
+        $company = \App\Models\Company::firstOrCreate(
+            ['company_name' => 'Test Company'],
+            ['customer_code' => 'TCOMP', 'tin' => 'T-COMP-TEST']
+        );
+
         // Create first test tenant
         Tenant::firstOrCreate(
-            ['code' => 'TEST1'],
+            ['customer_code' => 'TEST1'],
             [
                 'name' => 'Test Tenant 1',
-                'code' => 'TEST1'
+                'customer_code' => 'TEST1',
+                'company_id' => $company->id
             ]
         );
         
         // Create second test tenant
         Tenant::firstOrCreate(
-            ['code' => 'TEST2'],
+            ['customer_code' => 'TEST2'],
             [
                 'name' => 'Test Tenant 2',
-                'code' => 'TEST2'
+                'customer_code' => 'TEST2',
+                'company_id' => $company->id
             ]
         );
     }
