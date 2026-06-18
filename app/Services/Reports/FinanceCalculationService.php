@@ -128,8 +128,13 @@ class FinanceCalculationService
         $rawNetSales = (float) ($c['net_sales'] ?? 0);
         $rawVat = (float) ($c['vat_amount'] ?? 0);
         $rawScVatExempt = (float) ($c['sc_vat_exempt_sales'] ?? 0);
+        $rawVatableSales = (float) ($c['vatable_sales'] ?? 0);
+        $hasTaxableBasis = $rawVatableSales > 0 || $rawVat > 0;
+        $reportedScVatExempt = (! $hasTaxableBasis && $rawScVatExempt === 0.0 && $rawNetSales > 0)
+            ? round($rawNetSales, 2)
+            : $rawScVatExempt;
 
-        $vatableForGross = (float) ($c['vatable_sales'] ?? 0);
+        $vatableForGross = $rawVatableSales;
         $capturedVatableIncludesVatLessSeniorPwd = false;
 
         if ($rawNetSales > 0 && $rawVat > 0) {
@@ -164,10 +169,9 @@ class FinanceCalculationService
 
         $nominalGross = round($c['gross_sales'] ?? 0, 2);
         $grossBasis = $options['gross_sales_basis'] ?? 'raw';
-        $rawVatableSales = (float) ($c['vatable_sales'] ?? 0);
         $rawComponentSum = round(
             $rawVatableSales
-            + $rawScVatExempt
+            + $reportedScVatExempt
             + $rawVat
             + ($c['promo_with_approval'] ?? 0)
             + ($c['promo_without_approval'] ?? 0)
@@ -183,7 +187,7 @@ class FinanceCalculationService
 
         $normalizedComponentSum = round(
             $vatableForGross
-            + $rawScVatExempt
+            + $reportedScVatExempt
             + $rawVat
             + ($c['promo_with_approval'] ?? 0)
             + ($c['promo_without_approval'] ?? 0)
@@ -216,7 +220,7 @@ class FinanceCalculationService
             - ($c['employee_discount'] ?? 0)
             - $seniorPwd
             - ($c['vip_discount'] ?? 0)
-            - $rawScVatExempt
+            - $reportedScVatExempt
             - ($c['other_tax'] ?? 0)
             - $serviceCharge,
             2
@@ -224,17 +228,16 @@ class FinanceCalculationService
 
         $netSales = ($rawNetSales > 0) ? round($rawNetSales, 2) : $derivedNetSales;
 
-        if ($rawNetSales > 0 && $rawScVatExempt > 0) {
-            $netSales = round($netSales - $rawScVatExempt, 2);
+        if ($rawNetSales > 0 && $reportedScVatExempt > 0) {
+            $netSales = round($netSales - $reportedScVatExempt, 2);
 
-            $rawNetSalesIncludesVat = abs($rawNetSales - round($vatableForGross + $rawScVatExempt + $rawVat, 2)) <= 0.10;
+            $rawNetSalesIncludesVat = abs($rawNetSales - round($vatableForGross + $reportedScVatExempt + $rawVat, 2)) <= 0.10;
             if (! $rawNetSalesIncludesVat && $rawVat > 0) {
                 $netSales = round($netSales + $rawVat, 2);
             }
         }
 
         $reportedVatableSales = round((float) ($c['vatable_sales'] ?? 0), 2);
-        $hasTaxableBasis = $reportedVatableSales > 0 || $rawVat > 0;
         $derivedVat = $hasTaxableBasis ? round(($netSales / 1.12) * 0.12, 2) : 0.0;
 
         $capturedVatableIsTaxableInclusive = $rawVat > 0
@@ -261,7 +264,7 @@ class FinanceCalculationService
 
         $netSubjectToRent = round(
             $netExVAT
-            + $rawScVatExempt
+            + $reportedScVatExempt
             + ($c['promo_without_approval'] ?? 0)
             + ($c['other_tax'] ?? 0)
             + ($c['service_charge_retained'] ?? 0),
@@ -275,10 +278,11 @@ class FinanceCalculationService
             'net_sales' => $netSales,
             'vat_amount' => $vat,
             'vatable_sales' => $reportedVatableSales,
+            'sc_vat_exempt_sales' => $reportedScVatExempt,
             'gross_sales' => $gross,
             'net_ex_vat' => $netExVAT,
             'net_subject_to_rent' => $netSubjectToRent,
-            'net_total' => round($netSales + $rawScVatExempt, 2),
+            'net_total' => round($netSales + $reportedScVatExempt, 2),
         ]);
     }
 
