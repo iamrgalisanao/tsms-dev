@@ -110,7 +110,7 @@ class TransactionController extends Controller
         if (isset($transaction['adjustments']) && is_array($transaction['adjustments'])) {
             foreach ($transaction['adjustments'] as $adjustment) {
                 \App\Models\TransactionAdjustment::create([
-                    'transaction_id' => $transactionModel->transaction_id,
+                    'transaction_pk' => $transactionModel->id,
                     'adjustment_type' => $adjustment['adjustment_type'],
                     'amount' => $adjustment['amount'],
                 ]);
@@ -1353,6 +1353,7 @@ class TransactionController extends Controller
                         'submission_uuid' => $request->submission_uuid,
                         'submission_timestamp' => $request->submission_timestamp,
                     ];
+                    $txPayload = array_merge($txPayload, $this->adjustmentColumnTotals($transactionData['adjustments'] ?? [], $transactionData['promo_status'] ?? null));
                     if (Schema::hasColumn('transactions', 'receipt_no')) {
                         $txPayload['receipt_no'] = $transactionData['receipt_no'] ?? null;
                     }
@@ -1366,7 +1367,7 @@ class TransactionController extends Controller
                     if (isset($transactionData['adjustments']) && is_array($transactionData['adjustments'])) {
                         foreach ($transactionData['adjustments'] as $adjustment) {
                             \App\Models\TransactionAdjustment::create([
-                                'transaction_id' => $transaction->transaction_id,
+                                'transaction_pk' => $transaction->id,
                                 'adjustment_type' => $adjustment['adjustment_type'],
                                 'amount' => $adjustment['amount'],
                             ]);
@@ -1980,6 +1981,7 @@ class TransactionController extends Controller
                 'validation_status' => $validationStatus,
                 'submission_uuid' => $transaction['submission_uuid'] ?? null,
             ];
+            $txPayload = array_merge($txPayload, $this->adjustmentColumnTotals($transaction['adjustments'] ?? [], $transaction['promo_status'] ?? null));
             if (Schema::hasColumn('transactions', 'receipt_no')) {
                 $txPayload['receipt_no'] = $transaction['receipt_no'] ?? null;
             }
@@ -2051,5 +2053,43 @@ class TransactionController extends Controller
                 'errors' => ['system' => 'System error occurred while processing transaction']
             ];
         }
+    }
+
+    private function adjustmentColumnTotals(array $adjustments, ?string $promoStatus = null): array
+    {
+        $totals = [
+            'promo_discount' => 0.0,
+            'senior_discount' => 0.0,
+            'pwd_discount' => 0.0,
+            'vip_card_discount' => 0.0,
+            'employee_discount' => 0.0,
+            'service_charge' => 0.0,
+            'management_service_charge' => 0.0,
+        ];
+
+        foreach ($adjustments as $adjustment) {
+            $type = strtolower(trim((string) ($adjustment['adjustment_type'] ?? '')));
+            $amount = (float) ($adjustment['amount'] ?? 0);
+
+            if ($type === 'promo_discount') {
+                $totals['promo_discount'] += $amount;
+            } elseif (in_array($type, ['senior_discount', 'senior_citizen_discount', 'senior'], true)) {
+                $totals['senior_discount'] += $amount;
+            } elseif (in_array($type, ['pwd_discount', 'pwd_citizen_discount', 'pwddiscount', 'pwd'], true)) {
+                $totals['pwd_discount'] += $amount;
+            } elseif (in_array($type, ['vip_card_discount', 'vip_discount', 'vip'], true)) {
+                $totals['vip_card_discount'] += $amount;
+            } elseif (in_array($type, ['employee_discount', 'employee'], true)) {
+                $totals['employee_discount'] += $amount;
+            } elseif (in_array($type, ['service_charge', 'service_charge_distributed_to_employees'], true)) {
+                $totals['service_charge'] += $amount;
+            } elseif (in_array($type, ['management_service_charge', 'service_charge_retained_by_management'], true)) {
+                $totals['management_service_charge'] += $amount;
+            }
+        }
+
+        return collect($totals)
+            ->filter(fn ($amount, $column) => $amount !== 0.0 && Schema::hasColumn('transactions', $column))
+            ->all();
     }
 }

@@ -226,15 +226,19 @@ final readonly class TransactionIngestService
             $amount = (float) ($adjustment['amount'] ?? 0.0);
 
             if ($type === 'promo_discount' && Schema::hasColumn('transactions', 'promo_discount')) {
-                $normalized['promo_discount'] = $amount;
-            } elseif ($type === 'senior_discount' && Schema::hasColumn('transactions', 'senior_discount')) {
-                $normalized['senior_discount'] = $amount;
-            } elseif ($type === 'pwd_discount' && Schema::hasColumn('transactions', 'pwd_discount')) {
-                $normalized['pwd_discount'] = $amount;
-            } elseif (($type === 'service_charge' || $type === 'service_charge_distributed_to_employees') && Schema::hasColumn('transactions', 'service_charge')) {
-                $normalized['service_charge'] = $amount;
-            } elseif (($type === 'management_service_charge' || $type === 'service_charge_retained_by_management') && Schema::hasColumn('transactions', 'management_service_charge')) {
-                $normalized['management_service_charge'] = $amount;
+                $normalized['promo_discount'] = ($normalized['promo_discount'] ?? 0) + $amount;
+            } elseif (in_array($type, ['senior_discount', 'senior_citizen_discount', 'senior'], true) && Schema::hasColumn('transactions', 'senior_discount')) {
+                $normalized['senior_discount'] = ($normalized['senior_discount'] ?? 0) + $amount;
+            } elseif (in_array($type, ['pwd_discount', 'pwd_citizen_discount', 'pwddiscount', 'pwd'], true) && Schema::hasColumn('transactions', 'pwd_discount')) {
+                $normalized['pwd_discount'] = ($normalized['pwd_discount'] ?? 0) + $amount;
+            } elseif (in_array($type, ['vip_card_discount', 'vip_discount', 'vip'], true) && Schema::hasColumn('transactions', 'vip_card_discount')) {
+                $normalized['vip_card_discount'] = ($normalized['vip_card_discount'] ?? 0) + $amount;
+            } elseif (in_array($type, ['employee_discount', 'employee'], true) && Schema::hasColumn('transactions', 'employee_discount')) {
+                $normalized['employee_discount'] = ($normalized['employee_discount'] ?? 0) + $amount;
+            } elseif (in_array($type, ['service_charge', 'service_charge_distributed_to_employees'], true) && Schema::hasColumn('transactions', 'service_charge')) {
+                $normalized['service_charge'] = ($normalized['service_charge'] ?? 0) + $amount;
+            } elseif (in_array($type, ['management_service_charge', 'service_charge_retained_by_management'], true) && Schema::hasColumn('transactions', 'management_service_charge')) {
+                $normalized['management_service_charge'] = ($normalized['management_service_charge'] ?? 0) + $amount;
             }
         }
     }

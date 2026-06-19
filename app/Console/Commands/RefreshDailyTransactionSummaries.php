@@ -125,19 +125,22 @@ class RefreshDailyTransactionSummaries extends Command
             ->groupBy('t.tenant_id', 't.terminal_id', 'business_date')
             ->orderBy('business_date')
             ->get();
+        $payloadAdjustments = $this->payloadAdjustmentTotals($from, $to, $tenantId, $dateExpr);
 
         $affectedDates = collect();
         for ($date = Carbon::parse($from); $date->lte(Carbon::parse($to)); $date->addDay()) {
             $affectedDates->push($date->toDateString());
         }
 
-        DB::transaction(function () use ($rows, $affectedDates, $tenantId) {
+        DB::transaction(function () use ($rows, $affectedDates, $tenantId, $payloadAdjustments) {
             DB::table('daily_transaction_summaries')
                 ->whereBetween('business_date', [$affectedDates->first(), $affectedDates->last()])
                 ->when($tenantId, fn ($q) => $q->where('tenant_id', $tenantId))
                 ->delete();
 
             foreach ($rows as $row) {
+                $payload = $payloadAdjustments[$row->tenant_id][$row->terminal_id][$row->business_date] ?? [];
+
                 DB::table('daily_transaction_summaries')->insert([
                     'tenant_id' => $row->tenant_id,
                     'terminal_id' => $row->terminal_id,
@@ -150,12 +153,12 @@ class RefreshDailyTransactionSummaries extends Command
                     'vat_amount' => $row->vat_amount,
                     'sc_vat_exempt_sales' => $row->sc_vat_exempt_sales,
                     'refund_amount' => $row->refund_amount,
-                    'promo_with_approval' => $row->promo_with_approval,
-                    'promo_without_approval' => $row->promo_without_approval,
-                    'employee_discount' => $row->employee_discount,
-                    'senior_discount' => $row->senior_discount,
-                    'pwd_discount' => $row->pwd_discount,
-                    'vip_discount' => $row->vip_discount,
+                    'promo_with_approval' => max((float) $row->promo_with_approval, (float) ($payload['promo_with_approval'] ?? 0)),
+                    'promo_without_approval' => max((float) $row->promo_without_approval, (float) ($payload['promo_without_approval'] ?? 0)),
+                    'employee_discount' => max((float) $row->employee_discount, (float) ($payload['employee_discount'] ?? 0)),
+                    'senior_discount' => max((float) $row->senior_discount, (float) ($payload['senior_discount'] ?? 0)),
+                    'pwd_discount' => max((float) $row->pwd_discount, (float) ($payload['pwd_discount'] ?? 0)),
+                    'vip_discount' => max((float) $row->vip_discount, (float) ($payload['vip_discount'] ?? 0)),
                     'regular_discount' => $row->regular_discount,
                     'other_tax' => $row->other_tax,
                     'service_charge_distributed' => $row->service_charge_distributed,
@@ -188,5 +191,44 @@ class RefreshDailyTransactionSummaries extends Command
         ));
 
         return self::SUCCESS;
+    }
+
+    private function payloadAdjustmentTotals(string $from, string $to, mixed $tenantId, string $dateExpr): array
+    {
+        if (! Schema::hasColumn('transactions', 'original_payload')) {
+            return [];
+        }
+
+        $service = app(\App\Services\Reports\FinanceCalculationService::class);
+        $rows = DB::table('transactions as t')
+            ->selectRaw('t.tenant_id, t.terminal_id')
+            ->selectRaw($dateExpr . ' as business_date')
+            ->addSelect('t.promo_status', 't.original_payload')
+            ->whereRaw($dateExpr . ' BETWEEN ? AND ?', [$from, $to])
+            ->when($tenantId, fn ($q) => $q->where('t.tenant_id', $tenantId));
+
+        if (config('tsms.reporting.exclude_voids_from_totals', true) && Schema::hasColumn('transactions', 'transaction_type')) {
+            $rows->where('t.transaction_type', '!=', 'VOID')->whereNull('t.voided_at');
+        }
+
+        $totals = [];
+        foreach ($rows->cursor() as $row) {
+            $totals[$row->tenant_id][$row->terminal_id][$row->business_date] ??= [
+                'promo_with_approval' => 0.0,
+                'promo_without_approval' => 0.0,
+                'employee_discount' => 0.0,
+                'senior_discount' => 0.0,
+                'pwd_discount' => 0.0,
+                'vip_discount' => 0.0,
+            ];
+
+            foreach ($service->adjustmentComponentsFromPayload($row->original_payload, $row->promo_status) as $key => $value) {
+                if (array_key_exists($key, $totals[$row->tenant_id][$row->terminal_id][$row->business_date])) {
+                    $totals[$row->tenant_id][$row->terminal_id][$row->business_date][$key] += $value;
+                }
+            }
+        }
+
+        return $totals;
     }
 }

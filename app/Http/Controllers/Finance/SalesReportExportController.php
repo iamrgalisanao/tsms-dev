@@ -122,6 +122,7 @@ class SalesReportExportController extends Controller
         $dailyTax = $taxQuery->groupBy('report_date')->get()->keyBy('report_date');
 
         $service = app(\App\Services\Reports\FinanceCalculationService::class);
+        $dailyPayloadAdjustments = $this->payloadAdjustmentTotals($startDate, $endDate, $tenantRecord?->id, $reportDateExpr, $service);
         $byDate = [];
         $allComponents = [];
         $allDates = $dailyMain->keys()->union($dailyAdj->keys())->union($dailyTax->keys())->sort();
@@ -135,15 +136,15 @@ class SalesReportExportController extends Controller
                 'vatable_sales' => (float)($tx->vatable_sales ?? 0),
                 'sc_vat_exempt_sales' => (float)($tx->sc_vat_exempt_sales ?? 0),
                 'vat_amount' => (float)($tx->vat_amount ?? 0),
-                'promo_with_approval' => (float)($tx->promo_with_approval ?? 0),
-                'promo_without_approval' => (float)($tx->promo_without_approval ?? 0),
-                'employee_discount' => (float)($adj->employee_discount ?? 0),
-                'senior_discount' => (float)($tx->senior_discount ?? 0),
-                'pwd_discount' => (float)($tx->pwd_discount ?? 0),
-                'vip_discount' => (float)($adj->vip_discount ?? 0),
+                'promo_with_approval' => max((float)($tx->promo_with_approval ?? 0), (float)($dailyPayloadAdjustments[$date]['promo_with_approval'] ?? 0)),
+                'promo_without_approval' => max((float)($tx->promo_without_approval ?? 0), (float)($dailyPayloadAdjustments[$date]['promo_without_approval'] ?? 0)),
+                'employee_discount' => max((float)($adj->employee_discount ?? 0), (float)($dailyPayloadAdjustments[$date]['employee_discount'] ?? 0)),
+                'senior_discount' => max((float)($tx->senior_discount ?? 0), (float)($dailyPayloadAdjustments[$date]['senior_discount'] ?? 0)),
+                'pwd_discount' => max((float)($tx->pwd_discount ?? 0), (float)($dailyPayloadAdjustments[$date]['pwd_discount'] ?? 0)),
+                'vip_discount' => max((float)($adj->vip_discount ?? 0), (float)($dailyPayloadAdjustments[$date]['vip_discount'] ?? 0)),
                 'other_tax' => (float)($tax->other_tax_basis ?? 0),
-                'service_charge_distributed' => (float)($tx->service_charge_distributed ?? 0),
-                'service_charge_retained' => (float)($tx->service_charge_retained ?? 0),
+                'service_charge_distributed' => max((float)($tx->service_charge_distributed ?? 0), (float)($dailyPayloadAdjustments[$date]['service_charge_distributed'] ?? 0)),
+                'service_charge_retained' => max((float)($tx->service_charge_retained ?? 0), (float)($dailyPayloadAdjustments[$date]['service_charge_retained'] ?? 0)),
                 // CSMR does not expose a standalone "regular discount" column.
                 // Excluding discount_total here keeps Gross Sales aligned with
                 // visible CSMR columns and avoids discount double-counting.
@@ -292,5 +293,43 @@ class SalesReportExportController extends Controller
             Log::error('Export failed: ' . $e->getMessage());
             return response()->json(['error' => 'Critical failure: ' . $e->getMessage()], 500);
         }
+    }
+
+    private function payloadAdjustmentTotals(string $startDate, string $endDate, $tenantId, string $reportDateExpr, \App\Services\Reports\FinanceCalculationService $service): array
+    {
+        if (! Schema::hasColumn('transactions', 'original_payload')) {
+            return [];
+        }
+
+        $rows = DB::table('transactions')
+            ->selectRaw($reportDateExpr . ' as report_date')
+            ->addSelect('promo_status', 'original_payload')
+            ->whereRaw($reportDateExpr . ' BETWEEN ? AND ?', [$startDate, $endDate])
+            ->when($tenantId, fn ($query) => $query->where('tenant_id', $tenantId));
+
+        if (config('tsms.reporting.exclude_voids_from_totals', true)) {
+            $rows->where('transaction_type', '!=', 'VOID')->whereNull('voided_at');
+        }
+
+        $totals = [];
+        foreach ($rows->cursor() as $row) {
+            $date = (string) $row->report_date;
+            $totals[$date] ??= [
+                'promo_with_approval' => 0.0,
+                'promo_without_approval' => 0.0,
+                'employee_discount' => 0.0,
+                'senior_discount' => 0.0,
+                'pwd_discount' => 0.0,
+                'vip_discount' => 0.0,
+                'service_charge_distributed' => 0.0,
+                'service_charge_retained' => 0.0,
+            ];
+
+            foreach ($service->adjustmentComponentsFromPayload($row->original_payload, $row->promo_status) as $key => $value) {
+                $totals[$date][$key] += $value;
+            }
+        }
+
+        return $totals;
     }
 }

@@ -61,8 +61,61 @@ class FinanceReportSummarySourceTest extends TestCase
         $this->assertEquals(35.00, (float) $response->json('totals.gross_sales'));
     }
 
+    public function test_finance_report_recovers_discount_columns_from_original_payload(): void
+    {
+        Transaction::factory()->create([
+            'tenant_id' => $this->tenant->id,
+            'terminal_id' => $this->terminal->id,
+            'transaction_timestamp' => '2026-06-15 09:01:00',
+            'gross_sales' => 120.00,
+            'net_sales' => 100.00,
+            'vat_amount' => 10.71,
+            'vatable_sales' => 89.29,
+            'senior_discount' => 0,
+            'pwd_discount' => 0,
+            'promo_discount' => 0,
+            'promo_status' => 'WITH_APPROVAL',
+            'validation_status' => 'VALID',
+            'original_payload' => json_encode([
+                'adjustments' => [
+                    ['adjustment_type' => 'senior_discount', 'amount' => '12.50'],
+                    ['adjustment_type' => 'pwd_discount', 'amount' => '7.25'],
+                ],
+            ]),
+        ]);
+
+        Sanctum::actingAs($this->adminUser);
+
+        $response = $this->getJson('/reports/data?month=2026-06&tenant=' . $this->tenant->id);
+
+        $response->assertOk();
+        $this->assertSame('raw_transactions', $response->json('source'));
+        $this->assertEquals(12.50, (float) $response->json('totals.senior_discount'));
+        $this->assertEquals(7.25, (float) $response->json('totals.pwd_discount'));
+        $this->assertEquals(19.75, (float) $response->json('totals.senior_pwd'));
+    }
+
     public function test_finance_report_uses_daily_summaries_only_when_every_requested_date_is_refreshed(): void
     {
+        Transaction::factory()->create([
+            'tenant_id' => $this->tenant->id,
+            'terminal_id' => $this->terminal->id,
+            'transaction_timestamp' => '2026-06-15 09:01:00',
+            'gross_sales' => 35.00,
+            'net_sales' => 31.25,
+            'vat_amount' => 3.75,
+            'vatable_sales' => 31.25,
+            'senior_discount' => 0,
+            'pwd_discount' => 0,
+            'validation_status' => 'VALID',
+            'original_payload' => json_encode([
+                'adjustments' => [
+                    ['adjustment_type' => 'senior_discount', 'amount' => '4.00'],
+                    ['adjustment_type' => 'pwd_discount', 'amount' => '3.00'],
+                ],
+            ]),
+        ]);
+
         DB::table('daily_transaction_summaries')->insert([
             'tenant_id' => $this->tenant->id,
             'terminal_id' => $this->terminal->id,
@@ -108,6 +161,8 @@ class FinanceReportSummarySourceTest extends TestCase
 
         $response->assertOk();
         $this->assertSame('daily_transaction_summaries', $response->json('source'));
-        $this->assertEquals(35.00, (float) $response->json('totals.gross_sales'));
+        $this->assertEquals(42.00, (float) $response->json('totals.gross_sales'));
+        $this->assertEquals(4.00, (float) $response->json('totals.senior_discount'));
+        $this->assertEquals(3.00, (float) $response->json('totals.pwd_discount'));
     }
 }
