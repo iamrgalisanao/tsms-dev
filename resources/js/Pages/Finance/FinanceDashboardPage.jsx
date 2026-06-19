@@ -5,11 +5,9 @@ import FinanceLoadingSkeleton from '../../features/finance/components/FinanceLoa
 import FinanceDashboardHeader from '../../features/finance/components/FinanceDashboardHeader';
 import { FinanceKpiGrid, FinanceLeakageGrid } from '../../features/finance/components/FinanceKpiGrids';
 import FinanceAlerts from '../../features/finance/components/FinanceAlerts';
-import ExceptionQueue from '../../features/finance/components/ExceptionQueue';
 import RevenueTrendCard from '../../features/finance/components/RevenueTrendCard';
 import RevenueCompositionCard from '../../features/finance/components/RevenueCompositionCard';
 import TopTenantsCard from '../../features/finance/components/TopTenantsCard';
-import ComplianceStatusCard from '../../features/finance/components/ComplianceStatusCard';
 import QuickActionsHub from '../../features/finance/components/QuickActionsHub';
 
 export default function FinanceDashboardPage() {
@@ -19,7 +17,7 @@ export default function FinanceDashboardPage() {
     if (loading) return <FinanceLoadingSkeleton />;
 
     return (
-        <Box sx={{ pb: 10 }}>
+        <Box sx={{ width: '100%', maxWidth: 1440, mx: 'auto', px: { xs: 2, sm: 3, xl: 0 }, pb: 10 }}>
 
             {/* ── Row 1: Header / Sync / Period ──────────────────────── */}
             <FinanceDashboardHeader
@@ -32,17 +30,14 @@ export default function FinanceDashboardPage() {
             {/* ── Row 2: Gross Sales | Net Sales | Reconciled ─────────── */}
             <FinanceKpiGrid metrics={metrics} dateRange={dateRange} />
 
-            {/* ── Row 3: Refunds | Discounts | Validation Exceptions ───── */}
+            {/* ── Row 3: Refunds | Discounts | Voided Transactions ─────── */}
             <FinanceLeakageGrid metrics={metrics} dateRange={dateRange} />
 
             {/* ── Row 4: Finance Alerts (full width) ──────────────────── */}
             <FinanceAlerts metrics={metrics} />
 
-            {/* ── Row 5: Exception Queue (full width) ─────────────────── */}
-            <ExceptionQueue metrics={metrics} />
-
             {/* ── Row 6: Revenue Trend 50% | Revenue Composition 50% ──── */}
-            <Grid container spacing={4} sx={{ mb: 4 }}>
+            <Grid container spacing={3} sx={{ mb: 4 }}>
                 <Grid item xs={12} lg={6}>
                     <RevenueTrendCard charts={charts} />
                 </Grid>
@@ -51,13 +46,10 @@ export default function FinanceDashboardPage() {
                 </Grid>
             </Grid>
 
-            {/* ── Row 7: Top Tenants 50% | Compliance Status 50% ─────── */}
-            <Grid container spacing={4} sx={{ mb: 4 }}>
-                <Grid item xs={12} lg={6}>
+            {/* ── Row 7: Top Tenants ───────────────────────────────────── */}
+            <Grid container spacing={3} sx={{ mb: 4 }}>
+                <Grid item xs={12}>
                     <TopTenantsCard metrics={metrics} />
-                </Grid>
-                <Grid item xs={12} lg={6}>
-                    <ComplianceStatusCard metrics={metrics} />
                 </Grid>
             </Grid>
 

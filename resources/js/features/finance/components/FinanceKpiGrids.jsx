@@ -80,8 +80,6 @@ export function FinanceLeakageGrid({ metrics, dateRange }) {
         ? `${((voidCount / voidTotal) * 100).toFixed(2)}% of total volume`
         : 'of total volume';
 
-    const exceptions = metrics?.exceptions?.total_exceptions ?? 0;
-
     return (
         <Grid container spacing={3} sx={{ mb: 4 }}>
             <Grid item xs={12} sm={6} lg={4}>
@@ -104,13 +102,13 @@ export function FinanceLeakageGrid({ metrics, dateRange }) {
             </Grid>
             <Grid item xs={12} sm={6} lg={4}>
                 <FinanceKpiCard
-                    title="Validation Exceptions"
-                    value={exceptions}
-                    subtitle="Unresolved anomalies"
-                    gradient={exceptions > 0 ? 'linear-gradient(135deg, #EF4444 0%, #DC2626 100%)' : null}
+                    title="Voided Transactions"
+                    value={(metrics?.voided_transactions?.current ?? 0).toLocaleString()}
+                    subtitle={voidPct}
+                    trend={metrics?.voided_transactions?.trend}
+                    trendDirection={metrics?.voided_transactions?.trend < 0 ? 'down' : 'up'}
                     icon={<ErrorIcon sx={{ fontSize: 22 }} />}
-                    onClick={() => { window.location.href = '/transactions?status=FAILED'; }}
-                    tooltip="Schema anomalies, duplicate checksums, or VAT rounding errors requiring manual intervention."
+                    tooltip="Transactions voided at point-of-sale. High void rates may indicate operational errors or transaction fraud."
                 />
             </Grid>
         </Grid>
