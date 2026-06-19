@@ -854,7 +854,7 @@ class TransactionLogController extends Controller
                 'gross_sales' => (float) $grandTotalRaw->gross_sales,
                 'net_sales' => (float) $grandTotalRaw->raw_net_sales,
             ];
-            $grandTotalDerived = $this->financeService->deriveMetrics($grandTotalComponents);
+            $grandTotalDerived = $this->financeService->deriveMetrics($grandTotalComponents, ['gross_sales_basis' => 'pre_deduction']);
             $grandTotal = (object) [
                 'tx_count' => (int) $grandTotalRaw->tx_count,
                 'unique_receipts' => (int) ($grandTotalRaw->unique_receipts ?? 0),
@@ -939,7 +939,7 @@ class TransactionLogController extends Controller
                 'net_sales' => (float) $row->raw_net_sales,
             ];
 
-            $derived = $this->financeService->deriveMetrics($components);
+            $derived = $this->financeService->deriveMetrics($components, ['gross_sales_basis' => 'pre_deduction']);
 
             $row->gross = $derived['gross_sales'];
             $row->net = $derived['net_total'];
