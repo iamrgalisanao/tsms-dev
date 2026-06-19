@@ -385,38 +385,6 @@ class DashboardController extends Controller
         return response()->stream($callback, 200, $headers);
     }
 
-    // API: POST /api/dashboard/forward-transaction/{id}
-    public function forwardTransaction(Request $request, $transactionId)
-    {
-        try {
-            $transaction = Transaction::with(['adjustments', 'taxes'])->findOrFail($transactionId);
-
-            return response()->json([
-                'status' => 'disabled',
-                'message' => 'WebApp forwarding is disabled in this build.',
-                'transaction_id' => $transaction->transaction_id,
-            ], 410);
-
-        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Transaction not found',
-                'transaction_id' => $transactionId
-            ], 404);
-        } catch (\Exception $e) {
-            \Log::error('Forwarding endpoint failed while disabled', [
-                'transaction_id' => $transactionId,
-                'error' => $e->getMessage()
-            ]);
-
-            return response()->json([
-                'status' => 'error',
-                'message' => 'Forwarding endpoint failed: ' . $e->getMessage(),
-                'transaction_id' => $transactionId
-            ], 500);
-        }
-    }
-
     // protected function getEnrollmentData()
     // {
     //     $dates = collect(range(30, 0))->map(function($days) {

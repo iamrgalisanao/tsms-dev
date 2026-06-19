@@ -11,20 +11,16 @@ import {
     Button,
     Box,
     Chip,
-    Link,
-    IconButton,
     CircularProgress,
     Stack,
     Pagination,
     Tooltip
 } from '@mui/material';
-import ForwardIcon from '@mui/icons-material/Forward';
-import LaunchIcon from '@mui/icons-material/Launch';
 import VisibilityIcon from '@mui/icons-material/Visibility';
 import ReceiptIcon from '@mui/icons-material/Receipt';
 import { formatDate } from '../../utils/dateFormatter';
 
-const RecentTransactionsTable = ({ transactions, loading, onForward }) => {
+const RecentTransactionsTable = ({ transactions, loading, onViewDetails }) => {
     const [page, setPage] = useState(1);
     const pageSize = 10;
 
@@ -148,7 +144,7 @@ const RecentTransactionsTable = ({ transactions, loading, onForward }) => {
                                         variant="contained"
                                         size="small"
                                         startIcon={<VisibilityIcon />}
-                                        onClick={() => onForward(tx)}
+                                        onClick={() => onViewDetails(tx)}
                                         sx={{
                                             borderRadius: '8px',
                                             textTransform: 'none',

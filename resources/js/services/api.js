@@ -27,10 +27,6 @@ const api = {
         const response = await axios.get('/api/dashboard/terminal-performance');
         return response.data;
     },
-    forwardTransaction: async (id) => {
-        const response = await axios.post(`/api/dashboard/forward-transaction/${id}`);
-        return response.data;
-    },
     getNotifications: async () => {
         const response = await axios.get('/api/dashboard/notifications');
         return response.data;

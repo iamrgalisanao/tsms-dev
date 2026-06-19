@@ -139,7 +139,6 @@ const GUIDE_STEPS = [
                 <Box sx={{ bgcolor: 'grey.50', borderRadius: 2, p: 2, border: '1px solid', borderColor: 'divider' }}>
                     {[
                         { cls: 'ProcessTransactionJob', desc: 'Validates and records an incoming POS transaction. Most common in DLQ.' },
-                        { cls: 'ForwardTransactionsToWebAppJob', desc: 'Forwards processed transactions to the web application layer.' },
                         { cls: 'RetryTransactionJob', desc: 'Handles automatic retry of a previously failed transaction.' },
                         { cls: 'CheckTransactionFailureThresholdsJob', desc: 'Evaluates whether failure rate triggers an alert notification.' },
                     ].map(({ cls, desc }) => (

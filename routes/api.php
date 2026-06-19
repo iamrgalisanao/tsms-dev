@@ -57,8 +57,6 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::middleware(['role:admin|manager|commercial'])->group(function () {
         Route::get('dashboard/system-health', [DashboardController::class, 'apiSystemHealth']);
         Route::get('dashboard/audit-logs', [DashboardController::class, 'apiAuditLogs']);
-        Route::post('dashboard/forward-transaction/{id}', [DashboardController::class, 'forwardTransaction']);
-
         // Terminal Token Management
         Route::prefix('terminals/tokens')->group(function () {
             Route::get('/', [TerminalTokenController::class, 'apiIndex']);
@@ -227,35 +225,6 @@ Route::prefix('v1')->middleware(['throttle:30,1'])->group(function () {
 Route::prefix('v1')->middleware(['auth:sanctum', 'throttle:30,1'])->group(function () {
     Route::post('/checksum/sandbox', [ChecksumSandboxController::class, 'compute']);
 });
-
-// Machine-to-machine read-only webapp API (directly registered here for test/dev)
-Route::prefix('v1/webapp')->middleware(['auth:sanctum', 'ensure.webapp.token', 'throttle:webapp'])->group(function () {
-    Route::get('/transactions', [\App\Http\Controllers\API\Webapp\TransactionController::class, 'index']);
-    Route::get('/transactions/count', [\App\Http\Controllers\API\Webapp\TransactionController::class, 'count']);
-    Route::get('/transactions/{id}', [\App\Http\Controllers\API\Webapp\TransactionController::class, 'show']);
-    // Hourly transactions contract endpoint
-    Route::get('/transactions/hourly', [\App\Http\Controllers\API\Webapp\HourlyTransactionsController::class, 'index']);
-    // Reporting endpoints (summary/aggregates for the Webapp)
-    Route::get('/reports/sales', [\App\Http\Controllers\API\Webapp\ReportsController::class, 'sales']);
-    Route::get('/reports/sales/drilldown', [\App\Http\Controllers\API\Webapp\ReportsController::class, 'drilldown']);
-    Route::get('/reports/summary', [\App\Http\Controllers\API\Webapp\ReportsController::class, 'summary']);
-});
-
-// Also register explicit full-path routes so they are discoverable without relying on prefix grouping
-Route::get('/v1/webapp/transactions', [\App\Http\Controllers\API\Webapp\TransactionController::class, 'index'])
-    ->middleware(['auth:sanctum', 'ensure.webapp.token', 'throttle:webapp']);
-Route::get('/v1/webapp/transactions/count', [\App\Http\Controllers\API\Webapp\TransactionController::class, 'count'])
-    ->middleware(['auth:sanctum', 'ensure.webapp.token', 'throttle:webapp']);
-Route::get('/v1/webapp/transactions/{id}', [\App\Http\Controllers\API\Webapp\TransactionController::class, 'show'])
-    ->middleware(['auth:sanctum', 'ensure.webapp.token', 'throttle:webapp']);
-
-// Explicit reporting routes for discovery
-Route::get('/v1/webapp/reports/sales', [\App\Http\Controllers\API\Webapp\ReportsController::class, 'sales'])
-    ->middleware(['auth:sanctum', 'ensure.webapp.token', 'throttle:webapp']);
-Route::get('/v1/webapp/reports/sales/drilldown', [\App\Http\Controllers\API\Webapp\ReportsController::class, 'drilldown'])
-    ->middleware(['auth:sanctum', 'ensure.webapp.token', 'throttle:webapp']);
-Route::get('/v1/webapp/reports/summary', [\App\Http\Controllers\API\Webapp\ReportsController::class, 'summary'])
-    ->middleware(['auth:sanctum', 'ensure.webapp.token', 'throttle:webapp']);
 
 // Legacy V1 API Routes with rate limiting (for backward compatibility)
 // Disabled by default. Enable temporarily via TSMS_ENABLE_LEGACY_API=true if you must
@@ -545,60 +514,6 @@ Route::get('v1/transaction-id-exists', function (Illuminate\Http\Request $reques
 
 Route::post('/transactions/bulk', [ApiTransactionController::class, 'bulk'])
     ->name('api.transactions.bulk');
-
-// Void transaction endpoint (API v1) - DEPRECATED: Use v1 route above instead
-// Route::post('api/v1/transactions/{transaction_id}/void', [\App\Http\Controllers\API\V1\TransactionController::class, 'void']);
-
-// Register the new endpoint for receiving voided transactions in the webapp
-// Route::post('/transactions/void', [\App\Http\Controllers\Api\VoidTransactionController::class, 'receive']);
-
-// Test WebApp receiver endpoint for TSMS forwarding
-Route::post('/transactions/bulk', function (Request $request) {
-    // Log the incoming request
-    $timestamp = now()->toISOString();
-    $data = $request->all();
-
-    Log::info('WebApp Test Receiver: Transaction batch received', [
-        'timestamp' => $timestamp,
-        'batch_id' => $data['batch_id'] ?? 'unknown',
-        'transaction_count' => $data['transaction_count'] ?? 0,
-        'source' => $data['source'] ?? 'unknown',
-        'client_ip' => $request->ip(),
-    ]);
-
-    // Validate required fields
-    $requiredFields = ['source', 'batch_id', 'timestamp', 'transaction_count', 'transactions'];
-    foreach ($requiredFields as $field) {
-        if (!isset($data[$field])) {
-            Log::warning('WebApp Test Receiver: Missing required field', [
-                'field' => $field,
-                'batch_id' => $data['batch_id'] ?? null
-            ]);
-
-            return response()->json([
-                'status' => 'error',
-                'error_code' => 'MISSING_FIELD',
-                'message' => "Missing required field: {$field}",
-                'batch_id' => $data['batch_id'] ?? null
-            ], 400);
-        }
-    }
-
-    // Simulate successful processing
-    Log::info('WebApp Test Receiver: Transaction batch processed successfully', [
-        'batch_id' => $data['batch_id'],
-        'transaction_count' => $data['transaction_count'],
-        'transactions_processed' => count($data['transactions'] ?? [])
-    ]);
-
-    return response()->json([
-        'status' => 'success',
-        'message' => 'Transaction batch received and processed successfully',
-        'batch_id' => $data['batch_id'],
-        'transaction_count' => $data['transaction_count'],
-        'processed_at' => $timestamp
-    ]);
-})->name('webapp.test-receiver');
 
 // Include machine-to-machine read-only webapp API routes if present
 if (file_exists(base_path('routes/webapp_api.php'))) {

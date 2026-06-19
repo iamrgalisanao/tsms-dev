@@ -944,7 +944,7 @@ const DashboardPage = () => {
                         <RecentTransactionsTable
                             transactions={recentTransactions}
                             loading={loading}
-                            onForward={handleViewDetails}
+                            onViewDetails={handleViewDetails}
                         />
                     )}
 
