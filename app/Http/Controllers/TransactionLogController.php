@@ -804,6 +804,8 @@ class TransactionLogController extends Controller
             ];
         }
 
+        $payloadAdjustmentTotals = $this->transactionSummaryPayloadAdjustmentTotals($filters, $dateColumn, $dateExpr, $hasReceiptNo);
+
         $grandTotal = null;
         if ($hasDateWindow) {
             $grandTotalRaw = (clone $baseQuery)
@@ -839,12 +841,12 @@ class TransactionLogController extends Controller
                 'vatable_sales' => (float) $grandTotalRaw->raw_vatable_sales,
                 'sc_vat_exempt_sales' => (float) $grandTotalRaw->raw_sc_vat_exempt_sales,
                 'vat_amount' => (float) $grandTotalRaw->raw_vat_amount,
-                'promo_with_approval' => (float) $grandTotalRaw->promo_with_approval,
-                'promo_without_approval' => (float) $grandTotalRaw->promo_without_approval,
-                'employee_discount' => (float) ($grandTotalRaw->employee_discount ?? 0),
-                'senior_discount' => (float) $grandTotalRaw->senior_discount,
-                'pwd_discount' => (float) $grandTotalRaw->pwd_discount,
-                'vip_discount' => (float) ($grandTotalRaw->vip_discount ?? 0),
+                'promo_with_approval' => max((float) $grandTotalRaw->promo_with_approval, (float) ($payloadAdjustmentTotals['__total']['promo_with_approval'] ?? 0)),
+                'promo_without_approval' => max((float) $grandTotalRaw->promo_without_approval, (float) ($payloadAdjustmentTotals['__total']['promo_without_approval'] ?? 0)),
+                'employee_discount' => max((float) ($grandTotalRaw->employee_discount ?? 0), (float) ($payloadAdjustmentTotals['__total']['employee_discount'] ?? 0)),
+                'senior_discount' => max((float) $grandTotalRaw->senior_discount, (float) ($payloadAdjustmentTotals['__total']['senior_discount'] ?? 0)),
+                'pwd_discount' => max((float) $grandTotalRaw->pwd_discount, (float) ($payloadAdjustmentTotals['__total']['pwd_discount'] ?? 0)),
+                'vip_discount' => max((float) ($grandTotalRaw->vip_discount ?? 0), (float) ($payloadAdjustmentTotals['__total']['vip_discount'] ?? 0)),
                 'other_tax' => (float) ($grandTotalRaw->other_tax ?? 0),
                 'service_charge_distributed' => (float) $grandTotalRaw->service_charge_distributed,
                 'service_charge_retained' => (float) $grandTotalRaw->service_charge_retained,
@@ -860,10 +862,10 @@ class TransactionLogController extends Controller
                 'net' => $grandTotalDerived['net_total'],
                 'refund' => (float) $grandTotalRaw->refund,
                 'promo_discount' => $grandTotalDerived['total_promotions'],
-                'senior_discount' => (float) $grandTotalRaw->senior_discount,
-                'pwd_discount' => (float) $grandTotalRaw->pwd_discount,
-                'vip_discount' => (float) ($grandTotalRaw->vip_discount ?? 0),
-                'employee_discount' => (float) ($grandTotalRaw->employee_discount ?? 0),
+                'senior_discount' => $grandTotalComponents['senior_discount'],
+                'pwd_discount' => $grandTotalComponents['pwd_discount'],
+                'vip_discount' => $grandTotalComponents['vip_discount'],
+                'employee_discount' => $grandTotalComponents['employee_discount'],
                 'service_charge' => $grandTotalDerived['service_charge_distributed'],
                 'service_charge_distributed' => $grandTotalDerived['service_charge_distributed'],
                 'management_service_charge' => $grandTotalDerived['service_charge_retained'],
@@ -917,17 +919,18 @@ class TransactionLogController extends Controller
 
         $summary = $query->simplePaginate($perPage)->appends($request->all());
 
-        $summary->getCollection()->transform(function ($row) {
+        $summary->getCollection()->transform(function ($row) use ($payloadAdjustmentTotals) {
+            $payloadKey = $this->transactionSummaryPayloadAdjustmentKey($row->date, $row->tenant_id, $row->terminal_id);
             $components = [
                 'vatable_sales' => (float) $row->raw_vatable_sales,
                 'sc_vat_exempt_sales' => (float) $row->raw_sc_vat_exempt_sales,
                 'vat_amount' => (float) $row->raw_vat_amount,
-                'promo_with_approval' => (float) $row->promo_with_approval,
-                'promo_without_approval' => (float) $row->promo_without_approval,
-                'employee_discount' => (float) ($row->employee_discount ?? 0),
-                'senior_discount' => (float) $row->senior_discount,
-                'pwd_discount' => (float) $row->pwd_discount,
-                'vip_discount' => (float) ($row->vip_discount ?? 0),
+                'promo_with_approval' => max((float) $row->promo_with_approval, (float) ($payloadAdjustmentTotals[$payloadKey]['promo_with_approval'] ?? 0)),
+                'promo_without_approval' => max((float) $row->promo_without_approval, (float) ($payloadAdjustmentTotals[$payloadKey]['promo_without_approval'] ?? 0)),
+                'employee_discount' => max((float) ($row->employee_discount ?? 0), (float) ($payloadAdjustmentTotals[$payloadKey]['employee_discount'] ?? 0)),
+                'senior_discount' => max((float) $row->senior_discount, (float) ($payloadAdjustmentTotals[$payloadKey]['senior_discount'] ?? 0)),
+                'pwd_discount' => max((float) $row->pwd_discount, (float) ($payloadAdjustmentTotals[$payloadKey]['pwd_discount'] ?? 0)),
+                'vip_discount' => max((float) ($row->vip_discount ?? 0), (float) ($payloadAdjustmentTotals[$payloadKey]['vip_discount'] ?? 0)),
                 'other_tax' => (float) ($row->other_tax ?? 0),
                 'service_charge_distributed' => (float) $row->service_charge_distributed,
                 'service_charge_retained' => (float) $row->service_charge_retained,
@@ -947,6 +950,10 @@ class TransactionLogController extends Controller
             $row->other_tax = $derived['other_tax'];
             $row->senior_pwd = $derived['senior_pwd'];
             $row->promo_discount = $derived['total_promotions'];
+            $row->senior_discount = $components['senior_discount'];
+            $row->pwd_discount = $components['pwd_discount'];
+            $row->employee_discount = $components['employee_discount'];
+            $row->vip_discount = $components['vip_discount'];
 
             return $row;
         });
@@ -974,6 +981,78 @@ class TransactionLogController extends Controller
         $this->logSlowTransactionLogOperation('summary', $request, $startedAt);
 
         return view('transactions.logs.index', compact('logs', 'terminals', 'tenants', 'filters', 'activeTab', 'summary', 'grandTotal'));
+    }
+
+    private function transactionSummaryPayloadAdjustmentTotals(array $filters, string $dateColumn, string $dateExpr, bool $hasReceiptNo): array
+    {
+        if (! Schema::hasColumn('transactions', 'original_payload')) {
+            return [];
+        }
+
+        $query = DB::table('transactions as t')
+            ->leftJoin('pos_terminals as term', 'term.id', '=', 't.terminal_id')
+            ->selectRaw($dateExpr . ' as date')
+            ->addSelect('t.tenant_id', 't.terminal_id', 't.promo_status', 't.original_payload')
+            ->when(isset($filters['status']), function ($q) use ($filters) {
+                if ($filters['status'] === 'VOIDED') {
+                    $q->whereNotNull('t.voided_at');
+                } elseif ($filters['status'] === 'REFUNDED') {
+                    $q->where('t.is_refunded', true);
+                } else {
+                    $q->where('t.validation_status', $filters['status']);
+                }
+            })
+            ->when(isset($filters['date_from']), function ($q) use ($filters, $dateColumn) {
+                $q->where($dateColumn, '>=', $this->dateFilterValue($dateColumn, $filters['date_from'], false));
+            })
+            ->when(isset($filters['date_to']), function ($q) use ($filters, $dateColumn) {
+                $q->where($dateColumn, '<=', $this->dateFilterValue($dateColumn, $filters['date_to'], true));
+            })
+            ->when(isset($filters['tenant_id']), function ($q) use ($filters) {
+                $q->where(function ($sub) use ($filters) {
+                    $sub->where('t.tenant_id', $filters['tenant_id'])
+                        ->orWhere('term.tenant_id', $filters['tenant_id']);
+                });
+            })
+            ->when(isset($filters['terminal_id']), function ($q) use ($filters) {
+                $q->where('t.terminal_id', $filters['terminal_id']);
+            });
+
+        if ($hasReceiptNo && !isset($filters['status'])) {
+            $query->where('t.validation_status', '!=', 'DUPLICATE')
+                ->whereNull('t.voided_at');
+        }
+
+        $totals = [];
+        foreach ($query->cursor() as $row) {
+            $key = $this->transactionSummaryPayloadAdjustmentKey($row->date, $row->tenant_id, $row->terminal_id);
+            foreach ([$key, '__total'] as $targetKey) {
+                $totals[$targetKey] ??= [
+                    'promo_with_approval' => 0.0,
+                    'promo_without_approval' => 0.0,
+                    'employee_discount' => 0.0,
+                    'senior_discount' => 0.0,
+                    'pwd_discount' => 0.0,
+                    'vip_discount' => 0.0,
+                ];
+            }
+
+            foreach ($this->financeService->adjustmentComponentsFromPayload($row->original_payload, $row->promo_status) as $field => $amount) {
+                if (! array_key_exists($field, $totals[$key])) {
+                    continue;
+                }
+
+                $totals[$key][$field] += $amount;
+                $totals['__total'][$field] += $amount;
+            }
+        }
+
+        return $totals;
+    }
+
+    private function transactionSummaryPayloadAdjustmentKey($date, $tenantId, $terminalId): string
+    {
+        return implode('|', [(string) $date, (string) $tenantId, (string) $terminalId]);
     }
 
     private function resolvePerPage(Request $request): int

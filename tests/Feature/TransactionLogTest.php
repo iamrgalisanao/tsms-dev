@@ -335,6 +335,44 @@ class TransactionLogTest extends TestCase
     }
 
     /** @test */
+    public function test_summary_endpoint_recovers_discounts_from_original_payload()
+    {
+        Transaction::factory()->create([
+            'tenant_id' => $this->tenant->id,
+            'terminal_id' => $this->terminal->id,
+            'receipt_no' => 'REC-SUMMARY-PAYLOAD-DISCOUNTS',
+            'transaction_timestamp' => '2026-06-18 10:01:00',
+            'gross_sales' => 99.00,
+            'net_sales' => 88.39,
+            'vat_amount' => 10.61,
+            'vatable_sales' => 88.39,
+            'senior_discount' => 0,
+            'pwd_discount' => 0,
+            'promo_discount' => 0,
+            'validation_status' => 'VALID',
+            'original_payload' => json_encode([
+                'adjustments' => [
+                    ['adjustment_type' => 'senior_discount', 'amount' => '12.50'],
+                    ['adjustment_type' => 'pwd_discount', 'amount' => '7.25'],
+                    ['adjustment_type' => 'employee_discount', 'amount' => '5.00'],
+                ],
+            ]),
+        ]);
+
+        Sanctum::actingAs($this->adminUser);
+
+        $response = $this->getJson('/api/transactions/logs/summary?date_from=2026-06-18&date_to=2026-06-18&date_basis=transaction&tenant_id=' . $this->tenant->id);
+
+        $response->assertOk();
+        $this->assertEquals(12.50, (float) $response->json('summary.data.0.senior_discount'));
+        $this->assertEquals(7.25, (float) $response->json('summary.data.0.pwd_discount'));
+        $this->assertEquals(5.00, (float) $response->json('summary.data.0.employee_discount'));
+        $this->assertEquals(12.50, (float) $response->json('grandTotal.senior_discount'));
+        $this->assertEquals(7.25, (float) $response->json('grandTotal.pwd_discount'));
+        $this->assertEquals(5.00, (float) $response->json('grandTotal.employee_discount'));
+    }
+
+    /** @test */
     public function test_summary_endpoint_without_dates_is_rejected()
     {
         Transaction::factory()->create([
