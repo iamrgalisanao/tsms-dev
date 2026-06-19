@@ -4,13 +4,12 @@ import GetAppIcon from '@mui/icons-material/GetApp';
 import AssessmentIcon from '@mui/icons-material/Assessment';
 import DownloadIcon from '@mui/icons-material/Download';
 
-const GLASS = {
-    p: 4,
-    borderRadius: '24px',
-    border: '1px solid rgba(255,255,255,0.5)',
-    boxShadow: '0 8px 32px rgba(0,0,0,0.04)',
-    bgcolor: 'rgba(255,255,255,0.75)',
-    backdropFilter: 'blur(12px)',
+const CARD_STYLE = {
+    p: 3,
+    borderRadius: '10px',
+    border: '1px solid #E8ECF4',
+    boxShadow: '0 1px 3px rgba(15,23,42,0.06), 0 1px 2px rgba(15,23,42,0.04)',
+    bgcolor: '#FFFFFF',
     mb: 4,
 };
 
@@ -23,17 +22,17 @@ export default function QuickActionsHub() {
     const now = new Date();
 
     return (
-        <Box sx={GLASS}>
-            <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 3 }}>
+        <Box sx={CARD_STYLE}>
+            <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2.5 }}>
                 <Box>
-                    <Typography variant="body1" sx={{ fontWeight: 900, color: 'text.primary', letterSpacing: '-0.01em' }}>
+                    <Typography sx={{ fontWeight: 700, fontSize: '16px', color: '#0F172A', mb: 0.5 }}>
                         Quick Actions Hub
                     </Typography>
-                    <Typography variant="caption" sx={{ fontWeight: 700, color: 'text.secondary', textTransform: 'uppercase', letterSpacing: '0.08em', opacity: 0.55 }}>
+                    <Typography sx={{ fontWeight: 600, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.08em', fontSize: '11px' }}>
                         On-demand financial exports
                     </Typography>
                 </Box>
-                <GetAppIcon sx={{ color: 'text.disabled', fontSize: 20 }} />
+                <GetAppIcon sx={{ color: '#94A3B8', fontSize: 20 }} />
             </Stack>
 
             <Stack
@@ -43,11 +42,11 @@ export default function QuickActionsHub() {
             >
                 {/* Reports group */}
                 <Box sx={{ flex: 1 }}>
-                    <Typography variant="caption" sx={{ fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'text.disabled', fontSize: '0.65rem', display: 'block', mb: 2 }}>
+                    <Typography sx={{ fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#64748B', fontSize: '11px', display: 'block', mb: 2 }}>
                         Reports
                     </Typography>
                     <Stack spacing={2}>
-                        {/* Primary CTA */}
+                        {/* Primary CTA (CSMR) */}
                         <Button
                             fullWidth
                             variant="contained"
@@ -58,21 +57,35 @@ export default function QuickActionsHub() {
                                 month: now.getMonth() + 1,
                             })}
                             sx={{
-                                borderRadius: '14px',
-                                fontWeight: 900,
-                                bgcolor: 'primary.main',
-                                boxShadow: '0 6px 20px rgba(29,67,155,0.2)',
-                                '&:hover': { bgcolor: 'primary.dark' },
+                                borderRadius: '10px',
+                                fontWeight: 500,
+                                fontSize: '14px',
+                                textTransform: 'none',
+                                bgcolor: '#1A56DB',
+                                color: '#FFFFFF',
+                                boxShadow: '0 2px 8px rgba(26,86,219,0.35)',
+                                '&:hover': { bgcolor: '#1347B8', boxShadow: '0 4px 12px rgba(26,86,219,0.45)' },
                             }}
                         >
                             Generate CSMR Report
                         </Button>
+                        {/* Primary CTA (Audit) */}
                         <Button
                             fullWidth
-                            variant="outlined"
+                            variant="contained"
+                            size="large"
                             startIcon={<AssessmentIcon />}
                             onClick={() => handleExport('/api/dashboard/export-audit-logs')}
-                            sx={{ borderRadius: '14px', fontWeight: 800, borderStyle: 'dashed' }}
+                            sx={{
+                                borderRadius: '10px',
+                                fontWeight: 500,
+                                fontSize: '14px',
+                                textTransform: 'none',
+                                bgcolor: '#1A56DB',
+                                color: '#FFFFFF',
+                                boxShadow: '0 2px 8px rgba(26,86,219,0.35)',
+                                '&:hover': { bgcolor: '#1347B8', boxShadow: '0 4px 12px rgba(26,86,219,0.45)' },
+                            }}
                         >
                             Generate Audit Report
                         </Button>
@@ -81,25 +94,55 @@ export default function QuickActionsHub() {
 
                 {/* Exports group */}
                 <Box sx={{ flex: 1 }}>
-                    <Typography variant="caption" sx={{ fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'text.disabled', fontSize: '0.65rem', display: 'block', mb: 2 }}>
+                    <Typography sx={{ fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.1em', color: '#64748B', fontSize: '11px', display: 'block', mb: 2 }}>
                         Exports
                     </Typography>
                     <Stack spacing={2}>
+                        {/* Secondary CTA (Sales) */}
                         <Button
                             fullWidth
                             variant="outlined"
+                            size="large"
                             startIcon={<DownloadIcon />}
                             onClick={() => handleExport('/api/dashboard/export-transactions')}
-                            sx={{ borderRadius: '14px', fontWeight: 800, borderStyle: 'dashed' }}
+                            sx={{
+                                borderRadius: '10px',
+                                fontWeight: 500,
+                                fontSize: '14px',
+                                textTransform: 'none',
+                                borderColor: '#E8ECF4',
+                                color: '#0F172A',
+                                bgcolor: '#FFFFFF',
+                                '&:hover': {
+                                    borderColor: '#1A56DB',
+                                    bgcolor: '#EEF2FF',
+                                    color: '#1A56DB'
+                                }
+                            }}
                         >
                             Export Sales Data
                         </Button>
+                        {/* Secondary CTA (Reconciliation) */}
                         <Button
                             fullWidth
                             variant="outlined"
+                            size="large"
                             startIcon={<DownloadIcon />}
                             onClick={() => handleExport('/logs/export/csv')}
-                            sx={{ borderRadius: '14px', fontWeight: 800, borderStyle: 'dashed' }}
+                            sx={{
+                                borderRadius: '10px',
+                                fontWeight: 500,
+                                fontSize: '14px',
+                                textTransform: 'none',
+                                borderColor: '#E8ECF4',
+                                color: '#0F172A',
+                                bgcolor: '#FFFFFF',
+                                '&:hover': {
+                                    borderColor: '#1A56DB',
+                                    bgcolor: '#EEF2FF',
+                                    color: '#1A56DB'
+                                }
+                            }}
                         >
                             Export Reconciliation
                         </Button>

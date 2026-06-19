@@ -24,7 +24,7 @@ ChartJS.register(
     Filler
 );
 
-const TransactionChart = ({ data, loading }) => {
+const TransactionChart = ({ data, loading, inline = false }) => {
     if (loading) {
         return (
             <Card sx={{ height: 450, borderRadius: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -38,6 +38,7 @@ const TransactionChart = ({ data, loading }) => {
         maintainAspectRatio: false,
         plugins: {
             legend: {
+                display: !inline,
                 position: 'top',
                 align: 'end',
                 labels: {
@@ -85,9 +86,11 @@ const TransactionChart = ({ data, loading }) => {
                 },
                 grid: {
                     drawBorder: false,
-                    color: 'rgba(229, 231, 245, 0.5)',
+                    color: 'rgba(0, 0, 0, 0.04)',
                 },
                 ticks: {
+                    font: { size: 10, family: 'Inter' },
+                    color: '#94A3B8',
                     callback: (value) => '₱' + new Intl.NumberFormat().format(value)
                 }
             },
@@ -103,13 +106,18 @@ const TransactionChart = ({ data, loading }) => {
                 grid: {
                     drawOnChartArea: false,
                 },
+                ticks: {
+                    font: { size: 10, family: 'Inter' },
+                    color: '#94A3B8'
+                }
             },
             x: {
                 grid: {
                     display: false,
                 },
                 ticks: {
-                    font: { size: 11 },
+                    font: { size: 10, family: 'Inter' },
+                    color: '#94A3B8',
                     maxRotation: 45,
                     minRotation: 45,
                     maxTicksLimit: 12
@@ -121,7 +129,7 @@ const TransactionChart = ({ data, loading }) => {
             axis: 'x',
             intersect: false,
         },
-    }), []);
+    }), [inline]);
 
     const displayData = useMemo(() => {
         const labels = (data?.labels || []).map((l) => {
@@ -150,8 +158,8 @@ const TransactionChart = ({ data, loading }) => {
             {
                 label: 'Current Sales (₱)',
                 data: displayData.sales,
-                borderColor: '#1D439B',
-                backgroundColor: 'rgba(29, 67, 155, 0.1)',
+                borderColor: '#1A56DB',
+                backgroundColor: 'rgba(26, 86, 219, 0.04)',
                 fill: true,
                 tension: 0.4,
                 pointRadius: 4,
@@ -161,8 +169,8 @@ const TransactionChart = ({ data, loading }) => {
             {
                 label: 'Prev. Period Sales (₱)',
                 data: displayData.previous_sales,
-                borderColor: 'rgba(29, 67, 155, 0.3)',
-                borderDash: [5, 5],
+                borderColor: '#94A3B8',
+                borderDash: [4, 3],
                 fill: false,
                 tension: 0.4,
                 pointRadius: 0,
@@ -182,6 +190,46 @@ const TransactionChart = ({ data, loading }) => {
         ],
     }), [displayData]);
 
+    const renderChartContent = () => (
+        <Box sx={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
+            {inline && (
+                <Stack direction="row" spacing={2} sx={{ mb: 2, justifyContent: 'flex-start' }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', fontSize: '11px', fontWeight: '600', color: '#64748B' }}>
+                        <Box sx={{ width: 16, height: 2, bgcolor: '#1A56DB', mr: 1 }} />
+                        Current Period
+                    </Box>
+                    <Box sx={{ display: 'flex', alignItems: 'center', fontSize: '11px', fontWeight: '600', color: '#64748B' }}>
+                        <Box sx={{ width: 16, height: 2, borderBottom: '2px dashed #94A3B8', mr: 1 }} />
+                        Prior Period
+                    </Box>
+                    <Box sx={{ display: 'flex', alignItems: 'center', fontSize: '11px', fontWeight: '600', color: '#64748B' }}>
+                        <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: '#EB342E', mr: 1 }} />
+                        Volume
+                    </Box>
+                </Stack>
+            )}
+            <Box sx={{ flex: 1, minHeight: 0 }}>
+                {hasData ? (
+                    <Line options={options} data={chartData} />
+                ) : (
+                    <Box sx={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <Typography variant="body2" sx={{ color: 'text.secondary' }}>
+                            No sales analytics available for the selected range.
+                        </Typography>
+                    </Box>
+                )}
+            </Box>
+        </Box>
+    );
+
+    if (inline) {
+        return (
+            <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', p: 1, bgcolor: '#F4F6FA', borderRadius: '10px' }}>
+                {renderChartContent()}
+            </Box>
+        );
+    }
+
     return (
         <Card sx={{ height: 450, borderRadius: '32px', p: 2 }}>
             <CardContent sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
@@ -200,17 +248,7 @@ const TransactionChart = ({ data, loading }) => {
                         </Box>
                     </Stack>
                 </Stack>
-                <Box sx={{ flex: 1, minHeight: 0 }}>
-                    {hasData ? (
-                        <Line options={options} data={chartData} />
-                    ) : (
-                        <Box sx={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                            <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-                                No sales analytics available for the selected range.
-                            </Typography>
-                        </Box>
-                    )}
-                </Box>
+                {renderChartContent()}
             </CardContent>
         </Card>
     );

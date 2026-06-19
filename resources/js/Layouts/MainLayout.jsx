@@ -63,29 +63,33 @@ const MainLayout = ({ children }) => {
             <div className="h-screen bg-gray-50 flex overflow-hidden">
                 {/* Sidebar */}
                 <aside
-                    className={`border-r border-white/10 flex-shrink-0 flex flex-col h-full relative z-20 ${isSidebarOpen ? 'w-64' : 'w-20'} transition-all duration-300 font-sans`}
+                    className={`flex-shrink-0 flex flex-col h-full relative z-20 ${isSidebarOpen ? 'w-[220px]' : 'w-20'} transition-all duration-300 font-sans`}
                     style={{
-                        background: 'linear-gradient(180deg, rgba(29,67,155,0.96) 0%, rgba(23,48,111,0.98) 100%)',
+                        background: '#0D1B3E',
                         boxShadow: '16px 0 40px rgba(15, 23, 42, 0.08)'
                     }}
                 >
-                    <div className="h-24 flex items-center justify-center p-1 bg-white flex-shrink-0">
-                        {isSidebarOpen ? (
-                            <img
-                                src="/images/pitx_logo.png"
-                                alt="PITX Logo"
-                                className="w-full h-full object-contain"
-                            />
-                        ) : (
-                            <img
-                                src="/images/pitx_logo.png"
-                                alt="PITX"
-                                className="w-full h-full object-contain"
-                            />
-                        )}
+                    {/* Logo area */}
+                    <div className="h-20 flex items-center justify-start px-5 bg-white flex-shrink-0 border-b border-gray-150">
+                        <img
+                            src="/images/pitx_logo.png"
+                            alt="PITX Logo"
+                            className="h-[28px] object-contain"
+                        />
                     </div>
+                    {/* Divider below logo */}
+                    <div className="h-[1px] bg-white/10 w-full" />
 
-                    <nav className="flex-1 mt-6 px-4 space-y-2 overflow-y-auto no-scrollbar">
+                    {/* Navigation grouping label */}
+                    {isSidebarOpen && (
+                        <div className="px-5 pt-5 pb-2">
+                            <span className="text-[10px] font-bold tracking-widest text-[#A8B8D8]/50 uppercase">
+                                Navigation
+                            </span>
+                        </div>
+                    )}
+
+                    <nav className="flex-1 space-y-1 overflow-y-auto no-scrollbar pr-3 pt-2">
                         {filteredItems.map((item) => {
                             const isActive = location.pathname === item.path;
                             const IconComponent = item.icon;
@@ -93,41 +97,50 @@ const MainLayout = ({ children }) => {
                                 <Link
                                     key={item.name}
                                     to={item.path}
-                                    className={`flex items-center p-3 rounded-lg transition-all duration-200 group ${isActive
-                                        ? 'bg-white/15 text-white shadow-sm'
-                                        : 'text-white/70 hover:bg-white/10 hover:text-white'
+                                    className={`flex items-center py-2.5 px-4 rounded-r-lg transition-all duration-150 relative group ${isActive
+                                        ? 'bg-[#1A2F6B] text-white'
+                                        : 'text-[#A8B8D8] hover:bg-[#162558] hover:text-white'
                                         }`}
                                 >
+                                    {/* Left active border line */}
+                                    {isActive && (
+                                        <div className="absolute left-0 top-0 bottom-0 w-[3px] bg-[#4A90F5]" />
+                                    )}
+
                                     <IconComponent
                                         sx={{
-                                            fontSize: 24,
+                                            fontSize: 20,
+                                            color: isActive ? '#FFFFFF' : '#A8B8D8',
                                             transition: 'transform 0.2s',
-                                            transform: isActive ? 'scale(1.1)' : 'scale(1)',
-                                            '.group:hover &': { transform: 'scale(1.1)' }
+                                            transform: isActive ? 'scale(1.05)' : 'scale(1)',
+                                            '.group:hover &': { color: '#FFFFFF' }
                                         }}
                                     />
-                                    {isSidebarOpen && <span className={`ml-3 text-[17px] ${isActive ? 'font-bold' : 'font-medium'}`}>{item.name}</span>}
-                                    {isActive && isSidebarOpen && <div className="ml-auto w-1.5 h-1.5 rounded-full bg-brand-accent animate-pulse"></div>}
+                                    {isSidebarOpen && (
+                                        <span className={`ml-3 text-[14px] ${isActive ? 'font-semibold' : 'font-medium'}`}>
+                                            {item.name}
+                                        </span>
+                                    )}
                                 </Link>
                             );
                         })}
                     </nav>
 
+                    {/* User / Session Footer */}
                     <div className="p-4 border-t border-white/10 mt-auto flex-shrink-0">
-                        {/* User info block */}
                         {isSidebarOpen && (
-                            <div className="mb-3 px-1">
-                                <div className="flex items-center gap-2 mb-1">
-                                    <div className="w-7 h-7 rounded-full bg-white/20 flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
+                            <div className="mb-4 p-3 rounded-lg bg-white/5 border border-white/5">
+                                <div className="flex items-center gap-2.5">
+                                    <div className="w-8 h-8 rounded-full bg-[#1A56DB] flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
                                         {user.name.charAt(0)}
                                     </div>
                                     <div className="min-w-0">
                                         <p className="text-white text-[13px] font-bold truncate leading-tight">{user.name}</p>
-                                        <p className="text-white/50 text-[11px] truncate leading-tight">{user.email || ''}</p>
+                                        <p className="text-[#A8B8D8] text-[11px] truncate leading-tight mt-0.5">{user.email || ''}</p>
                                     </div>
                                 </div>
                                 {roles.length > 0 && (
-                                    <span className="inline-block mt-1 px-2 py-0.5 rounded-full bg-white/10 text-white/70 text-[10px] font-bold uppercase tracking-widest">
+                                    <span className="inline-block mt-2 px-2 py-0.5 rounded-full bg-white/10 text-white/70 text-[9px] font-bold uppercase tracking-wider">
                                         {typeof roles[0] === 'string' ? roles[0] : roles[0]?.name || 'user'}
                                     </span>
                                 )}
@@ -138,10 +151,10 @@ const MainLayout = ({ children }) => {
                                 await logout();
                                 navigate('/login');
                             }}
-                            className="flex items-center w-full p-3 rounded-xl text-white/60 hover:bg-white/15 hover:text-white transition-all duration-200 group"
+                            className="flex items-center w-full p-2.5 rounded-lg text-[#A8B8D8] hover:bg-[#162558] hover:text-white transition-all duration-150 group"
                         >
-                            <LogoutIcon sx={{ fontSize: 20 }} />
-                            {isSidebarOpen && <span className="ml-3 text-[14px] font-bold">Logout</span>}
+                            <LogoutIcon sx={{ fontSize: 18, color: 'inherit' }} />
+                            {isSidebarOpen && <span className="ml-3 text-[13px] font-semibold">Logout</span>}
                         </button>
                     </div>
                 </aside>
@@ -169,7 +182,16 @@ const MainLayout = ({ children }) => {
                     </header>
 
                     {/* Scrollable Page Content */}
-                    <main className="flex-1 overflow-y-auto p-8 relative bg-gray-50/50">
+                    <main 
+                        className="flex-1 overflow-y-auto p-8 relative bg-[#F8FAFC]"
+                        style={{
+                            backgroundImage: `
+                                linear-gradient(rgba(226, 232, 240, 0.5) 1px, transparent 1px),
+                                linear-gradient(90deg, rgba(226, 232, 240, 0.5) 1px, transparent 1px)
+                            `,
+                            backgroundSize: '32px 32px'
+                        }}
+                    >
                         <div className="max-w-screen-2xl mx-auto">
                             {children}
                         </div>

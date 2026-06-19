@@ -3,13 +3,12 @@ import { Box, Typography, Stack } from '@mui/material';
 import TimelineIcon from '@mui/icons-material/Timeline';
 import InboxIcon from '@mui/icons-material/Inbox';
 
-const GLASS = {
-    p: 4,
-    borderRadius: '24px',
-    border: '1px solid rgba(255,255,255,0.5)',
-    boxShadow: '0 8px 32px rgba(0,0,0,0.04)',
-    bgcolor: 'rgba(255,255,255,0.75)',
-    backdropFilter: 'blur(12px)',
+const CARD_STYLE = {
+    p: 3,
+    borderRadius: '10px',
+    border: '1px solid #E8ECF4',
+    boxShadow: '0 1px 3px rgba(15,23,42,0.06), 0 1px 2px rgba(15,23,42,0.04)',
+    bgcolor: '#FFFFFF',
     height: '100%',
     display: 'flex',
     flexDirection: 'column',
@@ -24,7 +23,7 @@ const COLORS = {
 };
 
 const formatCurrency = (val) =>
-    new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(val ?? 0);
+    new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP', maximumFractionDigits: 0 }).format(val ?? 0);
 
 function DonutChart({ categories, total }) {
     const r = 52;
@@ -35,7 +34,7 @@ function DonutChart({ categories, total }) {
         <Box sx={{ position: 'relative', width: 160, height: 160, flexShrink: 0 }}>
             <svg width="100%" height="100%" viewBox="0 0 120 120" style={{ transform: 'rotate(-90deg)' }}>
                 {/* Track */}
-                <circle cx="60" cy="60" r={r} fill="transparent" stroke="rgba(229,231,245,0.5)" strokeWidth="13" />
+                <circle cx="60" cy="60" r={r} fill="transparent" stroke="rgba(229,231,245,0.3)" strokeWidth="10" />
                 {categories.map((cat, idx) => {
                     if (cat.value <= 0) return null;
                     const pct = (cat.value / total) * 100;
@@ -48,7 +47,7 @@ function DonutChart({ categories, total }) {
                             cx="60" cy="60" r={r}
                             fill="transparent"
                             stroke={cat.color}
-                            strokeWidth="13"
+                            strokeWidth="10"
                             strokeDasharray={circ}
                             strokeDashoffset={offset}
                             style={{
@@ -62,10 +61,10 @@ function DonutChart({ categories, total }) {
             </svg>
             {/* Centre label */}
             <Box sx={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-                <Typography variant="caption" sx={{ fontSize: '0.55rem', fontWeight: 800, textTransform: 'uppercase', color: 'text.secondary', letterSpacing: '0.04em' }}>
-                    Total
+                <Typography sx={{ fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', color: '#64748B', letterSpacing: '0.05em' }}>
+                    Gross Sales
                 </Typography>
-                <Typography sx={{ fontWeight: 950, fontSize: '0.8rem', color: 'text.primary', textAlign: 'center', px: 0.5, lineHeight: 1.2 }}>
+                <Typography sx={{ fontWeight: 700, fontSize: '18px', color: '#0F172A', textAlign: 'center', px: 0.5, lineHeight: 1.2 }}>
                     {formatCurrency(total)}
                 </Typography>
             </Box>
@@ -86,18 +85,18 @@ export default function RevenueCompositionCard({ data }) {
     const isEmpty = total <= 0;
 
     return (
-        <Box sx={GLASS}>
+        <Box sx={CARD_STYLE}>
             {/* Header */}
-            <Stack direction="row" justifyContent="space-between" alignItems="flex-start" sx={{ mb: 3 }}>
+            <Stack direction="row" justifyContent="space-between" alignItems="flex-start" sx={{ mb: 2.5 }}>
                 <Box>
-                    <Typography variant="body1" sx={{ fontWeight: 900, color: 'text.primary', letterSpacing: '-0.01em' }}>
+                    <Typography sx={{ fontWeight: 700, fontSize: '16px', color: '#0F172A', mb: 0.5 }}>
                         Revenue Composition
                     </Typography>
-                    <Typography variant="caption" sx={{ fontWeight: 700, color: 'text.secondary', textTransform: 'uppercase', letterSpacing: '0.08em', opacity: 0.55 }}>
+                    <Typography sx={{ fontWeight: 600, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.08em', fontSize: '11px' }}>
                         Tax Exempts, VAT &amp; discounts
                     </Typography>
                 </Box>
-                <TimelineIcon sx={{ color: 'text.disabled', fontSize: 20 }} />
+                <TimelineIcon sx={{ color: '#94A3B8', fontSize: 20 }} />
             </Stack>
 
             {/* Empty state */}
@@ -116,20 +115,20 @@ export default function RevenueCompositionCard({ data }) {
             ) : (
                 <Box sx={{ flex: 1, display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, alignItems: 'center', gap: 3 }}>
                     <DonutChart categories={categories} total={total} />
-                    <Stack spacing={1.25} sx={{ flex: 1, width: '100%' }}>
+                    <Stack spacing={1} sx={{ flex: 1, width: '100%' }}>
                         {categories.map((cat) => {
                             const pct = total > 0 ? ((cat.value / total) * 100).toFixed(1) : '0.0';
                             return (
-                                <Box key={cat.name} sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid rgba(229,231,245,0.5)', pb: 0.75 }}>
-                                    <Stack direction="row" spacing={1.25} alignItems="center">
-                                        <Box sx={{ width: 9, height: 9, borderRadius: '50%', bgcolor: cat.color, flexShrink: 0 }} />
-                                        <Typography variant="body2" sx={{ fontWeight: 700, color: 'text.primary', fontSize: '0.8rem' }}>
+                                <Box key={cat.name} sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #E8ECF4', pb: 0.75 }}>
+                                    <Stack direction="row" spacing={1} alignItems="center">
+                                        <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: cat.color, flexShrink: 0 }} />
+                                        <Typography sx={{ fontWeight: 500, color: '#0F172A', fontSize: '13px' }}>
                                             {cat.name}
                                         </Typography>
                                     </Stack>
-                                    <Typography variant="body2" sx={{ fontWeight: 800, color: 'text.secondary', fontSize: '0.8rem', whiteSpace: 'nowrap' }}>
-                                        {formatCurrency(cat.value)}{' '}
-                                        <Box component="span" sx={{ color: 'text.disabled', fontWeight: 600, fontSize: '0.7rem' }}>
+                                    <Typography sx={{ fontWeight: 600, color: '#64748B', fontSize: '13px', whiteSpace: 'nowrap' }}>
+                                        {new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(cat.value)}{' '}
+                                        <Box component="span" sx={{ color: '#94A3B8', fontWeight: 500, fontSize: '11px', ml: 0.5 }}>
                                             ({pct}%)
                                         </Box>
                                     </Typography>

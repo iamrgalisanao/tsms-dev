@@ -10,40 +10,33 @@ import SyncIcon from '@mui/icons-material/Sync';
 
 export default function FinanceDashboardHeader({ dateRange, onDateChange, onRefresh, refreshing }) {
     return (
-        <Box sx={{ py: 3, mb: 2 }}>
-            {/* Breadcrumbs */}
-            <Breadcrumbs
-                separator={<NavigateNextIcon fontSize="small" />}
-                sx={{ mb: 4, '& .MuiTypography-root': { fontWeight: 700, fontSize: '0.7rem', letterSpacing: '0.06em' } }}
-            >
-                <MuiLink underline="hover" color="inherit" href="/dashboard" sx={{ display: 'flex', alignItems: 'center', opacity: 0.5 }}>
-                    <HomeIcon sx={{ mr: 0.5, fontSize: 14 }} />
-                    FINANCE
-                </MuiLink>
-                <Typography color="primary.main" sx={{ fontWeight: 800 }}>DASHBOARD COMMAND</Typography>
-            </Breadcrumbs>
-
+        <Box sx={{ py: 3, mb: 1 }}>
             {/* Title row */}
             <Stack
                 direction={{ xs: 'column', lg: 'row' }}
                 justifyContent="space-between"
                 alignItems={{ xs: 'flex-start', lg: 'center' }}
-                spacing={4}
+                spacing={3}
             >
                 {/* Left: Title + description */}
-                <Stack direction="row" spacing={2.5} alignItems="center">
+                <Stack direction="row" spacing={2} alignItems="center">
                     <Box sx={{
-                        p: 1.5, bgcolor: 'primary.main', color: 'white',
-                        borderRadius: '16px', display: 'flex',
-                        boxShadow: '0 8px 25px rgba(29,67,155,0.25)',
+                        width: 40,
+                        height: 40,
+                        bgcolor: '#EEF2FF',
+                        color: '#1A56DB',
+                        borderRadius: '10px',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
                     }}>
-                        <DashboardIcon sx={{ fontSize: 28 }} />
+                        <DashboardIcon sx={{ fontSize: 20 }} />
                     </Box>
                     <Box>
-                        <Typography variant="h2" sx={{ fontWeight: 950, color: 'text.primary', letterSpacing: '-0.03em', mb: 0.25 }}>
+                        <Typography sx={{ fontWeight: 700, fontSize: '28px', color: '#0F172A', lineHeight: 1.2, mb: 0.5, letterSpacing: '-0.02em' }}>
                             Finance Command Center
                         </Typography>
-                        <Typography variant="body2" sx={{ color: 'text.secondary', fontWeight: 500 }}>
+                        <Typography sx={{ color: '#64748B', fontWeight: 400, fontSize: '14px' }}>
                             Financial health, reconciliations, exceptions &amp; compliance.
                         </Typography>
                     </Box>
@@ -53,29 +46,41 @@ export default function FinanceDashboardHeader({ dateRange, onDateChange, onRefr
                 <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} alignItems={{ xs: 'stretch', sm: 'center' }}>
                     {/* Live status pill */}
                     <Stack
-                        direction="row" spacing={1.5} alignItems="center"
+                        direction="row" spacing={1} alignItems="center"
                         sx={{
-                            bgcolor: 'rgba(255,255,255,0.6)',
-                            px: 2, py: 1, borderRadius: '14px',
-                            border: '1px solid rgba(255,255,255,0.7)',
-                            backdropFilter: 'blur(8px)',
+                            bgcolor: '#DCFCE7',
+                            px: 1.5, py: 0.75,
+                            borderRadius: '20px',
+                            border: '1px solid #BBF7D0',
                         }}
                     >
-                        <Box sx={{ width: 7, height: 7, borderRadius: '50%', bgcolor: 'success.main', boxShadow: '0 0 8px #10B981' }} />
-                        <Typography variant="caption" sx={{ fontWeight: 800, color: 'text.secondary', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                        <Box sx={{
+                            width: 8,
+                            height: 8,
+                            borderRadius: '50%',
+                            bgcolor: '#16A34A',
+                            boxShadow: '0 0 0 3px rgba(22,163,74,0.2)'
+                        }} />
+                        <Typography sx={{ fontWeight: 600, color: '#16A34A', textTransform: 'uppercase', letterSpacing: '0.05em', fontSize: '11px' }}>
                             Ecosystem Healthy
                         </Typography>
                     </Stack>
 
                     {/* Period selector */}
                     <FormControl size="small" sx={{ minWidth: 140 }}>
-                        <InputLabel id="finance-period-label">Period</InputLabel>
                         <Select
-                            labelId="finance-period-label"
                             value={dateRange}
-                            label="Period"
                             onChange={(e) => onDateChange(e.target.value)}
-                            sx={{ borderRadius: '12px', bgcolor: 'background.paper', fontWeight: 700 }}
+                            sx={{
+                                borderRadius: '10px',
+                                bgcolor: '#FFFFFF',
+                                fontWeight: 500,
+                                fontSize: '14px',
+                                color: '#0F172A',
+                                '.MuiOutlinedInput-notchedOutline': { borderColor: '#E8ECF4' },
+                                '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: '#1A56DB' },
+                                '&.Mui-focused .MuiOutlinedInput-notchedOutline': { borderColor: '#1A56DB' }
+                            }}
                         >
                             <MenuItem value="7">Last 7 Days</MenuItem>
                             <MenuItem value="30">Last 30 Days</MenuItem>
@@ -87,19 +92,18 @@ export default function FinanceDashboardHeader({ dateRange, onDateChange, onRefr
                         variant="contained"
                         onClick={onRefresh}
                         disabled={refreshing}
-                        startIcon={refreshing ? <CircularProgress size={14} color="inherit" /> : <SyncIcon />}
+                        startIcon={refreshing ? <CircularProgress size={14} color="inherit" /> : <SyncIcon sx={{ fontSize: 16 }} />}
                         sx={{
-                            borderRadius: '12px',
-                            px: 3,
-                            py: 1.25,
-                            fontWeight: 900,
-                            fontSize: '0.75rem',
-                            letterSpacing: '0.08em',
-                            textTransform: 'uppercase',
-                            bgcolor: 'primary.main',
-                            color: 'white',
-                            boxShadow: '0 6px 20px rgba(29,67,155,0.25)',
-                            '&:hover': { bgcolor: 'primary.dark' },
+                            borderRadius: '10px',
+                            px: 2,
+                            py: 1,
+                            fontWeight: 500,
+                            fontSize: '14px',
+                            textTransform: 'none',
+                            bgcolor: '#1A56DB',
+                            color: '#FFFFFF',
+                            boxShadow: '0 2px 8px rgba(26,86,219,0.35)',
+                            '&:hover': { bgcolor: '#1347B8', boxShadow: '0 4px 12px rgba(26,86,219,0.45)' },
                         }}
                     >
                         {refreshing ? 'Syncing…' : 'Force Sync'}

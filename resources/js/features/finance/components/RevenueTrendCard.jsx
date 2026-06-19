@@ -3,13 +3,12 @@ import { Box, Typography, Stack } from '@mui/material';
 import QueryStatsIcon from '@mui/icons-material/QueryStats';
 import TransactionChart from '../../../Components/dashboard/TransactionChart';
 
-const GLASS = {
-    p: 4,
-    borderRadius: '24px',
-    border: '1px solid rgba(255,255,255,0.5)',
-    boxShadow: '0 8px 32px rgba(0,0,0,0.04)',
-    bgcolor: 'rgba(255,255,255,0.75)',
-    backdropFilter: 'blur(12px)',
+const CARD_STYLE = {
+    p: 3,
+    borderRadius: '10px',
+    border: '1px solid #E8ECF4',
+    boxShadow: '0 1px 3px rgba(15,23,42,0.06), 0 1px 2px rgba(15,23,42,0.04)',
+    bgcolor: '#FFFFFF',
     height: '100%',
     display: 'flex',
     flexDirection: 'column',
@@ -31,46 +30,46 @@ export default function RevenueTrendCard({ charts }) {
     }, [charts]);
 
     return (
-        <Box sx={GLASS}>
+        <Box sx={CARD_STYLE}>
             {/* Header */}
-            <Stack direction="row" justifyContent="space-between" alignItems="flex-start" sx={{ mb: 3 }}>
+            <Stack direction="row" justifyContent="space-between" alignItems="flex-start" sx={{ mb: 2.5 }}>
                 <Box>
-                    <Typography variant="body1" sx={{ fontWeight: 900, color: 'text.primary', letterSpacing: '-0.01em' }}>
+                    <Typography sx={{ fontWeight: 700, fontSize: '16px', color: '#0F172A', mb: 0.5 }}>
                         Monthly Revenue Trend
                     </Typography>
-                    <Typography variant="caption" sx={{ fontWeight: 700, color: 'text.secondary', textTransform: 'uppercase', letterSpacing: '0.08em', opacity: 0.55 }}>
+                    <Typography sx={{ fontWeight: 600, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.08em', fontSize: '11px' }}>
                         Sales and transaction lifecycle
                     </Typography>
                 </Box>
-                <QueryStatsIcon sx={{ color: 'text.disabled', fontSize: 20 }} />
+                <QueryStatsIcon sx={{ color: '#94A3B8', fontSize: 20 }} />
             </Stack>
 
-            {/* Summary metrics */}
-            <Stack direction="row" spacing={4} sx={{ mb: 3 }}>
-                <Box>
-                    <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 800, textTransform: 'uppercase', fontSize: '0.6rem', letterSpacing: '0.06em' }}>
+            {/* Summary metrics in subtle background boxes */}
+            <Stack direction="row" spacing={3} sx={{ mb: 3 }}>
+                <Box sx={{ bgcolor: '#F8FAFC', p: '10px 14px', borderRadius: '6px', flex: 1 }}>
+                    <Typography sx={{ color: '#64748B', fontWeight: 600, textTransform: 'uppercase', fontSize: '11px', letterSpacing: '0.06em' }}>
                         Peak Revenue Day
                     </Typography>
-                    <Typography sx={{ fontWeight: 950, color: 'primary.main', fontSize: '0.95rem', mt: 0.25 }}>
+                    <Typography sx={{ fontWeight: 700, color: '#1A56DB', fontSize: '15px', mt: 0.5 }}>
                         {chartStats.peakSalesDay}{' '}
-                        <Box component="span" sx={{ fontSize: '0.75rem', fontWeight: 700, color: 'text.secondary' }}>
+                        <Box component="span" sx={{ fontSize: '12px', fontWeight: 500, color: '#64748B' }}>
                             ({formatCurrency(chartStats.peakSales)})
                         </Box>
                     </Typography>
                 </Box>
-                <Box>
-                    <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 800, textTransform: 'uppercase', fontSize: '0.6rem', letterSpacing: '0.06em' }}>
+                <Box sx={{ bgcolor: '#F8FAFC', p: '10px 14px', borderRadius: '6px', flex: 1 }}>
+                    <Typography sx={{ color: '#64748B', fontWeight: 600, textTransform: 'uppercase', fontSize: '11px', letterSpacing: '0.06em' }}>
                         Avg Daily Revenue
                     </Typography>
-                    <Typography sx={{ fontWeight: 950, color: 'success.main', fontSize: '0.95rem', mt: 0.25 }}>
+                    <Typography sx={{ fontWeight: 700, color: '#16A34A', fontSize: '15px', mt: 0.5 }}>
                         {formatCurrency(chartStats.avgDailyRevenue)}
                     </Typography>
                 </Box>
             </Stack>
 
-            {/* Chart — directly inside the card, no inner wrapper */}
+            {/* Chart — direct inline integration */}
             <Box sx={{ flex: 1, minHeight: 300 }}>
-                <TransactionChart data={charts} loading={false} />
+                <TransactionChart data={charts} loading={false} inline />
             </Box>
         </Box>
     );
