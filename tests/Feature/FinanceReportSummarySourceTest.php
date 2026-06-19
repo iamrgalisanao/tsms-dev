@@ -95,6 +95,39 @@ class FinanceReportSummarySourceTest extends TestCase
         $this->assertEquals(19.75, (float) $response->json('totals.senior_pwd'));
     }
 
+    public function test_finance_report_groups_utc_timestamps_by_manila_business_day(): void
+    {
+        Transaction::factory()->create([
+            'tenant_id' => $this->tenant->id,
+            'terminal_id' => $this->terminal->id,
+            'transaction_timestamp' => '2026-06-17 22:03:54',
+            'gross_sales' => 120.00,
+            'net_sales' => 107.14,
+            'vat_amount' => 12.86,
+            'vatable_sales' => 107.14,
+            'validation_status' => 'VALID',
+        ]);
+
+        Transaction::factory()->create([
+            'tenant_id' => $this->tenant->id,
+            'terminal_id' => $this->terminal->id,
+            'transaction_timestamp' => '2026-06-17 15:59:59',
+            'gross_sales' => 99.00,
+            'net_sales' => 88.39,
+            'vat_amount' => 10.61,
+            'vatable_sales' => 88.39,
+            'validation_status' => 'VALID',
+        ]);
+
+        Sanctum::actingAs($this->adminUser);
+
+        $response = $this->getJson('/reports/data?month=2026-06&tenant=' . $this->tenant->id);
+
+        $response->assertOk();
+        $this->assertEquals(99.00, (float) $response->json('daily_totals.2026-06-17.gross_sales'));
+        $this->assertEquals(120.00, (float) $response->json('daily_totals.2026-06-18.gross_sales'));
+    }
+
     public function test_finance_report_uses_daily_summaries_only_when_every_requested_date_is_refreshed(): void
     {
         Transaction::factory()->create([

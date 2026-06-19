@@ -39,9 +39,7 @@ class RefreshDailyTransactionSummaries extends Command
             return self::FAILURE;
         }
 
-        $dateExpr = Schema::hasColumn('transactions', 'transaction_date')
-            ? 't.transaction_date'
-            : 'DATE(t.transaction_timestamp)';
+        $dateExpr = $this->localReportDateExpression('COALESCE(t.transaction_timestamp, t.created_at)');
         $receiptExpr = Schema::hasColumn('transactions', 'receipt_no')
             ? "COUNT(DISTINCT NULLIF(t.receipt_no, ''))"
             : 'COUNT(*)';
@@ -230,5 +228,34 @@ class RefreshDailyTransactionSummaries extends Command
         }
 
         return $totals;
+    }
+
+    private function localReportDateExpression(string $timestampExpression): string
+    {
+        $offsetMinutes = Carbon::now($this->reportTimezone())->utcOffset();
+        $driver = DB::connection()->getDriverName();
+
+        if ($driver === 'sqlite') {
+            $modifier = sprintf('%+d minutes', $offsetMinutes);
+
+            return "DATE(datetime({$timestampExpression}, '{$modifier}'))";
+        }
+
+        if ($driver === 'pgsql') {
+            $operator = $offsetMinutes >= 0 ? '+' : '-';
+            $minutes = abs($offsetMinutes);
+
+            return "DATE({$timestampExpression} {$operator} INTERVAL '{$minutes} minutes')";
+        }
+
+        $function = $offsetMinutes >= 0 ? 'DATE_ADD' : 'DATE_SUB';
+        $minutes = abs($offsetMinutes);
+
+        return "DATE({$function}({$timestampExpression}, INTERVAL {$minutes} MINUTE))";
+    }
+
+    private function reportTimezone(): string
+    {
+        return config('tsms.transaction_logs.timezone', 'Asia/Manila') ?: 'Asia/Manila';
     }
 }

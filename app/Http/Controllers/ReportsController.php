@@ -49,12 +49,8 @@ class ReportsController extends Controller
         $month = $monthDate->format('m');
 
         $excludeVoids = config('tsms.reporting.exclude_voids_from_totals', true);
-        $reportDateExpr = Schema::hasColumn('transactions', 'transaction_date')
-            ? 'transaction_date'
-            : 'DATE(transaction_timestamp)';
-        $joinedReportDateExpr = Schema::hasColumn('transactions', 'transaction_date')
-            ? 'transactions.transaction_date'
-            : 'DATE(transactions.transaction_timestamp)';
+        $reportDateExpr = $this->localReportDateExpression('COALESCE(transaction_timestamp, created_at)');
+        $joinedReportDateExpr = $this->localReportDateExpression('COALESCE(transactions.transaction_timestamp, transactions.created_at)');
 
         if ($summaryPayload = $this->dailySummaryPayload($startDate, $endDate, $tenantId, $year, $month)) {
             return response()->json($summaryPayload);
@@ -241,9 +237,7 @@ class ReportsController extends Controller
             ->keyBy('report_date');
 
         $service = app(\App\Services\Reports\FinanceCalculationService::class);
-        $reportDateExpr = Schema::hasColumn('transactions', 'transaction_date')
-            ? 'transaction_date'
-            : 'DATE(transaction_timestamp)';
+        $reportDateExpr = $this->localReportDateExpression('COALESCE(transaction_timestamp, created_at)');
         $payloadAdjustments = $this->payloadAdjustmentTotals($startDate, $endDate, $tenantId, $reportDateExpr, $service);
         $dailyTotals = [];
         $allComponents = [];
@@ -321,6 +315,35 @@ class ReportsController extends Controller
         }
 
         return $totals;
+    }
+
+    private function localReportDateExpression(string $timestampExpression): string
+    {
+        $offsetMinutes = Carbon::now($this->reportTimezone())->utcOffset();
+        $driver = DB::connection()->getDriverName();
+
+        if ($driver === 'sqlite') {
+            $modifier = sprintf('%+d minutes', $offsetMinutes);
+
+            return "DATE(datetime({$timestampExpression}, '{$modifier}'))";
+        }
+
+        if ($driver === 'pgsql') {
+            $operator = $offsetMinutes >= 0 ? '+' : '-';
+            $minutes = abs($offsetMinutes);
+
+            return "DATE({$timestampExpression} {$operator} INTERVAL '{$minutes} minutes')";
+        }
+
+        $function = $offsetMinutes >= 0 ? 'DATE_ADD' : 'DATE_SUB';
+        $minutes = abs($offsetMinutes);
+
+        return "DATE({$function}({$timestampExpression}, INTERVAL {$minutes} MINUTE))";
+    }
+
+    private function reportTimezone(): string
+    {
+        return config('tsms.transaction_logs.timezone', 'Asia/Manila') ?: 'Asia/Manila';
     }
 
     private function hasCompleteDailySummaryRefresh(string $startDate, string $endDate, $tenantId): bool
