@@ -113,11 +113,24 @@ const MainLayout = ({ children }) => {
                         })}
                     </nav>
 
-                    <div className="p-4 border-t border-white/10 mt-auto space-y-3">
+                    <div className="p-4 border-t border-white/10 mt-auto flex-shrink-0">
+                        {/* User info block */}
                         {isSidebarOpen && (
-                            <div className="rounded-lg bg-white/10 px-3 py-2">
-                                <p className="text-xs font-bold uppercase text-white/55 truncate">{roles.join(', ') || 'User'}</p>
-                                <p className="text-sm font-semibold text-white truncate">{user.email || user.name}</p>
+                            <div className="mb-3 px-1">
+                                <div className="flex items-center gap-2 mb-1">
+                                    <div className="w-7 h-7 rounded-full bg-white/20 flex items-center justify-center text-white font-bold text-sm flex-shrink-0">
+                                        {user.name.charAt(0)}
+                                    </div>
+                                    <div className="min-w-0">
+                                        <p className="text-white text-[13px] font-bold truncate leading-tight">{user.name}</p>
+                                        <p className="text-white/50 text-[11px] truncate leading-tight">{user.email || ''}</p>
+                                    </div>
+                                </div>
+                                {roles.length > 0 && (
+                                    <span className="inline-block mt-1 px-2 py-0.5 rounded-full bg-white/10 text-white/70 text-[10px] font-bold uppercase tracking-widest">
+                                        {typeof roles[0] === 'string' ? roles[0] : roles[0]?.name || 'user'}
+                                    </span>
+                                )}
                             </div>
                         )}
                         <button
@@ -125,10 +138,10 @@ const MainLayout = ({ children }) => {
                                 await logout();
                                 navigate('/login');
                             }}
-                            className="flex items-center w-full p-3 rounded-lg text-white/50 hover:bg-brand-accent/10 hover:text-brand-accent transition-all duration-200"
+                            className="flex items-center w-full p-3 rounded-xl text-white/60 hover:bg-white/15 hover:text-white transition-all duration-200 group"
                         >
-                            <LogoutIcon sx={{ fontSize: 24 }} />
-                            {isSidebarOpen && <span className="ml-3 text-[18px] font-bold">Logout</span>}
+                            <LogoutIcon sx={{ fontSize: 20 }} />
+                            {isSidebarOpen && <span className="ml-3 text-[14px] font-bold">Logout</span>}
                         </button>
                     </div>
                 </aside>

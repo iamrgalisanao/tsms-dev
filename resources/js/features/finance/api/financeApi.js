@@ -1,26 +1,24 @@
 import axios from 'axios';
 
-export const financePeriodParams = (days) => {
-    const today = new Date();
-    const start = new Date();
-    start.setDate(today.getDate() - (Number.parseInt(days, 10) - 1));
-
-    return {
-        start_date: start.toISOString().split('T')[0],
-        end_date: today.toISOString().split('T')[0],
-    };
+/**
+ * Fetch finance KPI metrics for a given date range.
+ * @param {string} startDate - ISO date string (YYYY-MM-DD)
+ * @param {string} endDate   - ISO date string (YYYY-MM-DD)
+ */
+export const fetchFinanceMetrics = async ({ startDate, endDate }) => {
+    const { data } = await axios.get('/api/dashboard/metrics', {
+        params: { start_date: startDate, end_date: endDate },
+    });
+    return data;
 };
 
-export const fetchFinanceDashboard = async (days) => {
-    const params = financePeriodParams(days);
-
-    const [metricsResponse, chartsResponse] = await Promise.all([
-        axios.get('/api/dashboard/metrics', { params }),
-        axios.get('/api/dashboard/charts', { params: { days } }),
-    ]);
-
-    return {
-        metrics: metricsResponse.data,
-        charts: chartsResponse.data,
-    };
+/**
+ * Fetch chart time-series data for the given number of days.
+ * @param {string|number} days - Number of trailing days (e.g. '7' or '30')
+ */
+export const fetchFinanceCharts = async ({ days }) => {
+    const { data } = await axios.get('/api/dashboard/charts', {
+        params: { days },
+    });
+    return data;
 };

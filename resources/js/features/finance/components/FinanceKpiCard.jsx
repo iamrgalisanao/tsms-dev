@@ -1,97 +1,158 @@
 import React from 'react';
-import {
-    Box,
-    Stack,
-    Tooltip,
-    Typography,
-} from '@mui/material';
-import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
+import { Box, Typography, Stack, Tooltip } from '@mui/material';
 import ArrowUpwardIcon from '@mui/icons-material/ArrowUpward';
+import ArrowDownwardIcon from '@mui/icons-material/ArrowDownward';
 import InfoIcon from '@mui/icons-material/Info';
 
-const FinanceKpiCard = ({
+/**
+ * Reusable KPI card for the Finance Command Center.
+ *
+ * Props:
+ *  title          - Card label (uppercase)
+ *  value          - Primary display value
+ *  subtitle       - Supporting text below the value
+ *  trend          - Numeric percent (pos/neg). Pass null to hide.
+ *  trendDirection - 'up' | 'down'
+ *  trendPositive  - If true, up=green, down=red. If false (e.g. exceptions), invert.
+ *  icon           - MUI icon element
+ *  gradient       - CSS gradient string for coloured variant (e.g. error cards)
+ *  onClick        - Optional click handler; adds pointer + hover lift
+ *  tooltip        - Optional tooltip text shown via (i) icon
+ *  minHeight      - Card min-height in px (default 136)
+ */
+export default function FinanceKpiCard({
     title,
     value,
     subtitle,
-    trend,
-    trendDirection,
-    trendColor,
+    trend = null,
+    trendDirection = 'up',
+    trendPositive = true,
     icon,
-    gradient,
+    gradient = null,
     onClick,
     tooltip,
-}) => {
+    minHeight = 136,
+}) {
+    const isGradient = Boolean(gradient);
+    const trendUp = trendDirection !== 'down';
+    const trendColor = trendUp
+        ? (trendPositive ? 'success.main' : 'error.main')
+        : (trendPositive ? 'error.main' : 'success.main');
+    const trendBg = trendUp
+        ? (trendPositive ? 'success.light' : 'error.light')
+        : (trendPositive ? 'error.light' : 'success.light');
+
     return (
         <Box
             onClick={onClick}
             sx={{
-                p: 3,
-                borderRadius: 2,
-                background: gradient || 'rgba(255, 255, 255, 0.86)',
-                border: '1px solid rgba(226, 232, 240, 0.9)',
-                boxShadow: '0 10px 28px rgba(15, 23, 42, 0.06)',
-                transition: 'transform 0.2s ease, box-shadow 0.2s ease',
+                p: '22px 24px',
+                borderRadius: '20px',
+                minHeight,
+                background: gradient || 'rgba(255,255,255,0.85)',
+                backdropFilter: 'blur(16px)',
+                border: isGradient ? 'none' : '1px solid rgba(255,255,255,0.6)',
+                boxShadow: isGradient
+                    ? '0 8px 30px rgba(0,0,0,0.1)'
+                    : '0 2px 16px rgba(0,0,0,0.04)',
+                transition: 'transform 0.22s ease, box-shadow 0.22s ease',
                 cursor: onClick ? 'pointer' : 'default',
-                '&:hover': {
-                    transform: onClick ? 'translateY(-2px)' : 'none',
-                    boxShadow: onClick ? '0 16px 34px rgba(15, 23, 42, 0.1)' : '0 10px 28px rgba(15, 23, 42, 0.06)',
-                },
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'space-between',
-                color: gradient ? 'white' : 'text.primary',
-                height: '100%',
-                minHeight: 148,
-                boxSizing: 'border-box',
+                gap: 2,
+                color: isGradient ? 'white' : 'text.primary',
+                '&:hover': onClick ? {
+                    transform: 'translateY(-4px)',
+                    boxShadow: isGradient
+                        ? '0 16px 40px rgba(0,0,0,0.15)'
+                        : '0 12px 32px rgba(29,67,155,0.10)',
+                } : {},
             }}
         >
-            <Box sx={{ minWidth: 0, width: '100%' }}>
-                <Stack direction="row" alignItems="center" spacing={0.5} sx={{ mb: 1 }}>
-                    <Typography variant="caption" sx={{ fontWeight: 800, textTransform: 'uppercase', opacity: gradient ? 0.86 : 0.62 }}>
+            {/* Left: text content */}
+            <Box sx={{ flex: 1, minWidth: 0 }}>
+                {/* Label row */}
+                <Stack direction="row" alignItems="center" spacing={0.5} sx={{ mb: 0.75 }}>
+                    <Typography
+                        variant="caption"
+                        sx={{
+                            fontWeight: 800,
+                            textTransform: 'uppercase',
+                            letterSpacing: '0.08em',
+                            fontSize: '0.65rem',
+                            opacity: isGradient ? 0.85 : 0.55,
+                            whiteSpace: 'nowrap',
+                        }}
+                    >
                         {title}
                     </Typography>
                     {tooltip && (
                         <Tooltip title={tooltip} arrow placement="top">
-                            <InfoIcon sx={{ fontSize: 14, opacity: gradient ? 0.85 : 0.55, cursor: 'help', color: gradient ? 'white' : 'action.active' }} />
+                            <InfoIcon sx={{ fontSize: 12, opacity: 0.45, cursor: 'help' }} />
                         </Tooltip>
                     )}
                 </Stack>
-                <Typography variant="h4" sx={{ fontWeight: 900, mb: 0.5, overflowWrap: 'anywhere' }}>
+
+                {/* Primary value */}
+                <Typography
+                    sx={{
+                        fontWeight: 950,
+                        fontSize: 'clamp(1.15rem, 2vw, 1.55rem)',
+                        letterSpacing: '-0.02em',
+                        lineHeight: 1.1,
+                        mb: 0.75,
+                        color: isGradient ? 'inherit' : 'text.primary',
+                        whiteSpace: 'nowrap',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                    }}
+                >
                     {value}
                 </Typography>
+
+                {/* Trend + subtitle */}
                 <Stack direction="row" spacing={1} alignItems="center" flexWrap="wrap">
                     {trend !== null && trend !== undefined && (
-                        <Stack direction="row" alignItems="center" spacing={0.25} sx={{
-                            color: trendColor || 'success.main',
-                            bgcolor: gradient ? 'rgba(255,255,255,0.2)' : (trendDirection === 'down' ? 'rgba(235,52,46,0.1)' : 'rgba(16,185,129,0.1)'),
-                            px: 1,
-                            py: 0.25,
-                            borderRadius: 1,
-                            fontWeight: 800,
-                            fontSize: '0.72rem',
-                        }}>
-                            {trendDirection === 'down' ? <ArrowDownwardIcon sx={{ fontSize: 12 }} /> : <ArrowUpwardIcon sx={{ fontSize: 12 }} />}
+                        <Stack
+                            direction="row" alignItems="center" spacing={0.25}
+                            sx={{
+                                bgcolor: isGradient ? 'rgba(255,255,255,0.2)' : trendBg,
+                                color: isGradient ? 'white' : trendColor,
+                                px: 0.75, py: 0.2, borderRadius: '6px',
+                                fontWeight: 900, fontSize: '0.6rem',
+                            }}
+                        >
+                            {trendUp
+                                ? <ArrowUpwardIcon sx={{ fontSize: 9 }} />
+                                : <ArrowDownwardIcon sx={{ fontSize: 9 }} />
+                            }
                             <span>{Math.abs(trend)}%</span>
                         </Stack>
                     )}
-                    <Typography variant="caption" sx={{ fontWeight: 600, opacity: gradient ? 0.9 : 0.72 }}>
+                    <Typography
+                        variant="caption"
+                        sx={{ fontWeight: 600, opacity: isGradient ? 0.85 : 0.6, fontSize: '0.7rem' }}
+                    >
                         {subtitle}
                     </Typography>
                 </Stack>
             </Box>
-            <Box sx={{
-                p: 1.5,
-                borderRadius: 2,
-                bgcolor: gradient ? 'rgba(255, 255, 255, 0.18)' : 'rgba(29, 67, 155, 0.08)',
-                color: gradient ? 'white' : 'primary.main',
-                display: 'flex',
-                flexShrink: 0,
-                ml: 2,
-            }}>
+
+            {/* Right: icon badge */}
+            <Box
+                sx={{
+                    p: 1.25,
+                    borderRadius: '14px',
+                    bgcolor: isGradient ? 'rgba(255,255,255,0.2)' : 'rgba(29,67,155,0.06)',
+                    color: isGradient ? 'white' : 'primary.main',
+                    display: 'flex',
+                    flexShrink: 0,
+                    boxShadow: isGradient ? 'none' : 'inset 0 1px 3px rgba(0,0,0,0.04)',
+                }}
+            >
                 {icon}
             </Box>
         </Box>
     );
-};
-
-export default FinanceKpiCard;
+}

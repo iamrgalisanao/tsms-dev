@@ -33,7 +33,7 @@ import '../css/app.css';
 import ProtectedRoute from './Components/Auth/ProtectedRoute';
 import UnauthorizedPage from './Pages/Auth/UnauthorizedPage';
 import NotFoundPage from './Pages/Auth/NotFoundPage';
-import { queryClient } from './lib/queryClient';
+import queryClient from './lib/queryClient';
 
 const App = () => {
   return (
