@@ -53,23 +53,19 @@ export default function FinanceDashboardPage() {
             {/* ── Row 4: Finance Alerts (full width) ──────────────────── */}
             <FinanceAlerts metrics={metrics} />
 
-            {/* ── Row 6: Revenue Trend 50% | Revenue Composition 50% ──── */}
-            <Grid container spacing={3} sx={{ mb: 3 }}>
+            {/* ── Bottom analytics: 2 cards per row (6 / 6 columns) ──── */}
+            <Grid container spacing={3} sx={{ mb: 3, alignItems: 'stretch' }}>
                 <Grid item xs={12} lg={6}>
                     <RevenueTrendCard charts={charts} />
                 </Grid>
                 <Grid item xs={12} lg={6}>
                     <RevenueCompositionCard data={metrics?.revenue_composition} />
                 </Grid>
-            </Grid>
-
-            {/* ── Row 7: Top Tenants ───────────────────────────────────── */}
-            <Grid container spacing={3} sx={{ mb: 3 }}>
-                <Grid item xs={12} lg={8}>
+                <Grid item xs={12} lg={6}>
                     <TopTenantsCard metrics={metrics} />
                 </Grid>
-                <Grid item xs={12} lg={4}>
-                    <QuickActionsHub compact />
+                <Grid item xs={12} lg={6}>
+                    <QuickActionsHub />
                 </Grid>
             </Grid>
 

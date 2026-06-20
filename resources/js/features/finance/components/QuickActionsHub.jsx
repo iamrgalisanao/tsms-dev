@@ -53,7 +53,7 @@ const ActionRow = ({ icon, title, description, onClick, primary = false }) => (
     </Box>
 );
 
-export default function QuickActionsHub() {
+export default function QuickActionsHub({ compact = false }) {
     const now = new Date();
 
     return (
@@ -70,7 +70,7 @@ export default function QuickActionsHub() {
                 <GetAppIcon sx={{ color: '#94A3B8', fontSize: 20 }} />
             </Stack>
 
-            <Stack spacing={1.5}>
+            <Box sx={{ display: 'grid', gridTemplateColumns: compact ? '1fr' : { xs: '1fr', sm: '1fr 1fr' }, gap: 1.5 }}>
                 <ActionRow
                     primary
                     icon={<AssessmentIcon sx={{ fontSize: 18 }} />}
@@ -99,7 +99,7 @@ export default function QuickActionsHub() {
                     description="Reconciliation CSV extract"
                     onClick={() => handleExport('/logs/export/csv')}
                 />
-            </Stack>
+            </Box>
         </Box>
     );
 }
