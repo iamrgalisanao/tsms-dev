@@ -65,6 +65,36 @@ const parseDateInput = (value) => {
     if (!year || !month || !day) return null;
     return new Date(year, month - 1, day);
 };
+const addDays = (date, days) => {
+    const next = new Date(date);
+    next.setDate(next.getDate() + days);
+    return next;
+};
+const getInclusiveDays = (start, end) => {
+    if (!start || !end || end < start) return [];
+
+    const days = [];
+    let cursor = new Date(start);
+    while (cursor <= end) {
+        days.push(new Date(cursor));
+        cursor = addDays(cursor, 1);
+    }
+
+    return days;
+};
+const getMonthBuckets = (start, end) => {
+    if (!start || !end || end < start) return [];
+
+    const months = [];
+    const cursor = new Date(start.getFullYear(), start.getMonth(), 1);
+    const last = new Date(end.getFullYear(), end.getMonth(), 1);
+    while (cursor <= last) {
+        months.push(new Date(cursor));
+        cursor.setMonth(cursor.getMonth() + 1);
+    }
+
+    return months;
+};
 const formatHeatmapDateRange = (startValue, endValue) => {
     const start = parseDateInput(startValue);
     const end = parseDateInput(endValue);
@@ -534,36 +564,55 @@ const DashboardPage = () => {
 
         const volumes = Array.isArray(chartData?.volume) ? chartData.volume.map((value) => Number(value || 0)) : [];
         const total = volumes.reduce((sum, value) => sum + value, 0);
-        const baseSeed = volumes.length ? volumes : [0];
-        const peak = Math.max(...baseSeed, 1);
+        const peak = Math.max(...volumes, 1);
+        const start = parseDateInput(filters.start_date);
+        const end = parseDateInput(filters.end_date);
+        const selectedDays = getInclusiveDays(start, end);
+        const selectedMonths = getMonthBuckets(start, end);
+        const formatCell = (value) => ({
+            value,
+            intensity: total === 0 || value === 0 ? 0 : Math.min(4, Math.ceil((value / peak) * 4))
+        });
+        const summarizeBucket = (bucketIndex, bucketSize = 1) => {
+            const startIndex = bucketIndex * bucketSize;
+            return volumes.slice(startIndex, startIndex + bucketSize).reduce((sum, value) => sum + value, 0);
+        };
         const configs = {
-            hourly: { columns: 24, rows: 1, labels: Array.from({ length: 24 }, (_, index) => (index % 3 === 0 ? `${String(index).padStart(2, '0')}:00` : '')), summary: 'Hourly transaction intensity.' },
-            daily: { columns: 30, rows: 2, labels: Array.from({ length: 30 }, (_, index) => ((index + 1) % 5 === 1 ? `Day ${index + 1}` : '')), summary: 'Daily activity over the current operating window.' },
-            weekly: { columns: 52, rows: 4, labels: ['Jan', '', '', '', 'Feb', '', '', '', 'Mar', '', '', '', 'Apr', '', '', '', 'May', '', '', '', 'Jun', '', '', '', 'Jul', '', '', '', 'Aug', '', '', '', 'Sep', '', '', '', 'Oct', '', '', '', 'Nov', '', '', '', 'Dec', '', '', '', '', '', '', ''], summary: 'Weekly activity by day intensity.' },
-            monthly: { columns: 12, rows: 3, labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'], summary: 'Monthly activity by period segment.' }
+            hourly: {
+                labels: Array.from({ length: 24 }, (_, index) => (index % 3 === 0 ? `${String(index).padStart(2, '0')}:00` : '')),
+                summary: `Hourly transaction intensity for ${formatHeatmapDateRange(filters.start_date, filters.end_date)}.`
+            },
+            daily: {
+                labels: selectedDays.map((date) => date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })),
+                summary: `Daily activity for ${formatHeatmapDateRange(filters.start_date, filters.end_date)}.`
+            },
+            weekly: {
+                labels: selectedDays.filter((_, index) => index % 7 === 0).map((date) => `Week of ${date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`),
+                summary: `Weekly activity for ${formatHeatmapDateRange(filters.start_date, filters.end_date)}.`
+            },
+            monthly: {
+                labels: selectedMonths.map((date) => date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })),
+                summary: `Monthly activity for ${formatHeatmapDateRange(filters.start_date, filters.end_date)}.`
+            }
         };
         const config = configs[heatmapGranularity] || configs.weekly;
+        const labels = config.labels.length ? config.labels : ['Selected period'];
+        const bucketSize = heatmapGranularity === 'weekly' ? 7 : 1;
 
-        const groups = Array.from({ length: config.columns }, (_, columnIndex) => ({
-            label: config.labels[columnIndex] || '',
-            cells: Array.from({ length: config.rows }, (_, rowIndex) => {
-                const seedValue = baseSeed[(columnIndex + rowIndex) % baseSeed.length] || 0;
-                const wave = ((columnIndex * 7 + rowIndex * 11) % 19) / 18;
-                const value = Math.round(seedValue * (0.55 + wave));
-                const intensity = total === 0 ? 0 : Math.min(4, Math.ceil((value / peak) * 4));
-                return { value, intensity };
-            })
+        const groups = labels.map((label, columnIndex) => ({
+            label,
+            cells: [formatCell(heatmapGranularity === 'hourly' ? (volumes[columnIndex] || 0) : summarizeBucket(columnIndex, bucketSize))]
         }));
 
         return {
             groups,
             total,
             peak,
-            columns: config.columns,
-            rows: config.rows,
+            columns: groups.length,
+            rows: 1,
             summary: config.summary
         };
-    }, [chartData, heatmapGranularity, loadingSections.charts]);
+    }, [chartData, filters.end_date, filters.start_date, heatmapGranularity, loadingSections.charts]);
 
     const heatmapColors = ['#f8fafc', '#dcfce7', '#86efac', '#22c55e', '#047857'];
     const heatmapPeriodLabel = useMemo(
@@ -1189,10 +1238,10 @@ const DashboardPage = () => {
                         ) : (
                             <>
                                 <div className="overflow-x-auto pb-3">
-                                    <div className="min-w-[980px]">
+                                    <div className="inline-block min-w-max">
                                         <div
                                             className="grid gap-1.5 mb-3"
-                                            style={{ gridTemplateColumns: `repeat(${heatmapData.columns}, minmax(12px, 1fr))` }}
+                                            style={{ gridTemplateColumns: `repeat(${heatmapData.columns}, 64px)` }}
                                         >
                                             {heatmapData.groups.map((group, index) => (
                                                 <div key={`heatmap-label-${index}`} className="text-xs text-slate-500 h-5 truncate">
@@ -1202,7 +1251,7 @@ const DashboardPage = () => {
                                         </div>
                                         <div
                                             className="grid gap-1.5"
-                                            style={{ gridTemplateColumns: `repeat(${heatmapData.columns}, minmax(12px, 1fr))` }}
+                                            style={{ gridTemplateColumns: `repeat(${heatmapData.columns}, 64px)` }}
                                         >
                                             {heatmapData.groups.map((group, groupIndex) => (
                                                 <div
