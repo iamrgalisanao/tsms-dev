@@ -81,6 +81,54 @@ const getPresetRange = (preset) => {
     return { start: '', end: '' };
 };
 
+const DASHBOARD_CACHE_PREFIX = 'tsms.dashboard.cache';
+const DASHBOARD_CACHE_TTL_MS = 5 * 60 * 1000;
+
+const getDefaultDashboardFilters = () => ({
+    start_date: getPresetRange('today').start,
+    end_date: getPresetRange('today').end,
+    terminal_id: '',
+    search: ''
+});
+
+const getDashboardCacheKey = (filters) => {
+    const stableFilters = {
+        start_date: filters.start_date || '',
+        end_date: filters.end_date || '',
+        terminal_id: filters.terminal_id || '',
+        search: filters.search || ''
+    };
+
+    return `${DASHBOARD_CACHE_PREFIX}.${JSON.stringify(stableFilters)}`;
+};
+
+const readDashboardCache = (filters) => {
+    try {
+        const cached = sessionStorage.getItem(getDashboardCacheKey(filters));
+        if (!cached) return null;
+
+        const parsed = JSON.parse(cached);
+        if (!parsed?.payload || Date.now() - parsed.cachedAt > DASHBOARD_CACHE_TTL_MS) {
+            return null;
+        }
+
+        return parsed.payload;
+    } catch (error) {
+        return null;
+    }
+};
+
+const writeDashboardCache = (filters, payload) => {
+    try {
+        sessionStorage.setItem(getDashboardCacheKey(filters), JSON.stringify({
+            cachedAt: Date.now(),
+            payload
+        }));
+    } catch (error) {
+        // Cache writes are best-effort; dashboard data should still render.
+    }
+};
+
 const LoadingPanel = ({ label = 'Loading page details...' }) => (
     <Box sx={{
         minHeight: 180,
@@ -100,39 +148,37 @@ const LoadingPanel = ({ label = 'Loading page details...' }) => (
 
 const DashboardPage = () => {
     const { user } = useAuth();
-    const [metrics, setMetrics] = useState(null);
-    const [chartData, setChartData] = useState(null);
-    const [health, setHealth] = useState(null);
-    const [terminalPerformance, setTerminalPerformance] = useState([]);
-    const [recentTransactions, setRecentTransactions] = useState([]);
-    const [auditLogs, setAuditLogs] = useState([]);
-    const [loading, setLoading] = useState(true);
-    const [loadingSections, setLoadingSections] = useState({
-        metrics: true,
-        charts: true,
-        health: true,
-        terminalPerformance: true,
-        transactions: true,
-        auditLogs: true,
-        notifications: true
-    });
+    const initialFilters = useMemo(() => getDefaultDashboardFilters(), []);
+    const initialDashboardCache = useMemo(() => readDashboardCache(initialFilters), [initialFilters]);
+    const hasInitialDashboardCache = Boolean(initialDashboardCache);
+    const [metrics, setMetrics] = useState(() => initialDashboardCache?.metrics ?? null);
+    const [chartData, setChartData] = useState(() => initialDashboardCache?.chartData ?? null);
+    const [health, setHealth] = useState(() => initialDashboardCache?.health ?? null);
+    const [terminalPerformance, setTerminalPerformance] = useState(() => initialDashboardCache?.terminalPerformance ?? []);
+    const [recentTransactions, setRecentTransactions] = useState(() => initialDashboardCache?.recentTransactions ?? []);
+    const [auditLogs, setAuditLogs] = useState(() => initialDashboardCache?.auditLogs ?? []);
+    const [loading, setLoading] = useState(() => !hasInitialDashboardCache);
+    const [loadingSections, setLoadingSections] = useState(() => ({
+        metrics: !hasInitialDashboardCache,
+        charts: !hasInitialDashboardCache,
+        health: !hasInitialDashboardCache,
+        terminalPerformance: !hasInitialDashboardCache,
+        transactions: !hasInitialDashboardCache,
+        auditLogs: !hasInitialDashboardCache,
+        notifications: !hasInitialDashboardCache
+    }));
     const [selectedTransaction, setSelectedTransaction] = useState(null);
     const [detailPanelOpen, setDetailPanelOpen] = useState(false);
     const [refreshInterval, setRefreshInterval] = useState(30000); // 30 seconds for command center
     const [isRefreshing, setIsRefreshing] = useState(false);
     const [notification, setNotification] = useState(null);
-    const [alerts, setAlerts] = useState([]);
-    const [lastUpdated, setLastUpdated] = useState(null);
+    const [alerts, setAlerts] = useState(() => initialDashboardCache?.alerts ?? []);
+    const [lastUpdated, setLastUpdated] = useState(() => initialDashboardCache?.lastUpdated ? new Date(initialDashboardCache.lastUpdated) : null);
     const [timeRange, setTimeRange] = useState('today');
     const [dashboardView, setDashboardView] = useState('operations');
     const [activityTab, setActivityTab] = useState('transactions');
     const [customRange, setCustomRange] = useState({ start: '', end: '' });
-    const [filters, setFilters] = useState({
-        start_date: getPresetRange('today').start,
-        end_date: getPresetRange('today').end,
-        terminal_id: '',
-        search: ''
-    });
+    const [filters, setFilters] = useState(() => initialFilters);
 
     const userRoles = useMemo(() => user?.roles || [], [user]);
     const normalisedRoles = useMemo(() => userRoles.map(r => (typeof r === 'string' ? r : r?.name || '').toLowerCase()), [userRoles]);
@@ -157,6 +203,27 @@ const DashboardPage = () => {
         }
     }, []);
 
+    const applyCachedDashboardData = useCallback((cachedPayload) => {
+        setMetrics(cachedPayload.metrics ?? null);
+        setChartData(cachedPayload.chartData ?? null);
+        setHealth(cachedPayload.health ?? null);
+        setTerminalPerformance(cachedPayload.terminalPerformance ?? []);
+        setRecentTransactions(cachedPayload.recentTransactions ?? []);
+        setAuditLogs(cachedPayload.auditLogs ?? []);
+        setAlerts(cachedPayload.alerts ?? []);
+        setLastUpdated(cachedPayload.lastUpdated ? new Date(cachedPayload.lastUpdated) : null);
+        setLoading(false);
+        setLoadingSections({
+            metrics: false,
+            charts: false,
+            health: false,
+            terminalPerformance: false,
+            transactions: false,
+            auditLogs: false,
+            notifications: false
+        });
+    }, []);
+
     const fetchDashboardData = useCallback(async (isInitial = false) => {
         if (isInitial) {
             setLoading(true);
@@ -165,7 +232,7 @@ const DashboardPage = () => {
         setIsRefreshing(true);
 
         try {
-            const [metricsRes, , healthRes] = await Promise.all([
+            const [metricsRes, chartsRes, healthRes, terminalPerformanceRes, transactionsRes, auditRes, notificationsRes] = await Promise.all([
                 runDashboardRequest('metrics', () => api.getMetrics(), setMetrics, isInitial),
                 runDashboardRequest('charts', () => api.getCharts(), setChartData, isInitial),
                 runDashboardRequest('health', () => api.getSystemHealth(), setHealth, isInitial),
@@ -174,7 +241,21 @@ const DashboardPage = () => {
                 runDashboardRequest('auditLogs', () => api.getAuditLogs(1, { ...filters, per_page: 10 }), (response) => setAuditLogs(response?.data || []), isInitial),
                 runDashboardRequest('notifications', () => api.getNotifications(), (response) => setAlerts(response?.data || []), isInitial)
             ]);
-            setLastUpdated(new Date());
+
+            const updatedAt = new Date();
+            setLastUpdated(updatedAt);
+
+            const previousCachedPayload = readDashboardCache(filters) || {};
+            writeDashboardCache(filters, {
+                metrics: metricsRes ?? previousCachedPayload.metrics ?? null,
+                chartData: chartsRes ?? previousCachedPayload.chartData ?? null,
+                health: healthRes ?? previousCachedPayload.health ?? null,
+                terminalPerformance: terminalPerformanceRes ?? previousCachedPayload.terminalPerformance ?? [],
+                recentTransactions: transactionsRes?.data ?? previousCachedPayload.recentTransactions ?? [],
+                auditLogs: auditRes?.data ?? previousCachedPayload.auditLogs ?? [],
+                alerts: notificationsRes?.data ?? previousCachedPayload.alerts ?? [],
+                lastUpdated: updatedAt.toISOString()
+            });
 
             if (healthRes && healthRes.cpu > 85) {
                 setNotification({ message: 'Critical high CPU usage detected! System performance may be affected.', type: 'error' });
@@ -190,8 +271,15 @@ const DashboardPage = () => {
     }, [filters, runDashboardRequest]);
 
     useEffect(() => {
+        const cachedPayload = readDashboardCache(filters);
+        if (cachedPayload) {
+            applyCachedDashboardData(cachedPayload);
+            fetchDashboardData(false);
+            return;
+        }
+
         fetchDashboardData(true);
-    }, [fetchDashboardData]);
+    }, [applyCachedDashboardData, fetchDashboardData, filters]);
 
     useEffect(() => {
         if (refreshInterval <= 0) return;
@@ -205,7 +293,13 @@ const DashboardPage = () => {
         }
 
         const preset = getPresetRange(timeRange);
-        setFilters((prev) => ({ ...prev, start_date: preset.start, end_date: preset.end }));
+        setFilters((prev) => {
+            if (prev.start_date === preset.start && prev.end_date === preset.end) {
+                return prev;
+            }
+
+            return { ...prev, start_date: preset.start, end_date: preset.end };
+        });
     }, [timeRange]);
 
     const handleApplyCustomRange = useCallback(() => {
@@ -213,11 +307,17 @@ const DashboardPage = () => {
             return;
         }
 
-        setFilters((prev) => ({
-            ...prev,
-            start_date: customRange.start,
-            end_date: customRange.end
-        }));
+        setFilters((prev) => {
+            if (prev.start_date === customRange.start && prev.end_date === customRange.end) {
+                return prev;
+            }
+
+            return {
+                ...prev,
+                start_date: customRange.start,
+                end_date: customRange.end
+            };
+        });
     }, [customRange]);
 
     const handleViewDetails = useCallback((transaction) => {

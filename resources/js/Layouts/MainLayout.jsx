@@ -21,6 +21,8 @@ const MainLayout = ({ children }) => {
     const location = useLocation();
     const navigate = useNavigate();
     const { user: authUser, logout } = useAuth();
+    const fullBleedRoutes = ['/dashboard'];
+    const isFullBleedPage = fullBleedRoutes.includes(location.pathname);
 
     // Merge: prefer reactive AuthContext user, fall back to Blade-injected window.authUser
     const user = authUser || window.authUser || { name: 'Guest', roles: [] };
@@ -185,7 +187,9 @@ const MainLayout = ({ children }) => {
                     <main 
                         className="flex-1 overflow-y-auto relative"
                     >
-                        {children}
+                        <div className={isFullBleedPage ? 'min-h-full' : 'min-h-full px-4 sm:px-6 lg:px-8'}>
+                            {children}
+                        </div>
                     </main>
                 </div>
             </div>
