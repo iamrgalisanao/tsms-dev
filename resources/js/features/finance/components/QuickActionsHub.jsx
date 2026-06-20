@@ -25,6 +25,7 @@ const ActionRow = ({ icon, title, description, onClick, primary = false }) => (
         onClick={onClick}
         sx={{
             width: '100%',
+            minWidth: 0,
             textAlign: 'left',
             border: `1px solid ${primary ? '#BFDBFE' : '#E2E8F0'}`,
             bgcolor: primary ? '#EFF6FF' : '#FFFFFF',
@@ -57,7 +58,7 @@ export default function QuickActionsHub({ compact = false }) {
     const now = new Date();
 
     return (
-        <Box sx={CARD_STYLE}>
+        <Box sx={{ ...CARD_STYLE, width: '100%' }}>
             <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2.5 }}>
                 <Box>
                     <Typography sx={{ fontWeight: 800, fontSize: '16px', color: '#0F172A', mb: 0.5 }}>
@@ -70,7 +71,14 @@ export default function QuickActionsHub({ compact = false }) {
                 <GetAppIcon sx={{ color: '#94A3B8', fontSize: 20 }} />
             </Stack>
 
-            <Box sx={{ display: 'grid', gridTemplateColumns: compact ? '1fr' : { xs: '1fr', sm: '1fr 1fr' }, gap: 1.5 }}>
+            <Box sx={{
+                display: 'grid',
+                width: '100%',
+                gridTemplateColumns: compact ? 'minmax(0, 1fr)' : { xs: 'minmax(0, 1fr)', sm: 'repeat(2, minmax(0, 1fr))' },
+                gap: 1.5,
+                alignItems: 'stretch',
+                justifyItems: 'stretch',
+            }}>
                 <ActionRow
                     primary
                     icon={<AssessmentIcon sx={{ fontSize: 18 }} />}
