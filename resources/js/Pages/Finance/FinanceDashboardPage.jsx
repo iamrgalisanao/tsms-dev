@@ -1,5 +1,5 @@
 import React from 'react';
-import { Box, Grid } from '@mui/material';
+import { Box } from '@mui/material';
 import { useFinanceDashboard } from '../../features/finance/hooks/useFinanceDashboard';
 import FinanceLoadingSkeleton from '../../features/finance/components/FinanceLoadingSkeleton';
 import FinanceDashboardHeader from '../../features/finance/components/FinanceDashboardHeader';
@@ -54,20 +54,29 @@ export default function FinanceDashboardPage() {
             <FinanceAlerts metrics={metrics} />
 
             {/* ── Bottom analytics: 2 cards per row (6 / 6 columns) ──── */}
-            <Grid container spacing={3} sx={{ mb: 3, alignItems: 'stretch' }}>
-                <Grid item xs={12} lg={6}>
+            <Box
+                sx={{
+                    display: 'grid',
+                    width: '100%',
+                    gridTemplateColumns: { xs: '1fr', lg: 'repeat(2, minmax(0, 1fr))' },
+                    gap: 3,
+                    mb: 3,
+                    alignItems: 'stretch',
+                }}
+            >
+                <Box sx={{ minWidth: 0, display: 'flex' }}>
                     <RevenueTrendCard charts={charts} />
-                </Grid>
-                <Grid item xs={12} lg={6}>
+                </Box>
+                <Box sx={{ minWidth: 0, display: 'flex' }}>
                     <RevenueCompositionCard data={metrics?.revenue_composition} />
-                </Grid>
-                <Grid item xs={12} lg={6}>
+                </Box>
+                <Box sx={{ minWidth: 0, display: 'flex' }}>
                     <TopTenantsCard metrics={metrics} />
-                </Grid>
-                <Grid item xs={12} lg={6}>
+                </Box>
+                <Box sx={{ minWidth: 0, display: 'flex' }}>
                     <QuickActionsHub />
-                </Grid>
-            </Grid>
+                </Box>
+            </Box>
 
         </Box>
     );
