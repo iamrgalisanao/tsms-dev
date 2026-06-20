@@ -44,7 +44,7 @@ const MainLayout = ({ children }) => {
         // ── Finance (exclusive set) ───────────────────────────────────
         { name: 'Dashboard', path: '/finance', icon: DashboardIcon, roles: ['finance'] },
         { name: 'Transaction Logs', path: '/transactions', icon: ReceiptIcon, roles: ['finance'] },
-        { name: 'CSMR Reports', path: '/reports', icon: DescriptionIcon, roles: ['finance', 'commercial'] },
+        { name: 'CMSR Reports', path: '/reports', icon: DescriptionIcon, roles: ['finance', 'commercial'] },
 
         // ── Commercial ───────────────────────────────────────────────
         { name: 'Dashboard', path: '/commercial', icon: DashboardIcon, roles: ['commercial'] },
@@ -76,18 +76,54 @@ const MainLayout = ({ children }) => {
                     popper: {
                         sx: {
                             zIndex: 1400,
+                            '@keyframes sidebarTooltipWiggle': {
+                                '0%, 100%': {
+                                    transform: 'translateX(0) rotate(0deg)',
+                                },
+                                '30%': {
+                                    transform: 'translateX(1px) rotate(0.35deg)',
+                                },
+                                '60%': {
+                                    transform: 'translateX(-0.5px) rotate(-0.25deg)',
+                                },
+                            },
                             '& .MuiTooltip-tooltip': {
-                                bgcolor: '#0F172A',
+                                position: 'relative',
+                                bgcolor: '#1D4ED8',
                                 color: '#FFFFFF',
                                 fontSize: '12px',
                                 fontWeight: 700,
-                                borderRadius: '8px',
-                                px: 1.25,
-                                py: 0.75,
-                                boxShadow: '0 12px 24px rgba(15, 23, 42, 0.24)',
+                                letterSpacing: '0.01em',
+                                border: 'none',
+                                borderRadius: '18px 18px 18px 6px',
+                                px: 1.5,
+                                py: 0.85,
+                                backdropFilter: 'blur(14px) saturate(155%)',
+                                WebkitBackdropFilter: 'blur(14px) saturate(155%)',
+                                boxShadow: '0 14px 32px rgba(15, 23, 42, 0.32), inset 0 1px 0 rgba(191, 219, 254, 0.34)',
+                                animation: 'sidebarTooltipWiggle 1.8s ease-in-out infinite',
+                                '&::after': {
+                                    content: '""',
+                                    position: 'absolute',
+                                    top: 0,
+                                    right: 0,
+                                    bottom: 0,
+                                    width: '48%',
+                                    pointerEvents: 'none',
+                                    borderTop: '1px solid rgba(239, 35, 60, 0.86)',
+                                    borderRight: '1px solid rgba(239, 35, 60, 0.86)',
+                                    borderBottom: '1px solid rgba(239, 35, 60, 0.86)',
+                                    borderRadius: '0 18px 18px 0',
+                                },
                             },
                             '& .MuiTooltip-arrow': {
-                                color: '#0F172A',
+                                color: '#1D4ED8',
+                                '&::before': {
+                                    border: 'none',
+                                    boxSizing: 'border-box',
+                                    backdropFilter: 'blur(14px) saturate(155%)',
+                                    WebkitBackdropFilter: 'blur(14px) saturate(155%)',
+                                },
                             },
                         },
                     },

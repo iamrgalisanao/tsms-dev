@@ -44,7 +44,7 @@ export default function FinanceAlerts({ metrics }) {
         {
             key: 'csmr',
             severity: csmrReady ? 'success' : 'info',
-            label: csmrReady ? 'CSMR Reports Ready' : 'CSMR Reports Processing',
+            label: csmrReady ? 'CMSR Reports Ready' : 'CMSR Reports Processing',
             action: !csmrReady ? () => { window.location.href = '/reports'; } : null,
             actionLabel: 'View Reports',
         },

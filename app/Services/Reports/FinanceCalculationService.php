@@ -163,13 +163,13 @@ class FinanceCalculationService
     }
 
     /**
-     * Derives final financial metrics from raw CSMR components.
+     * Derives final financial metrics from raw CMSR components.
      *
-     * CSMR uses visible-column math rather than simply echoing raw payload
+     * CMSR uses visible-column math rather than simply echoing raw payload
      * fields. Some providers submit VATABLE_SALES as VAT-inclusive; this
      * normalizes those rows so the report matches the Z-reading layout:
      * vatable sales ex-VAT, VAT in its own column, and gross reconstructed
-     * from the visible CSMR components.
+     * from the visible CMSR components.
      */
     public function deriveMetrics(array $c, array $options = []): array
     {

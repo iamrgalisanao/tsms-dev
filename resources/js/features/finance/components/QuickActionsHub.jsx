@@ -82,7 +82,7 @@ export default function QuickActionsHub({ compact = false }) {
                 <ActionRow
                     primary
                     icon={<AssessmentIcon sx={{ fontSize: 18 }} />}
-                    title="Generate CSMR Report"
+                    title="Generate CMSR Report"
                     description="Monthly tenant sales report"
                     onClick={() => handleExport('/finance/reports/export', {
                         year: now.getFullYear(),

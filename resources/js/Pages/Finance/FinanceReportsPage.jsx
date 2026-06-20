@@ -21,8 +21,8 @@ const fmt = (v, decimals = 2) =>
 
 const php = (v) => `P${fmt(v)}`;
 
-// ─── CSMR Table ───────────────────────────────────────────────────────────────
-const CSMR_TABLE_STYLES = `
+// ─── CMSR Table ───────────────────────────────────────────────────────────────
+const CMSR_TABLE_STYLES = `
 .csmr-wrap { overflow-x: auto; font-family: Arial, sans-serif; font-size: 11px; }
 .csmr-table { border-collapse: collapse; min-width: 1200px; width: 100%; }
 .csmr-table th, .csmr-table td {
@@ -60,7 +60,7 @@ const CsmrTable = ({ reportData, tenantName, month }) => {
 
     return (
         <>
-            <style>{CSMR_TABLE_STYLES}</style>
+            <style>{CMSR_TABLE_STYLES}</style>
 
             {/* Logo */}
             <div className="csmr-logo">
@@ -315,7 +315,7 @@ const FinanceReportsPage = () => {
                             Finance Reports
                         </Typography>
                         <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-                            Generate the Certified Monthly Sales Report (CSMR) per tenant.
+                            Generate the Certified Monthly Sales Report (CMSR) per tenant.
                         </Typography>
                     </Box>
                 </Stack>

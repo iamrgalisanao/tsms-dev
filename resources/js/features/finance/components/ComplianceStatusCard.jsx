@@ -31,8 +31,8 @@ export default function ComplianceStatusCard({ metrics }) {
 
     const items = [
         {
-            label: 'CSMR Report',
-            sub: `Certified Monthly Sales — due ${csmrDueDate}`,
+            label: 'CMSR Report',
+            sub: `Certified Monthly Sales Report — due ${csmrDueDate}`,
             ok: csmrReady,
             chipLabel: csmrReady ? 'Ready' : 'Pending Review',
             chipColor: csmrReady ? 'success' : 'warning',

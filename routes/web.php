@@ -233,7 +233,7 @@ Route::middleware(['auth'])->group(function () {
         return view('app');
     })->name('finance.dashboard');
 
-    // CSMR API endpoints (admin, manager, finance, or commercial roles)
+    // CMSR API endpoints (admin, manager, finance, or commercial roles)
     Route::middleware(['role:admin|manager|finance|commercial'])->group(function () {
         // JSON API endpoint used by the reports dashboard (ajax)
         Route::get('/reports/data', [ReportsController::class, 'data'])->name('finance.reports');

@@ -169,7 +169,7 @@ class ReportsController extends Controller
                 'other_tax' => (float)($tax->other_tax_basis ?? 0),
                 'service_charge_distributed' => max((float)($tx->service_charge_distributed ?? 0), (float)($dailyPayloadAdjustments[$date]['service_charge_distributed'] ?? 0)),
                 'service_charge_retained' => max((float)($tx->service_charge_retained ?? 0), (float)($dailyPayloadAdjustments[$date]['service_charge_retained'] ?? 0)),
-                // CSMR-style views do not have a standalone regular discount column.
+                // CMSR-style views do not have a standalone regular discount column.
                 // Excluding discount_total avoids hidden double-counting in gross math.
                 'regular_discount' => 0.0,
                 'gross_sales' => (float)($tx->gross_sales ?? 0),
