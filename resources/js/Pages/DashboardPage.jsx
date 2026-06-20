@@ -1125,9 +1125,7 @@ const DashboardPage = () => {
                         <div className="px-6 pt-6 border-b border-slate-100 flex items-center justify-between">
                             <div className="flex gap-8">
                                 <button className="pb-4 border-b-2 border-[#e11d2d] text-slate-900 text-xs font-bold uppercase tracking-wider">Transactions</button>
-                                <button className="pb-4 text-slate-400 text-xs font-bold uppercase tracking-wider hover:text-slate-600 transition-colors">Exceptions ({kpiData.exceptions.value})</button>
                             </div>
-                            <button className="pb-4 text-[10px] font-bold text-[#e11d2d] hover:underline uppercase tracking-widest">View Archive</button>
                         </div>
                         <div className="flex-1 flex flex-col min-h-0 relative">
                             {loadingSections.transactions || dashboardLogTransactions.length > 0 ? (
