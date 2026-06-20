@@ -164,8 +164,7 @@ const getDashboardCacheKey = (filters) => {
         start_date: filters.start_date || '',
         end_date: filters.end_date || '',
         terminal_id: filters.terminal_id || '',
-        search: filters.search || '',
-        chart_granularity: filters.chart_granularity || 'weekly'
+        search: filters.search || ''
     };
 
     return `${DASHBOARD_CACHE_PREFIX}.${JSON.stringify(stableFilters)}`;
@@ -231,10 +230,12 @@ const LoadingPanel = ({ label = 'Loading page details...' }) => (
 const DashboardPage = () => {
     const { user } = useAuth();
     const initialFilters = useMemo(() => getDefaultDashboardFilters(), []);
-    const initialDashboardCache = useMemo(() => readDashboardCache({ ...initialFilters, chart_granularity: 'weekly' }), [initialFilters]);
+    const initialDashboardCache = useMemo(() => readDashboardCache(initialFilters), [initialFilters]);
     const hasInitialDashboardCache = Boolean(initialDashboardCache);
     const [metrics, setMetrics] = useState(() => initialDashboardCache?.metrics ?? null);
     const [chartData, setChartData] = useState(() => initialDashboardCache?.chartData ?? null);
+    const [heatmapChartData, setHeatmapChartData] = useState(() => initialDashboardCache?.chartData ?? null);
+    const [heatmapLoading, setHeatmapLoading] = useState(() => !hasInitialDashboardCache);
     const [health, setHealth] = useState(() => initialDashboardCache?.health ?? null);
     const [terminalPerformance, setTerminalPerformance] = useState(() => normalizeTerminalPerformance(initialDashboardCache?.terminalPerformance));
     const [loading, setLoading] = useState(() => !hasInitialDashboardCache);
@@ -254,6 +255,10 @@ const DashboardPage = () => {
     const [dashboardView, setDashboardView] = useState('operations');
     const [heatmapGranularity, setHeatmapGranularity] = useState('weekly');
     const [heatmapDateRange, setHeatmapDateRange] = useState(() => ({
+        start: initialFilters.start_date,
+        end: initialFilters.end_date
+    }));
+    const [heatmapAppliedRange, setHeatmapAppliedRange] = useState(() => ({
         start: initialFilters.start_date,
         end: initialFilters.end_date
     }));
@@ -311,11 +316,10 @@ const DashboardPage = () => {
         setIsRefreshing(true);
 
         try {
-            const dashboardCacheFilters = { ...filters, chart_granularity: heatmapGranularity };
             const chartParams = {
                 date_from: filters.start_date,
                 date_to: filters.end_date,
-                granularity: heatmapGranularity
+                granularity: 'daily'
             };
             const [metricsRes, chartsRes, healthRes, terminalPerformanceRes, notificationsRes] = await Promise.all([
                 runDashboardRequest('metrics', () => api.getMetrics(), setMetrics, isInitial),
@@ -328,8 +332,8 @@ const DashboardPage = () => {
             const updatedAt = new Date();
             setLastUpdated(updatedAt);
 
-            const previousCachedPayload = readDashboardCache(dashboardCacheFilters) || {};
-            writeDashboardCache(dashboardCacheFilters, {
+            const previousCachedPayload = readDashboardCache(filters) || {};
+            writeDashboardCache(filters, {
                 metrics: metricsRes ?? previousCachedPayload.metrics ?? null,
                 chartData: chartsRes ?? previousCachedPayload.chartData ?? null,
                 health: healthRes ?? previousCachedPayload.health ?? null,
@@ -349,10 +353,10 @@ const DashboardPage = () => {
             setLoading(false);
             setIsRefreshing(false);
         }
-    }, [filters, heatmapGranularity, runDashboardRequest]);
+    }, [filters, runDashboardRequest]);
 
     useEffect(() => {
-        const cachedPayload = readDashboardCache({ ...filters, chart_granularity: heatmapGranularity });
+        const cachedPayload = readDashboardCache(filters);
         if (cachedPayload) {
             applyCachedDashboardData(cachedPayload);
             // Cached dashboard sections are session-scoped. If terminal rows are
@@ -365,7 +369,7 @@ const DashboardPage = () => {
         }
 
         fetchDashboardData(true);
-    }, [applyCachedDashboardData, fetchDashboardData, filters, heatmapGranularity]);
+    }, [applyCachedDashboardData, fetchDashboardData, filters]);
 
     useEffect(() => {
         if (refreshInterval <= 0) return;
@@ -388,36 +392,6 @@ const DashboardPage = () => {
         });
     }, [timeRange]);
 
-    useEffect(() => {
-        setHeatmapDateRange({
-            start: filters.start_date || '',
-            end: filters.end_date || ''
-        });
-
-        if (filters.start_date === filters.end_date && filters.start_date) {
-            setHeatmapHourlyDate(filters.start_date);
-        }
-    }, [filters.end_date, filters.start_date]);
-
-    useEffect(() => {
-        if (heatmapGranularity !== 'hourly' || !heatmapHourlyDate) {
-            return;
-        }
-
-        setTimeRange('custom');
-        setFilters((prev) => {
-            if (prev.start_date === heatmapHourlyDate && prev.end_date === heatmapHourlyDate) {
-                return prev;
-            }
-
-            return {
-                ...prev,
-                start_date: heatmapHourlyDate,
-                end_date: heatmapHourlyDate
-            };
-        });
-    }, [heatmapGranularity, heatmapHourlyDate]);
-
     const handleApplyCustomRange = useCallback(() => {
         if (!customRange.start || !customRange.end) {
             return;
@@ -437,21 +411,13 @@ const DashboardPage = () => {
     }, [customRange]);
 
     const handleApplyHeatmapDateRange = useCallback(() => {
-        if (!heatmapDateRange.start || !heatmapDateRange.end) {
+        if (!heatmapDateRange.start || !heatmapDateRange.end || heatmapDateRange.start > heatmapDateRange.end) {
             return;
         }
 
-        setTimeRange('custom');
-        setFilters((prev) => {
-            if (prev.start_date === heatmapDateRange.start && prev.end_date === heatmapDateRange.end) {
-                return prev;
-            }
-
-            return {
-                ...prev,
-                start_date: heatmapDateRange.start,
-                end_date: heatmapDateRange.end
-            };
+        setHeatmapAppliedRange({
+            start: heatmapDateRange.start,
+            end: heatmapDateRange.end
         });
     }, [heatmapDateRange]);
 
@@ -459,23 +425,42 @@ const DashboardPage = () => {
         setHeatmapHourlyDate(date);
         if (!date) return;
 
-        setTimeRange('custom');
-        setFilters((prev) => {
-            if (prev.start_date === date && prev.end_date === date) {
-                return prev;
-            }
-
-            return {
-                ...prev,
-                start_date: date,
-                end_date: date
-            };
-        });
+        setHeatmapAppliedRange({ start: date, end: date });
     }, []);
+
+    const fetchHeatmapChartData = useCallback(async () => {
+        const dateFrom = heatmapGranularity === 'hourly' ? heatmapHourlyDate : heatmapAppliedRange.start;
+        const dateTo = heatmapGranularity === 'hourly' ? heatmapHourlyDate : heatmapAppliedRange.end;
+
+        if (!dateFrom || !dateTo) {
+            setHeatmapChartData(null);
+            return;
+        }
+
+        setHeatmapLoading(true);
+        try {
+            const response = await api.getCharts({
+                date_from: dateFrom,
+                date_to: dateTo,
+                granularity: heatmapGranularity
+            });
+            setHeatmapChartData(response);
+        } catch (error) {
+            console.error('Error fetching dashboard heatmap charts:', error);
+            setHeatmapChartData(null);
+        } finally {
+            setHeatmapLoading(false);
+        }
+    }, [heatmapAppliedRange.end, heatmapAppliedRange.start, heatmapGranularity, heatmapHourlyDate]);
+
+    useEffect(() => {
+        fetchHeatmapChartData();
+    }, [fetchHeatmapChartData]);
 
     const handleRefresh = useCallback(() => {
         fetchDashboardData();
-    }, [fetchDashboardData]);
+        fetchHeatmapChartData();
+    }, [fetchDashboardData, fetchHeatmapChartData]);
 
     const handleDismissAlert = useCallback(async (id) => {
         // The alert row itself can contain navigation actions, so update local state
@@ -650,20 +635,20 @@ const DashboardPage = () => {
     );
     const heatmapDataRangeLabel = heatmapGranularity === 'hourly'
         ? formatHeatmapDateRange(heatmapHourlyDate, heatmapHourlyDate)
-        : formatHeatmapDateRange(filters.start_date, filters.end_date);
+        : formatHeatmapDateRange(heatmapAppliedRange.start, heatmapAppliedRange.end);
 
     // Memoized Heatmap data mapping
     const heatmapData = useMemo(() => {
-        if (loadingSections.charts) return { loading: true, groups: [], total: 0, peak: 0, columns: 0, rows: 0, summary: '' };
+        if (heatmapLoading) return { loading: true, groups: [], total: 0, peak: 0, columns: 0, rows: 0, summary: '' };
 
-        const volumes = Array.isArray(chartData?.volume) ? chartData.volume.map((value) => Number(value || 0)) : [];
+        const volumes = Array.isArray(heatmapChartData?.volume) ? heatmapChartData.volume.map((value) => Number(value || 0)) : [];
         const scopedVolumes = heatmapGranularity === 'hourly'
             ? volumes.slice(normalizedHourRange.start, normalizedHourRange.end + 1)
             : volumes;
         const total = scopedVolumes.reduce((sum, value) => sum + value, 0);
         const peak = Math.max(...scopedVolumes, 1);
-        const start = parseDateInput(filters.start_date);
-        const end = parseDateInput(filters.end_date);
+        const start = parseDateInput(heatmapGranularity === 'hourly' ? heatmapHourlyDate : heatmapAppliedRange.start);
+        const end = parseDateInput(heatmapGranularity === 'hourly' ? heatmapHourlyDate : heatmapAppliedRange.end);
         const selectedDays = getInclusiveDays(start, end);
         const selectedMonths = getMonthBuckets(start, end);
         const formatCell = (value) => ({
@@ -713,7 +698,7 @@ const DashboardPage = () => {
             rows: 1,
             summary: config.summary
         };
-    }, [chartData, filters.end_date, filters.start_date, heatmapDataRangeLabel, heatmapGranularity, loadingSections.charts, normalizedHourRange]);
+    }, [heatmapAppliedRange.end, heatmapAppliedRange.start, heatmapChartData, heatmapDataRangeLabel, heatmapGranularity, heatmapHourlyDate, heatmapLoading, normalizedHourRange]);
 
     const heatmapColors = ['#f8fafc', '#dcfce7', '#86efac', '#22c55e', '#047857'];
     const heatmapPeriodLabel = useMemo(
