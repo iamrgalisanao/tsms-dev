@@ -9,6 +9,7 @@ const CARD_STYLE = {
     border: '1px solid #E2E8F0',
     boxShadow: '0 10px 24px rgba(15,23,42,0.045), 0 1px 2px rgba(15,23,42,0.06)',
     bgcolor: '#FFFFFF',
+    width: '100%',
     height: '100%',
     display: 'flex',
     flexDirection: 'column',
