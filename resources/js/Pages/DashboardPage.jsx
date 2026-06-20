@@ -95,6 +95,7 @@ const getMonthBuckets = (start, end) => {
 
     return months;
 };
+const formatHourLabel = (hour) => `${String(hour).padStart(2, '0')}:00`;
 const formatHeatmapDateRange = (startValue, endValue) => {
     const start = parseDateInput(startValue);
     const end = parseDateInput(endValue);
@@ -251,6 +252,12 @@ const DashboardPage = () => {
     const [timeRange, setTimeRange] = useState('today');
     const [dashboardView, setDashboardView] = useState('operations');
     const [heatmapGranularity, setHeatmapGranularity] = useState('weekly');
+    const [heatmapDateRange, setHeatmapDateRange] = useState(() => ({
+        start: initialFilters.start_date,
+        end: initialFilters.end_date
+    }));
+    const [heatmapHourlyDate, setHeatmapHourlyDate] = useState(() => initialFilters.start_date);
+    const [heatmapHourRange, setHeatmapHourRange] = useState({ start: 0, end: 23 });
     const [activityTab, setActivityTab] = useState('transactions');
     const [customRange, setCustomRange] = useState({ start: '', end: '' });
     const [filters, setFilters] = useState(() => initialFilters);
@@ -374,6 +381,36 @@ const DashboardPage = () => {
         });
     }, [timeRange]);
 
+    useEffect(() => {
+        setHeatmapDateRange({
+            start: filters.start_date || '',
+            end: filters.end_date || ''
+        });
+
+        if (filters.start_date === filters.end_date && filters.start_date) {
+            setHeatmapHourlyDate(filters.start_date);
+        }
+    }, [filters.end_date, filters.start_date]);
+
+    useEffect(() => {
+        if (heatmapGranularity !== 'hourly' || !heatmapHourlyDate) {
+            return;
+        }
+
+        setTimeRange('custom');
+        setFilters((prev) => {
+            if (prev.start_date === heatmapHourlyDate && prev.end_date === heatmapHourlyDate) {
+                return prev;
+            }
+
+            return {
+                ...prev,
+                start_date: heatmapHourlyDate,
+                end_date: heatmapHourlyDate
+            };
+        });
+    }, [heatmapGranularity, heatmapHourlyDate]);
+
     const handleApplyCustomRange = useCallback(() => {
         if (!customRange.start || !customRange.end) {
             return;
@@ -391,6 +428,43 @@ const DashboardPage = () => {
             };
         });
     }, [customRange]);
+
+    const handleApplyHeatmapDateRange = useCallback(() => {
+        if (!heatmapDateRange.start || !heatmapDateRange.end) {
+            return;
+        }
+
+        setTimeRange('custom');
+        setFilters((prev) => {
+            if (prev.start_date === heatmapDateRange.start && prev.end_date === heatmapDateRange.end) {
+                return prev;
+            }
+
+            return {
+                ...prev,
+                start_date: heatmapDateRange.start,
+                end_date: heatmapDateRange.end
+            };
+        });
+    }, [heatmapDateRange]);
+
+    const handleHeatmapHourlyDateChange = useCallback((date) => {
+        setHeatmapHourlyDate(date);
+        if (!date) return;
+
+        setTimeRange('custom');
+        setFilters((prev) => {
+            if (prev.start_date === date && prev.end_date === date) {
+                return prev;
+            }
+
+            return {
+                ...prev,
+                start_date: date,
+                end_date: date
+            };
+        });
+    }, []);
 
     const handleRefresh = useCallback(() => {
         fetchDashboardData();
@@ -558,6 +632,19 @@ const DashboardPage = () => {
         return ((reconciledVal / total) * 100).toFixed(2);
     }, [metrics]);
 
+    const hourOptions = useMemo(() => Array.from({ length: 24 }, (_, hour) => hour), []);
+    const normalizedHourRange = useMemo(() => {
+        const start = Math.min(Number(heatmapHourRange.start), Number(heatmapHourRange.end));
+        const end = Math.max(Number(heatmapHourRange.start), Number(heatmapHourRange.end));
+        return { start, end };
+    }, [heatmapHourRange]);
+    const isHeatmapDateRangeInvalid = Boolean(
+        heatmapDateRange.start && heatmapDateRange.end && heatmapDateRange.start > heatmapDateRange.end
+    );
+    const heatmapDataRangeLabel = heatmapGranularity === 'hourly'
+        ? formatHeatmapDateRange(heatmapHourlyDate, heatmapHourlyDate)
+        : formatHeatmapDateRange(filters.start_date, filters.end_date);
+
     // Memoized Heatmap data mapping
     const heatmapData = useMemo(() => {
         if (loadingSections.charts) return { loading: true, groups: [], total: 0, peak: 0, columns: 0, rows: 0, summary: '' };
@@ -577,22 +664,26 @@ const DashboardPage = () => {
             const startIndex = bucketIndex * bucketSize;
             return volumes.slice(startIndex, startIndex + bucketSize).reduce((sum, value) => sum + value, 0);
         };
+        const hourlyLabels = Array.from(
+            { length: normalizedHourRange.end - normalizedHourRange.start + 1 },
+            (_, index) => formatHourLabel(normalizedHourRange.start + index)
+        );
         const configs = {
             hourly: {
-                labels: Array.from({ length: 24 }, (_, index) => (index % 3 === 0 ? `${String(index).padStart(2, '0')}:00` : '')),
-                summary: `Hourly transaction intensity for ${formatHeatmapDateRange(filters.start_date, filters.end_date)}.`
+                labels: hourlyLabels,
+                summary: `Hourly transaction intensity for ${heatmapDataRangeLabel}, ${formatHourLabel(normalizedHourRange.start)}-${formatHourLabel(normalizedHourRange.end)}.`
             },
             daily: {
                 labels: selectedDays.map((date) => date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })),
-                summary: `Daily activity for ${formatHeatmapDateRange(filters.start_date, filters.end_date)}.`
+                summary: `Daily activity for ${heatmapDataRangeLabel}.`
             },
             weekly: {
                 labels: selectedDays.filter((_, index) => index % 7 === 0).map((date) => `Week of ${date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`),
-                summary: `Weekly activity for ${formatHeatmapDateRange(filters.start_date, filters.end_date)}.`
+                summary: `Weekly activity for ${heatmapDataRangeLabel}.`
             },
             monthly: {
                 labels: selectedMonths.map((date) => date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })),
-                summary: `Monthly activity for ${formatHeatmapDateRange(filters.start_date, filters.end_date)}.`
+                summary: `Monthly activity for ${heatmapDataRangeLabel}.`
             }
         };
         const config = configs[heatmapGranularity] || configs.weekly;
@@ -601,7 +692,7 @@ const DashboardPage = () => {
 
         const groups = labels.map((label, columnIndex) => ({
             label,
-            cells: [formatCell(heatmapGranularity === 'hourly' ? (volumes[columnIndex] || 0) : summarizeBucket(columnIndex, bucketSize))]
+            cells: [formatCell(heatmapGranularity === 'hourly' ? (volumes[normalizedHourRange.start + columnIndex] || 0) : summarizeBucket(columnIndex, bucketSize))]
         }));
 
         return {
@@ -612,12 +703,12 @@ const DashboardPage = () => {
             rows: 1,
             summary: config.summary
         };
-    }, [chartData, filters.end_date, filters.start_date, heatmapGranularity, loadingSections.charts]);
+    }, [chartData, filters.end_date, filters.start_date, heatmapDataRangeLabel, heatmapGranularity, loadingSections.charts, normalizedHourRange]);
 
     const heatmapColors = ['#f8fafc', '#dcfce7', '#86efac', '#22c55e', '#047857'];
     const heatmapPeriodLabel = useMemo(
-        () => formatHeatmapDateRange(filters.start_date, filters.end_date),
-        [filters.start_date, filters.end_date]
+        () => heatmapDataRangeLabel,
+        [heatmapDataRangeLabel]
     );
 
     // Alert action router renderer
@@ -1233,6 +1324,80 @@ const DashboardPage = () => {
                             </div>
                         </div>
 
+                        <div className="mb-8 rounded-xl border border-slate-200 bg-slate-50 p-4">
+                            {heatmapGranularity === 'hourly' ? (
+                                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                                    <TextField
+                                        size="small"
+                                        type="date"
+                                        label="Activity Date"
+                                        InputLabelProps={{ shrink: true }}
+                                        value={heatmapHourlyDate}
+                                        onChange={(event) => handleHeatmapHourlyDateChange(event.target.value)}
+                                        sx={{ '& .MuiOutlinedInput-root': { bgcolor: 'white', borderRadius: '10px' } }}
+                                    />
+                                    <FormControl size="small">
+                                        <Select
+                                            value={heatmapHourRange.start}
+                                            onChange={(event) => setHeatmapHourRange((prev) => ({ ...prev, start: Number(event.target.value) }))}
+                                            displayEmpty
+                                            sx={{ bgcolor: 'white', borderRadius: '10px', fontWeight: 700, fontSize: '0.8rem' }}
+                                        >
+                                            {hourOptions.map((hour) => (
+                                                <MenuItem key={`heatmap-start-hour-${hour}`} value={hour}>
+                                                    Start {formatHourLabel(hour)}
+                                                </MenuItem>
+                                            ))}
+                                        </Select>
+                                    </FormControl>
+                                    <FormControl size="small">
+                                        <Select
+                                            value={heatmapHourRange.end}
+                                            onChange={(event) => setHeatmapHourRange((prev) => ({ ...prev, end: Number(event.target.value) }))}
+                                            displayEmpty
+                                            sx={{ bgcolor: 'white', borderRadius: '10px', fontWeight: 700, fontSize: '0.8rem' }}
+                                        >
+                                            {hourOptions.map((hour) => (
+                                                <MenuItem key={`heatmap-end-hour-${hour}`} value={hour}>
+                                                    End {formatHourLabel(hour)}
+                                                </MenuItem>
+                                            ))}
+                                        </Select>
+                                    </FormControl>
+                                </div>
+                            ) : (
+                                <div className="grid grid-cols-1 md:grid-cols-[1fr_1fr_auto] gap-3">
+                                    <TextField
+                                        size="small"
+                                        type="date"
+                                        label="From"
+                                        InputLabelProps={{ shrink: true }}
+                                        value={heatmapDateRange.start}
+                                        onChange={(event) => setHeatmapDateRange((prev) => ({ ...prev, start: event.target.value }))}
+                                        sx={{ '& .MuiOutlinedInput-root': { bgcolor: 'white', borderRadius: '10px' } }}
+                                    />
+                                    <TextField
+                                        size="small"
+                                        type="date"
+                                        label="To"
+                                        InputLabelProps={{ shrink: true }}
+                                        inputProps={{ min: heatmapDateRange.start || undefined }}
+                                        value={heatmapDateRange.end}
+                                        onChange={(event) => setHeatmapDateRange((prev) => ({ ...prev, end: event.target.value }))}
+                                        sx={{ '& .MuiOutlinedInput-root': { bgcolor: 'white', borderRadius: '10px' } }}
+                                    />
+                                    <Button
+                                        variant="contained"
+                                        onClick={handleApplyHeatmapDateRange}
+                                        disabled={!heatmapDateRange.start || !heatmapDateRange.end || isHeatmapDateRangeInvalid}
+                                        sx={{ borderRadius: '10px', fontWeight: 800, textTransform: 'none', px: 3 }}
+                                    >
+                                        Apply Dates
+                                    </Button>
+                                </div>
+                            )}
+                        </div>
+
                         {heatmapData.loading ? (
                             <LoadingPanel label="Loading activity heatmap..." />
                         ) : (
@@ -1278,7 +1443,11 @@ const DashboardPage = () => {
                                 </div>
 
                                 <div className="mt-6 flex items-center justify-between text-xs text-slate-500">
-                                    <span>Showing {heatmapGranularity} activity for {heatmapPeriodLabel}.</span>
+                                    <span>
+                                        {heatmapGranularity === 'hourly'
+                                            ? `Showing hourly activity for ${heatmapPeriodLabel}, ${formatHourLabel(normalizedHourRange.start)}-${formatHourLabel(normalizedHourRange.end)}.`
+                                            : `Showing ${heatmapGranularity} activity for ${heatmapPeriodLabel}.`}
+                                    </span>
                                     <div className="flex items-center gap-2">
                                         <span>Less</span>
                                         {heatmapColors.map((color, index) => (
