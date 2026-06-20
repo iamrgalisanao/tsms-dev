@@ -31,7 +31,8 @@ import {
     TableRow,
     Chip,
     TextField,
-    Tooltip
+    Tooltip,
+    useTheme
 } from '@mui/material';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import BarChartIcon from '@mui/icons-material/BarChart';
@@ -47,6 +48,7 @@ import { Breadcrumbs, Link as MuiLink } from '@mui/material';
 import NavigateNextIcon from '@mui/icons-material/NavigateNext';
 import HomeIcon from '@mui/icons-material/Home';
 import DashboardIcon from '@mui/icons-material/Dashboard';
+import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 
 const currencyFormat = (val) => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(val);
 const formatDateInput = (date) => date.toISOString().slice(0, 10);
@@ -347,684 +349,668 @@ const DashboardPage = () => {
         }
 
         const canAccess = hasRole(requiredRoles);
+        const accentColor = type === 'error' ? '#dc2626' : type === 'warning' ? '#d97706' : '#2563eb';
+        const borderColor = type === 'error' ? '#fecaca' : type === 'warning' ? '#fde68a' : '#bfdbfe';
 
         return (
-            <Alert
+            <Box
                 key={alert.id}
-                severity={type}
-                onClose={() => handleDismissAlert(alert.id)}
-                action={
-                    route && (
+                sx={{
+                    p: 2,
+                    mb: 1.5,
+                    bgcolor: 'white',
+                    border: '1px solid #f1f5f9', // slate-100
+                    borderRadius: '12px',
+                    display: 'flex',
+                    alignItems: 'flex-start',
+                    gap: 2,
+                    transition: 'all 0.2s',
+                    '&:hover': {
+                        borderColor: borderColor,
+                    }
+                }}
+            >
+                {/* Status Dot */}
+                <Box sx={{
+                    width: 8,
+                    height: 8,
+                    borderRadius: '50%',
+                    bgcolor: accentColor,
+                    mt: 0.75,
+                    flexShrink: 0,
+                    position: 'relative',
+                    ...(type === 'error' && {
+                        '&::after': {
+                            content: '""',
+                            position: 'absolute',
+                            width: '100%',
+                            height: '100%',
+                            bgcolor: 'inherit',
+                            borderRadius: '50%',
+                            animation: 'pulseAlert 2s infinite',
+                        },
+                        '@keyframes pulseAlert': {
+                            '0%': { transform: 'scale(1)', opacity: 0.8 },
+                            '100%': { transform: 'scale(3)', opacity: 0 }
+                        }
+                    })
+                }} />
+
+                <Box sx={{ flex: 1 }}>
+                    <Typography variant="body2" sx={{ fontWeight: 800, color: '#0f172a', mb: 0.5 }}>
+                        {title}
+                    </Typography>
+                    <Typography variant="caption" sx={{ color: '#64748b', display: 'block', mb: 1.5 }}>
+                        {message}
+                    </Typography>
+                    {route && (
                         <Button
                             size="small"
-                            color="inherit"
                             disabled={!canAccess}
                             onClick={() => window.location.href = route}
                             sx={{
+                                p: 0,
+                                minWidth: 'auto',
                                 fontWeight: 800,
                                 textTransform: 'none',
-                                textDecoration: 'underline',
-                                '&:hover': { bgcolor: 'rgba(0,0,0,0.05)' }
+                                fontSize: '0.75rem',
+                                color: type === 'error' ? '#e11d2d' : accentColor,
+                                '&:hover': { color: '#0a1931', bgcolor: 'transparent' }
                             }}
                         >
-                            {canAccess ? btnText : 'Access Restricted'}
+                            {canAccess ? `${btnText} →` : 'Access Restricted'}
                         </Button>
-                    )
-                }
-                sx={{ mb: 1 }}
-            >
-                <strong>{title}: </strong>
-                {message}
-            </Alert>
+                    )}
+                </Box>
+                <Button
+                    size="small"
+                    color="inherit"
+                    onClick={() => handleDismissAlert(alert.id)}
+                    sx={{
+                        minWidth: 'auto',
+                        p: 0.5,
+                        ml: 1,
+                        borderRadius: '50%',
+                        color: '#94a3b8',
+                        '&:hover': { color: '#0f172a', bgcolor: '#f1f5f9' }
+                    }}
+                >
+                    ✕
+                </Button>
+            </Box>
         );
     };
 
+    const theme = useTheme();
     return (
-        <Box sx={{ pb: 10 }}>
-            {/* Unified Breadcrumbs */}
-            <Box sx={{ py: 3 }}>
-                <Breadcrumbs
-                    separator={<NavigateNextIcon fontSize="small" />}
-                    sx={{ mb: 4, '& .MuiTypography-root': { fontWeight: 700, fontSize: '0.75rem', letterSpacing: '0.05em' } }}
-                >
-                    <MuiLink underline="hover" color="inherit" href="/dashboard" sx={{ display: 'flex', alignItems: 'center', opacity: 0.6 }}>
-                        <HomeIcon sx={{ mr: 0.5, fontSize: 16 }} />
-                        SYSTEM
-                    </MuiLink>
-                    <Typography color="primary.main" sx={{ fontWeight: 800 }}>DASHBOARD COMMAND</Typography>
-                </Breadcrumbs>
-
-                <Stack direction={{ xs: 'column', lg: 'row' }} justifyContent="space-between" alignItems={{ xs: 'flex-start', lg: 'center' }} sx={{ mb: 6 }} spacing={4}>
-                    <Box>
-                        <Stack direction="row" spacing={2.5} alignItems="center" sx={{ mb: 1.5 }}>
-                            <Box sx={{ p: 1.5, bgcolor: 'primary.main', color: 'white', borderRadius: 3, display: 'flex', boxShadow: '0 8px 25px rgba(25, 118, 210, 0.25)' }}>
-                                <DashboardIcon sx={{ fontSize: 32 }} />
-                            </Box>
-                            <div>
-                                <Typography variant="h2" sx={{ fontWeight: 950, color: 'text.primary', letterSpacing: '-0.03em', mb: 0.5 }}>
+        <Box sx={{
+            minHeight: '100vh',
+            width: '100%',
+            boxSizing: 'border-box',
+            overflowX: 'hidden',
+            position: 'relative',
+            bgcolor: '#F8FAFC',
+            backgroundImage: `linear-gradient(to right, rgba(29, 67, 155, 0.035) 1px, transparent 1px),
+                              linear-gradient(to bottom, rgba(29, 67, 155, 0.035) 1px, transparent 1px)`,
+            backgroundSize: '24px 24px',
+        }}>
+            {/* Top App Bar */}
+            <Box component="header" sx={{
+                position: 'sticky',
+                top: 0,
+                zIndex: 50,
+                bgcolor: 'rgba(255, 255, 255, 0.95)',
+                backdropFilter: 'blur(12px)',
+                borderBottom: '1px solid #e2e8f0',
+                px: { xs: 3, md: 5, lg: 8 },
+                py: 2.5,
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                flexWrap: { xs: 'wrap', md: 'nowrap' },
+                gap: 2
+            }}>
+                {/* Left side: Breadcrumbs and Title */}
+                <Box sx={{ display: 'flex', flexDirection: 'column' }}>
+                    <Breadcrumbs
+                        separator={<NavigateNextIcon sx={{ fontSize: 10, opacity: 0.5 }} />}
+                        sx={{ mb: 1, '& .MuiTypography-root': { fontWeight: 800, fontSize: '0.625rem', letterSpacing: '0.1em', textTransform: 'uppercase', color: '#94a3b8' } }}
+                    >
+                        <MuiLink underline="hover" color="inherit" href="/dashboard" sx={{ display: 'flex', alignItems: 'center' }}>
+                            <HomeIcon sx={{ mr: 0.5, fontSize: 12 }} />
+                            SYSTEM
+                        </MuiLink>
+                        <Typography sx={{ fontWeight: 800, color: '#475569' }}>DASHBOARD COMMAND</Typography>
+                    </Breadcrumbs>
+                    
+                    <Stack direction="row" spacing={2} alignItems="center">
+                        <Box sx={{
+                            width: 44,
+                            height: 44,
+                            bgcolor: '#0a1931',
+                            color: 'white',
+                            borderRadius: '12px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center'
+                        }}>
+                            <DashboardIcon sx={{ fontSize: 24 }} />
+                        </Box>
+                        <Box>
+                            <Stack direction="row" spacing={1.5} alignItems="center">
+                                <Typography variant="h4" sx={{ fontWeight: 900, color: '#0f172a', letterSpacing: '-0.02em', fontSize: '1.5rem', fontFamily: '"Hanken Grotesk", sans-serif' }}>
                                     Operations Command Center
                                 </Typography>
-                                <Typography variant="body1" sx={{ color: 'text.secondary', fontWeight: 500, opacity: 0.8 }}>
-                                    Live telemetry, diagnostic monitoring, and device health status.
-                                </Typography>
-                            </div>
-                        </Stack>
+                                <Tooltip title="Live system connection active" arrow>
+                                    <Box sx={{
+                                        width: 8,
+                                        height: 8,
+                                        borderRadius: '50%',
+                                        bgcolor: '#22c55e',
+                                        position: 'relative',
+                                        '&::after': {
+                                            content: '""',
+                                            position: 'absolute',
+                                            width: '100%',
+                                            height: '100%',
+                                            bgcolor: 'inherit',
+                                            borderRadius: '50%',
+                                            animation: 'pulseGreen 2s infinite',
+                                        },
+                                        '@keyframes pulseGreen': {
+                                            '0%': { transform: 'scale(1)', opacity: 0.8 },
+                                            '100%': { transform: 'scale(3)', opacity: 0 }
+                                        }
+                                    }} />
+                                </Tooltip>
+                            </Stack>
+                            <Typography variant="body2" sx={{ color: '#64748b', fontSize: '0.75rem', fontWeight: 500, mt: 0.25 }}>
+                                Live telemetry, diagnostic monitoring, and device health status.
+                            </Typography>
+                        </Box>
+                    </Stack>
+                </Box>
+
+                {/* Right side controls toolbar */}
+                <Stack direction="row" alignItems="center" spacing={2} flexWrap="wrap">
+                    {/* Real-time telemetry info bar */}
+                    <Box sx={{ display: { xs: 'none', lg: 'flex' }, alignItems: 'center', gap: 3, borderRight: '1px solid #e2e8f0', pr: 3 }}>
+                        <Box>
+                            <Typography sx={{ color: '#94a3b8', display: 'block', fontWeight: 700, textTransform: 'uppercase', fontSize: '0.55rem', letterSpacing: '0.05em' }}>
+                                LAST UPDATED
+                            </Typography>
+                            <Typography sx={{ fontWeight: 700, color: '#334155', fontSize: '0.875rem', fontFamily: '"JetBrains Mono", monospace' }}>
+                                {lastUpdated ? lastUpdated.toLocaleTimeString() : 'Not synced'}
+                            </Typography>
+                        </Box>
+                        <Box>
+                            <Typography sx={{ color: '#94a3b8', display: 'block', fontWeight: 700, textTransform: 'uppercase', fontSize: '0.55rem', letterSpacing: '0.05em' }}>
+                                REFRESH
+                            </Typography>
+                            <Typography sx={{ fontWeight: 700, color: refreshInterval > 0 ? '#16a34a' : '#94a3b8', fontSize: '0.875rem', fontFamily: '"JetBrains Mono", monospace' }}>
+                                {refreshInterval > 0 ? `${refreshInterval / 1000}s` : 'OFF'}
+                            </Typography>
+                        </Box>
                     </Box>
 
-                    <Stack direction="row" alignItems="center" spacing={2} flexWrap="wrap" useFlexGap>
-                        {/* Real-time sync details info bar */}
-                        <Stack direction="row" spacing={2} alignItems="center" sx={{ bgcolor: 'rgba(0,0,0,0.03)', px: 2, py: 1, borderRadius: 3, border: '1px solid', borderColor: 'divider' }}>
-                            <Box>
-                                <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', fontWeight: 800, textTransform: 'uppercase', fontSize: '0.6rem', letterSpacing: '0.05em' }}>
-                                    LAST UPDATED
-                                </Typography>
-                                <Typography variant="body2" sx={{ fontWeight: 900, color: 'text.primary' }}>
-                                    {lastUpdated ? lastUpdated.toLocaleTimeString() : 'Not synced'}
-                                </Typography>
-                            </Box>
-                            <Divider orientation="vertical" flexItem />
-                            <Box>
-                                <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', fontWeight: 800, textTransform: 'uppercase', fontSize: '0.6rem', letterSpacing: '0.05em' }}>
-                                    AUTO REFRESH
-                                </Typography>
-                                <Typography variant="body2" sx={{ fontWeight: 900, color: refreshInterval > 0 ? 'success.main' : 'text.secondary' }}>
-                                    {refreshInterval > 0 ? `Every ${refreshInterval / 1000}s` : 'OFF'}
-                                </Typography>
-                            </Box>
-                        </Stack>
+                    <Button
+                        variant="contained"
+                        color="inherit"
+                        onClick={handleRefresh}
+                        disabled={isRefreshing}
+                        startIcon={isRefreshing ? <CircularProgress size={16} color="inherit" /> : <RefreshIcon sx={{ fontSize: 18 }} />}
+                        sx={{
+                            borderRadius: '8px',
+                            px: 2,
+                            py: 1,
+                            fontWeight: 700,
+                            fontSize: '0.75rem',
+                            textTransform: 'none',
+                            bgcolor: '#f1f5f9',
+                            color: '#334155',
+                            boxShadow: 'none',
+                            '&:hover': { bgcolor: '#e2e8f0', boxShadow: 'none' }
+                        }}
+                    >
+                        {isRefreshing ? 'Syncing...' : 'Sync Data'}
+                    </Button>
 
-                        <FormControl variant="outlined" size="small">
-                            <Select
-                                value={dashboardView}
-                                onChange={(e) => setDashboardView(e.target.value)}
-                                sx={{
-                                    bgcolor: 'white',
-                                    minWidth: 180,
-                                    borderRadius: 3,
-                                    fontWeight: 'bold',
-                                    color: 'primary.main'
-                                }}
-                            >
-                                <MenuItem value="executive">Executive View</MenuItem>
-                                <MenuItem value="operations">Operations View</MenuItem>
-                                <MenuItem value="audit">Audit View</MenuItem>
-                            </Select>
-                        </FormControl>
-                        <Button
-                            variant="outlined"
-                            color="inherit"
-                            onClick={handleRefresh}
-                            disabled={isRefreshing}
-                            startIcon={isRefreshing ? <CircularProgress size={20} color="inherit" /> : <RefreshIcon />}
+                    <FormControl variant="outlined" size="small">
+                        <Select
+                            value={timeRange}
+                            onChange={(e) => setTimeRange(e.target.value)}
                             sx={{
-                                borderRadius: 3,
-                                px: 2.5,
-                                py: 1.2,
-                                fontWeight: 700,
-                                borderColor: 'divider',
-                                textTransform: 'none',
                                 bgcolor: 'white',
-                                boxShadow: '0 4px 12px rgba(0,0,0,0.03)',
-                                '&:hover': { bgcolor: 'grey.50', borderColor: 'grey.300' }
+                                borderRadius: '8px',
+                                fontWeight: 700,
+                                fontSize: '0.75rem',
+                                color: '#334155',
+                                height: '36px',
+                                '& .MuiOutlinedInput-notchedOutline': { borderColor: '#e2e8f0' },
+                                '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: '#cbd5e1' }
                             }}
                         >
-                            {isRefreshing ? 'Refreshing...' : 'Sync Data'}
-                        </Button>
-                        <Button
-                            variant="outlined"
-                            color={refreshInterval > 0 ? 'success' : 'inherit'}
-                            onClick={() => setRefreshInterval((prev) => (prev > 0 ? 0 : 30000))}
-                            sx={{ borderRadius: 3, textTransform: 'none', fontWeight: 700, px: 2 }}
+                            <MenuItem value="today">Today</MenuItem>
+                            <MenuItem value="yesterday">Yesterday</MenuItem>
+                            <MenuItem value="7days">Last 7 Days</MenuItem>
+                            <MenuItem value="thismonth">This Month</MenuItem>
+                            <MenuItem value="custom">Custom</MenuItem>
+                        </Select>
+                    </FormControl>
+
+                    <FormControl variant="outlined" size="small">
+                        <Select
+                            value={dashboardView}
+                            onChange={(e) => setDashboardView(e.target.value)}
+                            sx={{
+                                bgcolor: 'white',
+                                borderRadius: '8px',
+                                fontWeight: 700,
+                                fontSize: '0.75rem',
+                                color: '#334155',
+                                height: '36px',
+                                '& .MuiOutlinedInput-notchedOutline': { borderColor: '#e2e8f0' },
+                                '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: '#cbd5e1' }
+                            }}
                         >
-                            Auto Refresh: {refreshInterval > 0 ? 'ON' : 'OFF'}
-                        </Button>
-                        <FormControl variant="outlined" size="small">
-                            <Select
-                                id="time-range-select"
-                                value={timeRange}
-                                onChange={(e) => setTimeRange(e.target.value)}
-                                sx={{
-                                    bgcolor: 'white',
-                                    minWidth: 180,
-                                    borderRadius: 3,
-                                    fontWeight: 'bold',
-                                    color: 'primary.main',
-                                    boxShadow: '0 4px 12px rgba(0,0,0,0.03)',
-                                    '& .MuiOutlinedInput-notchedOutline': { borderColor: 'divider' },
-                                    '&:hover .MuiOutlinedInput-notchedOutline': { borderColor: 'primary.main' }
-                                }}
-                            >
-                                <MenuItem value="today">Today</MenuItem>
-                                <MenuItem value="yesterday">Yesterday</MenuItem>
-                                <MenuItem value="7days">Last 7 Days</MenuItem>
-                                <MenuItem value="thismonth">This Month</MenuItem>
-                                <MenuItem value="custom">Custom</MenuItem>
-                            </Select>
-                        </FormControl>
-                    </Stack>
-                </Stack>
-
-                <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} alignItems={{ xs: 'flex-start', md: 'center' }} sx={{ mb: 3 }}>
-                    {timeRange === 'custom' && (
-                        <>
-                            <TextField
-                                size="small"
-                                type="date"
-                                label="From"
-                                InputLabelProps={{ shrink: true }}
-                                value={customRange.start}
-                                onChange={(e) => setCustomRange((prev) => ({ ...prev, start: e.target.value }))}
-                            />
-                            <TextField
-                                size="small"
-                                type="date"
-                                label="To"
-                                InputLabelProps={{ shrink: true }}
-                                value={customRange.end}
-                                onChange={(e) => setCustomRange((prev) => ({ ...prev, end: e.target.value }))}
-                            />
-                            <Button variant="contained" onClick={handleApplyCustomRange} sx={{ textTransform: 'none', fontWeight: 700 }}>
-                                Apply Range
-                            </Button>
-                        </>
-                    )}
+                            <MenuItem value="executive">Executive</MenuItem>
+                            <MenuItem value="operations">Operations</MenuItem>
+                            <MenuItem value="audit">Audit</MenuItem>
+                        </Select>
+                    </FormControl>
                 </Stack>
             </Box>
 
-            {/* Layout Block 1: Key Performance Indicators */}
-            <Box sx={{ mb: 10 }}>
-                <Typography variant="h2" color="primary" sx={{ display: 'flex', alignItems: 'center', mb: 4, textTransform: 'uppercase' }}>
-                    <BarChartIcon sx={{ mr: 2, bgcolor: 'primary.main', color: 'white', p: 1, borderRadius: 2, fontSize: 40 }} />
-                    Key Performance Indicators
-                </Typography>
-                <Typography variant="body2" sx={{ color: 'text.secondary', mb: 3, fontWeight: 500 }}>
-                    Today vs yesterday, based on transaction timestamps.
-                </Typography>
-                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-6">
-                    <Tooltip title="Total gross transaction sales value for the period.">
-                        <div>
-                            <MetricCard
-                                title="Revenue"
-                                value={kpiData.revenue.value}
-                                trend={kpiData.revenue.trend}
-                                sparkline={kpiData.revenue.sparkline}
-                                subtitle="vs yesterday"
-                                onClick={() => openTransactions()}
-                                icon={<AccountBalanceWalletIcon />}
-                                color="primary"
-                            />
-                        </div>
-                    </Tooltip>
-                    
-                    <Tooltip title="Total quantity of transaction logs submitted.">
-                        <div>
-                            <MetricCard
-                                title="Transactions"
-                                value={kpiData.transactions.value}
-                                trend={kpiData.transactions.trend}
-                                sparkline={kpiData.transactions.sparkline}
-                                subtitle="vs yesterday"
-                                onClick={() => openTransactions()}
-                                icon={<ReceiptLongIcon />}
-                                color="accent"
-                            />
-                        </div>
-                    </Tooltip>
-
-                    <Tooltip title="Sum of failed reconciliations, missing uploads, and invalid tax records. Mutual exclusion guarantees no double-counting.">
-                        <div>
-                            <MetricCard
-                                title="Total Exceptions"
-                                value={kpiData.exceptions.value}
-                                subtitle="Unmatched or error logs"
-                                onClick={() => {
-                                    setActivityTab('exceptions');
-                                    const el = document.getElementById('activity-logs-section');
-                                    if (el) el.scrollIntoView({ behavior: 'smooth' });
-                                }}
-                                icon={<ErrorIcon />}
-                                color="danger"
-                            />
-                        </div>
-                    </Tooltip>
-
-                    <Tooltip title="Intake queue payloads pending ingestion.">
-                        <div>
-                            <MetricCard
-                                title="Pending Uploads"
-                                value={kpiData.pendingUploads.value}
-                                subtitle="Queued ingestion tasks"
-                                onClick={() => {
-                                    if (hasRole(['admin', 'manager'])) {
-                                        window.location.href = '/payload-sandbox?status=pending';
-                                    }
-                                }}
-                                icon={<HourglassEmptyIcon />}
-                                color="accent"
-                            />
-                        </div>
-                    </Tooltip>
-
-                    <Tooltip title="Terminals not uploading data within 1 hour inactivity threshold.">
-                        <div>
-                            <MetricCard
-                                title="Offline Terminals"
-                                value={`${kpiData.offlineTerminals.value} / ${kpiData.offlineTerminals.total}`}
-                                subtitle={`${kpiData.offlineTerminals.value} offline`}
-                                onClick={() => {
-                                    if (hasRole(['admin', 'commercial'])) {
-                                        window.location.href = '/terminal-tokens?status=offline';
-                                    }
-                                }}
-                                icon={<DesktopWindowsIcon />}
-                                color="danger"
-                            />
-                        </div>
-                    </Tooltip>
-                </div>
-            </Box>
-
-            {/* Layout Block 2: Operational Alerts & Escalation Panel */}
-            {(dashboardView === 'operations' || dashboardView === 'audit') && (
-                <Box sx={{ mb: 10 }}>
-                    <Typography variant="h2" color="primary" sx={{ display: 'flex', alignItems: 'center', mb: 3, textTransform: 'uppercase' }}>
-                        <SensorsIcon sx={{ mr: 2, bgcolor: 'primary.main', color: 'white', p: 1, borderRadius: 2, fontSize: 40 }} />
-                        Operational Alerts & Escalation Queue
-                    </Typography>
-                    
-                    <Grid container spacing={4}>
-                        {/* Alerts Box */}
-                        <Grid item xs={12} lg={8}>
-                            <Card sx={{ height: '100%', borderRadius: 3, border: '1px solid', borderColor: 'divider' }}>
-                                <CardContent>
-                                    <Grid container spacing={2} sx={{ mb: 3 }}>
-                                        <Grid item xs={12} md={3}>
-                                            <Tooltip title="Reconciliation jobs failing validation rules.">
-                                                <Chip color={failedReconciliation > 0 ? 'error' : 'success'} label={`${failedReconciliation} Failed Reconciliations`} sx={{ fontWeight: 800, width: '100%' }} />
-                                            </Tooltip>
-                                        </Grid>
-                                        <Grid item xs={12} md={3}>
-                                            <Tooltip title="Submitted intake payloads awaiting queue execution.">
-                                                <Chip color={pendingUploads > 0 ? 'warning' : 'success'} label={`${pendingUploads} Pending Ingestions`} sx={{ fontWeight: 800, width: '100%' }} />
-                                            </Tooltip>
-                                        </Grid>
-                                        <Grid item xs={12} md={3}>
-                                            <Tooltip title="Terminals not uploading data within 1 hour inactivity threshold.">
-                                                <Chip color={offlineTerminals > 0 ? 'error' : 'success'} label={`${offlineTerminals} Offline Terminals`} sx={{ fontWeight: 800, width: '100%' }} />
-                                            </Tooltip>
-                                        </Grid>
-                                        <Grid item xs={12} md={3}>
-                                            <Tooltip title="Active queue backlog count.">
-                                                <Chip color={queueBacklog > 20 ? 'warning' : 'success'} label={queueBacklog > 20 ? 'Queue Busy' : 'Queue Healthy'} sx={{ fontWeight: 800, width: '100%' }} />
-                                            </Tooltip>
-                                        </Grid>
-                                    </Grid>
-
-                                    <Stack spacing={2}>
-                                        {groupedAlerts.critical.length > 0 && (
-                                            <Box>
-                                                <Typography variant="subtitle2" color="error.main" sx={{ fontWeight: 900, mb: 1 }}>
-                                                    🔴 Critical ({groupedAlerts.critical.length})
-                                                </Typography>
-                                                <Stack spacing={1}>
-                                                    {groupedAlerts.critical.map((alert) => renderAlertRow(alert, 'error'))}
-                                                </Stack>
-                                            </Box>
-                                        )}
-
-                                        {groupedAlerts.warning.length > 0 && (
-                                            <Box>
-                                                <Typography variant="subtitle2" color="warning.main" sx={{ fontWeight: 900, mb: 1 }}>
-                                                    Orange Warning ({groupedAlerts.warning.length})
-                                                </Typography>
-                                                <Stack spacing={1}>
-                                                    {groupedAlerts.warning.map((alert) => renderAlertRow(alert, 'warning'))}
-                                                </Stack>
-                                            </Box>
-                                        )}
-
-                                        {groupedAlerts.advisory.length > 0 && (
-                                            <Box>
-                                                <Typography variant="subtitle2" color="info.main" sx={{ fontWeight: 900, mb: 1 }}>
-                                                    Yellow Advisory ({groupedAlerts.advisory.length})
-                                                </Typography>
-                                                <Stack spacing={1}>
-                                                    {groupedAlerts.advisory.map((alert) => renderAlertRow(alert, 'info'))}
-                                                </Stack>
-                                            </Box>
-                                        )}
-
-                                        {alerts.length === 0 && (
-                                            <Alert severity="success">No active critical alerts.</Alert>
-                                        )}
-                                    </Stack>
-                                </CardContent>
-                            </Card>
-                        </Grid>
-
-                        {/* Escalation Widget */}
-                        <Grid item xs={12} lg={4}>
-                            <Card sx={{ height: '100%', borderRadius: 3, border: '1px solid', borderColor: 'divider', bgcolor: 'rgba(255, 255, 255, 0.4)' }}>
-                                <CardContent sx={{ p: 4 }}>
-                                    <Typography variant="h6" sx={{ fontWeight: 900, mb: 3, color: 'text.primary', letterSpacing: '-0.02em' }}>
-                                        Open Operational Issues
-                                    </Typography>
-                                    <Stack spacing={3}>
-                                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', p: 2, bgcolor: escalationCounts.criticalCount > 0 ? 'rgba(211, 47, 47, 0.08)' : 'rgba(0,0,0,0.02)', borderRadius: 3, border: '1px solid', borderColor: escalationCounts.criticalCount > 0 ? 'error.light' : 'divider' }}>
-                                            <Stack direction="row" spacing={1.5} alignItems="center">
-                                                <Typography sx={{ fontSize: 20 }}>🔴</Typography>
-                                                <Box>
-                                                    <Typography variant="body2" sx={{ fontWeight: 800, color: 'text.primary' }}>Critical Issues</Typography>
-                                                    <Typography variant="caption" sx={{ color: 'text.secondary' }}>Requires immediate intervention</Typography>
-                                                </Box>
-                                            </Stack>
-                                            <Typography variant="h4" sx={{ fontWeight: 950, color: escalationCounts.criticalCount > 0 ? 'error.main' : 'text.secondary' }}>
-                                                {escalationCounts.criticalCount}
-                                            </Typography>
-                                        </Box>
-
-                                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', p: 2, bgcolor: escalationCounts.warningCount > 0 ? 'rgba(237, 108, 2, 0.08)' : 'rgba(0,0,0,0.02)', borderRadius: 3, border: '1px solid', borderColor: escalationCounts.warningCount > 0 ? 'warning.light' : 'divider' }}>
-                                            <Stack direction="row" spacing={1.5} alignItems="center">
-                                                <Typography sx={{ fontSize: 20 }}>🟠</Typography>
-                                                <Box>
-                                                    <Typography variant="body2" sx={{ fontWeight: 800, color: 'text.primary' }}>Warnings</Typography>
-                                                    <Typography variant="caption" sx={{ color: 'text.secondary' }}>Operational warnings</Typography>
-                                                </Box>
-                                            </Stack>
-                                            <Typography variant="h4" sx={{ fontWeight: 950, color: escalationCounts.warningCount > 0 ? 'warning.main' : 'text.secondary' }}>
-                                                {escalationCounts.warningCount}
-                                            </Typography>
-                                        </Box>
-
-                                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', p: 2, bgcolor: 'rgba(0,0,0,0.02)', borderRadius: 3, border: '1px solid', borderColor: 'divider' }}>
-                                            <Stack direction="row" spacing={1.5} alignItems="center">
-                                                <Typography sx={{ fontSize: 20 }}>🟡</Typography>
-                                                <Box>
-                                                    <Typography variant="body2" sx={{ fontWeight: 800, color: 'text.primary' }}>Advisories</Typography>
-                                                    <Typography variant="caption" sx={{ color: 'text.secondary' }}>General alerts</Typography>
-                                                </Box>
-                                            </Stack>
-                                            <Typography variant="h4" sx={{ fontWeight: 950, color: 'text.secondary' }}>
-                                                {escalationCounts.advisoryCount}
-                                            </Typography>
-                                        </Box>
-                                    </Stack>
-                                </CardContent>
-                            </Card>
-                        </Grid>
-                    </Grid>
-                </Box>
-            )}
-
-            {/* Layout Block 3: Operational Performance & Heatmap */}
-            {(dashboardView === 'executive' || dashboardView === 'operations') && (
-                <Box sx={{ mb: 10 }}>
-                    <Typography variant="h2" color="primary" sx={{ display: 'flex', alignItems: 'center', mb: 4, textTransform: 'uppercase' }}>
-                        <TrendingUpIcon sx={{ mr: 2, bgcolor: 'primary.main', color: 'white', p: 1, borderRadius: 2, fontSize: 40 }} />
-                        Operational Performance
-                    </Typography>
-                    
-                    <Grid container spacing={4}>
-                        {/* Metrics and Chart */}
-                        <Grid item xs={12} lg={8} sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-                            <Grid container spacing={2}>
-                                <Grid item xs={12} sm={6} md={3}>
-                                    <Tooltip title="Active terminals uploading data vs total enrolled devices. Devices inactive for 1 hour are marked offline.">
-                                        <Card sx={{ borderRadius: 2, border: '1px solid', borderColor: 'divider', height: '100%' }}>
-                                            <CardContent sx={{ p: 2 }}>
-                                                <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 800, textTransform: 'uppercase', display: 'block', mb: 0.5 }}>
-                                                    Terminals Online
-                                                </Typography>
-                                                <Typography variant="h6" sx={{ fontWeight: 900 }}>
-                                                    {activeTerminals} / {totalTerminals}
-                                                </Typography>
-                                                <Typography variant="body2" sx={{ color: 'text.secondary', fontSize: '0.72rem' }}>
-                                                    {offlineTerminals} offline
-                                                </Typography>
-                                            </CardContent>
-                                        </Card>
-                                    </Tooltip>
-                                </Grid>
-                                
-                                <Grid item xs={12} sm={6} md={3}>
-                                    <Tooltip title="Registered tenants with transaction activity in selected period vs total registered tenants.">
-                                        <Card sx={{ borderRadius: 2, border: '1px solid', borderColor: 'divider', height: '100%' }}>
-                                            <CardContent sx={{ p: 2 }}>
-                                                <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 800, textTransform: 'uppercase', display: 'block', mb: 0.5 }}>
-                                                    Tenants With Activity / Total Tenants
-                                                </Typography>
-                                                <Typography variant="h6" sx={{ fontWeight: 900 }}>
-                                                    {metrics?.active_tenants?.current ?? 0} / {metrics?.active_tenants?.total ?? 0}
-                                                </Typography>
-                                                <Typography variant="body2" sx={{ color: 'text.secondary', fontSize: '0.72rem' }}>
-                                                    Active in period
-                                                </Typography>
-                                            </CardContent>
-                                        </Card>
-                                    </Tooltip>
-                                </Grid>
-
-                                <Grid item xs={12} sm={6} md={3}>
-                                    <Tooltip title="Success rate is calculated as reconciled transactions divided by total ingestion submissions (reconciled + exceptions).">
-                                        <Card sx={{ borderRadius: 2, border: '1px solid', borderColor: 'divider', height: '100%' }}>
-                                            <CardContent sx={{ p: 2 }}>
-                                                <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 800, textTransform: 'uppercase', display: 'block', mb: 0.5 }}>
-                                                    Ingestion Success Rate
-                                                </Typography>
-                                                <Typography variant="h6" sx={{ fontWeight: 900, color: Number(ingestionSuccessRate) >= 99 ? 'success.main' : 'warning.main' }}>
-                                                    {ingestionSuccessRate}%
-                                                </Typography>
-                                                <Typography variant="body2" sx={{ color: 'text.secondary', fontSize: '0.72rem' }}>
-                                                    Successful ingestions
-                                                </Typography>
-                                            </CardContent>
-                                        </Card>
-                                    </Tooltip>
-                                </Grid>
-
-                                <Grid item xs={12} sm={6} md={3}>
-                                    <Tooltip title="Backlog queue jobs waiting in redis/database pipelines.">
-                                        <Card sx={{ borderRadius: 2, border: '1px solid', borderColor: 'divider', height: '100%' }}>
-                                            <CardContent sx={{ p: 2 }}>
-                                                <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 800, textTransform: 'uppercase', display: 'block', mb: 0.5 }}>
-                                                    Queue Backlog
-                                                </Typography>
-                                                <Typography variant="h6" sx={{ fontWeight: 900, color: queueBacklog > 5 ? 'error.main' : 'text.primary' }}>
-                                                    {queueBacklog}
-                                                </Typography>
-                                                <Typography variant="body2" sx={{ color: 'text.secondary', fontSize: '0.72rem' }}>
-                                                    Pending execution
-                                                </Typography>
-                                            </CardContent>
-                                        </Card>
-                                    </Tooltip>
-                                </Grid>
-                            </Grid>
-
-                            <TransactionChart data={chartData} loading={loading} />
-                        </Grid>
-
-                        {/* Terminal Activity Heatmap */}
-                        <Grid item xs={12} lg={4}>
-                            <Card sx={{ height: '100%', borderRadius: 3, border: '1px solid', borderColor: 'divider' }}>
-                                <CardContent sx={{ p: 4, display: 'flex', flexDirection: 'column', height: '100%' }}>
-                                    <Typography variant="h6" sx={{ fontWeight: 900, mb: 1, color: 'primary.main' }}>
-                                        Terminal Activity Heatmap
-                                    </Typography>
-                                    <Typography variant="caption" sx={{ color: 'text.secondary', display: 'block', mb: 4, fontWeight: 700 }}>
-                                        Hourly transaction activity distribution. Hover block to inspect volume.
-                                    </Typography>
-
-                                    <Box sx={{ flex: 1, minHeight: 0 }}>
-                                        {heatmapData.empty ? (
-                                            <Box sx={{ height: '100%', minHeight: 250, display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px dashed', borderColor: 'divider', borderRadius: 3, p: 2, textAlign: 'center' }}>
-                                                <Typography variant="body2" sx={{ color: 'text.secondary', fontWeight: 600 }}>
-                                                    No hourly activity available for selected period
-                                                </Typography>
-                                            </Box>
-                                        ) : heatmapData.loading ? (
-                                            <Box sx={{ height: '100%', minHeight: 250, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                                <CircularProgress size={24} />
-                                            </Box>
-                                        ) : (
-                                            <Grid container spacing={1.5}>
-                                                {heatmapData.data.map((item, idx) => {
-                                                    const maxVol = Math.max(...heatmapData.data.map(d => d.volume), 1);
-                                                    const density = item.volume / maxVol;
-                                                    const bgcolor = density === 0 ? 'rgba(0,0,0,0.02)' : `hsla(210, 85%, ${90 - (density * 55)}%, ${0.3 + density * 0.7})`;
-                                                    const textColor = density > 0.5 ? '#fff' : 'text.primary';
-
-                                                    return (
-                                                        <Grid item xs={4} key={idx}>
-                                                            <Tooltip title={`${item.volume} transactions at ${item.hour}`}>
-                                                                <Box
-                                                                    sx={{
-                                                                        bgcolor,
-                                                                        color: textColor,
-                                                                        py: 1.5,
-                                                                        px: 1,
-                                                                        borderRadius: 2,
-                                                                        textAlign: 'center',
-                                                                        border: '1px solid',
-                                                                        borderColor: density === 0 ? 'divider' : 'transparent',
-                                                                        transition: 'all 0.2s',
-                                                                        '&:hover': { transform: 'scale(1.05)', boxShadow: '0 4px 12px rgba(29, 67, 155, 0.15)' }
-                                                                    }}
-                                                                >
-                                                                    <Typography variant="caption" sx={{ fontWeight: 800, display: 'block', fontSize: '0.65rem' }}>
-                                                                        {item.hour}
-                                                                    </Typography>
-                                                                    <Typography variant="body2" sx={{ fontWeight: 900, fontSize: '0.85rem' }}>
-                                                                        {item.volume}
-                                                                    </Typography>
-                                                                </Box>
-                                                            </Tooltip>
-                                                        </Grid>
-                                                    );
-                                                })}
-                                            </Grid>
-                                        )}
-                                    </Box>
-                                </CardContent>
-                            </Card>
-                        </Grid>
-                    </Grid>
-                </Box>
-            )}
-
-            {/* Layout Block 4: Terminal Performance */}
-            {(dashboardView === 'executive' || dashboardView === 'operations') && (
-                <Box sx={{ mb: 10 }}>
-                    <Typography variant="h2" color="primary" sx={{ display: 'flex', alignItems: 'center', mb: 4, textTransform: 'uppercase' }}>
-                        <SensorsIcon sx={{ mr: 2, bgcolor: 'primary.main', color: 'white', p: 1, borderRadius: 2, fontSize: 40 }} />
-                        Terminal Performance
-                    </Typography>
-                    <RevenueByTerminalChart data={terminalPerformance} loading={loading} />
-                </Box>
-            )}
-
-            {/* Layout Block 5: Detailed Activity */}
-            <Box id="activity-logs-section" sx={{ mt: 10 }}>
-                <Typography variant="h2" color="primary" sx={{ display: 'flex', alignItems: 'center', mb: 4, textTransform: 'uppercase' }}>
-                    <ListAltIcon sx={{ mr: 2, bgcolor: 'primary.main', color: 'white', p: 1, borderRadius: 2, fontSize: 40 }} />
-                    Recent Activity Logs
-                </Typography>
-                <Box sx={{ bgcolor: 'white', borderRadius: '2rem', shadow: '0 20px 40px rgba(0,0,0,0.05)', border: '1px solid', borderColor: 'grey.100', overflow: 'hidden' }}>
-                    <Tabs
-                        value={activityTab}
-                        onChange={(_, value) => setActivityTab(value)}
-                        sx={{ px: 2, borderBottom: '1px solid', borderColor: 'divider' }}
-                    >
-                        <Tab value="transactions" label="Transactions" />
-                        <Tab value="exceptions" label={`Exceptions (${exceptionRows.length})`} />
-                        <Tab value="reconciliation" label={`Reconciliation (${reconciliationRows.length})`} />
-                    </Tabs>
-
-                    {activityTab === 'transactions' && (
-                        <RecentTransactionsTable
-                            transactions={recentTransactions}
-                            loading={loading}
-                            onViewDetails={handleViewDetails}
+            {/* Custom date range selector below header if active */}
+            {timeRange === 'custom' && (
+                <Box sx={{ px: { xs: 3, md: 5, lg: 8 }, py: 2, bgcolor: 'white', borderBottom: '1px solid #e2e8f0' }}>
+                    <Stack direction="row" spacing={2} alignItems="center">
+                        <TextField
+                            size="small"
+                            type="date"
+                            label="From"
+                            InputLabelProps={{ shrink: true }}
+                            value={customRange.start}
+                            onChange={(e) => setCustomRange((prev) => ({ ...prev, start: e.target.value }))}
+                            sx={{ '& .MuiOutlinedInput-root': { borderRadius: '8px' } }}
                         />
-                    )}
-
-                    {(activityTab === 'exceptions' || activityTab === 'reconciliation') && (
-                        <Box sx={{ p: 3 }}>
-                            <Table size="small">
-                                <TableHead>
-                                    <TableRow>
-                                        <TableCell sx={{ fontWeight: 800 }}>Type</TableCell>
-                                        <TableCell sx={{ fontWeight: 800 }}>Severity</TableCell>
-                                        <TableCell sx={{ fontWeight: 800 }}>Source</TableCell>
-                                        <TableCell sx={{ fontWeight: 800 }}>Description</TableCell>
-                                        <TableCell sx={{ fontWeight: 800 }}>Timestamp</TableCell>
-                                    </TableRow>
-                                </TableHead>
-                                <TableBody>
-                                    {(activityTab === 'exceptions' ? exceptionRows : reconciliationRows).slice(0, 15).map((entry) => {
-                                        const actionText = entry.action || entry.event || 'System';
-                                        let severityLabel = 'Info';
-                                        let severityColor = 'info';
-                                        
-                                        const combinedStr = `${entry?.level || ''} ${entry?.action || ''} ${entry?.message || ''}`.toLowerCase();
-                                        if (combinedStr.includes('error') || combinedStr.includes('fail') || combinedStr.includes('critical')) {
-                                            severityLabel = 'Critical';
-                                            severityColor = 'error';
-                                        } else if (combinedStr.includes('warning') || combinedStr.includes('pending')) {
-                                            severityLabel = 'Warning';
-                                            severityColor = 'warning';
-                                        }
-
-                                        return (
-                                            <TableRow key={`activity-${entry.id || Math.random()}`}>
-                                                <TableCell sx={{ fontWeight: 700 }}>{actionText}</TableCell>
-                                                <TableCell>
-                                                    <Chip size="small" label={severityLabel} color={severityColor} sx={{ fontWeight: 800 }} />
-                                                </TableCell>
-                                                <TableCell>{entry.user?.name || entry.user_name || entry.actor || 'System'}</TableCell>
-                                                <TableCell>{entry.message || entry.description || '-'}</TableCell>
-                                                <TableCell>{entry.created_at || entry.timestamp || '-'}</TableCell>
-                                            </TableRow>
-                                        );
-                                    })}
-                                    {(activityTab === 'exceptions' ? exceptionRows : reconciliationRows).length === 0 && (
-                                        <TableRow>
-                                            <TableCell colSpan={5} align="center" sx={{ color: 'text.secondary' }}>
-                                                No records found for this activity stream.
-                                            </TableCell>
-                                        </TableRow>
-                                    )}
-                                </TableBody>
-                            </Table>
-                        </Box>
-                    )}
-                </Box>
-            </Box>
-
-            {/* Layout Block 6: System Hardware Health */}
-            {(dashboardView === 'operations' || dashboardView === 'audit') && (
-                <Box sx={{ mt: 10 }}>
-                    <Typography variant="h2" color="primary" sx={{ display: 'flex', alignItems: 'center', mb: 4, textTransform: 'uppercase' }}>
-                        <SensorsIcon sx={{ mr: 2, bgcolor: 'primary.main', color: 'white', p: 1, borderRadius: 2, fontSize: 40 }} />
-                        System Status & Health
-                    </Typography>
-                    <SystemHealthMonitor health={health} loading={loading} />
+                        <TextField
+                            size="small"
+                            type="date"
+                            label="To"
+                            InputLabelProps={{ shrink: true }}
+                            value={customRange.end}
+                            onChange={(e) => setCustomRange((prev) => ({ ...prev, end: e.target.value }))}
+                            sx={{ '& .MuiOutlinedInput-root': { borderRadius: '8px' } }}
+                        />
+                        <Button
+                            variant="contained"
+                            onClick={handleApplyCustomRange}
+                            sx={{ textTransform: 'none', fontWeight: 800, borderRadius: '8px', px: 3 }}
+                        >
+                            Apply Range
+                        </Button>
+                    </Stack>
                 </Box>
             )}
 
-            <TransactionDetailPanel
-                open={detailPanelOpen}
-                transaction={selectedTransaction}
-                onClose={() => setDetailPanelOpen(false)}
-            />
+                        {/* Dashboard Content - Branded Edition */}
+            <div className="p-8 space-y-8 w-full mx-auto">
+                {/* Embedded Styles from Stitch */}
+                <style>{`
+                    .elite-card {
+                        background: #ffffff;
+                        border: 1px solid #e2e8f0;
+                        box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05);
+                        transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+                    }
+                    .elite-card:hover {
+                        box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.05);
+                        border-color: #cbd5e1;
+                    }
+                    .tabular-nums {
+                        font-variant-numeric: tabular-nums;
+                    }
+                `}</style>
 
-            {notification && (
-                <NotificationToast
-                    message={notification.message}
-                    type={notification.type}
-                    onClose={() => setNotification(null)}
-                />
-            )}
+                {/* KPI Section */}
+                <section>
+                    <div className="flex items-center gap-2 mb-6">
+                        <span className="material-symbols-outlined text-blue-600">analytics</span>
+                        <h2 className="text-xs font-bold text-blue-600 uppercase tracking-widest">Key Performance Indicators</h2>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-6">
+                        {/* Revenue Card */}
+                        <div className="elite-card rounded-2xl p-5 flex flex-col justify-between">
+                            <div className="flex justify-between items-start mb-4">
+                                <div className="w-10 h-10 bg-cyan-100 rounded-xl flex items-center justify-center text-cyan-600">
+                                    <span className="material-symbols-outlined">payments</span>
+                                </div>
+                                <span className="text-[10px] font-bold text-green-600 bg-green-50 px-2 py-1 rounded">↑ {kpiData.revenue.trend}</span>
+                            </div>
+                            <div>
+                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Revenue</p>
+                                <h3 className="text-3xl font-display font-black text-slate-900 tabular-nums">{kpiData.revenue.value}</h3>
+                                <p className="text-[10px] text-slate-400 mt-2">vs yesterday</p>
+                            </div>
+                        </div>
+
+                        {/* Transactions Card */}
+                        <div className="elite-card rounded-2xl p-5 flex flex-col justify-between">
+                            <div className="flex justify-between items-start mb-4">
+                                <div className="w-10 h-10 bg-amber-100 rounded-xl flex items-center justify-center text-amber-600">
+                                    <span className="material-symbols-outlined">receipt_long</span>
+                                </div>
+                                <span className="text-[10px] font-bold text-green-600 bg-green-50 px-2 py-1 rounded">↑ {kpiData.transactions.trend}</span>
+                            </div>
+                            <div>
+                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Transactions</p>
+                                <h3 className="text-3xl font-display font-black text-slate-900 tabular-nums">{kpiData.transactions.value}</h3>
+                                <p className="text-[10px] text-slate-400 mt-2">vs yesterday</p>
+                            </div>
+                        </div>
+
+                        {/* Exceptions Card */}
+                        <div className="elite-card rounded-2xl p-5 flex flex-col justify-between">
+                            <div className="flex justify-between items-start mb-4">
+                                <div className="w-10 h-10 bg-red-100 rounded-xl flex items-center justify-center text-[#e11d2d]">
+                                    <span className="material-symbols-outlined">error</span>
+                                </div>
+                            </div>
+                            <div>
+                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Total Exceptions</p>
+                                <h3 className="text-3xl font-display font-black text-slate-900 tabular-nums">{kpiData.exceptions.value}</h3>
+                                <p className="text-[10px] text-slate-400 mt-2">Unmatched error logs</p>
+                            </div>
+                        </div>
+
+                        {/* Pending Uploads Card */}
+                        <div className="elite-card rounded-2xl p-5 flex flex-col justify-between">
+                            <div className="flex justify-between items-start mb-4">
+                                <div className="w-10 h-10 bg-indigo-100 rounded-xl flex items-center justify-center text-indigo-600">
+                                    <span className="material-symbols-outlined">hourglass_top</span>
+                                </div>
+                            </div>
+                            <div>
+                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Pending Uploads</p>
+                                <h3 className="text-3xl font-display font-black text-slate-900 tabular-nums">{kpiData.pendingUploads.value}</h3>
+                                <p className="text-[10px] text-slate-400 mt-2">Queued ingestion tasks</p>
+                            </div>
+                        </div>
+
+                        {/* Offline Terminals Card */}
+                        <div className="elite-card rounded-2xl p-5 flex flex-col justify-between border-[#e11d2d]/20">
+                            <div className="flex justify-between items-start mb-4">
+                                <div className="w-10 h-10 bg-[#e11d2d]/10 rounded-xl flex items-center justify-center text-[#e11d2d]">
+                                    <span className="material-symbols-outlined">router</span>
+                                </div>
+                            </div>
+                            <div>
+                                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Offline Terminals</p>
+                                <h3 className="text-3xl font-display font-black text-slate-900 tabular-nums">{kpiData.offlineTerminals.total - kpiData.offlineTerminals.value} <span className="text-lg text-slate-300 font-medium">/ {kpiData.offlineTerminals.total}</span></h3>
+                                <p className="text-[10px] text-[#e11d2d] font-bold mt-2">{kpiData.offlineTerminals.value} offline</p>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                {/* Alerts & Issues Grid */}
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                    {/* Escalation Queue */}
+                    <div className="lg:col-span-2 elite-card rounded-2xl flex flex-col overflow-hidden">
+                        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                            <div className="flex items-center gap-2">
+                                <span className="material-symbols-outlined text-blue-600 text-lg">sensors</span>
+                                <h3 className="text-xs font-bold text-slate-600 uppercase tracking-widest">Operational Alerts & Escalation Queue</h3>
+                            </div>
+                            <div className="flex gap-2">
+                                <span className={`px-2 py-1 text-[9px] font-bold rounded uppercase ${queueBacklog > 20 ? 'bg-orange-100 text-orange-700' : 'bg-green-100 text-green-700'}`}>
+                                    {queueBacklog > 20 ? 'Queue Busy' : 'Queue Healthy'}
+                                </span>
+                            </div>
+                        </div>
+                        <div className="flex-1 flex flex-col items-center justify-center p-12 text-center h-[350px]">
+                            {alerts.length === 0 ? (
+                                <>
+                                    <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mb-6">
+                                        <span className="material-symbols-outlined text-green-600 text-[40px]" style={{ fontVariationSettings: "'FILL' 1" }}>check_circle</span>
+                                    </div>
+                                    <h4 className="text-xl font-bold text-slate-900 mb-2">All Systems Nominal</h4>
+                                    <p className="text-sm text-slate-500 max-w-sm">No active critical alerts or terminal queue exceptions detected in the current environment.</p>
+                                </>
+                            ) : (
+                                <Box sx={{ width: '100%', height: '100%', overflowY: 'auto', p: 2 }}>
+                                    <Stack spacing={1}>
+                                        {groupedAlerts.critical.map((alert) => renderAlertRow(alert, 'error'))}
+                                        {groupedAlerts.warning.map((alert) => renderAlertRow(alert, 'warning'))}
+                                        {groupedAlerts.advisory.map((alert) => renderAlertRow(alert, 'info'))}
+                                    </Stack>
+                                </Box>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Open Issues Panel */}
+                    <div className="elite-card rounded-2xl flex flex-col">
+                        <div className="px-6 py-4 border-b border-slate-100">
+                            <h3 className="font-bold text-slate-900">Open Operations Issues</h3>
+                        </div>
+                        <div className="p-6 space-y-4 flex-1">
+                            <div className="flex items-center justify-between p-4 bg-white border border-slate-100 rounded-xl hover:border-red-200 transition-colors group cursor-pointer">
+                                <div className="flex items-center gap-4">
+                                    <div className="w-3 h-3 rounded-full bg-[#ef4444]" style={{boxShadow: escalationCounts.criticalCount > 0 ? '0 0 8px #ef4444' : 'none'}}></div>
+                                    <div>
+                                        <p className="text-xs font-bold text-slate-900">Critical Issues</p>
+                                        <p className="text-[10px] text-slate-400 uppercase">Action Required</p>
+                                    </div>
+                                </div>
+                                <span className="text-2xl font-black text-slate-900">{escalationCounts.criticalCount}</span>
+                            </div>
+                            
+                            <div className="flex items-center justify-between p-4 bg-white border border-slate-100 rounded-xl hover:border-orange-200 transition-colors group cursor-pointer">
+                                <div className="flex items-center gap-4">
+                                    <div className="w-3 h-3 rounded-full bg-[#f97316]"></div>
+                                    <div>
+                                        <p className="text-xs font-bold text-slate-900">Warnings</p>
+                                        <p className="text-[10px] text-slate-400 uppercase">Operational Exceptions</p>
+                                    </div>
+                                </div>
+                                <span className="text-2xl font-black text-slate-900">{escalationCounts.warningCount}</span>
+                            </div>
+                            
+                            <div className="flex items-center justify-between p-4 bg-white border border-slate-100 rounded-xl hover:border-yellow-200 transition-colors group cursor-pointer">
+                                <div className="flex items-center gap-4">
+                                    <div className="w-3 h-3 rounded-full bg-[#facc15]"></div>
+                                    <div>
+                                        <p className="text-xs font-bold text-slate-900">Advisories</p>
+                                        <p className="text-[10px] text-slate-400 uppercase">Maintenance</p>
+                                    </div>
+                                </div>
+                                <span className="text-2xl font-black text-slate-900">{escalationCounts.advisoryCount}</span>
+                            </div>
+                        </div>
+                        <div className="p-6 pt-0">
+                            <button className="w-full py-2.5 text-xs font-bold text-slate-500 hover:text-slate-700 bg-slate-50 hover:bg-slate-100 rounded-lg transition-colors border border-slate-200 uppercase tracking-widest">
+                                View Queue Archive
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                {/* Performance Analytics */}
+                <section className="grid grid-cols-1 lg:grid-cols-4 gap-8">
+                    {/* Secondary Stats Row */}
+                    <div className="lg:col-span-4 grid grid-cols-1 md:grid-cols-4 gap-6">
+                        <div className="elite-card p-4 rounded-xl flex items-center justify-between">
+                            <div>
+                                <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Terminals Online</p>
+                                <p className="text-xl font-black text-slate-900">{kpiData.offlineTerminals.total - kpiData.offlineTerminals.value} / {kpiData.offlineTerminals.total}</p>
+                            </div>
+                            <span className="material-symbols-outlined text-blue-600 bg-blue-50 p-2 rounded-lg">router</span>
+                        </div>
+                        <div className="elite-card p-4 rounded-xl flex items-center justify-between">
+                            <div>
+                                <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Active Tenants</p>
+                                <p className="text-xl font-black text-slate-900">{new Set(terminalPerformance.map(t => t.tenant_id)).size}</p>
+                            </div>
+                            <span className="material-symbols-outlined text-blue-600 bg-blue-50 p-2 rounded-lg">group</span>
+                        </div>
+                        <div className="elite-card p-4 rounded-xl flex items-center justify-between">
+                            <div>
+                                <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Ingestion Success</p>
+                                <p className="text-xl font-black text-green-600">{(health?.ingestion_rate || 0).toFixed(2)}%</p>
+                            </div>
+                            <span className="material-symbols-outlined text-green-600 bg-green-50 p-2 rounded-lg">cloud_done</span>
+                        </div>
+                        <div className="elite-card p-4 rounded-xl flex items-center justify-between">
+                            <div>
+                                <p className="text-[10px] font-bold text-slate-400 uppercase mb-1">Queue Backlog</p>
+                                <p className="text-xl font-black text-slate-900">{queueBacklog}</p>
+                            </div>
+                            <span className="material-symbols-outlined text-blue-600 bg-blue-50 p-2 rounded-lg">reorder</span>
+                        </div>
+                    </div>
+
+                    {/* Chart */}
+                    <div className="lg:col-span-3 elite-card rounded-2xl p-6 h-[480px] flex flex-col">
+                        <div className="flex items-center justify-between mb-8">
+                            <h3 className="font-bold text-slate-900">Transaction Analytics</h3>
+                            <div className="flex gap-4">
+                                <div className="flex items-center gap-2">
+                                    <div className="w-3 h-3 rounded-full bg-[#e11d2d]"></div>
+                                    <span className="text-xs font-bold text-slate-600">Sales</span>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    <div className="w-3 h-3 rounded-full bg-slate-300"></div>
+                                    <span className="text-xs font-bold text-slate-600">Volume</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div className="flex-1 relative w-full h-full min-h-0">
+                            {chartData ? <TransactionChart data={chartData} inline={true} /> : <div className="flex items-center justify-center h-full"><CircularProgress /></div>}
+                        </div>
+                    </div>
+
+                    {/* Heatmap */}
+                    <div className="elite-card rounded-2xl p-6 flex flex-col h-[480px]">
+                        <h3 className="font-bold text-slate-900 mb-1">Activity Heatmap</h3>
+                        <p className="text-xs text-slate-400 mb-6">Hourly activity distribution</p>
+                        <div className="flex-1 bg-slate-50 border border-dashed border-slate-200 rounded-xl flex flex-col items-center justify-center p-8 text-center">
+                            <span className="material-symbols-outlined text-slate-300 text-[40px] mb-4">sensors</span>
+                            <p className="text-sm font-medium text-slate-500">Live heatmap active.<br/><span className="text-xs opacity-60">Heatmap scales during peak loads.</span></p>
+                        </div>
+                        <div className="mt-6 grid grid-cols-6 gap-2">
+                            <div className="h-4 rounded bg-[#e11d2d]/20"></div>
+                            <div className="h-4 rounded bg-[#e11d2d]/10"></div>
+                            <div className="h-4 rounded bg-slate-100"></div>
+                            <div className="h-4 rounded bg-slate-100"></div>
+                            <div className="h-4 rounded bg-slate-100"></div>
+                            <div className="h-4 rounded bg-slate-100"></div>
+                        </div>
+                    </div>
+                </section>
+
+                {/* Bottom Tables Section */}
+                <section className="grid grid-cols-1 xl:grid-cols-3 gap-8">
+                    {/* Top Terminals */}
+                    <div className="elite-card rounded-2xl flex flex-col h-[500px]">
+                        <div className="p-6 border-b border-slate-100">
+                            <h3 className="text-xs font-bold text-blue-600 uppercase tracking-widest">Top Performing Terminals</h3>
+                        </div>
+                        <div className="p-4 space-y-2 overflow-y-auto flex-1">
+                            {terminalPerformance.slice(0, 10).map((tp, idx) => (
+                                <div key={tp.terminal_id} className="flex items-center justify-between p-3 hover:bg-slate-50 rounded-xl transition-colors cursor-pointer group">
+                                    <div className="flex items-center gap-4">
+                                        <div className="w-9 h-9 rounded-full bg-slate-100 flex items-center justify-center text-xs font-black text-slate-600 group-hover:bg-[#e11d2d] group-hover:text-white transition-colors">#{idx + 1}</div>
+                                        <div>
+                                            <p className="text-xs font-bold text-slate-900 uppercase">{tp.terminal_id || 'Unknown'}</p>
+                                            <p className="text-[10px] text-slate-400 font-medium">Tenant {tp.tenant_id}</p>
+                                        </div>
+                                    </div>
+                                    <span className="text-sm font-bold text-slate-900">{currencyFormat(tp.revenue || 0)}</span>
+                                </div>
+                            ))}
+                            {terminalPerformance.length === 0 && (
+                                <div className="p-4 text-center text-slate-400 text-sm">No terminals data</div>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* Recent Activity */}
+                    <div className="xl:col-span-2 elite-card rounded-2xl flex flex-col overflow-hidden h-[500px]">
+                        <div className="px-6 pt-6 border-b border-slate-100 flex items-center justify-between">
+                            <div className="flex gap-8">
+                                <button className="pb-4 border-b-2 border-[#e11d2d] text-slate-900 text-xs font-bold uppercase tracking-wider">Transactions</button>
+                                <button className="pb-4 text-slate-400 text-xs font-bold uppercase tracking-wider hover:text-slate-600 transition-colors">Exceptions ({kpiData.exceptions.value})</button>
+                            </div>
+                            <button className="pb-4 text-[10px] font-bold text-[#e11d2d] hover:underline uppercase tracking-widest">View Archive</button>
+                        </div>
+                        <div className="flex-1 flex flex-col min-h-0 relative">
+                            {recentTransactions.length > 0 ? (
+                                <RecentTransactionsTable transactions={recentTransactions} onView={handleViewDetails} />
+                            ) : (
+                                <div className="flex-1 flex flex-col items-center justify-center p-20 text-center text-slate-300">
+                                    <span className="material-symbols-outlined text-[48px] mb-4">history_toggle_off</span>
+                                    <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">No recent transactions found</p>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                </section>
+
+                {/* System Status Footer */}
+                <footer className="grid grid-cols-1 md:grid-cols-4 gap-6 pt-8 border-t border-slate-200">
+                    <div className="flex items-center gap-3 px-4 py-3 bg-white rounded-xl border border-slate-200">
+                        <span className="material-symbols-outlined text-orange-500">memory</span>
+                        <div className="flex-1">
+                            <div className="flex justify-between items-center mb-1">
+                                <span className="text-[10px] font-bold text-slate-400 uppercase">CPU</span>
+                                <span className="text-[10px] font-bold text-orange-500">{(health?.cpu || 0).toFixed(0)}%</span>
+                            </div>
+                            <div className="h-1 w-full bg-slate-100 rounded-full overflow-hidden">
+                                <div className="h-full bg-orange-500" style={{ width: `${health?.cpu || 0}%` }}></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div className="flex items-center gap-3 px-4 py-3 bg-white rounded-xl border border-slate-200">
+                        <span className="material-symbols-outlined text-green-500">analytics</span>
+                        <div className="flex-1">
+                            <div className="flex justify-between items-center mb-1">
+                                <span className="text-[10px] font-bold text-slate-400 uppercase">Memory</span>
+                                <span className="text-[10px] font-bold text-green-500">{(health?.memory || 0).toFixed(0)}%</span>
+                            </div>
+                            <div className="h-1 w-full bg-slate-100 rounded-full overflow-hidden">
+                                <div className="h-full bg-green-500" style={{ width: `${health?.memory || 0}%` }}></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div className="flex items-center gap-3 px-4 py-3 bg-white rounded-xl border border-slate-200">
+                        <span className="material-symbols-outlined text-green-500">reorder</span>
+                        <div className="flex-1">
+                            <div className="flex justify-between items-center mb-1">
+                                <span className="text-[10px] font-bold text-slate-400 uppercase">Queue</span>
+                                <span className="text-[10px] font-bold text-green-500">{queueBacklog < 50 ? 'Healthy' : 'Busy'}</span>
+                            </div>
+                            <div className="h-1 w-full bg-slate-100 rounded-full overflow-hidden">
+                                <div className="h-full bg-green-500" style={{ width: `${Math.min(queueBacklog, 100)}%` }}></div>
+                            </div>
+                        </div>
+                    </div>
+                    <div className="flex items-center gap-3 px-4 py-3 bg-white rounded-xl border border-slate-200">
+                        <span className="material-symbols-outlined text-blue-500">lan</span>
+                        <div className="flex-1">
+                            <div className="flex justify-between items-center mb-1">
+                                <span className="text-[10px] font-bold text-slate-400 uppercase">Network</span>
+                                <span className="text-[10px] font-bold text-blue-500">Stable</span>
+                            </div>
+                            <div className="h-1 w-full bg-slate-100 rounded-full overflow-hidden">
+                                <div className="h-full bg-blue-500" style={{ width: '100%' }}></div>
+                            </div>
+                        </div>
+                    </div>
+                </footer>
+            </div>
+
         </Box>
     );
 };
