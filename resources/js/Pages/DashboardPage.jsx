@@ -59,6 +59,36 @@ ChartJS.register(ArcElement, ChartTooltip, ChartLegend);
 
 const currencyFormat = (val) => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(val);
 const formatDateInput = (date) => date.toISOString().slice(0, 10);
+const parseDateInput = (value) => {
+    if (!value) return null;
+    const [year, month, day] = value.split('-').map(Number);
+    if (!year || !month || !day) return null;
+    return new Date(year, month - 1, day);
+};
+const formatHeatmapDateRange = (startValue, endValue) => {
+    const start = parseDateInput(startValue);
+    const end = parseDateInput(endValue);
+
+    if (!start || !end) return 'Selected analytics window';
+
+    const sameDay = start.toDateString() === end.toDateString();
+    const sameMonth = start.getFullYear() === end.getFullYear() && start.getMonth() === end.getMonth();
+    const sameYear = start.getFullYear() === end.getFullYear();
+
+    if (sameDay) {
+        return start.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+    }
+
+    if (sameMonth) {
+        return `${start.toLocaleDateString('en-US', { month: 'long' })} ${start.getDate()}-${end.getDate()}, ${start.getFullYear()}`;
+    }
+
+    if (sameYear) {
+        return `${start.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${end.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
+    }
+
+    return `${start.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} - ${end.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`;
+};
 
 const getPresetRange = (preset) => {
     const now = new Date();
@@ -536,6 +566,10 @@ const DashboardPage = () => {
     }, [chartData, heatmapGranularity, loadingSections.charts]);
 
     const heatmapColors = ['#f8fafc', '#dcfce7', '#86efac', '#22c55e', '#047857'];
+    const heatmapPeriodLabel = useMemo(
+        () => formatHeatmapDateRange(filters.start_date, filters.end_date),
+        [filters.start_date, filters.end_date]
+    );
 
     // Alert action router renderer
     const renderAlertRow = (alert, type) => {
@@ -1118,6 +1152,10 @@ const DashboardPage = () => {
                             <div>
                                 <p className="text-xs font-bold text-blue-600 uppercase tracking-widest mb-3">Activity Heatmap</p>
                                 <h3 className="text-3xl font-black text-slate-900 tabular-nums">{heatmapData.total.toLocaleString()}</h3>
+                                <div className="mt-3 inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-600">
+                                    <span className="material-symbols-outlined text-[14px]">calendar_month</span>
+                                    {heatmapPeriodLabel}
+                                </div>
                                 <p className="text-sm text-slate-500 mt-2">{heatmapData.summary}</p>
                             </div>
                             <div className="flex items-center gap-3 self-start">
@@ -1191,7 +1229,7 @@ const DashboardPage = () => {
                                 </div>
 
                                 <div className="mt-6 flex items-center justify-between text-xs text-slate-500">
-                                    <span>Activity is derived from the selected analytics window.</span>
+                                    <span>Showing {heatmapGranularity} activity for {heatmapPeriodLabel}.</span>
                                     <div className="flex items-center gap-2">
                                         <span>Less</span>
                                         {heatmapColors.map((color, index) => (
