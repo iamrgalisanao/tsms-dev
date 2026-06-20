@@ -183,18 +183,9 @@ const MainLayout = ({ children }) => {
 
                     {/* Scrollable Page Content */}
                     <main 
-                        className="flex-1 overflow-y-auto p-8 relative bg-[#F8FAFC]"
-                        style={{
-                            backgroundImage: `
-                                linear-gradient(rgba(226, 232, 240, 0.5) 1px, transparent 1px),
-                                linear-gradient(90deg, rgba(226, 232, 240, 0.5) 1px, transparent 1px)
-                            `,
-                            backgroundSize: '32px 32px'
-                        }}
+                        className="flex-1 overflow-y-auto relative"
                     >
-                        <div className="max-w-screen-2xl mx-auto">
-                            {children}
-                        </div>
+                        {children}
                     </main>
                 </div>
             </div>

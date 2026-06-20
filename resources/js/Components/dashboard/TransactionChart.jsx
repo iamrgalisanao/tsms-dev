@@ -10,7 +10,7 @@ import {
     Legend,
     Filler,
 } from 'chart.js';
-import { Card, CardContent, Typography, Box, Stack, CircularProgress } from '@mui/material';
+import { Card, CardContent, Typography, Box, Stack, CircularProgress, useTheme } from '@mui/material';
 import { Line } from 'react-chartjs-2';
 
 ChartJS.register(
@@ -24,10 +24,10 @@ ChartJS.register(
     Filler
 );
 
-const TransactionChart = ({ data, loading, inline = false }) => {
+const TransactionChart = ({ data, loading, inline = false, height = 450 }) => {
     if (loading) {
         return (
-            <Card sx={{ height: 450, borderRadius: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Card sx={{ height: height, borderRadius: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <CircularProgress color="primary" />
             </Card>
         );
@@ -45,21 +45,24 @@ const TransactionChart = ({ data, loading, inline = false }) => {
                     usePointStyle: true,
                     boxWidth: 8,
                     padding: 20,
-                    font: { size: 12, weight: '600' }
+                    font: { size: 11, weight: '700', family: 'Inter' },
+                    color: '#64748B'
                 },
             },
             tooltip: {
                 mode: 'index',
                 intersect: false,
-                backgroundColor: 'rgba(255, 255, 255, 0.95)',
-                titleColor: '#111827',
-                titleFont: { size: 14, weight: 'bold' },
-                bodyColor: '#4B5563',
-                borderColor: '#E5E7EB',
+                backgroundColor: 'rgba(15, 23, 42, 0.95)',
+                titleColor: '#FFFFFF',
+                titleFont: { size: 13, weight: 'bold', family: 'Inter' },
+                bodyColor: '#E2E8F0',
+                bodyFont: { size: 12, family: 'Inter' },
+                borderColor: 'rgba(255, 255, 255, 0.1)',
                 borderWidth: 1,
                 padding: 12,
                 boxPadding: 6,
                 usePointStyle: true,
+                cornerRadius: 8,
                 callbacks: {
                     label: function (context) {
                         let label = context.dataset.label || '';
@@ -82,14 +85,16 @@ const TransactionChart = ({ data, loading, inline = false }) => {
                 title: {
                     display: true,
                     text: 'Sales (₱)',
-                    font: { size: 11, weight: 'bold' }
+                    font: { size: 10, weight: 'bold', family: 'Inter' },
+                    color: '#64748B'
                 },
                 grid: {
                     drawBorder: false,
-                    color: 'rgba(0, 0, 0, 0.04)',
+                    color: 'rgba(29, 67, 155, 0.05)',
+                    borderDash: [4, 4]
                 },
                 ticks: {
-                    font: { size: 10, family: 'Inter' },
+                    font: { size: 9, family: 'Inter', weight: '500' },
                     color: '#94A3B8',
                     callback: (value) => '₱' + new Intl.NumberFormat().format(value)
                 }
@@ -101,13 +106,14 @@ const TransactionChart = ({ data, loading, inline = false }) => {
                 title: {
                     display: true,
                     text: 'Volume (Count)',
-                    font: { size: 11, weight: 'bold' }
+                    font: { size: 10, weight: 'bold', family: 'Inter' },
+                    color: '#64748B'
                 },
                 grid: {
                     drawOnChartArea: false,
                 },
                 ticks: {
-                    font: { size: 10, family: 'Inter' },
+                    font: { size: 9, family: 'Inter', weight: '500' },
                     color: '#94A3B8'
                 }
             },
@@ -116,11 +122,10 @@ const TransactionChart = ({ data, loading, inline = false }) => {
                     display: false,
                 },
                 ticks: {
-                    font: { size: 10, family: 'Inter' },
+                    font: { size: 9, family: 'Inter', weight: '500' },
                     color: '#94A3B8',
-                    maxRotation: 45,
-                    minRotation: 45,
-                    maxTicksLimit: 12
+                    maxRotation: 0,
+                    maxTicksLimit: 8
                 }
             },
         },
@@ -158,19 +163,28 @@ const TransactionChart = ({ data, loading, inline = false }) => {
             {
                 label: 'Current Sales (₱)',
                 data: displayData.sales,
-                borderColor: '#1A56DB',
-                backgroundColor: 'rgba(26, 86, 219, 0.04)',
+                borderColor: '#1D439B',
+                backgroundColor: (context) => {
+                    const chart = context.chart;
+                    const { ctx, chartArea } = chart;
+                    if (!chartArea) return null;
+                    const gradient = ctx.createLinearGradient(0, chartArea.top, 0, chartArea.bottom);
+                    gradient.addColorStop(0, 'rgba(29, 67, 155, 0.16)');
+                    gradient.addColorStop(1, 'rgba(29, 67, 155, 0.01)');
+                    return gradient;
+                },
                 fill: true,
                 tension: 0.4,
-                pointRadius: 4,
-                pointHoverRadius: 6,
+                pointRadius: 3,
+                pointHoverRadius: 5,
+                pointBackgroundColor: '#1D439B',
                 yAxisID: 'y',
             },
             {
                 label: 'Prev. Period Sales (₱)',
                 data: displayData.previous_sales,
                 borderColor: '#94A3B8',
-                borderDash: [4, 3],
+                borderDash: [5, 4],
                 fill: false,
                 tension: 0.4,
                 pointRadius: 0,
@@ -183,8 +197,9 @@ const TransactionChart = ({ data, loading, inline = false }) => {
                 backgroundColor: 'transparent',
                 fill: false,
                 tension: 0.4,
-                pointRadius: 4,
-                pointHoverRadius: 6,
+                pointRadius: 3,
+                pointHoverRadius: 5,
+                pointBackgroundColor: '#EB342E',
                 yAxisID: 'y1',
             },
         ],
@@ -230,20 +245,29 @@ const TransactionChart = ({ data, loading, inline = false }) => {
         );
     }
 
+    const theme = useTheme();
+
     return (
-        <Card sx={{ height: 450, borderRadius: '32px', p: 2 }}>
-            <CardContent sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-                <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 4 }}>
-                    <Typography variant="h6" sx={{ fontWeight: 900, color: 'primary.main' }}>
+        <Card sx={{
+            height: height,
+            transition: 'all 0.3s cubic-bezier(0.16, 1, 0.3, 1)',
+            '&:hover': {
+                transform: 'translateY(-2px)',
+                boxShadow: theme.custom?.shadows?.cardHover || '0 12px 40px rgba(29, 67, 155, 0.08)',
+            }
+        }}>
+            <CardContent sx={{ height: '100%', display: 'flex', flexDirection: 'column', p: '20px !important' }}>
+                <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 3 }}>
+                    <Typography variant="h6" sx={{ fontWeight: 800, color: '#0F172A', letterSpacing: '-0.02em' }}>
                         Transaction Analytics
                     </Typography>
-                    <Stack direction="row" spacing={2}>
-                        <Box sx={{ display: 'flex', alignItems: 'center', fontSize: '12px', fontWeight: 'bold', color: 'grey.600' }}>
-                            <Box sx={{ width: 12, height: 12, bgcolor: 'primary.main', borderRadius: '50%', mr: 1 }} />
+                    <Stack direction="row" spacing={2.5}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', fontSize: '11px', fontWeight: 800, color: 'text.secondary', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                            <Box sx={{ width: 10, height: 10, bgcolor: 'primary.main', borderRadius: '50%', mr: 1, boxShadow: '0 2px 6px rgba(29, 67, 155, 0.3)' }} />
                             Sales
                         </Box>
-                        <Box sx={{ display: 'flex', alignItems: 'center', fontSize: '12px', fontWeight: 'bold', color: 'grey.600' }}>
-                            <Box sx={{ width: 12, height: 12, bgcolor: 'secondary.main', borderRadius: '50%', mr: 1 }} />
+                        <Box sx={{ display: 'flex', alignItems: 'center', fontSize: '11px', fontWeight: 800, color: 'text.secondary', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                            <Box sx={{ width: 10, height: 10, bgcolor: 'secondary.main', borderRadius: '50%', mr: 1, boxShadow: '0 2px 6px rgba(235, 52, 46, 0.3)' }} />
                             Volume
                         </Box>
                     </Stack>

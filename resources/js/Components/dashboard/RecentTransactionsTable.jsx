@@ -19,21 +19,21 @@ import {
 import VisibilityIcon from '@mui/icons-material/Visibility';
 import ReceiptIcon from '@mui/icons-material/Receipt';
 import { formatDate } from '../../utils/dateFormatter';
+import { useTheme } from '@mui/material/styles';
 
 const RecentTransactionsTable = ({ transactions, loading, onViewDetails }) => {
     const [page, setPage] = useState(1);
     const pageSize = 10;
+    const theme = useTheme();
 
     useEffect(() => {
         // Reset to first page whenever the data set changes
         setPage(1);
     }, [transactions]);
 
-    // formatDate is now imported from utils/dateFormatter
-
     if (loading) {
         return (
-            <Paper sx={{ p: 8, display: 'flex', justifyContent: 'center', borderRadius: '32px' }}>
+            <Paper sx={{ p: 8, display: 'flex', justifyContent: 'center', borderRadius: '24px', background: 'rgba(255,255,255,0.4)', backdropFilter: 'blur(20px)' }}>
                 <CircularProgress />
             </Paper>
         );
@@ -41,14 +41,14 @@ const RecentTransactionsTable = ({ transactions, loading, onViewDetails }) => {
 
     const headerStyles = {
         fontWeight: 800,
-        fontSize: '0.65rem',
+        fontSize: '0.68rem',
         textTransform: 'uppercase',
-        letterSpacing: '0.1em',
+        letterSpacing: '0.08em',
         color: '#EB342E',
         py: 2,
-        bgcolor: 'white',
-        borderBottom: '2px solid',
-        borderColor: 'divider'
+        bgcolor: 'transparent',
+        borderBottom: '2.5px solid',
+        borderColor: 'rgba(235, 52, 46, 0.15)'
     };
 
     const total = transactions.length;
@@ -58,30 +58,15 @@ const RecentTransactionsTable = ({ transactions, loading, onViewDetails }) => {
     const pageItems = transactions.slice(startIndex, endIndex);
 
     return (
-        <TableContainer component={Paper} sx={{ borderRadius: '24px', overflow: 'hidden', boxShadow: '0 8px 32px rgba(0,0,0,0.06)', border: '1px solid', borderColor: 'divider' }}>
-            <Box sx={{ p: 3, px: 4, display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid', borderColor: 'grey.50', bgcolor: 'white' }}>
-                <Stack direction="row" spacing={1.5} alignItems="center">
-                    <ReceiptIcon sx={{ color: 'primary.main', fontSize: 24 }} />
-                    <Typography variant="h6" sx={{ fontWeight: 900, color: 'text.primary', letterSpacing: '-0.02em' }}>
-                        Recent Activity
-                    </Typography>
-                </Stack>
-                <Button
-                    href="/transactions"
-                    size="small"
-                    sx={{
-                        fontWeight: 800,
-                        textTransform: 'uppercase',
-                        fontSize: '0.7rem',
-                        letterSpacing: '0.05em',
-                        color: 'primary.main'
-                    }}
-                >
-                    View Archive
-                </Button>
-            </Box>
-            <Table sx={{ minWidth: 650 }} aria-label="recent transactions table">
-                <TableHead>
+        <TableContainer
+            sx={{
+                width: '100%',
+                overflow: 'hidden',
+                bgcolor: 'transparent',
+            }}
+        >
+            <Table sx={{ minWidth: 650, width: '100%' }} aria-label="recent transactions table">
+                <TableHead sx={{ bgcolor: 'rgba(255, 255, 255, 0.2)' }}>
                     <TableRow>
                         <TableCell sx={headerStyles}>ID</TableCell>
                         <TableCell sx={headerStyles}>Transaction ID</TableCell>
@@ -95,12 +80,12 @@ const RecentTransactionsTable = ({ transactions, loading, onViewDetails }) => {
                     {total === 0 ? (
                         <TableRow>
                             <TableCell colSpan={6} align="center" sx={{ py: 8 }}>
-                                <Typography sx={{ color: 'grey.400', fontWeight: 500 }}>No recent transactions found.</Typography>
+                                <Typography sx={{ color: 'text.secondary', fontWeight: 600 }}>No recent transactions found.</Typography>
                             </TableCell>
                         </TableRow>
                     ) : (
                         pageItems.map((tx) => (
-                            <TableRow key={tx.id} sx={{ '&:hover': { bgcolor: 'rgba(25, 118, 210, 0.02)' }, transition: 'background-color 0.2s' }}>
+                            <TableRow key={tx.id} sx={{ '&:hover': { bgcolor: 'rgba(29, 67, 155, 0.03)' }, transition: 'background-color 0.2s', borderBottom: '1px solid rgba(0,0,0,0.03)' }}>
                                 <TableCell sx={{ fontWeight: 800, color: 'text.disabled', fontSize: '11px', fontFamily: 'monospace' }}>#{tx.id}</TableCell>
                                 <TableCell>
                                     <Typography
@@ -109,10 +94,10 @@ const RecentTransactionsTable = ({ transactions, loading, onViewDetails }) => {
                                             fontSize: '11px',
                                             fontWeight: 800,
                                             color: 'primary.main',
-                                            bgcolor: 'rgba(25, 118, 210, 0.05)',
+                                            bgcolor: 'rgba(29, 67, 155, 0.05)',
                                             px: 1,
                                             py: 0.5,
-                                            borderRadius: 1,
+                                            borderRadius: 1.5,
                                             display: 'inline-block'
                                         }}
                                     >
@@ -120,30 +105,29 @@ const RecentTransactionsTable = ({ transactions, loading, onViewDetails }) => {
                                     </Typography>
                                 </TableCell>
                                 <TableCell>
-                                    <Typography sx={{ fontWeight: 800, color: 'text.primary', fontSize: '0.85rem' }}>
+                                    <Typography sx={{ fontWeight: 800, color: '#0F172A', fontSize: '0.85rem' }}>
                                         {tx.tenant?.trade_name || 'N/A'}
                                     </Typography>
-                                    <Typography variant="caption" sx={{ color: 'text.disabled', fontWeight: 700, fontFamily: 'monospace', fontSize: '10px' }}>
+                                    <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600, fontFamily: 'monospace', fontSize: '10px' }}>
                                         {tx.terminal?.serial_number || tx.display_tenant_code}
                                     </Typography>
                                 </TableCell>
                                 <TableCell>
-                                    <Typography sx={{ fontWeight: 950, color: 'text.primary', fontFamily: 'monospace', fontSize: '0.9rem' }}>
+                                    <Typography sx={{ fontWeight: 800, color: '#0F172A', fontFamily: 'monospace', fontSize: '0.9rem', fontVariantNumeric: 'tabular-nums' }}>
                                         ₱{new Intl.NumberFormat('en-PH', { minimumFractionDigits: 2 }).format(tx.net_sales || 0)}
                                     </Typography>
                                 </TableCell>
                                  <TableCell>
                                     <Tooltip title={`Transaction Timestamp (Raw): ${tx.transaction_timestamp || 'N/A'}`} arrow>
-                                        <Typography sx={{ color: 'text.secondary', fontSize: '11px', fontWeight: 700, fontFamily: 'monospace', cursor: 'help' }}>
+                                        <Typography sx={{ color: 'text.secondary', fontSize: '11px', fontWeight: 600, fontFamily: 'monospace', cursor: 'help' }}>
                                             {formatDate(tx.transaction_timestamp)}
                                         </Typography>
                                     </Tooltip>
                                  </TableCell>
                                 <TableCell align="right">
                                     <Button
-                                        variant="contained"
+                                        variant="outlined"
                                         size="small"
-                                        startIcon={<VisibilityIcon />}
                                         onClick={() => onViewDetails(tx)}
                                         sx={{
                                             borderRadius: '8px',
@@ -153,14 +137,13 @@ const RecentTransactionsTable = ({ transactions, loading, onViewDetails }) => {
                                             py: 0.75,
                                             bgcolor: 'white',
                                             color: 'text.primary',
-                                            border: '1px solid',
                                             borderColor: 'divider',
                                             boxShadow: 'none',
                                             '&:hover': {
                                                 bgcolor: 'primary.main',
                                                 color: 'white',
                                                 borderColor: 'primary.main',
-                                                boxShadow: '0 4px 12px rgba(25, 118, 210, 0.2)'
+                                                boxShadow: '0 4px 12px rgba(29, 67, 155, 0.15)'
                                             }
                                         }}
                                     >
@@ -179,12 +162,12 @@ const RecentTransactionsTable = ({ transactions, loading, onViewDetails }) => {
                     display: 'flex',
                     justifyContent: 'space-between',
                     alignItems: 'center',
-                    bgcolor: 'grey.50',
+                    bgcolor: 'rgba(255, 255, 255, 0.2)',
                     borderTop: '1px solid',
-                    borderColor: 'divider',
+                    borderColor: 'rgba(0,0,0,0.04)',
                 }}
             >
-                <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 500 }}>
+                <Typography variant="caption" sx={{ color: 'text.secondary', fontWeight: 600 }}>
                     {total > 0
                         ? `Showing ${Math.min(startIndex + 1, total)}-${Math.min(endIndex, total)} of ${total} transaction${total !== 1 ? 's' : ''}`
                         : 'No recent transactions in this window'}

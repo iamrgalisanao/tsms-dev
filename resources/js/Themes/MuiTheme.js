@@ -3,12 +3,14 @@ import { createTheme } from '@mui/material/styles';
 const theme = createTheme({
     palette: {
         primary: {
-            main: '#1D439B',
-            light: '#4169c1',
-            dark: '#142f6e',
+            main: '#e11d2d',
+            light: '#ff4d5a',
+            dark: '#b31522',
         },
         secondary: {
-            main: '#EB342E',
+            main: '#0a1931',
+            light: '#162a4a',
+            dark: '#050d1a',
         },
         error: {
             main: '#EF4444',
@@ -26,9 +28,26 @@ const theme = createTheme({
             main: '#3B82F6',
         },
         background: {
-            default: '#F9FAFB',
+            default: '#F8FAFC',
             paper: '#FFFFFF',
         },
+    },
+    custom: {
+        eliteCard: {
+            background: '#ffffff',
+            border: '1px solid #e2e8f0',
+            boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.05)',
+            transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+        },
+        shadows: {
+            cardHover: '0 10px 15px -3px rgba(0, 0, 0, 0.05)',
+        },
+        gradients: {
+            primary: 'linear-gradient(135deg, #ffffff 0%, #fff1f2 100%)',
+            accent: 'linear-gradient(135deg, #ffffff 0%, #fffbeb 100%)',
+            success: 'linear-gradient(135deg, #ffffff 0%, #f0fdf4 100%)',
+            danger: 'linear-gradient(135deg, #ffffff 0%, #fef2f2 100%)',
+        }
     },
     typography: {
         fontFamily: [
@@ -74,15 +93,22 @@ const theme = createTheme({
         MuiCard: {
             styleOverrides: {
                 root: {
-                    borderRadius: '24px',
-                    boxShadow: '0 4px 20px 0 rgba(0,0,0,0.05)',
+                    borderRadius: '16px', // equivalent to rounded-2xl
+                    background: '#ffffff',
+                    border: '1px solid #e2e8f0',
+                    boxShadow: '0 1px 3px 0 rgba(0, 0, 0, 0.05)',
+                    transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
+                    '&:hover': {
+                        boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.05)',
+                        borderColor: '#cbd5e1',
+                    }
                 },
             },
         },
         MuiPaper: {
             styleOverrides: {
                 root: {
-                    borderRadius: '24px',
+                    borderRadius: '16px',
                 },
             },
         },
