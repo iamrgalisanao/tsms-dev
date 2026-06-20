@@ -96,6 +96,14 @@ const getMonthBuckets = (start, end) => {
     return months;
 };
 const formatHourLabel = (hour) => `${String(hour).padStart(2, '0')}:00`;
+const HEATMAP_DAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const HEATMAP_HOURS = Array.from({ length: 24 }, (_, hour) => hour);
+const HEATMAP_COLORS = ['#f8fafc', '#dbeafe', '#93c5fd', '#38bdf8', '#0f766e'];
+const HEATMAP_METRICS = {
+    transactions: { label: 'Transactions', field: 'transactions', formatter: (value) => Number(value || 0).toLocaleString() },
+    gross_sales: { label: 'Gross Sales', field: 'gross_sales', formatter: (value) => currencyFormat(Number(value || 0)) },
+    net_sales: { label: 'Net Sales', field: 'net_sales', formatter: (value) => currencyFormat(Number(value || 0)) }
+};
 const formatHeatmapDateRange = (startValue, endValue) => {
     const start = parseDateInput(startValue);
     const end = parseDateInput(endValue);
@@ -230,6 +238,7 @@ const LoadingPanel = ({ label = 'Loading page details...' }) => (
 const DashboardPage = () => {
     const { user } = useAuth();
     const initialFilters = useMemo(() => getDefaultDashboardFilters(), []);
+    const initialHeatmapRange = useMemo(() => getPresetRange('7days'), []);
     const initialDashboardCache = useMemo(() => readDashboardCache(initialFilters), [initialFilters]);
     const hasInitialDashboardCache = Boolean(initialDashboardCache);
     const [metrics, setMetrics] = useState(() => initialDashboardCache?.metrics ?? null);
@@ -253,14 +262,20 @@ const DashboardPage = () => {
     const [lastUpdated, setLastUpdated] = useState(() => initialDashboardCache?.lastUpdated ? new Date(initialDashboardCache.lastUpdated) : null);
     const [timeRange, setTimeRange] = useState('today');
     const [dashboardView, setDashboardView] = useState('operations');
-    const [heatmapGranularity, setHeatmapGranularity] = useState('weekly');
+    const [heatmapGranularity, setHeatmapGranularity] = useState('weekly_pattern');
+    const [heatmapMetric, setHeatmapMetric] = useState('transactions');
+    const [heatmapNormalization, setHeatmapNormalization] = useState('absolute');
+    const [heatmapComparePrevious, setHeatmapComparePrevious] = useState(true);
+    const [heatmapTenantId, setHeatmapTenantId] = useState('all');
+    const [heatmapTenantSearch, setHeatmapTenantSearch] = useState('');
+    const [tenantOptions, setTenantOptions] = useState([]);
     const [heatmapDateRange, setHeatmapDateRange] = useState(() => ({
-        start: initialFilters.start_date,
-        end: initialFilters.end_date
+        start: initialHeatmapRange.start,
+        end: initialHeatmapRange.end
     }));
     const [heatmapAppliedRange, setHeatmapAppliedRange] = useState(() => ({
-        start: initialFilters.start_date,
-        end: initialFilters.end_date
+        start: initialHeatmapRange.start,
+        end: initialHeatmapRange.end
     }));
     const [heatmapHourlyDate, setHeatmapHourlyDate] = useState(() => initialFilters.start_date);
     const [heatmapHourRange, setHeatmapHourRange] = useState({ start: 0, end: 23 });
@@ -392,6 +407,25 @@ const DashboardPage = () => {
         });
     }, [timeRange]);
 
+    useEffect(() => {
+        let isMounted = true;
+
+        api.getTenants()
+            .then((response) => {
+                if (!isMounted) return;
+                const tenants = Array.isArray(response?.data) ? response.data : response;
+                setTenantOptions(Array.isArray(tenants) ? tenants : []);
+            })
+            .catch((error) => {
+                console.error('Error fetching heatmap tenants:', error);
+                if (isMounted) setTenantOptions([]);
+            });
+
+        return () => {
+            isMounted = false;
+        }
+    }, []);
+
     const handleApplyCustomRange = useCallback(() => {
         if (!customRange.start || !customRange.end) {
             return;
@@ -442,7 +476,8 @@ const DashboardPage = () => {
             const response = await api.getCharts({
                 date_from: dateFrom,
                 date_to: dateTo,
-                granularity: heatmapGranularity
+                granularity: heatmapGranularity,
+                ...(heatmapTenantId !== 'all' ? { tenant_id: heatmapTenantId } : {})
             });
             setHeatmapChartData(response);
         } catch (error) {
@@ -451,7 +486,7 @@ const DashboardPage = () => {
         } finally {
             setHeatmapLoading(false);
         }
-    }, [heatmapAppliedRange.end, heatmapAppliedRange.start, heatmapGranularity, heatmapHourlyDate]);
+    }, [heatmapAppliedRange.end, heatmapAppliedRange.start, heatmapGranularity, heatmapHourlyDate, heatmapTenantId]);
 
     useEffect(() => {
         fetchHeatmapChartData();
@@ -624,7 +659,7 @@ const DashboardPage = () => {
         return ((reconciledVal / total) * 100).toFixed(2);
     }, [metrics]);
 
-    const hourOptions = useMemo(() => Array.from({ length: 24 }, (_, hour) => hour), []);
+    const hourOptions = useMemo(() => HEATMAP_HOURS, []);
     const normalizedHourRange = useMemo(() => {
         const start = Math.min(Number(heatmapHourRange.start), Number(heatmapHourRange.end));
         const end = Math.max(Number(heatmapHourRange.start), Number(heatmapHourRange.end));
@@ -636,75 +671,196 @@ const DashboardPage = () => {
     const heatmapDataRangeLabel = heatmapGranularity === 'hourly'
         ? formatHeatmapDateRange(heatmapHourlyDate, heatmapHourlyDate)
         : formatHeatmapDateRange(heatmapAppliedRange.start, heatmapAppliedRange.end);
+    const filteredTenantOptions = useMemo(() => {
+        const normalizedSearch = heatmapTenantSearch.trim().toLowerCase();
+        if (!normalizedSearch) return tenantOptions;
+
+        return tenantOptions.filter((tenant) => {
+            const label = `${tenant.trade_name || ''} ${tenant.customer_code || ''}`.toLowerCase();
+            return label.includes(normalizedSearch);
+        });
+    }, [heatmapTenantSearch, tenantOptions]);
+    const selectedHeatmapTenant = useMemo(
+        () => tenantOptions.find((tenant) => String(tenant.id) === String(heatmapTenantId)),
+        [heatmapTenantId, tenantOptions]
+    );
 
     // Memoized Heatmap data mapping
     const heatmapData = useMemo(() => {
-        if (heatmapLoading) return { loading: true, groups: [], total: 0, peak: 0, columns: 0, rows: 0, summary: '' };
+        if (heatmapLoading) {
+            return { loading: true, rows: [], columns: [], totalTransactions: 0, peak: 0, peakLabel: 'No peak yet', summary: '', topTenants: [] };
+        }
 
-        const volumes = Array.isArray(heatmapChartData?.volume) ? heatmapChartData.volume.map((value) => Number(value || 0)) : [];
-        const scopedVolumes = heatmapGranularity === 'hourly'
-            ? volumes.slice(normalizedHourRange.start, normalizedHourRange.end + 1)
-            : volumes;
-        const total = scopedVolumes.reduce((sum, value) => sum + value, 0);
-        const peak = Math.max(...scopedVolumes, 1);
+        const metricConfig = HEATMAP_METRICS[heatmapMetric] || HEATMAP_METRICS.transactions;
+        const topTenants = Array.isArray(heatmapChartData?.top_tenants) ? heatmapChartData.top_tenants : [];
         const start = parseDateInput(heatmapGranularity === 'hourly' ? heatmapHourlyDate : heatmapAppliedRange.start);
         const end = parseDateInput(heatmapGranularity === 'hourly' ? heatmapHourlyDate : heatmapAppliedRange.end);
         const selectedDays = getInclusiveDays(start, end);
-        const selectedMonths = getMonthBuckets(start, end);
-        const formatCell = (value) => ({
-            value,
-            intensity: total === 0 || value === 0 ? 0 : Math.min(4, Math.ceil((value / peak) * 4))
+        const metricValue = (cell) => Number(cell?.[metricConfig.field] ?? 0);
+        const buildCell = (cell, context) => ({
+            day: context.day,
+            hour: context.hour,
+            label: context.label,
+            date: context.date,
+            transactions: Number(cell?.transactions ?? 0),
+            gross_sales: Number(cell?.gross_sales ?? 0),
+            net_sales: Number(cell?.net_sales ?? 0),
+            terminal_count: Number(cell?.terminal_count ?? 0),
+            tenant_count: Number(cell?.tenant_count ?? 0),
+            typicalPercent: Number(cell?.typicalPercent ?? 0),
+            topTenants,
+            hasRecord: Boolean(cell && Number(cell.transactions ?? 0) > 0),
+            metricValue: metricValue(cell)
         });
-        const summarizeBucket = (bucketIndex, bucketSize = 1) => {
-            const startIndex = bucketIndex * bucketSize;
-            return volumes.slice(startIndex, startIndex + bucketSize).reduce((sum, value) => sum + value, 0);
-        };
-        const hourlyLabels = Array.from(
-            { length: normalizedHourRange.end - normalizedHourRange.start + 1 },
-            (_, index) => formatHourLabel(normalizedHourRange.start + index)
-        );
-        const configs = {
-            hourly: {
-                labels: hourlyLabels,
-                summary: `Hourly transaction intensity for ${heatmapDataRangeLabel}, ${formatHourLabel(normalizedHourRange.start)}-${formatHourLabel(normalizedHourRange.end)}.`
-            },
-            daily: {
-                labels: selectedDays.map((date) => date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })),
-                summary: `Daily activity for ${heatmapDataRangeLabel}.`
-            },
-            weekly: {
-                labels: selectedDays.filter((_, index) => index % 7 === 0).map((date) => `Week of ${date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`),
-                summary: `Weekly activity for ${heatmapDataRangeLabel}.`
-            },
-            monthly: {
-                labels: selectedMonths.map((date) => date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' })),
-                summary: `Monthly activity for ${heatmapDataRangeLabel}.`
-            }
-        };
-        const config = configs[heatmapGranularity] || configs.weekly;
-        const labels = config.labels.length ? config.labels : ['Selected period'];
-        const bucketSize = heatmapGranularity === 'weekly' ? 7 : 1;
+        const seriesCell = (index, context) => buildCell({
+            transactions: heatmapChartData?.volume?.[index],
+            gross_sales: heatmapChartData?.sales?.[index],
+            net_sales: heatmapChartData?.net_sales?.[index],
+            terminal_count: heatmapChartData?.terminal_counts?.[index],
+            tenant_count: heatmapChartData?.tenant_counts?.[index],
+            typicalPercent: heatmapComparePrevious && heatmapChartData?.previous_sales?.[index] > 0
+                ? Math.round(((Number(heatmapChartData?.sales?.[index] || 0) - Number(heatmapChartData.previous_sales[index])) / Number(heatmapChartData.previous_sales[index])) * 100)
+                : 0
+        }, context);
 
-        const groups = labels.map((label, columnIndex) => ({
-            label,
-            cells: [formatCell(heatmapGranularity === 'hourly' ? (volumes[normalizedHourRange.start + columnIndex] || 0) : summarizeBucket(columnIndex, bucketSize))]
-        }));
+        let rows = [];
+        let columns = [];
+        let summary = '';
+
+        if (heatmapGranularity === 'weekly_pattern') {
+            columns = HEATMAP_HOURS.map(formatHourLabel);
+            const cellMap = new Map((heatmapChartData?.cells || []).map((cell) => [`${cell.day_index}-${cell.hour}`, cell]));
+            rows = HEATMAP_DAYS.map((day, dayIndex) => ({
+                label: day,
+                cells: HEATMAP_HOURS.map((hour) => buildCell(cellMap.get(`${dayIndex}-${hour}`), {
+                    day,
+                    hour,
+                    label: `${day} ${formatHourLabel(hour)}`
+                }))
+            }));
+            summary = `Weekly ${metricConfig.label.toLowerCase()} pattern for ${heatmapDataRangeLabel}.`;
+        } else if (heatmapGranularity === 'hourly') {
+            const hours = HEATMAP_HOURS.slice(normalizedHourRange.start, normalizedHourRange.end + 1);
+            columns = hours.map(formatHourLabel);
+            rows = [{
+                label: heatmapDataRangeLabel,
+                cells: hours.map((hour) => seriesCell(hour, {
+                    day: heatmapDataRangeLabel,
+                    hour,
+                    date: heatmapHourlyDate,
+                    label: `${heatmapDataRangeLabel} ${formatHourLabel(hour)}`
+                }))
+            }];
+            summary = `Hourly ${metricConfig.label.toLowerCase()} for ${heatmapDataRangeLabel}, ${formatHourLabel(normalizedHourRange.start)}-${formatHourLabel(normalizedHourRange.end)}.`;
+        } else if (heatmapGranularity === 'monthly') {
+            columns = HEATMAP_DAYS;
+            const weeks = [];
+            selectedDays.forEach((date, index) => {
+                const weekIndex = Math.floor(index / 7);
+                if (!weeks[weekIndex]) {
+                    weeks[weekIndex] = {
+                        label: `Week ${weekIndex + 1}`,
+                        cells: HEATMAP_DAYS.map((day) => buildCell(null, { day, label: `${day} no record` }))
+                    };
+                }
+
+                const mondayIndex = (date.getDay() + 6) % 7;
+                weeks[weekIndex].cells[mondayIndex] = seriesCell(index, {
+                    day: date.toLocaleDateString('en-US', { weekday: 'short' }),
+                    date: formatDateInput(date),
+                    label: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                });
+            });
+            rows = weeks;
+            summary = `Monthly week-by-week ${metricConfig.label.toLowerCase()} for ${heatmapDataRangeLabel}.`;
+        } else {
+            columns = selectedDays.map((date) => date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
+            rows = [{
+                label: 'Calendar',
+                cells: selectedDays.map((date, index) => seriesCell(index, {
+                    day: date.toLocaleDateString('en-US', { weekday: 'short' }),
+                    date: formatDateInput(date),
+                    label: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                }))
+            }];
+            summary = `Calendar ${metricConfig.label.toLowerCase()} for ${heatmapDataRangeLabel}.`;
+        }
+
+        const allCells = rows.flatMap((row) => row.cells);
+        const presentValues = allCells.filter((cell) => cell.hasRecord).map((cell) => cell.metricValue).sort((a, b) => a - b);
+        const totalTransactions = allCells.reduce((sum, cell) => sum + cell.transactions, 0);
+        const globalPeak = Math.max(...presentValues, 0);
+        const p95 = presentValues.length ? presentValues[Math.max(0, Math.ceil(presentValues.length * 0.95) - 1)] : 0;
+        const peakCell = allCells.reduce((peak, cell) => (cell.metricValue > (peak?.metricValue ?? -1) ? cell : peak), null);
+        const rowsWithIntensity = rows.map((row) => {
+            const rowPeak = Math.max(...row.cells.filter((cell) => cell.hasRecord).map((cell) => cell.metricValue), 0);
+            const denominator = heatmapNormalization === 'relative' ? rowPeak : globalPeak;
+
+            return {
+                ...row,
+                cells: row.cells.map((cell) => ({
+                    ...cell,
+                    intensity: !cell.hasRecord || denominator === 0 ? 0 : Math.min(4, Math.max(1, Math.ceil((cell.metricValue / denominator) * 4))),
+                    isOutlier: cell.hasRecord && p95 > 0 && cell.metricValue >= p95
+                }))
+            };
+        });
+        const peakLabel = peakCell?.hasRecord
+            ? `${peakCell.day || peakCell.label}${peakCell.hour !== undefined ? ` ${formatHourLabel(peakCell.hour)}` : ''}`
+            : 'No peak yet';
 
         return {
-            groups,
-            total,
-            peak,
-            columns: groups.length,
-            rows: 1,
-            summary: config.summary
+            loading: false,
+            rows: rowsWithIntensity,
+            columns,
+            totalTransactions,
+            peak: globalPeak,
+            peakLabel,
+            summary,
+            topTenants,
+            metricConfig
         };
-    }, [heatmapAppliedRange.end, heatmapAppliedRange.start, heatmapChartData, heatmapDataRangeLabel, heatmapGranularity, heatmapHourlyDate, heatmapLoading, normalizedHourRange]);
+    }, [heatmapAppliedRange.end, heatmapAppliedRange.start, heatmapChartData, heatmapComparePrevious, heatmapDataRangeLabel, heatmapGranularity, heatmapHourlyDate, heatmapLoading, heatmapMetric, heatmapNormalization, normalizedHourRange]);
 
-    const heatmapColors = ['#f8fafc', '#dcfce7', '#86efac', '#22c55e', '#047857'];
+    const heatmapColors = HEATMAP_COLORS;
     const heatmapPeriodLabel = useMemo(
         () => heatmapDataRangeLabel,
         [heatmapDataRangeLabel]
     );
+    const handleHeatmapCellClick = useCallback((cell) => {
+        if (!cell?.hasRecord) return;
+
+        const params = new URLSearchParams();
+        if (heatmapTenantId !== 'all') params.set('tenant_id', heatmapTenantId);
+        if (cell.date) {
+            params.set('date_from', cell.date);
+            params.set('date_to', cell.date);
+        } else {
+            params.set('date_from', heatmapAppliedRange.start);
+            params.set('date_to', heatmapAppliedRange.end);
+        }
+        if (cell.hour !== undefined) params.set('hour', String(cell.hour));
+        if (cell.day) params.set('day', cell.day);
+
+        window.location.href = `/transactions?${params.toString()}`;
+    }, [heatmapAppliedRange.end, heatmapAppliedRange.start, heatmapTenantId]);
+    const renderHeatmapTooltip = useCallback((cell) => (
+        <Box sx={{ p: 0.5 }}>
+            <Typography sx={{ fontWeight: 900, fontSize: '0.8rem' }}>{cell.label}</Typography>
+            <Typography sx={{ fontSize: '0.75rem' }}>{cell.transactions.toLocaleString()} transactions</Typography>
+            <Typography sx={{ fontSize: '0.75rem' }}>{currencyFormat(cell.gross_sales)} gross sales</Typography>
+            <Typography sx={{ fontSize: '0.75rem' }}>{currencyFormat(cell.net_sales)} net sales</Typography>
+            <Typography sx={{ fontSize: '0.75rem' }}>
+                {cell.typicalPercent >= 0 ? '+' : ''}{cell.typicalPercent}% vs typical {cell.day || 'period'} {cell.hour !== undefined ? formatHourLabel(cell.hour) : ''}
+            </Typography>
+            <Typography sx={{ fontSize: '0.75rem' }}>
+                {cell.tenant_count.toLocaleString()} tenants - {cell.terminal_count.toLocaleString()} terminals
+            </Typography>
+            <Typography sx={{ fontSize: '0.75rem' }}>
+                Top tenants: {cell.topTenants?.slice(0, 3).map((tenant) => tenant.name).join(', ') || 'No tenant data'}
+            </Typography>
+        </Box>
+    ), []);
 
     // Alert action router renderer
     const renderAlertRow = (alert, type) => {
@@ -1286,40 +1442,113 @@ const DashboardPage = () => {
                         <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-4 mb-8">
                             <div>
                                 <p className="text-xs font-bold text-blue-600 uppercase tracking-widest mb-3">Activity Heatmap</p>
-                                <h3 className="text-3xl font-black text-slate-900 tabular-nums">{heatmapData.total.toLocaleString()}</h3>
+                                <div className="flex flex-wrap items-end gap-6">
+                                    <div>
+                                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Total Transactions</p>
+                                        <h3 className="text-3xl font-black text-slate-900 tabular-nums">{heatmapData.totalTransactions.toLocaleString()}</h3>
+                                    </div>
+                                    <div>
+                                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Peak Hour / Day</p>
+                                        <p className="text-lg font-black text-slate-900">{heatmapData.peakLabel}</p>
+                                    </div>
+                                </div>
                                 <div className="mt-3 inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1.5 text-xs font-bold text-slate-600">
                                     <span className="material-symbols-outlined text-[14px]">calendar_month</span>
                                     {heatmapPeriodLabel}
                                 </div>
                                 <p className="text-sm text-slate-500 mt-2">{heatmapData.summary}</p>
                             </div>
-                            <div className="flex items-center gap-3 self-start">
-                                <FormControl size="small">
-                                    <Select
-                                        value={heatmapGranularity}
-                                        onChange={(event) => setHeatmapGranularity(event.target.value)}
-                                        sx={{
-                                            bgcolor: 'white',
-                                            borderRadius: '10px',
-                                            fontWeight: 800,
-                                            fontSize: '0.75rem',
-                                            height: 36,
-                                            '& .MuiOutlinedInput-notchedOutline': { borderColor: '#e2e8f0' }
-                                        }}
-                                    >
-                                        <MenuItem value="hourly">Hourly</MenuItem>
-                                        <MenuItem value="daily">Daily</MenuItem>
-                                        <MenuItem value="weekly">Weekly</MenuItem>
-                                        <MenuItem value="monthly">Monthly</MenuItem>
-                                    </Select>
-                                </FormControl>
-                                <div className="px-3 py-2 rounded-full bg-emerald-50 text-emerald-700 text-xs font-bold">
-                                    Peak volume {heatmapData.peak.toLocaleString()}
+                            <div className="flex flex-col items-start md:items-end gap-3">
+                                <div className="flex rounded-xl border border-slate-200 bg-white p-1">
+                                    {[
+                                        ['hourly', 'Hourly'],
+                                        ['weekly_pattern', 'Weekly Pattern'],
+                                        ['calendar', 'Calendar'],
+                                        ['monthly', 'Monthly']
+                                    ].map(([value, label]) => (
+                                        <button
+                                            key={value}
+                                            type="button"
+                                            onClick={() => setHeatmapGranularity(value)}
+                                            className={`px-3 py-2 text-xs font-black rounded-lg transition-colors ${heatmapGranularity === value ? 'bg-blue-600 text-white' : 'text-slate-500 hover:text-slate-900'}`}
+                                        >
+                                            {label}
+                                        </button>
+                                    ))}
+                                </div>
+                                <div className="px-3 py-2 rounded-full bg-sky-50 text-teal-700 text-xs font-bold">
+                                    Peak {heatmapData.metricConfig?.formatter?.(heatmapData.peak) || heatmapData.peak.toLocaleString()}
                                 </div>
                             </div>
                         </div>
 
-                        <div className="mb-8 rounded-xl border border-slate-200 bg-slate-50 p-4">
+                        <div className="mb-8 rounded-xl border border-slate-200 bg-slate-50 p-4 space-y-3">
+                            <div className="grid grid-cols-1 lg:grid-cols-4 gap-3">
+                                <TextField
+                                    size="small"
+                                    label="Search tenants"
+                                    value={heatmapTenantSearch}
+                                    onChange={(event) => setHeatmapTenantSearch(event.target.value)}
+                                    sx={{ '& .MuiOutlinedInput-root': { bgcolor: 'white', borderRadius: '10px' } }}
+                                />
+                                <FormControl size="small">
+                                    <Select
+                                        value={heatmapTenantId}
+                                        onChange={(event) => setHeatmapTenantId(event.target.value)}
+                                        sx={{ bgcolor: 'white', borderRadius: '10px', fontWeight: 700, fontSize: '0.8rem' }}
+                                    >
+                                        <MenuItem value="all">All Tenants</MenuItem>
+                                        {filteredTenantOptions.map((tenant) => (
+                                            <MenuItem key={tenant.id} value={String(tenant.id)}>
+                                                {tenant.trade_name || tenant.customer_code || `Tenant ${tenant.id}`}
+                                            </MenuItem>
+                                        ))}
+                                    </Select>
+                                </FormControl>
+                                <FormControl size="small">
+                                    <Select
+                                        value={heatmapMetric}
+                                        onChange={(event) => setHeatmapMetric(event.target.value)}
+                                        sx={{ bgcolor: 'white', borderRadius: '10px', fontWeight: 700, fontSize: '0.8rem' }}
+                                    >
+                                        <MenuItem value="transactions">Transactions</MenuItem>
+                                        <MenuItem value="gross_sales">Gross Sales</MenuItem>
+                                        <MenuItem value="net_sales">Net Sales</MenuItem>
+                                    </Select>
+                                </FormControl>
+                                <div className="grid grid-cols-2 gap-2">
+                                    {['absolute', 'relative'].map((mode) => (
+                                        <button
+                                            key={mode}
+                                            type="button"
+                                            onClick={() => setHeatmapNormalization(mode)}
+                                            className={`rounded-lg border px-3 py-2 text-xs font-black capitalize ${heatmapNormalization === mode ? 'border-blue-600 bg-blue-50 text-blue-700' : 'border-slate-200 bg-white text-slate-500'}`}
+                                        >
+                                            {mode}
+                                        </button>
+                                    ))}
+                                </div>
+                            </div>
+                            {heatmapTenantId === 'all' && heatmapData.topTenants?.length > 0 && (
+                                <div className="flex flex-wrap gap-2">
+                                    <span className="text-[10px] font-black uppercase tracking-widest text-slate-400 py-1">Top tenants</span>
+                                    {heatmapData.topTenants.slice(0, 5).map((tenant) => (
+                                        <button
+                                            key={tenant.id}
+                                            type="button"
+                                            onClick={() => setHeatmapTenantId(String(tenant.id))}
+                                            className="rounded-full border border-slate-200 bg-white px-3 py-1 text-xs font-bold text-slate-600 hover:border-blue-300 hover:text-blue-700"
+                                        >
+                                            {tenant.name}
+                                        </button>
+                                    ))}
+                                </div>
+                            )}
+                            {heatmapTenantId !== 'all' && (
+                                <div className="text-xs font-bold text-slate-500">
+                                    Showing tenant: <span className="text-slate-900">{selectedHeatmapTenant?.trade_name || selectedHeatmapTenant?.customer_code || `Tenant ${heatmapTenantId}`}</span>
+                                </div>
+                            )}
                             {heatmapGranularity === 'hourly' ? (
                                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                                     <TextField
@@ -1361,7 +1590,7 @@ const DashboardPage = () => {
                                     </FormControl>
                                 </div>
                             ) : (
-                                <div className="grid grid-cols-1 md:grid-cols-[1fr_1fr_auto] gap-3">
+                                <div className="grid grid-cols-1 md:grid-cols-[1fr_1fr_auto_auto] gap-3">
                                     <TextField
                                         size="small"
                                         type="date"
@@ -1389,6 +1618,13 @@ const DashboardPage = () => {
                                     >
                                         Apply Dates
                                     </Button>
+                                    <Button
+                                        variant={heatmapComparePrevious ? 'contained' : 'outlined'}
+                                        onClick={() => setHeatmapComparePrevious((prev) => !prev)}
+                                        sx={{ borderRadius: '10px', fontWeight: 800, textTransform: 'none', px: 3 }}
+                                    >
+                                        vs Previous
+                                    </Button>
                                 </div>
                             )}
                         </div>
@@ -1401,34 +1637,43 @@ const DashboardPage = () => {
                                     <div className="inline-block min-w-max">
                                         <div
                                             className="grid gap-1.5 mb-3"
-                                            style={{ gridTemplateColumns: `repeat(${heatmapData.columns}, 64px)` }}
+                                            style={{ gridTemplateColumns: `96px repeat(${heatmapData.columns.length}, ${heatmapGranularity === 'weekly_pattern' ? '46px' : '64px'})` }}
                                         >
-                                            {heatmapData.groups.map((group, index) => (
-                                                <div key={`heatmap-label-${index}`} className="text-xs text-slate-500 h-5 truncate">
-                                                    {group.label}
+                                            <div />
+                                            {heatmapData.columns.map((label, index) => (
+                                                <div key={`heatmap-column-${index}`} className="text-xs text-slate-500 h-5 truncate text-center">
+                                                    {label}
                                                 </div>
                                             ))}
                                         </div>
                                         <div
                                             className="grid gap-1.5"
-                                            style={{ gridTemplateColumns: `repeat(${heatmapData.columns}, 64px)` }}
+                                            style={{ gridTemplateRows: `repeat(${heatmapData.rows.length}, auto)` }}
                                         >
-                                            {heatmapData.groups.map((group, groupIndex) => (
+                                            {heatmapData.rows.map((row, rowIndex) => (
                                                 <div
-                                                    key={`heatmap-group-${groupIndex}`}
-                                                    className="grid gap-1.5"
-                                                    style={{ gridTemplateRows: `repeat(${heatmapData.rows}, minmax(12px, 1fr))` }}
+                                                    key={`heatmap-row-${rowIndex}`}
+                                                    className="grid gap-1.5 items-center"
+                                                    style={{ gridTemplateColumns: `96px repeat(${heatmapData.columns.length}, ${heatmapGranularity === 'weekly_pattern' ? '46px' : '64px'})` }}
                                                 >
-                                                    {group.cells.map((cell, cellIndex) => (
+                                                    <div className="text-xs font-black text-slate-500 uppercase tracking-widest">{row.label}</div>
+                                                    {row.cells.map((cell, cellIndex) => (
                                                         <Tooltip
-                                                            key={`${groupIndex}-${cellIndex}`}
-                                                            title={`${cell.value.toLocaleString()} transactions`}
+                                                            key={`${rowIndex}-${cellIndex}`}
+                                                            title={renderHeatmapTooltip(cell)}
                                                             arrow
                                                         >
-                                                            <div
-                                                                className="aspect-square rounded border border-slate-200"
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => handleHeatmapCellClick(cell)}
+                                                                className={`relative aspect-square rounded border transition-transform ${cell.hasRecord ? 'cursor-pointer hover:scale-105' : 'cursor-default'} ${cell.isOutlier ? 'border-teal-950 ring-2 ring-teal-900' : 'border-slate-200'}`}
                                                                 style={{ backgroundColor: heatmapColors[cell.intensity] }}
-                                                            />
+                                                                aria-label={`${cell.label}: ${cell.transactions} transactions`}
+                                                            >
+                                                                {cell.isOutlier && (
+                                                                    <span className="absolute -right-1 -top-1 h-2.5 w-2.5 rounded-full bg-teal-950" />
+                                                                )}
+                                                            </button>
                                                         </Tooltip>
                                                     ))}
                                                 </div>
@@ -1441,7 +1686,7 @@ const DashboardPage = () => {
                                     <span>
                                         {heatmapGranularity === 'hourly'
                                             ? `Showing hourly activity for ${heatmapPeriodLabel}, ${formatHourLabel(normalizedHourRange.start)}-${formatHourLabel(normalizedHourRange.end)}.`
-                                            : `Showing ${heatmapGranularity} activity for ${heatmapPeriodLabel}.`}
+                                            : `Showing ${heatmapGranularity.replace('_', ' ')} activity for ${heatmapPeriodLabel}.`}
                                     </span>
                                     <div className="flex items-center gap-2">
                                         <span>Less</span>

@@ -162,9 +162,9 @@ class DashboardController extends Controller
     // API: GET /api/dashboard/charts
     public function apiCharts(Request $request)
     {
-        $granularity = in_array($request->input('granularity'), ['hourly', 'daily', 'weekly', 'monthly'], true)
+        $granularity = in_array($request->input('granularity'), ['hourly', 'daily', 'weekly', 'weekly_pattern', 'calendar', 'monthly'], true)
             ? $request->input('granularity')
-            : 'weekly';
+            : 'weekly_pattern';
         $startDate = $request->filled('date_from')
             ? Carbon::parse($request->input('date_from'))->startOfDay()
             : Carbon::today()->subDays(max((int) $request->input('days', 7), 1) - 1)->startOfDay();
@@ -177,26 +177,92 @@ class DashboardController extends Controller
         }
 
         $cacheKey = sprintf(
-            'dashboard.api_charts.%s.%s.%s',
+            'dashboard.api_charts.%s.%s.%s.%s',
             $granularity,
             $startDate->toDateString(),
-            $endDate->toDateString()
+            $endDate->toDateString(),
+            $request->input('tenant_id', 'all')
         );
 
-        $data = \Illuminate\Support\Facades\Cache::remember($cacheKey, 300, function () use ($granularity, $startDate, $endDate) {
+        $data = \Illuminate\Support\Facades\Cache::remember($cacheKey, 300, function () use ($granularity, $request, $startDate, $endDate) {
             $labels = [];
             $salesData = [];
+            $netSalesData = [];
             $volumeData = [];
             $prevSalesData = [];
             $reconciledData = [];
             $exceptionData = [];
+            $terminalCounts = [];
+            $tenantCounts = [];
+            $tenantId = $request->input('tenant_id');
+            $baseQuery = Transaction::whereBetween('transaction_timestamp', [$startDate, $endDate]);
+
+            if ($tenantId && $tenantId !== 'all') {
+                $baseQuery->where('tenant_id', $tenantId);
+            }
+
+            $topTenants = (clone $baseQuery)
+                ->leftJoin('tenants', 'transactions.tenant_id', '=', 'tenants.id')
+                ->selectRaw('transactions.tenant_id, COALESCE(tenants.trade_name, "Unknown Tenant") as tenant_name, COUNT(*) as transactions, SUM(gross_sales) as gross_sales')
+                ->groupBy('transactions.tenant_id', 'tenant_name')
+                ->orderByDesc('transactions')
+                ->limit(10)
+                ->get()
+                ->map(fn ($row) => [
+                    'id' => $row->tenant_id,
+                    'name' => $row->tenant_name,
+                    'transactions' => (int) $row->transactions,
+                    'gross_sales' => (float) $row->gross_sales,
+                ])
+                ->values()
+                ->all();
+
+            if ($granularity === 'weekly_pattern') {
+                $stats = (clone $baseQuery)
+                    ->selectRaw('
+                        DAYOFWEEK(transaction_timestamp) as day_of_week,
+                        HOUR(transaction_timestamp) as hour,
+                        SUM(gross_sales) as sales,
+                        SUM(COALESCE(net_sales, gross_sales, 0)) as net_sales,
+                        COUNT(*) as count,
+                        COUNT(DISTINCT terminal_id) as terminal_count,
+                        COUNT(DISTINCT tenant_id) as tenant_count
+                    ')
+                    ->groupBy('day_of_week', 'hour')
+                    ->get();
+
+                $cells = $stats->map(function ($row) {
+                    $dayIndex = ((int) $row->day_of_week + 5) % 7; // MySQL Sunday=1, dashboard Monday=0.
+
+                    return [
+                        'day_index' => $dayIndex,
+                        'hour' => (int) $row->hour,
+                        'transactions' => (int) $row->count,
+                        'gross_sales' => (float) $row->sales,
+                        'net_sales' => (float) $row->net_sales,
+                        'terminal_count' => (int) $row->terminal_count,
+                        'tenant_count' => (int) $row->tenant_count,
+                    ];
+                })->values()->all();
+
+                return [
+                    'granularity' => $granularity,
+                    'labels' => ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
+                    'hours' => range(0, 23),
+                    'cells' => $cells,
+                    'top_tenants' => $topTenants,
+                ];
+            }
 
             if ($granularity === 'hourly') {
-                $stats = Transaction::whereBetween('transaction_timestamp', [$startDate, $endDate])
+                $stats = (clone $baseQuery)
                     ->selectRaw('
                         HOUR(transaction_timestamp) as hour,
                         SUM(gross_sales) as sales,
+                        SUM(COALESCE(net_sales, gross_sales, 0)) as net_sales,
                         COUNT(*) as count,
+                        COUNT(DISTINCT terminal_id) as terminal_count,
+                        COUNT(DISTINCT tenant_id) as tenant_count,
                         SUM(IF(validation_status = "VALID", 1, 0)) as reconciled,
                         SUM(IF(validation_status IN ("FAILED", "INVALID", "ERROR"), 1, 0)) as exceptions
                     ')
@@ -208,30 +274,41 @@ class DashboardController extends Controller
                     $hourStats = $stats->get($hour);
                     $labels[] = str_pad((string) $hour, 2, '0', STR_PAD_LEFT) . ':00';
                     $salesData[] = (float) ($hourStats->sales ?? 0);
+                    $netSalesData[] = (float) ($hourStats->net_sales ?? 0);
                     $volumeData[] = (int) ($hourStats->count ?? 0);
                     $reconciledData[] = (int) ($hourStats->reconciled ?? 0);
                     $exceptionData[] = (int) ($hourStats->exceptions ?? 0);
                     $prevSalesData[] = 0;
+                    $terminalCounts[] = (int) ($hourStats->terminal_count ?? 0);
+                    $tenantCounts[] = (int) ($hourStats->tenant_count ?? 0);
                 }
 
                 return [
+                    'granularity' => $granularity,
                     'labels' => $labels,
                     'sales' => $salesData,
+                    'net_sales' => $netSalesData,
                     'volume' => $volumeData,
                     'previous_sales' => $prevSalesData,
                     'reconciled' => $reconciledData,
                     'exceptions' => $exceptionData,
+                    'terminal_counts' => $terminalCounts,
+                    'tenant_counts' => $tenantCounts,
+                    'top_tenants' => $topTenants,
                 ];
             }
 
             $days = max($startDate->diffInDays($endDate) + 1, 1);
 
             // Fetch current period metrics in a single query
-            $stats = Transaction::whereBetween('transaction_timestamp', [$startDate, $endDate])
+            $stats = (clone $baseQuery)
                 ->selectRaw('
                     DATE(transaction_timestamp) as date,
                     SUM(gross_sales) as sales,
+                    SUM(COALESCE(net_sales, gross_sales, 0)) as net_sales,
                     COUNT(*) as count,
+                    COUNT(DISTINCT terminal_id) as terminal_count,
+                    COUNT(DISTINCT tenant_id) as tenant_count,
                     SUM(IF(validation_status = "VALID", 1, 0)) as reconciled,
                     SUM(IF(validation_status IN ("FAILED", "INVALID", "ERROR"), 1, 0)) as exceptions
                 ')
@@ -243,7 +320,12 @@ class DashboardController extends Controller
             $prevStartDate = $startDate->copy()->subDays($days);
             $prevEndDate = $endDate->copy()->subDays($days);
 
-            $prevStats = Transaction::whereBetween('transaction_timestamp', [$prevStartDate, $prevEndDate])
+            $prevQuery = Transaction::whereBetween('transaction_timestamp', [$prevStartDate, $prevEndDate]);
+            if ($tenantId && $tenantId !== 'all') {
+                $prevQuery->where('tenant_id', $tenantId);
+            }
+
+            $prevStats = $prevQuery
                 ->selectRaw('
                     DATE(transaction_timestamp) as date,
                     SUM(gross_sales) as sales
@@ -260,9 +342,12 @@ class DashboardController extends Controller
 
                 $dayStats = $stats->get($dateStr);
                 $salesData[] = (float) ($dayStats->sales ?? 0);
+                $netSalesData[] = (float) ($dayStats->net_sales ?? 0);
                 $volumeData[] = (int) ($dayStats->count ?? 0);
                 $reconciledData[] = (int) ($dayStats->reconciled ?? 0);
                 $exceptionData[] = (int) ($dayStats->exceptions ?? 0);
+                $terminalCounts[] = (int) ($dayStats->terminal_count ?? 0);
+                $tenantCounts[] = (int) ($dayStats->tenant_count ?? 0);
 
                 $prevDateStr = $date->copy()->subDays($days)->toDateString();
                 $prevDayStats = $prevStats->get($prevDateStr);
@@ -270,12 +355,17 @@ class DashboardController extends Controller
             }
 
             return [
+                'granularity' => $granularity,
                 'labels' => $labels,
                 'sales' => $salesData,
+                'net_sales' => $netSalesData,
                 'volume' => $volumeData,
                 'previous_sales' => $prevSalesData,
                 'reconciled' => $reconciledData,
                 'exceptions' => $exceptionData,
+                'terminal_counts' => $terminalCounts,
+                'tenant_counts' => $tenantCounts,
+                'top_tenants' => $topTenants,
             ];
         });
 
