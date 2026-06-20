@@ -5,8 +5,8 @@ const api = {
         const response = await axios.get('/api/dashboard/metrics');
         return response.data;
     },
-    getCharts: async () => {
-        const response = await axios.get('/api/dashboard/charts');
+    getCharts: async (params = {}) => {
+        const response = await axios.get('/api/dashboard/charts', { params });
         return response.data;
     },
     getTransactions: async (page = 1, filters = {}) => {

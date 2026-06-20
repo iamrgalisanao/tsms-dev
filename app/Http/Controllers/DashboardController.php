@@ -162,11 +162,28 @@ class DashboardController extends Controller
     // API: GET /api/dashboard/charts
     public function apiCharts(Request $request)
     {
-        $days = (int) $request->input('days', 7);
-        $dateKey = Carbon::today()->toDateString();
-        $cacheKey = "dashboard.api_charts.{$days}.{$dateKey}";
+        $granularity = in_array($request->input('granularity'), ['hourly', 'daily', 'weekly', 'monthly'], true)
+            ? $request->input('granularity')
+            : 'weekly';
+        $startDate = $request->filled('date_from')
+            ? Carbon::parse($request->input('date_from'))->startOfDay()
+            : Carbon::today()->subDays(max((int) $request->input('days', 7), 1) - 1)->startOfDay();
+        $endDate = $request->filled('date_to')
+            ? Carbon::parse($request->input('date_to'))->endOfDay()
+            : Carbon::today()->endOfDay();
 
-        $data = \Illuminate\Support\Facades\Cache::remember($cacheKey, 300, function () use ($days) {
+        if ($endDate->lt($startDate)) {
+            [$startDate, $endDate] = [$endDate->copy()->startOfDay(), $startDate->copy()->endOfDay()];
+        }
+
+        $cacheKey = sprintf(
+            'dashboard.api_charts.%s.%s.%s',
+            $granularity,
+            $startDate->toDateString(),
+            $endDate->toDateString()
+        );
+
+        $data = \Illuminate\Support\Facades\Cache::remember($cacheKey, 300, function () use ($granularity, $startDate, $endDate) {
             $labels = [];
             $salesData = [];
             $volumeData = [];
@@ -174,8 +191,40 @@ class DashboardController extends Controller
             $reconciledData = [];
             $exceptionData = [];
 
-            $startDate = Carbon::today()->subDays($days - 1)->startOfDay();
-            $endDate = Carbon::today()->endOfDay();
+            if ($granularity === 'hourly') {
+                $stats = Transaction::whereBetween('transaction_timestamp', [$startDate, $endDate])
+                    ->selectRaw('
+                        HOUR(transaction_timestamp) as hour,
+                        SUM(gross_sales) as sales,
+                        COUNT(*) as count,
+                        SUM(IF(validation_status = "VALID", 1, 0)) as reconciled,
+                        SUM(IF(validation_status IN ("FAILED", "INVALID", "ERROR"), 1, 0)) as exceptions
+                    ')
+                    ->groupBy('hour')
+                    ->get()
+                    ->keyBy('hour');
+
+                for ($hour = 0; $hour < 24; $hour++) {
+                    $hourStats = $stats->get($hour);
+                    $labels[] = str_pad((string) $hour, 2, '0', STR_PAD_LEFT) . ':00';
+                    $salesData[] = (float) ($hourStats->sales ?? 0);
+                    $volumeData[] = (int) ($hourStats->count ?? 0);
+                    $reconciledData[] = (int) ($hourStats->reconciled ?? 0);
+                    $exceptionData[] = (int) ($hourStats->exceptions ?? 0);
+                    $prevSalesData[] = 0;
+                }
+
+                return [
+                    'labels' => $labels,
+                    'sales' => $salesData,
+                    'volume' => $volumeData,
+                    'previous_sales' => $prevSalesData,
+                    'reconciled' => $reconciledData,
+                    'exceptions' => $exceptionData,
+                ];
+            }
+
+            $days = max($startDate->diffInDays($endDate) + 1, 1);
 
             // Fetch current period metrics in a single query
             $stats = Transaction::whereBetween('transaction_timestamp', [$startDate, $endDate])
@@ -204,8 +253,8 @@ class DashboardController extends Controller
                 ->keyBy('date');
 
             // Build data series
-            for ($i = $days - 1; $i >= 0; $i--) {
-                $date = Carbon::today()->subDays($i);
+            for ($i = 0; $i < $days; $i++) {
+                $date = $startDate->copy()->addDays($i);
                 $dateStr = $date->toDateString();
                 $labels[] = $date->format('M d');
 

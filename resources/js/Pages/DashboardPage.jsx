@@ -164,7 +164,8 @@ const getDashboardCacheKey = (filters) => {
         start_date: filters.start_date || '',
         end_date: filters.end_date || '',
         terminal_id: filters.terminal_id || '',
-        search: filters.search || ''
+        search: filters.search || '',
+        chart_granularity: filters.chart_granularity || 'weekly'
     };
 
     return `${DASHBOARD_CACHE_PREFIX}.${JSON.stringify(stableFilters)}`;
@@ -230,7 +231,7 @@ const LoadingPanel = ({ label = 'Loading page details...' }) => (
 const DashboardPage = () => {
     const { user } = useAuth();
     const initialFilters = useMemo(() => getDefaultDashboardFilters(), []);
-    const initialDashboardCache = useMemo(() => readDashboardCache(initialFilters), [initialFilters]);
+    const initialDashboardCache = useMemo(() => readDashboardCache({ ...initialFilters, chart_granularity: 'weekly' }), [initialFilters]);
     const hasInitialDashboardCache = Boolean(initialDashboardCache);
     const [metrics, setMetrics] = useState(() => initialDashboardCache?.metrics ?? null);
     const [chartData, setChartData] = useState(() => initialDashboardCache?.chartData ?? null);
@@ -310,9 +311,15 @@ const DashboardPage = () => {
         setIsRefreshing(true);
 
         try {
+            const dashboardCacheFilters = { ...filters, chart_granularity: heatmapGranularity };
+            const chartParams = {
+                date_from: filters.start_date,
+                date_to: filters.end_date,
+                granularity: heatmapGranularity
+            };
             const [metricsRes, chartsRes, healthRes, terminalPerformanceRes, notificationsRes] = await Promise.all([
                 runDashboardRequest('metrics', () => api.getMetrics(), setMetrics, isInitial),
-                runDashboardRequest('charts', () => api.getCharts(), setChartData, isInitial),
+                runDashboardRequest('charts', () => api.getCharts(chartParams), setChartData, isInitial),
                 runDashboardRequest('health', () => api.getSystemHealth(), setHealth, isInitial),
                 runDashboardRequest('terminalPerformance', () => api.getTerminalPerformance(), (response) => setTerminalPerformance(normalizeTerminalPerformance(response)), isInitial),
                 runDashboardRequest('notifications', () => api.getNotifications(), (response) => setAlerts(response?.data || []), isInitial)
@@ -321,8 +328,8 @@ const DashboardPage = () => {
             const updatedAt = new Date();
             setLastUpdated(updatedAt);
 
-            const previousCachedPayload = readDashboardCache(filters) || {};
-            writeDashboardCache(filters, {
+            const previousCachedPayload = readDashboardCache(dashboardCacheFilters) || {};
+            writeDashboardCache(dashboardCacheFilters, {
                 metrics: metricsRes ?? previousCachedPayload.metrics ?? null,
                 chartData: chartsRes ?? previousCachedPayload.chartData ?? null,
                 health: healthRes ?? previousCachedPayload.health ?? null,
@@ -342,10 +349,10 @@ const DashboardPage = () => {
             setLoading(false);
             setIsRefreshing(false);
         }
-    }, [filters, runDashboardRequest]);
+    }, [filters, heatmapGranularity, runDashboardRequest]);
 
     useEffect(() => {
-        const cachedPayload = readDashboardCache(filters);
+        const cachedPayload = readDashboardCache({ ...filters, chart_granularity: heatmapGranularity });
         if (cachedPayload) {
             applyCachedDashboardData(cachedPayload);
             // Cached dashboard sections are session-scoped. If terminal rows are
@@ -358,7 +365,7 @@ const DashboardPage = () => {
         }
 
         fetchDashboardData(true);
-    }, [applyCachedDashboardData, fetchDashboardData, filters]);
+    }, [applyCachedDashboardData, fetchDashboardData, filters, heatmapGranularity]);
 
     useEffect(() => {
         if (refreshInterval <= 0) return;
@@ -650,8 +657,11 @@ const DashboardPage = () => {
         if (loadingSections.charts) return { loading: true, groups: [], total: 0, peak: 0, columns: 0, rows: 0, summary: '' };
 
         const volumes = Array.isArray(chartData?.volume) ? chartData.volume.map((value) => Number(value || 0)) : [];
-        const total = volumes.reduce((sum, value) => sum + value, 0);
-        const peak = Math.max(...volumes, 1);
+        const scopedVolumes = heatmapGranularity === 'hourly'
+            ? volumes.slice(normalizedHourRange.start, normalizedHourRange.end + 1)
+            : volumes;
+        const total = scopedVolumes.reduce((sum, value) => sum + value, 0);
+        const peak = Math.max(...scopedVolumes, 1);
         const start = parseDateInput(filters.start_date);
         const end = parseDateInput(filters.end_date);
         const selectedDays = getInclusiveDays(start, end);
