@@ -25,13 +25,7 @@ ChartJS.register(
 );
 
 const TransactionChart = ({ data, loading, inline = false, height = 450 }) => {
-    if (loading) {
-        return (
-            <Card sx={{ height: height, borderRadius: '32px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                <CircularProgress color="primary" />
-            </Card>
-        );
-    }
+    const theme = useTheme();
 
     const options = useMemo(() => ({
         responsive: true,
@@ -237,6 +231,31 @@ const TransactionChart = ({ data, loading, inline = false, height = 450 }) => {
         </Box>
     );
 
+    if (loading) {
+        const loadingContent = (
+            <Box sx={{ height: '100%', minHeight: inline ? 260 : height, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 1.5 }}>
+                <CircularProgress sx={{ color: '#e11d2d' }} />
+                <Typography variant="caption" sx={{ color: '#64748b', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
+                    Loading chart details...
+                </Typography>
+            </Box>
+        );
+
+        if (inline) {
+            return (
+                <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', p: 1, bgcolor: '#F4F6FA', borderRadius: '10px' }}>
+                    {loadingContent}
+                </Box>
+            );
+        }
+
+        return (
+            <Card sx={{ height: height, borderRadius: '32px' }}>
+                {loadingContent}
+            </Card>
+        );
+    }
+
     if (inline) {
         return (
             <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column', p: 1, bgcolor: '#F4F6FA', borderRadius: '10px' }}>
@@ -244,8 +263,6 @@ const TransactionChart = ({ data, loading, inline = false, height = 450 }) => {
             </Box>
         );
     }
-
-    const theme = useTheme();
 
     return (
         <Card sx={{

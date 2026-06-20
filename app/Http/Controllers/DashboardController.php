@@ -316,8 +316,32 @@ class DashboardController extends Controller
     // API: GET /api/dashboard/transactions
     public function apiTransactions(Request $request)
     {
-        $query = Transaction::with(['terminal', 'tenant', 'adjustments', 'taxes'])
-            ->withSum('adjustments as adjustments_sum', 'amount');
+        $perPage = (int) $request->input('per_page', 50);
+        $perPage = max(1, min($perPage, 100));
+
+        $query = Transaction::query()
+            ->with([
+                'tenant:id,trade_name,customer_code',
+                'terminal:id,terminal_uid,serial_number,status_id,is_active',
+                'terminal.status:id,name',
+            ])
+            ->select([
+                'id',
+                'transaction_id',
+                'terminal_id',
+                'tenant_id',
+                'customer_code',
+                'gross_sales',
+                'net_sales',
+                'validation_status',
+                'job_status',
+                'transaction_timestamp',
+                'created_at',
+                'completed_at',
+                'voided_at',
+                'refund_status',
+                'refund_amount',
+            ]);
 
         // Apply filters
         if ($request->filled('start_date')) {
@@ -341,7 +365,7 @@ class DashboardController extends Controller
 
         $query->where('validation_status', '!=', Transaction::VALIDATION_STATUS_PENDING);
 
-        $transactions = $query->orderByDesc('transaction_timestamp')->paginate(50);
+        $transactions = $query->orderByDesc('transaction_timestamp')->paginate($perPage);
         return new \App\Http\Resources\TransactionCollection($transactions);
     }
 
@@ -477,6 +501,9 @@ class DashboardController extends Controller
     // API: GET /api/dashboard/audit-logs
     public function apiAuditLogs(Request $request)
     {
+        $perPage = (int) $request->input('per_page', 50);
+        $perPage = max(1, min($perPage, 100));
+
         $query = \App\Models\AuditLog::with('user');
 
         if ($request->filled('start_date')) {
@@ -492,7 +519,7 @@ class DashboardController extends Controller
             $query->where('action', 'like', '%' . $request->input('action') . '%');
         }
 
-        $auditLogs = $query->orderByDesc('created_at')->paginate(50);
+        $auditLogs = $query->orderByDesc('created_at')->paginate($perPage);
 
         return response()->json([
             'data' => $auditLogs->items(),

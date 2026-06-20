@@ -81,6 +81,23 @@ const getPresetRange = (preset) => {
     return { start: '', end: '' };
 };
 
+const LoadingPanel = ({ label = 'Loading page details...' }) => (
+    <Box sx={{
+        minHeight: 180,
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 1.5,
+        color: '#64748b'
+    }}>
+        <CircularProgress size={34} thickness={4} sx={{ color: '#e11d2d' }} />
+        <Typography sx={{ fontSize: '0.72rem', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.12em' }}>
+            {label}
+        </Typography>
+    </Box>
+);
+
 const DashboardPage = () => {
     const { user } = useAuth();
     const [metrics, setMetrics] = useState(null);
@@ -90,6 +107,15 @@ const DashboardPage = () => {
     const [recentTransactions, setRecentTransactions] = useState([]);
     const [auditLogs, setAuditLogs] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [loadingSections, setLoadingSections] = useState({
+        metrics: true,
+        charts: true,
+        health: true,
+        terminalPerformance: true,
+        transactions: true,
+        auditLogs: true,
+        notifications: true
+    });
     const [selectedTransaction, setSelectedTransaction] = useState(null);
     const [detailPanelOpen, setDetailPanelOpen] = useState(false);
     const [refreshInterval, setRefreshInterval] = useState(30000); // 30 seconds for command center
@@ -112,33 +138,47 @@ const DashboardPage = () => {
     const normalisedRoles = useMemo(() => userRoles.map(r => (typeof r === 'string' ? r : r?.name || '').toLowerCase()), [userRoles]);
     const hasRole = useCallback((allowedRoles) => allowedRoles.some(role => normalisedRoles.includes(role.toLowerCase())), [normalisedRoles]);
 
-    const fetchDashboardData = useCallback(async (isInitial = false) => {
+    const runDashboardRequest = useCallback(async (section, request, onSuccess, showLoading = true) => {
+        if (showLoading) {
+            setLoadingSections((prev) => ({ ...prev, [section]: true }));
+        }
+
         try {
-            if (isInitial) setLoading(true);
-            setIsRefreshing(true);
+            const response = await request();
+            onSuccess(response);
+            return response;
+        } catch (error) {
+            console.error(`Error fetching dashboard ${section}:`, error);
+            return null;
+        } finally {
+            if (showLoading) {
+                setLoadingSections((prev) => ({ ...prev, [section]: false }));
+            }
+        }
+    }, []);
 
-            const [metricsRes, chartsRes, healthRes, tpRes, transactionsRes, auditRes, notificationsRes] = await Promise.all([
-                api.getMetrics(),
-                api.getCharts(),
-                api.getSystemHealth(),
-                api.getTerminalPerformance(),
-                api.getTransactions(1, filters),
-                api.getAuditLogs(1, filters),
-                api.getNotifications()
+    const fetchDashboardData = useCallback(async (isInitial = false) => {
+        if (isInitial) {
+            setLoading(true);
+        }
+
+        setIsRefreshing(true);
+
+        try {
+            const [metricsRes, , healthRes] = await Promise.all([
+                runDashboardRequest('metrics', () => api.getMetrics(), setMetrics, isInitial),
+                runDashboardRequest('charts', () => api.getCharts(), setChartData, isInitial),
+                runDashboardRequest('health', () => api.getSystemHealth(), setHealth, isInitial),
+                runDashboardRequest('terminalPerformance', () => api.getTerminalPerformance(), (response) => setTerminalPerformance(response || []), isInitial),
+                runDashboardRequest('transactions', () => api.getTransactions(1, { ...filters, per_page: 10 }), (response) => setRecentTransactions(response?.data || []), isInitial),
+                runDashboardRequest('auditLogs', () => api.getAuditLogs(1, { ...filters, per_page: 10 }), (response) => setAuditLogs(response?.data || []), isInitial),
+                runDashboardRequest('notifications', () => api.getNotifications(), (response) => setAlerts(response?.data || []), isInitial)
             ]);
-
-            setMetrics(metricsRes);
-            setChartData(chartsRes);
-            setHealth(healthRes);
-            setTerminalPerformance(tpRes || []);
-            setRecentTransactions(transactionsRes.data || []);
-            setAuditLogs(auditRes.data || []);
-            setAlerts(notificationsRes.data || []);
             setLastUpdated(new Date());
 
             if (healthRes && healthRes.cpu > 85) {
                 setNotification({ message: 'Critical high CPU usage detected! System performance may be affected.', type: 'error' });
-            } else if (isInitial) {
+            } else if (isInitial && metricsRes) {
                 setNotification({ message: 'Dashboard Command Center is active and monitoring live terminals.', type: 'success' });
             }
         } catch (error) {
@@ -147,7 +187,7 @@ const DashboardPage = () => {
             setLoading(false);
             setIsRefreshing(false);
         }
-    }, [filters]);
+    }, [filters, runDashboardRequest]);
 
     useEffect(() => {
         fetchDashboardData(true);
@@ -206,6 +246,10 @@ const DashboardPage = () => {
         });
         window.location.href = `/transactions?${params.toString()}`;
     }, [filters.end_date, filters.start_date]);
+
+    const kpiValue = useCallback((value) => (
+        loadingSections.metrics ? <CircularProgress size={26} sx={{ color: '#e11d2d' }} /> : value
+    ), [loadingSections.metrics]);
 
     // Operational helpers
     const activeTerminals = Number(metrics?.active_terminals?.current ?? 0);
@@ -686,11 +730,11 @@ const DashboardPage = () => {
                                 <div className="w-10 h-10 bg-cyan-100 rounded-xl flex items-center justify-center text-cyan-600">
                                     <span className="material-symbols-outlined">payments</span>
                                 </div>
-                                <span className="text-[10px] font-bold text-green-600 bg-green-50 px-2 py-1 rounded">↑ {kpiData.revenue.trend}</span>
+                                {!loadingSections.metrics && <span className="text-[10px] font-bold text-green-600 bg-green-50 px-2 py-1 rounded">↑ {kpiData.revenue.trend}</span>}
                             </div>
                             <div>
                                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Revenue</p>
-                                <h3 className="text-3xl font-display font-black text-slate-900 tabular-nums">{kpiData.revenue.value}</h3>
+                                <h3 className="text-3xl font-display font-black text-slate-900 tabular-nums min-h-[40px] flex items-center">{kpiValue(kpiData.revenue.value)}</h3>
                                 <p className="text-[10px] text-slate-400 mt-2">vs yesterday</p>
                             </div>
                         </div>
@@ -701,11 +745,11 @@ const DashboardPage = () => {
                                 <div className="w-10 h-10 bg-amber-100 rounded-xl flex items-center justify-center text-amber-600">
                                     <span className="material-symbols-outlined">receipt_long</span>
                                 </div>
-                                <span className="text-[10px] font-bold text-green-600 bg-green-50 px-2 py-1 rounded">↑ {kpiData.transactions.trend}</span>
+                                {!loadingSections.metrics && <span className="text-[10px] font-bold text-green-600 bg-green-50 px-2 py-1 rounded">↑ {kpiData.transactions.trend}</span>}
                             </div>
                             <div>
                                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Transactions</p>
-                                <h3 className="text-3xl font-display font-black text-slate-900 tabular-nums">{kpiData.transactions.value}</h3>
+                                <h3 className="text-3xl font-display font-black text-slate-900 tabular-nums min-h-[40px] flex items-center">{kpiValue(kpiData.transactions.value)}</h3>
                                 <p className="text-[10px] text-slate-400 mt-2">vs yesterday</p>
                             </div>
                         </div>
@@ -719,7 +763,7 @@ const DashboardPage = () => {
                             </div>
                             <div>
                                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Total Exceptions</p>
-                                <h3 className="text-3xl font-display font-black text-slate-900 tabular-nums">{kpiData.exceptions.value}</h3>
+                                <h3 className="text-3xl font-display font-black text-slate-900 tabular-nums min-h-[40px] flex items-center">{kpiValue(kpiData.exceptions.value)}</h3>
                                 <p className="text-[10px] text-slate-400 mt-2">Unmatched error logs</p>
                             </div>
                         </div>
@@ -733,7 +777,7 @@ const DashboardPage = () => {
                             </div>
                             <div>
                                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Pending Uploads</p>
-                                <h3 className="text-3xl font-display font-black text-slate-900 tabular-nums">{kpiData.pendingUploads.value}</h3>
+                                <h3 className="text-3xl font-display font-black text-slate-900 tabular-nums min-h-[40px] flex items-center">{kpiValue(kpiData.pendingUploads.value)}</h3>
                                 <p className="text-[10px] text-slate-400 mt-2">Queued ingestion tasks</p>
                             </div>
                         </div>
@@ -747,7 +791,7 @@ const DashboardPage = () => {
                             </div>
                             <div>
                                 <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Offline Terminals</p>
-                                <h3 className="text-3xl font-display font-black text-slate-900 tabular-nums">{kpiData.offlineTerminals.total - kpiData.offlineTerminals.value} <span className="text-lg text-slate-300 font-medium">/ {kpiData.offlineTerminals.total}</span></h3>
+                                <h3 className="text-3xl font-display font-black text-slate-900 tabular-nums min-h-[40px] flex items-center">{kpiValue(<>{kpiData.offlineTerminals.total - kpiData.offlineTerminals.value} <span className="text-lg text-slate-300 font-medium">/ {kpiData.offlineTerminals.total}</span></>)}</h3>
                                 <p className="text-[10px] text-[#e11d2d] font-bold mt-2">{kpiData.offlineTerminals.value} offline</p>
                             </div>
                         </div>
@@ -770,7 +814,9 @@ const DashboardPage = () => {
                             </div>
                         </div>
                         <div className="flex-1 flex flex-col items-center justify-center p-12 text-center h-[350px]">
-                            {alerts.length === 0 ? (
+                            {loadingSections.notifications ? (
+                                <LoadingPanel label="Loading alert details..." />
+                            ) : alerts.length === 0 ? (
                                 <>
                                     <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mb-6">
                                         <span className="material-symbols-outlined text-green-600 text-[40px]" style={{ fontVariationSettings: "'FILL' 1" }}>check_circle</span>
@@ -804,7 +850,7 @@ const DashboardPage = () => {
                                         <p className="text-[10px] text-slate-400 uppercase">Action Required</p>
                                     </div>
                                 </div>
-                                <span className="text-2xl font-black text-slate-900">{escalationCounts.criticalCount}</span>
+                                <span className="text-2xl font-black text-slate-900">{loading ? <CircularProgress size={18} sx={{ color: '#e11d2d' }} /> : escalationCounts.criticalCount}</span>
                             </div>
                             
                             <div className="flex items-center justify-between p-4 bg-white border border-slate-100 rounded-xl hover:border-orange-200 transition-colors group cursor-pointer">
@@ -815,7 +861,7 @@ const DashboardPage = () => {
                                         <p className="text-[10px] text-slate-400 uppercase">Operational Exceptions</p>
                                     </div>
                                 </div>
-                                <span className="text-2xl font-black text-slate-900">{escalationCounts.warningCount}</span>
+                                <span className="text-2xl font-black text-slate-900">{loading ? <CircularProgress size={18} sx={{ color: '#e11d2d' }} /> : escalationCounts.warningCount}</span>
                             </div>
                             
                             <div className="flex items-center justify-between p-4 bg-white border border-slate-100 rounded-xl hover:border-yellow-200 transition-colors group cursor-pointer">
@@ -826,7 +872,7 @@ const DashboardPage = () => {
                                         <p className="text-[10px] text-slate-400 uppercase">Maintenance</p>
                                     </div>
                                 </div>
-                                <span className="text-2xl font-black text-slate-900">{escalationCounts.advisoryCount}</span>
+                                <span className="text-2xl font-black text-slate-900">{loading ? <CircularProgress size={18} sx={{ color: '#e11d2d' }} /> : escalationCounts.advisoryCount}</span>
                             </div>
                         </div>
                         <div className="p-6 pt-0">
@@ -887,7 +933,7 @@ const DashboardPage = () => {
                             </div>
                         </div>
                         <div className="flex-1 relative w-full h-full min-h-0">
-                            {chartData ? <TransactionChart data={chartData} inline={true} /> : <div className="flex items-center justify-center h-full"><CircularProgress /></div>}
+                            <TransactionChart data={chartData} loading={loadingSections.charts} inline={true} />
                         </div>
                     </div>
 
@@ -918,19 +964,21 @@ const DashboardPage = () => {
                             <h3 className="text-xs font-bold text-blue-600 uppercase tracking-widest">Top Performing Terminals</h3>
                         </div>
                         <div className="p-4 space-y-2 overflow-y-auto flex-1">
-                            {terminalPerformance.slice(0, 10).map((tp, idx) => (
+                            {loadingSections.terminalPerformance ? (
+                                <LoadingPanel label="Loading terminal details..." />
+                            ) : terminalPerformance.slice(0, 10).map((tp, idx) => (
                                 <div key={tp.terminal_id} className="flex items-center justify-between p-3 hover:bg-slate-50 rounded-xl transition-colors cursor-pointer group">
                                     <div className="flex items-center gap-4">
                                         <div className="w-9 h-9 rounded-full bg-slate-100 flex items-center justify-center text-xs font-black text-slate-600 group-hover:bg-[#e11d2d] group-hover:text-white transition-colors">#{idx + 1}</div>
                                         <div>
-                                            <p className="text-xs font-bold text-slate-900 uppercase">{tp.terminal_id || 'Unknown'}</p>
-                                            <p className="text-[10px] text-slate-400 font-medium">Tenant {tp.tenant_id}</p>
+                                            <p className="text-xs font-bold text-slate-900 uppercase">{tp.serial_number || tp.terminal_id || 'Unknown'}</p>
+                                            <p className="text-[10px] text-slate-400 font-medium">{tp.trade_name || 'Unknown Tenant'}</p>
                                         </div>
                                     </div>
-                                    <span className="text-sm font-bold text-slate-900">{currencyFormat(tp.revenue || 0)}</span>
+                                    <span className="text-sm font-bold text-slate-900">{currencyFormat(tp.total_sales || tp.revenue || 0)}</span>
                                 </div>
                             ))}
-                            {terminalPerformance.length === 0 && (
+                            {!loadingSections.terminalPerformance && terminalPerformance.length === 0 && (
                                 <div className="p-4 text-center text-slate-400 text-sm">No terminals data</div>
                             )}
                         </div>
@@ -946,8 +994,8 @@ const DashboardPage = () => {
                             <button className="pb-4 text-[10px] font-bold text-[#e11d2d] hover:underline uppercase tracking-widest">View Archive</button>
                         </div>
                         <div className="flex-1 flex flex-col min-h-0 relative">
-                            {recentTransactions.length > 0 ? (
-                                <RecentTransactionsTable transactions={recentTransactions} onView={handleViewDetails} />
+                            {loadingSections.transactions || recentTransactions.length > 0 ? (
+                                <RecentTransactionsTable transactions={recentTransactions} loading={loadingSections.transactions} onViewDetails={handleViewDetails} />
                             ) : (
                                 <div className="flex-1 flex flex-col items-center justify-center p-20 text-center text-slate-300">
                                     <span className="material-symbols-outlined text-[48px] mb-4">history_toggle_off</span>
