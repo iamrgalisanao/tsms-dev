@@ -190,6 +190,7 @@ const DashboardPage = () => {
     const [lastUpdated, setLastUpdated] = useState(() => initialDashboardCache?.lastUpdated ? new Date(initialDashboardCache.lastUpdated) : null);
     const [timeRange, setTimeRange] = useState('today');
     const [dashboardView, setDashboardView] = useState('operations');
+    const [heatmapGranularity, setHeatmapGranularity] = useState('weekly');
     const [activityTab, setActivityTab] = useState('transactions');
     const [customRange, setCustomRange] = useState({ start: '', end: '' });
     const [filters, setFilters] = useState(() => initialFilters);
@@ -499,27 +500,40 @@ const DashboardPage = () => {
 
     // Memoized Heatmap data mapping
     const heatmapData = useMemo(() => {
-        if (loadingSections.charts) return { loading: true, weeks: [], total: 0, peak: 0 };
+        if (loadingSections.charts) return { loading: true, groups: [], total: 0, peak: 0, columns: 0, rows: 0, summary: '' };
 
         const volumes = Array.isArray(chartData?.volume) ? chartData.volume.map((value) => Number(value || 0)) : [];
         const total = volumes.reduce((sum, value) => sum + value, 0);
         const baseSeed = volumes.length ? volumes : [0];
         const peak = Math.max(...baseSeed, 1);
-        const monthLabels = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        const configs = {
+            hourly: { columns: 24, rows: 1, labels: Array.from({ length: 24 }, (_, index) => (index % 3 === 0 ? `${String(index).padStart(2, '0')}:00` : '')), summary: 'Hourly transaction intensity.' },
+            daily: { columns: 30, rows: 2, labels: Array.from({ length: 30 }, (_, index) => ((index + 1) % 5 === 1 ? `Day ${index + 1}` : '')), summary: 'Daily activity over the current operating window.' },
+            weekly: { columns: 52, rows: 4, labels: ['Jan', '', '', '', 'Feb', '', '', '', 'Mar', '', '', '', 'Apr', '', '', '', 'May', '', '', '', 'Jun', '', '', '', 'Jul', '', '', '', 'Aug', '', '', '', 'Sep', '', '', '', 'Oct', '', '', '', 'Nov', '', '', '', 'Dec', '', '', '', '', '', '', ''], summary: 'Weekly activity by day intensity.' },
+            monthly: { columns: 12, rows: 3, labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'], summary: 'Monthly activity by period segment.' }
+        };
+        const config = configs[heatmapGranularity] || configs.weekly;
 
-        const weeks = Array.from({ length: 52 }, (_, weekIndex) => ({
-            month: weekIndex % 4 === 0 ? monthLabels[Math.floor(weekIndex / 4)] || '' : '',
-            days: Array.from({ length: 4 }, (_, dayIndex) => {
-                const seedValue = baseSeed[(weekIndex + dayIndex) % baseSeed.length] || 0;
-                const wave = ((weekIndex * 7 + dayIndex * 11) % 19) / 18;
+        const groups = Array.from({ length: config.columns }, (_, columnIndex) => ({
+            label: config.labels[columnIndex] || '',
+            cells: Array.from({ length: config.rows }, (_, rowIndex) => {
+                const seedValue = baseSeed[(columnIndex + rowIndex) % baseSeed.length] || 0;
+                const wave = ((columnIndex * 7 + rowIndex * 11) % 19) / 18;
                 const value = Math.round(seedValue * (0.55 + wave));
                 const intensity = total === 0 ? 0 : Math.min(4, Math.ceil((value / peak) * 4));
                 return { value, intensity };
             })
         }));
 
-        return { weeks, total, peak };
-    }, [chartData, loadingSections.charts]);
+        return {
+            groups,
+            total,
+            peak,
+            columns: config.columns,
+            rows: config.rows,
+            summary: config.summary
+        };
+    }, [chartData, heatmapGranularity, loadingSections.charts]);
 
     const heatmapColors = ['#f8fafc', '#dcfce7', '#86efac', '#22c55e', '#047857'];
 
@@ -1104,10 +1118,31 @@ const DashboardPage = () => {
                             <div>
                                 <p className="text-xs font-bold text-blue-600 uppercase tracking-widest mb-3">Activity Heatmap</p>
                                 <h3 className="text-3xl font-black text-slate-900 tabular-nums">{heatmapData.total.toLocaleString()}</h3>
-                                <p className="text-sm text-slate-500 mt-2">Transaction activity by week and day intensity.</p>
+                                <p className="text-sm text-slate-500 mt-2">{heatmapData.summary}</p>
                             </div>
-                            <div className="px-3 py-2 rounded-full bg-emerald-50 text-emerald-700 text-xs font-bold self-start">
-                                Peak volume {heatmapData.peak.toLocaleString()}
+                            <div className="flex items-center gap-3 self-start">
+                                <FormControl size="small">
+                                    <Select
+                                        value={heatmapGranularity}
+                                        onChange={(event) => setHeatmapGranularity(event.target.value)}
+                                        sx={{
+                                            bgcolor: 'white',
+                                            borderRadius: '10px',
+                                            fontWeight: 800,
+                                            fontSize: '0.75rem',
+                                            height: 36,
+                                            '& .MuiOutlinedInput-notchedOutline': { borderColor: '#e2e8f0' }
+                                        }}
+                                    >
+                                        <MenuItem value="hourly">Hourly</MenuItem>
+                                        <MenuItem value="daily">Daily</MenuItem>
+                                        <MenuItem value="weekly">Weekly</MenuItem>
+                                        <MenuItem value="monthly">Monthly</MenuItem>
+                                    </Select>
+                                </FormControl>
+                                <div className="px-3 py-2 rounded-full bg-emerald-50 text-emerald-700 text-xs font-bold">
+                                    Peak volume {heatmapData.peak.toLocaleString()}
+                                </div>
                             </div>
                         </div>
 
@@ -1117,25 +1152,35 @@ const DashboardPage = () => {
                             <>
                                 <div className="overflow-x-auto pb-3">
                                     <div className="min-w-[980px]">
-                                        <div className="grid grid-cols-[repeat(52,minmax(12px,1fr))] gap-1.5 mb-3">
-                                            {heatmapData.weeks.map((week, index) => (
-                                                <div key={`month-${index}`} className="text-xs text-slate-500 h-5">
-                                                    {week.month}
+                                        <div
+                                            className="grid gap-1.5 mb-3"
+                                            style={{ gridTemplateColumns: `repeat(${heatmapData.columns}, minmax(12px, 1fr))` }}
+                                        >
+                                            {heatmapData.groups.map((group, index) => (
+                                                <div key={`heatmap-label-${index}`} className="text-xs text-slate-500 h-5 truncate">
+                                                    {group.label}
                                                 </div>
                                             ))}
                                         </div>
-                                        <div className="grid grid-cols-[repeat(52,minmax(12px,1fr))] gap-1.5">
-                                            {heatmapData.weeks.map((week, weekIndex) => (
-                                                <div key={`week-${weekIndex}`} className="grid grid-rows-4 gap-1.5">
-                                                    {week.days.map((day, dayIndex) => (
+                                        <div
+                                            className="grid gap-1.5"
+                                            style={{ gridTemplateColumns: `repeat(${heatmapData.columns}, minmax(12px, 1fr))` }}
+                                        >
+                                            {heatmapData.groups.map((group, groupIndex) => (
+                                                <div
+                                                    key={`heatmap-group-${groupIndex}`}
+                                                    className="grid gap-1.5"
+                                                    style={{ gridTemplateRows: `repeat(${heatmapData.rows}, minmax(12px, 1fr))` }}
+                                                >
+                                                    {group.cells.map((cell, cellIndex) => (
                                                         <Tooltip
-                                                            key={`${weekIndex}-${dayIndex}`}
-                                                            title={`${day.value.toLocaleString()} transactions`}
+                                                            key={`${groupIndex}-${cellIndex}`}
+                                                            title={`${cell.value.toLocaleString()} transactions`}
                                                             arrow
                                                         >
                                                             <div
                                                                 className="aspect-square rounded border border-slate-200"
-                                                                style={{ backgroundColor: heatmapColors[day.intensity] }}
+                                                                style={{ backgroundColor: heatmapColors[cell.intensity] }}
                                                             />
                                                         </Tooltip>
                                                     ))}
