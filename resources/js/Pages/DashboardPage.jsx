@@ -5,9 +5,14 @@ import TransactionChart from '../Components/dashboard/TransactionChart';
 import SystemHealthMonitor from '../Components/dashboard/SystemHealthMonitor';
 import RevenueByTerminalChart from '../Components/dashboard/RevenueByTerminalChart';
 import NotificationToast from '../Components/dashboard/NotificationToast';
-import TransactionDetailPanel from '../Components/transactions/TransactionDetailPanel';
-import TransactionTable from '../Components/transactions/TransactionTable';
 import { useAuth } from '../Contexts/AuthContext';
+import {
+    Chart as ChartJS,
+    ArcElement,
+    Tooltip as ChartTooltip,
+    Legend as ChartLegend,
+} from 'chart.js';
+import { Doughnut } from 'react-chartjs-2';
 import {
     Box,
     Typography,
@@ -49,6 +54,8 @@ import NavigateNextIcon from '@mui/icons-material/NavigateNext';
 import HomeIcon from '@mui/icons-material/Home';
 import DashboardIcon from '@mui/icons-material/Dashboard';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+
+ChartJS.register(ArcElement, ChartTooltip, ChartLegend);
 
 const currencyFormat = (val) => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(val);
 const formatDateInput = (date) => date.toISOString().slice(0, 10);
@@ -161,22 +168,14 @@ const DashboardPage = () => {
     const [chartData, setChartData] = useState(() => initialDashboardCache?.chartData ?? null);
     const [health, setHealth] = useState(() => initialDashboardCache?.health ?? null);
     const [terminalPerformance, setTerminalPerformance] = useState(() => initialDashboardCache?.terminalPerformance ?? []);
-    const [recentTransactions, setRecentTransactions] = useState(() => initialDashboardCache?.recentTransactions ?? []);
-    const [auditLogs, setAuditLogs] = useState(() => initialDashboardCache?.auditLogs ?? []);
     const [loading, setLoading] = useState(() => !hasInitialDashboardCache);
     const [loadingSections, setLoadingSections] = useState(() => ({
         metrics: !hasInitialDashboardCache,
         charts: !hasInitialDashboardCache,
         health: !hasInitialDashboardCache,
         terminalPerformance: !hasInitialDashboardCache,
-        transactions: !hasInitialDashboardCache,
-        auditLogs: !hasInitialDashboardCache,
         notifications: !hasInitialDashboardCache
     }));
-    const [selectedTransaction, setSelectedTransaction] = useState(null);
-    const [detailPanelOpen, setDetailPanelOpen] = useState(false);
-    const [dashboardTransactionPage, setDashboardTransactionPage] = useState(0);
-    const dashboardTransactionRowsPerPage = 10;
     const [refreshInterval, setRefreshInterval] = useState(30000); // 30 seconds for command center
     const [isRefreshing, setIsRefreshing] = useState(false);
     const [notification, setNotification] = useState(null);
@@ -216,8 +215,6 @@ const DashboardPage = () => {
         setChartData(cachedPayload.chartData ?? null);
         setHealth(cachedPayload.health ?? null);
         setTerminalPerformance(cachedPayload.terminalPerformance ?? []);
-        setRecentTransactions(cachedPayload.recentTransactions ?? []);
-        setAuditLogs(cachedPayload.auditLogs ?? []);
         setAlerts(cachedPayload.alerts ?? []);
         setLastUpdated(cachedPayload.lastUpdated ? new Date(cachedPayload.lastUpdated) : null);
         setLoading(false);
@@ -226,8 +223,6 @@ const DashboardPage = () => {
             charts: false,
             health: false,
             terminalPerformance: false,
-            transactions: false,
-            auditLogs: false,
             notifications: false
         });
     }, []);
@@ -240,13 +235,11 @@ const DashboardPage = () => {
         setIsRefreshing(true);
 
         try {
-            const [metricsRes, chartsRes, healthRes, terminalPerformanceRes, transactionsRes, auditRes, notificationsRes] = await Promise.all([
+            const [metricsRes, chartsRes, healthRes, terminalPerformanceRes, notificationsRes] = await Promise.all([
                 runDashboardRequest('metrics', () => api.getMetrics(), setMetrics, isInitial),
                 runDashboardRequest('charts', () => api.getCharts(), setChartData, isInitial),
                 runDashboardRequest('health', () => api.getSystemHealth(), setHealth, isInitial),
                 runDashboardRequest('terminalPerformance', () => api.getTerminalPerformance(), (response) => setTerminalPerformance(response || []), isInitial),
-                runDashboardRequest('transactions', () => api.getTransactions(1, { ...filters, per_page: 10 }), (response) => setRecentTransactions(response?.data || []), isInitial),
-                runDashboardRequest('auditLogs', () => api.getAuditLogs(1, { ...filters, per_page: 10 }), (response) => setAuditLogs(response?.data || []), isInitial),
                 runDashboardRequest('notifications', () => api.getNotifications(), (response) => setAlerts(response?.data || []), isInitial)
             ]);
 
@@ -259,8 +252,6 @@ const DashboardPage = () => {
                 chartData: chartsRes ?? previousCachedPayload.chartData ?? null,
                 health: healthRes ?? previousCachedPayload.health ?? null,
                 terminalPerformance: terminalPerformanceRes ?? previousCachedPayload.terminalPerformance ?? [],
-                recentTransactions: transactionsRes?.data ?? previousCachedPayload.recentTransactions ?? [],
-                auditLogs: auditRes?.data ?? previousCachedPayload.auditLogs ?? [],
                 alerts: notificationsRes?.data ?? previousCachedPayload.alerts ?? [],
                 lastUpdated: updatedAt.toISOString()
             });
@@ -328,11 +319,6 @@ const DashboardPage = () => {
             };
         });
     }, [customRange]);
-
-    const handleViewDetails = useCallback((transaction) => {
-        setSelectedTransaction(transaction);
-        setDetailPanelOpen(true);
-    }, []);
 
     const handleRefresh = useCallback(() => {
         fetchDashboardData();
@@ -433,18 +419,50 @@ const DashboardPage = () => {
         return { criticalCount, warningCount, advisoryCount };
     }, [groupedAlerts, failedReconciliation, offlineTerminals, pendingUploads]);
 
-    const dashboardLogTransactions = useMemo(() => {
-        return recentTransactions.map((tx) => ({
-            ...tx,
-            amount: tx.amount ?? tx.gross_sales ?? 0,
-            vat: tx.vat ?? tx.vat_amount ?? 0,
-            refund: tx.refund ?? tx.refund_amount ?? 0,
-            terminal: {
-                ...(tx.terminal || {}),
-                tenant: tx.tenant || tx.terminal?.tenant || null
+    const topTerminalRows = useMemo(() => {
+        return terminalPerformance
+            .slice(0, 8)
+            .map((terminal, index) => ({
+                ...terminal,
+                label: terminal.serial_number || `Terminal ${terminal.terminal_id || index + 1}`,
+                value: Number(terminal.total_sales ?? terminal.revenue ?? 0)
+            }))
+            .filter((terminal) => terminal.value > 0);
+    }, [terminalPerformance]);
+
+    const terminalPieData = useMemo(() => {
+        const colors = ['#1D439B', '#EB342E', '#10B981', '#F59E0B', '#8B5CF6', '#06B6D4', '#F97316', '#64748B'];
+
+        return {
+            labels: topTerminalRows.map((terminal) => terminal.label),
+            datasets: [
+                {
+                    data: topTerminalRows.map((terminal) => terminal.value),
+                    backgroundColor: colors.slice(0, topTerminalRows.length),
+                    borderColor: '#ffffff',
+                    borderWidth: 3,
+                    hoverOffset: 8
+                }
+            ]
+        };
+    }, [topTerminalRows]);
+
+    const terminalPieOptions = useMemo(() => ({
+        responsive: true,
+        maintainAspectRatio: false,
+        cutout: '62%',
+        plugins: {
+            legend: { display: false },
+            tooltip: {
+                callbacks: {
+                    label: (context) => {
+                        const value = Number(context.raw || 0);
+                        return `${context.label}: ${currencyFormat(value)}`;
+                    }
+                }
             }
-        }));
-    }, [recentTransactions]);
+        }
+    }), []);
 
     // Memoized Ingestion Success Rate (reconciled / (reconciled + exceptions))
     const ingestionSuccessRate = useMemo(() => {
@@ -482,21 +500,6 @@ const DashboardPage = () => {
 
         return { data: dataPoints };
     }, [chartData, loading]);
-
-    // Audit logs filters for tabs
-    const exceptionRows = useMemo(() => {
-        return (auditLogs || []).filter((entry) => {
-            const combined = `${entry?.level || ''} ${entry?.action || ''} ${entry?.message || ''}`.toLowerCase();
-            return combined.includes('error') || combined.includes('fail') || combined.includes('exception') || combined.includes('warning');
-        });
-    }, [auditLogs]);
-
-    const reconciliationRows = useMemo(() => {
-        return (auditLogs || []).filter((entry) => {
-            const combined = `${entry?.action || ''} ${entry?.message || ''} ${entry?.event || ''}`.toLowerCase();
-            return combined.includes('reconcil');
-        });
-    }, [auditLogs]);
 
     // Alert action router renderer
     const renderAlertRow = (alert, type) => {
@@ -1092,58 +1095,56 @@ const DashboardPage = () => {
                     </div>
                 </section>
 
-                {/* Bottom Tables Section */}
-                <section className="grid grid-cols-1 xl:grid-cols-3 gap-8">
-                    {/* Top Terminals */}
-                    <div className="elite-card rounded-2xl flex flex-col h-[500px]">
-                        <div className="p-6 border-b border-slate-100">
-                            <h3 className="text-xs font-bold text-blue-600 uppercase tracking-widest">Top Performing Terminals</h3>
-                        </div>
-                        <div className="p-4 space-y-2 overflow-y-auto flex-1">
-                            {loadingSections.terminalPerformance ? (
-                                <LoadingPanel label="Loading terminal details..." />
-                            ) : terminalPerformance.slice(0, 10).map((tp, idx) => (
-                                <div key={tp.terminal_id} className="flex items-center justify-between p-3 hover:bg-slate-50 rounded-xl transition-colors cursor-pointer group">
-                                    <div className="flex items-center gap-4">
-                                        <div className="w-9 h-9 rounded-full bg-slate-100 flex items-center justify-center text-xs font-black text-slate-600 group-hover:bg-[#e11d2d] group-hover:text-white transition-colors">#{idx + 1}</div>
-                                        <div>
-                                            <p className="text-xs font-bold text-slate-900 uppercase">{tp.serial_number || tp.terminal_id || 'Unknown'}</p>
-                                            <p className="text-[10px] text-slate-400 font-medium">{tp.trade_name || 'Unknown Tenant'}</p>
-                                        </div>
-                                    </div>
-                                    <span className="text-sm font-bold text-slate-900">{currencyFormat(tp.total_sales || tp.revenue || 0)}</span>
-                                </div>
-                            ))}
-                            {!loadingSections.terminalPerformance && terminalPerformance.length === 0 && (
-                                <div className="p-4 text-center text-slate-400 text-sm">No terminals data</div>
+                {/* Terminal Performance */}
+                <section className="grid grid-cols-1 gap-8">
+                    <div className="elite-card rounded-2xl flex flex-col min-h-[500px]">
+                        <div className="p-6 border-b border-slate-100 flex items-center justify-between">
+                            <div>
+                                <h3 className="text-xs font-bold text-blue-600 uppercase tracking-widest">Top Performing Terminals</h3>
+                                <p className="text-xs text-slate-400 mt-1">Share of sales by highest-performing terminals.</p>
+                            </div>
+                            {!loadingSections.terminalPerformance && topTerminalRows.length > 0 && (
+                                <span className="text-[10px] font-bold text-slate-500 bg-slate-100 px-3 py-1.5 rounded-full uppercase tracking-widest">
+                                    Top {topTerminalRows.length}
+                                </span>
                             )}
                         </div>
-                    </div>
-
-                    {/* Recent Activity */}
-                    <div className="xl:col-span-2 elite-card rounded-2xl flex flex-col overflow-hidden h-[500px]">
-                        <div className="px-6 pt-6 border-b border-slate-100 flex items-center justify-between">
-                            <div className="flex gap-8">
-                                <button className="pb-4 border-b-2 border-[#e11d2d] text-slate-900 text-xs font-bold uppercase tracking-wider">Transactions</button>
-                            </div>
-                        </div>
-                        <div className="flex-1 flex flex-col min-h-0 relative">
-                            {loadingSections.transactions || dashboardLogTransactions.length > 0 ? (
-                                <TransactionTable
-                                    transactions={dashboardLogTransactions}
-                                    loading={loadingSections.transactions}
-                                    page={dashboardTransactionPage}
-                                    rowsPerPage={dashboardTransactionRowsPerPage}
-                                    totalCount={dashboardLogTransactions.length}
-                                    onPageChange={(_, newPage) => setDashboardTransactionPage(newPage)}
-                                    onRowsPerPageChange={() => {}}
-                                    onViewDetails={handleViewDetails}
-                                    hidePagination
-                                />
+                        <div className="p-6 flex-1 min-h-0">
+                            {loadingSections.terminalPerformance ? (
+                                <LoadingPanel label="Loading terminal chart..." />
+                            ) : topTerminalRows.length > 0 ? (
+                                <div className="grid grid-cols-1 lg:grid-cols-5 gap-8 h-full">
+                                    <div className="lg:col-span-3 min-h-[340px] relative">
+                                        <Doughnut data={terminalPieData} options={terminalPieOptions} />
+                                        <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Total Sales</span>
+                                            <span className="text-2xl font-black text-slate-900">
+                                                {currencyFormat(topTerminalRows.reduce((sum, terminal) => sum + terminal.value, 0))}
+                                            </span>
+                                        </div>
+                                    </div>
+                                    <div className="lg:col-span-2 space-y-2 overflow-y-auto pr-1">
+                                        {topTerminalRows.map((terminal, idx) => {
+                                            const color = terminalPieData.datasets[0].backgroundColor[idx];
+                                            return (
+                                                <div key={terminal.terminal_id || terminal.label} className="flex items-center justify-between p-3 bg-white border border-slate-100 rounded-xl">
+                                                    <div className="flex items-center gap-3 min-w-0">
+                                                        <span className="w-3 h-3 rounded-full flex-shrink-0" style={{ backgroundColor: color }} />
+                                                        <div className="min-w-0">
+                                                            <p className="text-xs font-bold text-slate-900 uppercase truncate">{terminal.label}</p>
+                                                            <p className="text-[10px] text-slate-400 font-medium truncate">{terminal.trade_name || 'Unknown Tenant'}</p>
+                                                        </div>
+                                                    </div>
+                                                    <span className="text-sm font-bold text-slate-900 tabular-nums ml-3">{currencyFormat(terminal.value)}</span>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
                             ) : (
-                                <div className="flex-1 flex flex-col items-center justify-center p-20 text-center text-slate-300">
-                                    <span className="material-symbols-outlined text-[48px] mb-4">history_toggle_off</span>
-                                    <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">No recent transactions found</p>
+                                <div className="h-full min-h-[340px] flex flex-col items-center justify-center text-center text-slate-300">
+                                    <span className="material-symbols-outlined text-[48px] mb-4">pie_chart</span>
+                                    <p className="text-xs font-bold text-slate-400 uppercase tracking-widest">No terminal performance data</p>
                                 </div>
                             )}
                         </div>
