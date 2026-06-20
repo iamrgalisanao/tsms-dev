@@ -322,7 +322,7 @@ class DashboardController extends Controller
         $query = Transaction::query()
             ->with([
                 'tenant:id,trade_name,customer_code',
-                'terminal:id,terminal_uid,serial_number,status_id,is_active',
+                'terminal:id,serial_number,status_id,is_active',
                 'terminal.status:id,name',
             ])
             ->select([
@@ -341,6 +341,7 @@ class DashboardController extends Controller
                 'voided_at',
                 'refund_status',
                 'refund_amount',
+                'refund_processed_at',
             ]);
 
         // Apply filters
