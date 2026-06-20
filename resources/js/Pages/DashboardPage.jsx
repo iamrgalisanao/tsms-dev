@@ -424,6 +424,8 @@ const DashboardPage = () => {
             .slice(0, 8)
             .map((terminal, index) => ({
                 ...terminal,
+                serialNumber: terminal.serial_number || `Terminal ${terminal.terminal_id || index + 1}`,
+                tenantName: terminal.trade_name || 'Unknown Tenant',
                 label: terminal.serial_number || `Terminal ${terminal.terminal_id || index + 1}`,
                 value: Number(terminal.total_sales ?? terminal.revenue ?? 0)
             }))
@@ -455,14 +457,19 @@ const DashboardPage = () => {
             legend: { display: false },
             tooltip: {
                 callbacks: {
+                    title: (items) => {
+                        const index = items?.[0]?.dataIndex;
+                        return topTerminalRows[index]?.tenantName || 'Unknown Tenant';
+                    },
                     label: (context) => {
+                        const terminal = topTerminalRows[context.dataIndex];
                         const value = Number(context.raw || 0);
-                        return `${context.label}: ${currencyFormat(value)}`;
+                        return `${terminal?.serialNumber || context.label}: ${currencyFormat(value)}`;
                     }
                 }
             }
         }
-    }), []);
+    }), [topTerminalRows]);
 
     // Memoized Ingestion Success Rate (reconciled / (reconciled + exceptions))
     const ingestionSuccessRate = useMemo(() => {
