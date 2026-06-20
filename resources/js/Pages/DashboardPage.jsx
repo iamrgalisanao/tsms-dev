@@ -2,11 +2,11 @@ import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import api from '../services/api';
 import MetricCard from '../Components/dashboard/MetricCard';
 import TransactionChart from '../Components/dashboard/TransactionChart';
-import RecentTransactionsTable from '../Components/dashboard/RecentTransactionsTable';
 import SystemHealthMonitor from '../Components/dashboard/SystemHealthMonitor';
 import RevenueByTerminalChart from '../Components/dashboard/RevenueByTerminalChart';
 import NotificationToast from '../Components/dashboard/NotificationToast';
 import TransactionDetailPanel from '../Components/transactions/TransactionDetailPanel';
+import TransactionTable from '../Components/transactions/TransactionTable';
 import { useAuth } from '../Contexts/AuthContext';
 import {
     Box,
@@ -129,6 +129,12 @@ const writeDashboardCache = (filters, payload) => {
     }
 };
 
+const updateDashboardCache = (filters, updater) => {
+    const currentPayload = readDashboardCache(filters) || {};
+    const nextPayload = updater(currentPayload);
+    writeDashboardCache(filters, nextPayload);
+};
+
 const LoadingPanel = ({ label = 'Loading page details...' }) => (
     <Box sx={{
         minHeight: 180,
@@ -169,6 +175,8 @@ const DashboardPage = () => {
     }));
     const [selectedTransaction, setSelectedTransaction] = useState(null);
     const [detailPanelOpen, setDetailPanelOpen] = useState(false);
+    const [dashboardTransactionPage, setDashboardTransactionPage] = useState(0);
+    const dashboardTransactionRowsPerPage = 10;
     const [refreshInterval, setRefreshInterval] = useState(30000); // 30 seconds for command center
     const [isRefreshing, setIsRefreshing] = useState(false);
     const [notification, setNotification] = useState(null);
@@ -274,7 +282,8 @@ const DashboardPage = () => {
         const cachedPayload = readDashboardCache(filters);
         if (cachedPayload) {
             applyCachedDashboardData(cachedPayload);
-            fetchDashboardData(false);
+            // Cached dashboard sections are session-scoped, so revisiting the page
+            // should paint retained alerts/terminal rankings without an immediate refetch.
             return;
         }
 
@@ -330,13 +339,20 @@ const DashboardPage = () => {
     }, [fetchDashboardData]);
 
     const handleDismissAlert = useCallback(async (id) => {
+        // The alert row itself can contain navigation actions, so update local state
+        // immediately and persist the dismissed list into the dashboard session cache.
+        setAlerts((prev) => prev.filter((n) => n.id !== id));
+        updateDashboardCache(filters, (currentPayload) => ({
+            ...currentPayload,
+            alerts: (currentPayload.alerts || []).filter((n) => n.id !== id)
+        }));
+
         try {
             await api.dismissNotification(id);
-            setAlerts((prev) => prev.filter((n) => n.id !== id));
         } catch (err) {
             console.error('Failed to dismiss alert', err);
         }
-    }, []);
+    }, [filters]);
 
     const openTransactions = useCallback((extraParams = {}) => {
         const params = new URLSearchParams({
@@ -350,6 +366,8 @@ const DashboardPage = () => {
     const kpiValue = useCallback((value) => (
         loadingSections.metrics ? <CircularProgress size={26} sx={{ color: '#e11d2d' }} /> : value
     ), [loadingSections.metrics]);
+
+    const issueCountsLoading = loadingSections.metrics || loadingSections.health || loadingSections.notifications;
 
     // Operational helpers
     const activeTerminals = Number(metrics?.active_terminals?.current ?? 0);
@@ -414,6 +432,19 @@ const DashboardPage = () => {
         const advisoryCount = groupedAlerts.advisory.length;
         return { criticalCount, warningCount, advisoryCount };
     }, [groupedAlerts, failedReconciliation, offlineTerminals, pendingUploads]);
+
+    const dashboardLogTransactions = useMemo(() => {
+        return recentTransactions.map((tx) => ({
+            ...tx,
+            amount: tx.amount ?? tx.gross_sales ?? 0,
+            vat: tx.vat ?? tx.vat_amount ?? 0,
+            refund: tx.refund ?? tx.refund_amount ?? 0,
+            terminal: {
+                ...(tx.terminal || {}),
+                tenant: tx.tenant || tx.terminal?.tenant || null
+            }
+        }));
+    }, [recentTransactions]);
 
     // Memoized Ingestion Success Rate (reconciled / (reconciled + exceptions))
     const ingestionSuccessRate = useMemo(() => {
@@ -569,7 +600,12 @@ const DashboardPage = () => {
                 <Button
                     size="small"
                     color="inherit"
-                    onClick={() => handleDismissAlert(alert.id)}
+                    type="button"
+                    onClick={(event) => {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        handleDismissAlert(alert.id);
+                    }}
                     sx={{
                         minWidth: 'auto',
                         p: 0.5,
@@ -950,7 +986,7 @@ const DashboardPage = () => {
                                         <p className="text-[10px] text-slate-400 uppercase">Action Required</p>
                                     </div>
                                 </div>
-                                <span className="text-2xl font-black text-slate-900">{loading ? <CircularProgress size={18} sx={{ color: '#e11d2d' }} /> : escalationCounts.criticalCount}</span>
+                                <span className="text-2xl font-black text-slate-900">{issueCountsLoading ? <CircularProgress size={18} sx={{ color: '#e11d2d' }} /> : escalationCounts.criticalCount}</span>
                             </div>
                             
                             <div className="flex items-center justify-between p-4 bg-white border border-slate-100 rounded-xl hover:border-orange-200 transition-colors group cursor-pointer">
@@ -961,7 +997,7 @@ const DashboardPage = () => {
                                         <p className="text-[10px] text-slate-400 uppercase">Operational Exceptions</p>
                                     </div>
                                 </div>
-                                <span className="text-2xl font-black text-slate-900">{loading ? <CircularProgress size={18} sx={{ color: '#e11d2d' }} /> : escalationCounts.warningCount}</span>
+                                <span className="text-2xl font-black text-slate-900">{issueCountsLoading ? <CircularProgress size={18} sx={{ color: '#e11d2d' }} /> : escalationCounts.warningCount}</span>
                             </div>
                             
                             <div className="flex items-center justify-between p-4 bg-white border border-slate-100 rounded-xl hover:border-yellow-200 transition-colors group cursor-pointer">
@@ -972,7 +1008,7 @@ const DashboardPage = () => {
                                         <p className="text-[10px] text-slate-400 uppercase">Maintenance</p>
                                     </div>
                                 </div>
-                                <span className="text-2xl font-black text-slate-900">{loading ? <CircularProgress size={18} sx={{ color: '#e11d2d' }} /> : escalationCounts.advisoryCount}</span>
+                                <span className="text-2xl font-black text-slate-900">{issueCountsLoading ? <CircularProgress size={18} sx={{ color: '#e11d2d' }} /> : escalationCounts.advisoryCount}</span>
                             </div>
                         </div>
                         <div className="p-6 pt-0">
@@ -1094,8 +1130,18 @@ const DashboardPage = () => {
                             <button className="pb-4 text-[10px] font-bold text-[#e11d2d] hover:underline uppercase tracking-widest">View Archive</button>
                         </div>
                         <div className="flex-1 flex flex-col min-h-0 relative">
-                            {loadingSections.transactions || recentTransactions.length > 0 ? (
-                                <RecentTransactionsTable transactions={recentTransactions} loading={loadingSections.transactions} onViewDetails={handleViewDetails} />
+                            {loadingSections.transactions || dashboardLogTransactions.length > 0 ? (
+                                <TransactionTable
+                                    transactions={dashboardLogTransactions}
+                                    loading={loadingSections.transactions}
+                                    page={dashboardTransactionPage}
+                                    rowsPerPage={dashboardTransactionRowsPerPage}
+                                    totalCount={dashboardLogTransactions.length}
+                                    onPageChange={(_, newPage) => setDashboardTransactionPage(newPage)}
+                                    onRowsPerPageChange={() => {}}
+                                    onViewDetails={handleViewDetails}
+                                    hidePagination
+                                />
                             ) : (
                                 <div className="flex-1 flex flex-col items-center justify-center p-20 text-center text-slate-300">
                                     <span className="material-symbols-outlined text-[48px] mb-4">history_toggle_off</span>

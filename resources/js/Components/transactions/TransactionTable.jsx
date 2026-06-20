@@ -280,7 +280,7 @@ const DetailItem = ({ label, value }) => (
     </Box>
 );
 
-const TransactionTable = ({ transactions, loading, page, rowsPerPage, totalCount, onPageChange, onRowsPerPageChange, onViewDetails }) => {
+const TransactionTable = ({ transactions, loading, page, rowsPerPage, totalCount, onPageChange, onRowsPerPageChange, onViewDetails, hidePagination = false }) => {
     if (loading) {
         return (
             <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: 400 }}>
@@ -373,18 +373,20 @@ const TransactionTable = ({ transactions, loading, page, rowsPerPage, totalCount
                 </Table>
             </TableContainer>
 
-            <Box sx={{ p: 2, bgcolor: 'grey.50', borderTop: '1px solid', borderColor: 'divider' }}>
-                <TablePagination
-                    component="div"
-                    count={totalCount}
-                    page={page}
-                    onPageChange={onPageChange}
-                    rowsPerPage={rowsPerPage}
-                    onRowsPerPageChange={onRowsPerPageChange}
-                    rowsPerPageOptions={[15, 50, 100, 500, 1000]}
-                    sx={{ border: 'none' }}
-                />
-            </Box>
+            {!hidePagination && (
+                <Box sx={{ p: 2, bgcolor: 'grey.50', borderTop: '1px solid', borderColor: 'divider' }}>
+                    <TablePagination
+                        component="div"
+                        count={totalCount}
+                        page={page}
+                        onPageChange={onPageChange}
+                        rowsPerPage={rowsPerPage}
+                        onRowsPerPageChange={onRowsPerPageChange}
+                        rowsPerPageOptions={[15, 50, 100, 500, 1000]}
+                        sx={{ border: 'none' }}
+                    />
+                </Box>
+            )}
         </Box>
     );
 };
