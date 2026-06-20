@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { ThemeProvider } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
+import Tooltip from '@mui/material/Tooltip';
 import theme from '../Themes/MuiTheme';
 import DashboardIcon from '@mui/icons-material/Dashboard';
 import ReceiptIcon from '@mui/icons-material/Receipt';
@@ -59,6 +60,44 @@ const MainLayout = ({ children }) => {
         return item.roles.some(role => normalisedRoles.includes(role.toLowerCase()));
     });
 
+    const renderCollapsedTooltip = (label, child) => {
+        // Labels are hidden only when the sidebar is collapsed, so tooltips are
+        // mounted in that state and removed entirely once the sidebar expands.
+        if (isSidebarOpen) return child;
+
+        return (
+            <Tooltip
+                title={label}
+                placement="right"
+                arrow
+                enterDelay={250}
+                leaveDelay={0}
+                slotProps={{
+                    popper: {
+                        sx: {
+                            zIndex: 1400,
+                            '& .MuiTooltip-tooltip': {
+                                bgcolor: '#0F172A',
+                                color: '#FFFFFF',
+                                fontSize: '12px',
+                                fontWeight: 700,
+                                borderRadius: '8px',
+                                px: 1.25,
+                                py: 0.75,
+                                boxShadow: '0 12px 24px rgba(15, 23, 42, 0.24)',
+                            },
+                            '& .MuiTooltip-arrow': {
+                                color: '#0F172A',
+                            },
+                        },
+                    },
+                }}
+            >
+                {child}
+            </Tooltip>
+        );
+    };
+
     return (
         <ThemeProvider theme={theme}>
             <CssBaseline />
@@ -95,10 +134,10 @@ const MainLayout = ({ children }) => {
                         {filteredItems.map((item) => {
                             const isActive = location.pathname === item.path;
                             const IconComponent = item.icon;
-                            return (
+                            const navLink = (
                                 <Link
-                                    key={item.name}
                                     to={item.path}
+                                    aria-label={isSidebarOpen ? undefined : item.name}
                                     className={`flex items-center py-2.5 px-4 rounded-r-lg transition-all duration-150 relative group ${isActive
                                         ? 'bg-[#1A2F6B] text-white'
                                         : 'text-[#A8B8D8] hover:bg-[#162558] hover:text-white'
@@ -125,6 +164,12 @@ const MainLayout = ({ children }) => {
                                     )}
                                 </Link>
                             );
+
+                            return (
+                                <React.Fragment key={`${item.path}-${item.name}`}>
+                                    {renderCollapsedTooltip(item.name, navLink)}
+                                </React.Fragment>
+                            );
                         })}
                     </nav>
 
@@ -148,16 +193,20 @@ const MainLayout = ({ children }) => {
                                 )}
                             </div>
                         )}
-                        <button
-                            onClick={async () => {
-                                await logout();
-                                navigate('/login');
-                            }}
-                            className="flex items-center w-full p-2.5 rounded-lg text-[#A8B8D8] hover:bg-[#162558] hover:text-white transition-all duration-150 group"
-                        >
-                            <LogoutIcon sx={{ fontSize: 18, color: 'inherit' }} />
-                            {isSidebarOpen && <span className="ml-3 text-[13px] font-semibold">Logout</span>}
-                        </button>
+                        {renderCollapsedTooltip(
+                            'Logout',
+                            <button
+                                onClick={async () => {
+                                    await logout();
+                                    navigate('/login');
+                                }}
+                                aria-label={isSidebarOpen ? undefined : 'Logout'}
+                                className="flex items-center w-full p-2.5 rounded-lg text-[#A8B8D8] hover:bg-[#162558] hover:text-white transition-all duration-150 group"
+                            >
+                                <LogoutIcon sx={{ fontSize: 18, color: 'inherit' }} />
+                                {isSidebarOpen && <span className="ml-3 text-[13px] font-semibold">Logout</span>}
+                            </button>
+                        )}
                     </div>
                 </aside>
 
