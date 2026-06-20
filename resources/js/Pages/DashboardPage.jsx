@@ -427,19 +427,25 @@ const DashboardPage = () => {
                 serialNumber: terminal.serial_number || `Terminal ${terminal.terminal_id || index + 1}`,
                 tenantName: terminal.trade_name || 'Unknown Tenant',
                 label: terminal.serial_number || `Terminal ${terminal.terminal_id || index + 1}`,
-                value: Number(terminal.total_sales ?? terminal.revenue ?? 0)
-            }))
-            .filter((terminal) => terminal.value > 0);
+                value: Number(terminal.total_sales ?? terminal.totalSales ?? terminal.revenue ?? terminal.sales ?? 0)
+            }));
     }, [terminalPerformance]);
+
+    const terminalPieTotal = useMemo(() => {
+        return topTerminalRows.reduce((sum, terminal) => sum + terminal.value, 0);
+    }, [topTerminalRows]);
 
     const terminalPieData = useMemo(() => {
         const colors = ['#1D439B', '#EB342E', '#10B981', '#F59E0B', '#8B5CF6', '#06B6D4', '#F97316', '#64748B'];
+        const chartValues = terminalPieTotal > 0
+            ? topTerminalRows.map((terminal) => terminal.value)
+            : topTerminalRows.map(() => 1);
 
         return {
             labels: topTerminalRows.map((terminal) => terminal.label),
             datasets: [
                 {
-                    data: topTerminalRows.map((terminal) => terminal.value),
+                    data: chartValues,
                     backgroundColor: colors.slice(0, topTerminalRows.length),
                     borderColor: '#ffffff',
                     borderWidth: 3,
@@ -447,7 +453,7 @@ const DashboardPage = () => {
                 }
             ]
         };
-    }, [topTerminalRows]);
+    }, [terminalPieTotal, topTerminalRows]);
 
     const terminalPieOptions = useMemo(() => ({
         responsive: true,
@@ -1126,7 +1132,7 @@ const DashboardPage = () => {
                                         <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
                                             <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Total Sales</span>
                                             <span className="text-2xl font-black text-slate-900">
-                                                {currencyFormat(topTerminalRows.reduce((sum, terminal) => sum + terminal.value, 0))}
+                                                {currencyFormat(terminalPieTotal)}
                                             </span>
                                         </div>
                                     </div>
