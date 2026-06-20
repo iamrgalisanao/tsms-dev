@@ -186,6 +186,12 @@ const MainLayout = ({ children }) => {
                     {/* Scrollable Page Content */}
                     <main 
                         className="flex-1 overflow-y-auto relative"
+                        style={{
+                            backgroundColor: '#F8FAFC',
+                            backgroundImage: `linear-gradient(to right, rgba(29, 67, 155, 0.035) 1px, transparent 1px),
+                                              linear-gradient(to bottom, rgba(29, 67, 155, 0.035) 1px, transparent 1px)`,
+                            backgroundSize: '24px 24px'
+                        }}
                     >
                         <div className={isFullBleedPage ? 'min-h-full' : 'min-h-full px-4 sm:px-6 lg:px-8'}>
                             {children}
