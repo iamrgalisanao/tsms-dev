@@ -5,12 +5,12 @@ import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import ErrorIcon from '@mui/icons-material/Error';
 
 const CARD_STYLE = {
-    p: 3,
-    borderRadius: '10px',
-    border: '1px solid #E8ECF4',
-    boxShadow: '0 1px 3px rgba(15,23,42,0.06), 0 1px 2px rgba(15,23,42,0.04)',
+    p: 2.5,
+    borderRadius: '12px',
+    border: '1px solid #E2E8F0',
+    boxShadow: '0 10px 24px rgba(15,23,42,0.045), 0 1px 2px rgba(15,23,42,0.06)',
     bgcolor: '#FFFFFF',
-    mb: 4,
+    mb: 3,
 };
 
 export default function FinanceAlerts({ metrics }) {
@@ -55,10 +55,10 @@ export default function FinanceAlerts({ metrics }) {
     return (
         <Box sx={CARD_STYLE}>
             {/* Header with active status badge */}
-            <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2.5 }}>
+            <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
                 <Stack direction="row" alignItems="center" spacing={1}>
                     <WarningIcon sx={{ color: '#D97706', fontSize: 18 }} />
-                    <Typography sx={{ fontWeight: 700, fontSize: '13px', textTransform: 'uppercase', letterSpacing: '0.08em', color: '#64748B' }}>
+                    <Typography sx={{ fontWeight: 800, fontSize: '13px', color: '#334155' }}>
                         Finance Alerts
                     </Typography>
                 </Stack>
@@ -68,7 +68,7 @@ export default function FinanceAlerts({ metrics }) {
                     px: 1.5, py: 0.5,
                     borderRadius: '20px',
                     fontSize: '11px',
-                    fontWeight: 600,
+                    fontWeight: 800,
                     textTransform: 'uppercase',
                     letterSpacing: '0.05em'
                 }}>
@@ -77,7 +77,7 @@ export default function FinanceAlerts({ metrics }) {
             </Stack>
 
             {/* List of alert items */}
-            <Stack spacing={1}>
+            <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: '1fr 1fr' }, gap: 1 }}>
                 {alerts.map(({ key, severity, label, action, actionLabel }) => {
                     const isCritical = severity === 'error';
                     const isWarning = severity === 'warning';
@@ -104,13 +104,13 @@ export default function FinanceAlerts({ metrics }) {
                             justifyContent="space-between"
                             onClick={action || undefined}
                             sx={{
-                                p: '8px 12px',
-                                minHeight: '40px',
-                                borderRadius: '6px',
+                                p: '10px 12px',
+                                minHeight: '44px',
+                                borderRadius: '10px',
                                 transition: 'background-color 150ms ease',
                                 cursor: action ? 'pointer' : 'default',
-                                borderLeft: isCritical ? '3px solid #DC2626' : '3px solid transparent',
-                                bgcolor: isCritical ? 'rgba(220,38,38,0.02)' : 'transparent',
+                                border: `1px solid ${isCritical ? '#FECACA' : '#E8ECF4'}`,
+                                bgcolor: isCritical ? '#FEF2F2' : '#FFFFFF',
                                 '&:hover': {
                                     bgcolor: isCritical ? 'rgba(220,38,38,0.04)' : '#F8FAFC'
                                 }
@@ -120,7 +120,7 @@ export default function FinanceAlerts({ metrics }) {
                                 <Box sx={{ color: iconColor, display: 'flex', alignItems: 'center' }}>
                                     {alertIcon}
                                 </Box>
-                                <Typography sx={{ fontSize: '14px', fontWeight: 500, color: '#0F172A' }}>
+                                <Typography sx={{ fontSize: '13px', fontWeight: 700, color: '#0F172A' }}>
                                     {label}
                                 </Typography>
                             </Stack>
@@ -146,7 +146,7 @@ export default function FinanceAlerts({ metrics }) {
                         </Stack>
                     );
                 })}
-            </Stack>
+            </Box>
         </Box>
     );
 }

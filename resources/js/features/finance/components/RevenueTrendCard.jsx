@@ -1,13 +1,14 @@
 import React, { useMemo } from 'react';
 import { Box, Typography, Stack } from '@mui/material';
 import QueryStatsIcon from '@mui/icons-material/QueryStats';
+import InsightsIcon from '@mui/icons-material/Insights';
 import TransactionChart from '../../../Components/dashboard/TransactionChart';
 
 const CARD_STYLE = {
-    p: 3,
-    borderRadius: '10px',
-    border: '1px solid #E8ECF4',
-    boxShadow: '0 1px 3px rgba(15,23,42,0.06), 0 1px 2px rgba(15,23,42,0.04)',
+    p: 2.5,
+    borderRadius: '12px',
+    border: '1px solid #E2E8F0',
+    boxShadow: '0 10px 24px rgba(15,23,42,0.045), 0 1px 2px rgba(15,23,42,0.06)',
     bgcolor: '#FFFFFF',
     height: '100%',
     display: 'flex',
@@ -28,16 +29,17 @@ export default function RevenueTrendCard({ charts }) {
         const avgDailyRevenue = charts.sales.reduce((a, b) => a + b, 0) / charts.sales.length;
         return { peakSales, peakSalesDay, avgDailyRevenue };
     }, [charts]);
+    const hasSalesData = charts?.sales?.some((value) => Number(value) > 0);
 
     return (
         <Box sx={CARD_STYLE}>
             {/* Header */}
             <Stack direction="row" justifyContent="space-between" alignItems="flex-start" sx={{ mb: 2.5 }}>
                 <Box>
-                    <Typography sx={{ fontWeight: 700, fontSize: '16px', color: '#0F172A', mb: 0.5 }}>
+                    <Typography sx={{ fontWeight: 800, fontSize: '16px', color: '#0F172A', mb: 0.5 }}>
                         Monthly Revenue Trend
                     </Typography>
-                    <Typography sx={{ fontWeight: 600, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.08em', fontSize: '11px' }}>
+                    <Typography sx={{ fontWeight: 700, color: '#64748B', fontSize: '12px' }}>
                         Sales and transaction lifecycle
                     </Typography>
                 </Box>
@@ -46,8 +48,8 @@ export default function RevenueTrendCard({ charts }) {
 
             {/* Summary metrics in subtle background boxes */}
             <Stack direction="row" spacing={3} sx={{ mb: 3 }}>
-                <Box sx={{ bgcolor: '#F8FAFC', p: '10px 14px', borderRadius: '6px', flex: 1 }}>
-                    <Typography sx={{ color: '#64748B', fontWeight: 600, textTransform: 'uppercase', fontSize: '11px', letterSpacing: '0.06em' }}>
+                <Box sx={{ bgcolor: '#F8FAFC', p: '10px 14px', borderRadius: '10px', flex: 1, border: '1px solid #EEF2F7' }}>
+                    <Typography sx={{ color: '#64748B', fontWeight: 800, fontSize: '11px' }}>
                         Peak Revenue Day
                     </Typography>
                     <Typography sx={{ fontWeight: 700, color: '#1A56DB', fontSize: '15px', mt: 0.5 }}>
@@ -57,8 +59,8 @@ export default function RevenueTrendCard({ charts }) {
                         </Box>
                     </Typography>
                 </Box>
-                <Box sx={{ bgcolor: '#F8FAFC', p: '10px 14px', borderRadius: '6px', flex: 1 }}>
-                    <Typography sx={{ color: '#64748B', fontWeight: 600, textTransform: 'uppercase', fontSize: '11px', letterSpacing: '0.06em' }}>
+                <Box sx={{ bgcolor: '#F8FAFC', p: '10px 14px', borderRadius: '10px', flex: 1, border: '1px solid #EEF2F7' }}>
+                    <Typography sx={{ color: '#64748B', fontWeight: 800, fontSize: '11px' }}>
                         Avg Daily Revenue
                     </Typography>
                     <Typography sx={{ fontWeight: 700, color: '#16A34A', fontSize: '15px', mt: 0.5 }}>
@@ -68,9 +70,23 @@ export default function RevenueTrendCard({ charts }) {
             </Stack>
 
             {/* Chart — direct inline integration */}
-            <Box sx={{ flex: 1, minHeight: 300 }}>
-                <TransactionChart data={charts} loading={false} inline />
-            </Box>
+            {hasSalesData ? (
+                <Box sx={{ flex: 1, minHeight: 280 }}>
+                    <TransactionChart data={charts} loading={false} inline />
+                </Box>
+            ) : (
+                <Stack flex={1} alignItems="center" justifyContent="center" spacing={1.5} sx={{ minHeight: 240, bgcolor: '#F8FAFC', border: '1px dashed #CBD5E1', borderRadius: '12px', textAlign: 'center', px: 3 }}>
+                    <Box sx={{ p: 1.5, bgcolor: '#EEF2FF', borderRadius: '12px', display: 'flex', color: '#1A56DB' }}>
+                        <InsightsIcon />
+                    </Box>
+                    <Typography sx={{ fontWeight: 800, color: '#0F172A', fontSize: '14px' }}>
+                        No revenue trend for this range
+                    </Typography>
+                    <Typography sx={{ color: '#64748B', fontSize: '13px', maxWidth: 300 }}>
+                        Try a wider date range or sync data to populate the revenue lifecycle chart.
+                    </Typography>
+                </Stack>
+            )}
         </Box>
     );
 }

@@ -4,10 +4,10 @@ import TimelineIcon from '@mui/icons-material/Timeline';
 import InboxIcon from '@mui/icons-material/Inbox';
 
 const CARD_STYLE = {
-    p: 3,
-    borderRadius: '10px',
-    border: '1px solid #E8ECF4',
-    boxShadow: '0 1px 3px rgba(15,23,42,0.06), 0 1px 2px rgba(15,23,42,0.04)',
+    p: 2.5,
+    borderRadius: '12px',
+    border: '1px solid #E2E8F0',
+    boxShadow: '0 10px 24px rgba(15,23,42,0.045), 0 1px 2px rgba(15,23,42,0.06)',
     bgcolor: '#FFFFFF',
     height: '100%',
     display: 'flex',
@@ -31,7 +31,7 @@ function DonutChart({ categories, total }) {
     let accumulated = 0;
 
     return (
-        <Box sx={{ position: 'relative', width: 160, height: 160, flexShrink: 0 }}>
+        <Box sx={{ position: 'relative', width: 180, height: 180, flexShrink: 0 }}>
             <svg width="100%" height="100%" viewBox="0 0 120 120" style={{ transform: 'rotate(-90deg)' }}>
                 {/* Track */}
                 <circle cx="60" cy="60" r={r} fill="transparent" stroke="rgba(229,231,245,0.3)" strokeWidth="10" />
@@ -61,10 +61,10 @@ function DonutChart({ categories, total }) {
             </svg>
             {/* Centre label */}
             <Box sx={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
-                <Typography sx={{ fontSize: '11px', fontWeight: 600, textTransform: 'uppercase', color: '#64748B', letterSpacing: '0.05em' }}>
+                <Typography sx={{ fontSize: '11px', fontWeight: 800, color: '#64748B' }}>
                     Gross Sales
                 </Typography>
-                <Typography sx={{ fontWeight: 700, fontSize: '18px', color: '#0F172A', textAlign: 'center', px: 0.5, lineHeight: 1.2 }}>
+                <Typography sx={{ fontWeight: 800, fontSize: '18px', color: '#0F172A', textAlign: 'center', px: 0.5, lineHeight: 1.2 }}>
                     {formatCurrency(total)}
                 </Typography>
             </Box>
@@ -89,10 +89,10 @@ export default function RevenueCompositionCard({ data }) {
             {/* Header */}
             <Stack direction="row" justifyContent="space-between" alignItems="flex-start" sx={{ mb: 2.5 }}>
                 <Box>
-                    <Typography sx={{ fontWeight: 700, fontSize: '16px', color: '#0F172A', mb: 0.5 }}>
+                    <Typography sx={{ fontWeight: 800, fontSize: '16px', color: '#0F172A', mb: 0.5 }}>
                         Revenue Composition
                     </Typography>
-                    <Typography sx={{ fontWeight: 600, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.08em', fontSize: '11px' }}>
+                    <Typography sx={{ fontWeight: 700, color: '#64748B', fontSize: '12px' }}>
                         Tax Exempts, VAT &amp; discounts
                     </Typography>
                 </Box>
@@ -102,7 +102,7 @@ export default function RevenueCompositionCard({ data }) {
             {/* Empty state */}
             {isEmpty ? (
                 <Stack flex={1} alignItems="center" justifyContent="center" spacing={1.5} sx={{ py: 4 }}>
-                    <Box sx={{ p: 2, bgcolor: 'rgba(29,67,155,0.06)', borderRadius: '50%', display: 'flex' }}>
+                    <Box sx={{ p: 1.5, bgcolor: '#EEF2FF', borderRadius: '12px', display: 'flex' }}>
                         <InboxIcon sx={{ fontSize: 32, color: 'text.disabled' }} />
                     </Box>
                     <Typography variant="body2" sx={{ fontWeight: 700, color: 'text.secondary', textAlign: 'center' }}>
@@ -113,20 +113,20 @@ export default function RevenueCompositionCard({ data }) {
                     </Typography>
                 </Stack>
             ) : (
-                <Box sx={{ flex: 1, display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, alignItems: 'center', gap: 3 }}>
+                <Box sx={{ flex: 1, display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, alignItems: 'center', justifyContent: 'center', gap: 4 }}>
                     <DonutChart categories={categories} total={total} />
                     <Stack spacing={1} sx={{ flex: 1, width: '100%' }}>
                         {categories.map((cat) => {
                             const pct = total > 0 ? ((cat.value / total) * 100).toFixed(1) : '0.0';
                             return (
-                                <Box key={cat.name} sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #E8ECF4', pb: 0.75 }}>
+                                <Box key={cat.name} sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: '1px solid #E8ECF4', pb: 0.85 }}>
                                     <Stack direction="row" spacing={1} alignItems="center">
                                         <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: cat.color, flexShrink: 0 }} />
-                                        <Typography sx={{ fontWeight: 500, color: '#0F172A', fontSize: '13px' }}>
+                                        <Typography sx={{ fontWeight: 700, color: '#0F172A', fontSize: '13px' }}>
                                             {cat.name}
                                         </Typography>
                                     </Stack>
-                                    <Typography sx={{ fontWeight: 600, color: '#64748B', fontSize: '13px', whiteSpace: 'nowrap' }}>
+                                    <Typography sx={{ fontWeight: 800, color: '#475569', fontSize: '13px', whiteSpace: 'nowrap', fontVariantNumeric: 'tabular-nums' }}>
                                         {new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(cat.value)}{' '}
                                         <Box component="span" sx={{ color: '#94A3B8', fontWeight: 500, fontSize: '11px', ml: 0.5 }}>
                                             ({pct}%)

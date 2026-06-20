@@ -23,9 +23,9 @@ export function FinanceKpiGrid({ metrics, dateRange }) {
         <Box sx={{
             display: 'grid',
             gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr', lg: '1fr 1fr 1fr' },
-            gap: 3,
+            gap: 2.5,
             width: '100%',
-            mb: 3
+            mb: 2.5
         }}>
             <FinanceKpiCard
                 title="Gross Sales"
@@ -51,7 +51,7 @@ export function FinanceKpiGrid({ metrics, dateRange }) {
                 title="Reconciled"
                 value={
                     <Box sx={{ width: '100%' }}>
-                        <Typography sx={{ fontWeight: 700, fontSize: '24px', color: '#0F172A', lineHeight: 1.2 }}>
+                        <Typography sx={{ fontWeight: 800, fontSize: '24px', color: '#0F172A', lineHeight: 1.2 }}>
                             {reconDone.toLocaleString()} of {reconTotal.toLocaleString()}
                         </Typography>
                         <Box sx={{ width: '100%', height: 4, bgcolor: '#E2E8F0', borderRadius: 2, my: 1, overflow: 'hidden' }}>
@@ -90,9 +90,9 @@ export function FinanceLeakageGrid({ metrics, dateRange }) {
         <Box sx={{
             display: 'grid',
             gridTemplateColumns: { xs: '1fr', sm: '1fr 1fr', lg: '1fr 1fr 1fr' },
-            gap: 3,
+            gap: 2.5,
             width: '100%',
-            mb: 4
+            mb: 3
         }}>
             <FinanceKpiCard
                 title="Refunds"

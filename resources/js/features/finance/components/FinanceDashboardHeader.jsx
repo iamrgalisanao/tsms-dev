@@ -10,7 +10,7 @@ import SyncIcon from '@mui/icons-material/Sync';
 
 export default function FinanceDashboardHeader({ dateRange, onDateChange, onRefresh, refreshing }) {
     return (
-        <Box sx={{ py: 3, mb: 1 }}>
+        <Box sx={{ pt: 3, pb: 2.5, mb: 1 }}>
             {/* Title row */}
             <Stack
                 direction={{ xs: 'column', lg: 'row' }}
@@ -21,22 +21,22 @@ export default function FinanceDashboardHeader({ dateRange, onDateChange, onRefr
                 {/* Left: Title + description */}
                 <Stack direction="row" spacing={2} alignItems="center">
                     <Box sx={{
-                        width: 40,
-                        height: 40,
+                        width: 44,
+                        height: 44,
                         bgcolor: '#EEF2FF',
                         color: '#1A56DB',
-                        borderRadius: '10px',
+                        borderRadius: '12px',
                         display: 'flex',
                         alignItems: 'center',
                         justifyContent: 'center',
                     }}>
-                        <DashboardIcon sx={{ fontSize: 20 }} />
+                        <DashboardIcon sx={{ fontSize: 21 }} />
                     </Box>
                     <Box>
-                        <Typography sx={{ fontWeight: 700, fontSize: '28px', color: '#0F172A', lineHeight: 1.2, mb: 0.5, letterSpacing: '-0.02em' }}>
+                        <Typography sx={{ fontWeight: 800, fontSize: { xs: '24px', md: '28px' }, color: '#0F172A', lineHeight: 1.15, mb: 0.5 }}>
                             Finance Command Center
                         </Typography>
-                        <Typography sx={{ color: '#64748B', fontWeight: 400, fontSize: '14px' }}>
+                        <Typography sx={{ color: '#475569', fontWeight: 500, fontSize: '14px' }}>
                             Financial health, reconciliations, exceptions &amp; compliance.
                         </Typography>
                     </Box>
@@ -48,7 +48,7 @@ export default function FinanceDashboardHeader({ dateRange, onDateChange, onRefr
                     <Stack
                         direction="row" spacing={1} alignItems="center"
                         sx={{
-                            bgcolor: '#DCFCE7',
+                            bgcolor: '#ECFDF5',
                             px: 1.5, py: 0.75,
                             borderRadius: '20px',
                             border: '1px solid #BBF7D0',
@@ -61,7 +61,7 @@ export default function FinanceDashboardHeader({ dateRange, onDateChange, onRefr
                             bgcolor: '#16A34A',
                             boxShadow: '0 0 0 3px rgba(22,163,74,0.2)'
                         }} />
-                        <Typography sx={{ fontWeight: 600, color: '#16A34A', textTransform: 'uppercase', letterSpacing: '0.05em', fontSize: '11px' }}>
+                        <Typography sx={{ fontWeight: 800, color: '#15803D', textTransform: 'uppercase', letterSpacing: '0.04em', fontSize: '11px' }}>
                             Ecosystem Healthy
                         </Typography>
                     </Stack>
@@ -74,7 +74,7 @@ export default function FinanceDashboardHeader({ dateRange, onDateChange, onRefr
                             sx={{
                                 borderRadius: '10px',
                                 bgcolor: '#FFFFFF',
-                                fontWeight: 500,
+                                fontWeight: 700,
                                 fontSize: '14px',
                                 color: '#0F172A',
                                 '.MuiOutlinedInput-notchedOutline': { borderColor: '#E8ECF4' },
@@ -97,13 +97,13 @@ export default function FinanceDashboardHeader({ dateRange, onDateChange, onRefr
                             borderRadius: '10px',
                             px: 2,
                             py: 1,
-                            fontWeight: 500,
+                            fontWeight: 800,
                             fontSize: '14px',
                             textTransform: 'none',
                             bgcolor: '#1A56DB',
                             color: '#FFFFFF',
-                            boxShadow: '0 2px 8px rgba(26,86,219,0.35)',
-                            '&:hover': { bgcolor: '#1347B8', boxShadow: '0 4px 12px rgba(26,86,219,0.45)' },
+                            boxShadow: '0 6px 14px rgba(26,86,219,0.18)',
+                            '&:hover': { bgcolor: '#1347B8', boxShadow: '0 8px 18px rgba(26,86,219,0.22)' },
                         }}
                     >
                         {refreshing ? 'Syncing…' : 'Force Sync'}

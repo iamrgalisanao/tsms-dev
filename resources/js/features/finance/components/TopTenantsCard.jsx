@@ -7,10 +7,10 @@ import BusinessIcon from '@mui/icons-material/Business';
 import StoreIcon from '@mui/icons-material/Store';
 
 const CARD_STYLE = {
-    p: 3,
-    borderRadius: '10px',
-    border: '1px solid #E8ECF4',
-    boxShadow: '0 1px 3px rgba(15,23,42,0.06), 0 1px 2px rgba(15,23,42,0.04)',
+    p: 2.5,
+    borderRadius: '12px',
+    border: '1px solid #E2E8F0',
+    boxShadow: '0 10px 24px rgba(15,23,42,0.045), 0 1px 2px rgba(15,23,42,0.06)',
     bgcolor: '#FFFFFF',
     height: '100%',
     display: 'flex',
@@ -40,10 +40,10 @@ export default function TopTenantsCard({ metrics }) {
             {/* Header */}
             <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2.5 }}>
                 <Box>
-                    <Typography sx={{ fontWeight: 700, fontSize: '16px', color: '#0F172A', mb: 0.5 }}>
+                    <Typography sx={{ fontWeight: 800, fontSize: '16px', color: '#0F172A', mb: 0.5 }}>
                         Top Tenants
                     </Typography>
-                    <Typography sx={{ fontWeight: 600, color: '#64748B', textTransform: 'uppercase', letterSpacing: '0.08em', fontSize: '11px' }}>
+                    <Typography sx={{ fontWeight: 700, color: '#64748B', fontSize: '12px' }}>
                         Tenants driving revenue this period
                     </Typography>
                 </Box>
@@ -73,10 +73,8 @@ export default function TopTenantsCard({ metrics }) {
                                         key={h}
                                         align={i >= 3 ? 'right' : 'left'}
                                         sx={{
-                                            fontWeight: 600,
+                                            fontWeight: 800,
                                             fontSize: '11px',
-                                            textTransform: 'uppercase',
-                                            letterSpacing: '0.06em',
                                             borderBottom: '2px solid #E8ECF4',
                                             pb: 1.25,
                                             color: '#64748B'
@@ -104,33 +102,33 @@ export default function TopTenantsCard({ metrics }) {
                                             '&:nth-of-type(odd)': { bgcolor: '#FAFBFC' },
                                         }}
                                     >
-                                        <TableCell sx={{ fontWeight: 500, color: '#94A3B8', borderBottom: '1px solid #E8ECF4', py: 1.5, width: 40 }}>
+                                        <TableCell sx={{ fontWeight: 800, color: '#94A3B8', borderBottom: '1px solid #E8ECF4', py: 1.65, width: 40 }}>
                                             {idx + 1}
                                         </TableCell>
-                                        <TableCell sx={{ borderBottom: '1px solid #E8ECF4', py: 1.5 }}>
-                                            <Typography sx={{ fontWeight: 600, color: '#1A56DB', fontSize: '14px' }}>
+                                        <TableCell sx={{ borderBottom: '1px solid #E8ECF4', py: 1.65 }}>
+                                            <Typography sx={{ fontWeight: 800, color: '#1A56DB', fontSize: '14px' }}>
                                                 {tenant.trade_name}
                                             </Typography>
                                             <Typography sx={{ color: '#94A3B8', fontSize: '11px', mt: 0.5 }}>
                                                 View Logs →
                                             </Typography>
                                         </TableCell>
-                                        <TableCell sx={{ borderBottom: '1px solid #E8ECF4', py: 1.5 }}>
+                                        <TableCell sx={{ borderBottom: '1px solid #E8ECF4', py: 1.65 }}>
                                             <Box sx={{
                                                 display: 'inline-block',
                                                 bgcolor: category === 'F&B' ? '#DCFCE7' : '#EEF2FF',
                                                 color: category === 'F&B' ? '#16A34A' : '#1A56DB',
                                                 px: 1, py: 0.25,
-                                                borderRadius: '4px',
+                                                borderRadius: '999px',
                                                 fontSize: '11px',
                                                 fontWeight: 600
                                             }}>
                                                 {category}
                                             </Box>
                                         </TableCell>
-                                        <TableCell align="right" sx={{ borderBottom: '1px solid #E8ECF4', py: 1.5 }}>
+                                        <TableCell align="right" sx={{ borderBottom: '1px solid #E8ECF4', py: 1.65 }}>
                                             <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end' }}>
-                                                <Typography sx={{ fontWeight: 600, color: '#0F172A', fontSize: '14px', fontVariantNumeric: 'tabular-nums' }}>
+                                                <Typography sx={{ fontWeight: 800, color: '#0F172A', fontSize: '14px', fontVariantNumeric: 'tabular-nums' }}>
                                                     {formatCurrency(tenant.total_revenue)}
                                                 </Typography>
                                                 {/* Mini rank visualizer bar */}
@@ -139,7 +137,7 @@ export default function TopTenantsCard({ metrics }) {
                                                 </Box>
                                             </Box>
                                         </TableCell>
-                                        <TableCell align="right" sx={{ fontWeight: 500, color: '#64748B', borderBottom: '1px solid #E8ECF4', py: 1.5, fontSize: '13px' }}>
+                                        <TableCell align="right" sx={{ fontWeight: 700, color: '#64748B', borderBottom: '1px solid #E8ECF4', py: 1.65, fontSize: '13px' }}>
                                             {sharePct}%
                                         </TableCell>
                                     </TableRow>

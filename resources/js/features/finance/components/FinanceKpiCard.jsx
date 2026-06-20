@@ -44,27 +44,26 @@ export default function FinanceKpiCard({
         ? (trendPositive ? '#DCFCE7' : '#FEE2E2')
         : (trendPositive ? '#FEE2E2' : '#DCFCE7');
 
-    let topBorderColor = 'transparent';
-    if (title === 'Gross Sales') topBorderColor = '#1A56DB';
-    else if (title === 'Net Sales') topBorderColor = '#16A34A';
-    else if (title === 'Reconciled') topBorderColor = '#1A56DB';
-    else if (title === 'Refunds') topBorderColor = '#DC2626';
-    else if (title === 'Voided Transactions') topBorderColor = '#D97706';
+    let accentColor = '#CBD5E1';
+    if (title === 'Gross Sales') accentColor = '#1A56DB';
+    else if (title === 'Net Sales') accentColor = '#16A34A';
+    else if (title === 'Reconciled') accentColor = '#1A56DB';
+    else if (title === 'Refunds') accentColor = '#DC2626';
+    else if (title === 'Voided Transactions') accentColor = '#D97706';
 
     return (
         <Box
             onClick={onClick}
             sx={{
                 width: '100%',
-                p: '16px 20px',
-                borderRadius: '10px',
+                p: '18px 20px',
+                borderRadius: '12px',
                 minHeight,
                 background: gradient || '#FFFFFF',
-                border: isGradient ? 'none' : '1px solid #E8ECF4',
-                borderTop: !isGradient && topBorderColor !== 'transparent' ? `3px solid ${topBorderColor}` : undefined,
+                border: isGradient ? 'none' : '1px solid #E2E8F0',
                 boxShadow: isGradient
                     ? '0 8px 30px rgba(0,0,0,0.1)'
-                    : '0 1px 3px rgba(15,23,42,0.06), 0 1px 2px rgba(15,23,42,0.04)',
+                    : '0 10px 24px rgba(15,23,42,0.045), 0 1px 2px rgba(15,23,42,0.06)',
                 transition: 'transform 0.2s ease, box-shadow 0.2s ease',
                 cursor: onClick ? 'pointer' : 'default',
                 display: 'flex',
@@ -76,21 +75,20 @@ export default function FinanceKpiCard({
                     transform: 'translateY(-2px)',
                     boxShadow: isGradient
                         ? '0 16px 40px rgba(0,0,0,0.15)'
-                        : '0 4px 12px rgba(15,23,42,0.10), 0 2px 4px rgba(15,23,42,0.06)',
+                        : '0 14px 30px rgba(15,23,42,0.08), 0 2px 4px rgba(15,23,42,0.06)',
                 } : {},
             }}
         >
             {/* Left: text content */}
             <Box sx={{ flex: 1, minWidth: 0 }}>
+                <Box sx={{ width: 28, height: 3, borderRadius: 999, bgcolor: accentColor, mb: 1.5 }} />
                 {/* Label row */}
                 <Stack direction="row" alignItems="center" spacing={0.5} sx={{ mb: 1 }}>
                     <Typography
                         sx={{
-                            fontWeight: 600,
-                            textTransform: 'uppercase',
-                            letterSpacing: '0.07em',
-                            fontSize: '11px',
-                            color: isGradient ? 'rgba(255,255,255,0.85)' : '#64748B',
+                            fontWeight: 800,
+                            fontSize: '12px',
+                            color: isGradient ? 'rgba(255,255,255,0.85)' : '#475569',
                             whiteSpace: 'nowrap',
                         }}
                     >
@@ -107,7 +105,7 @@ export default function FinanceKpiCard({
                 {typeof value === 'string' || typeof value === 'number' ? (
                     <Typography
                         sx={{
-                            fontWeight: 700,
+                            fontWeight: 800,
                             fontSize: title === 'Gross Sales' || title === 'Net Sales' || title === 'Reconciled' ? '24px' : '20px',
                             letterSpacing: '-0.02em',
                             lineHeight: 1.2,
@@ -132,8 +130,8 @@ export default function FinanceKpiCard({
                             sx={{
                                 bgcolor: isGradient ? 'rgba(255,255,255,0.2)' : trendBg,
                                 color: isGradient ? 'white' : trendColor,
-                                px: 1, py: 0.25, borderRadius: '6px',
-                                fontWeight: 600, fontSize: '11px',
+                                px: 1, py: 0.25, borderRadius: '999px',
+                                fontWeight: 800, fontSize: '11px',
                             }}
                         >
                             {trendUp
@@ -144,7 +142,7 @@ export default function FinanceKpiCard({
                         </Stack>
                     )}
                     <Typography
-                        sx={{ fontWeight: 400, opacity: isGradient ? 0.85 : 1, fontSize: '12px', color: isGradient ? 'inherit' : '#64748B' }}
+                        sx={{ fontWeight: 600, opacity: isGradient ? 0.85 : 1, fontSize: '12px', color: isGradient ? 'inherit' : '#64748B' }}
                     >
                         {subtitle}
                     </Typography>
@@ -155,9 +153,9 @@ export default function FinanceKpiCard({
             <Box
                 sx={{
                     p: 1.25,
-                    borderRadius: '10px',
-                    bgcolor: isGradient ? 'rgba(255,255,255,0.2)' : '#EEF2FF',
-                    color: isGradient ? 'white' : '#1A56DB',
+                    borderRadius: '12px',
+                    bgcolor: isGradient ? 'rgba(255,255,255,0.2)' : `${accentColor}12`,
+                    color: isGradient ? 'white' : accentColor,
                     display: 'flex',
                     flexShrink: 0,
                     boxShadow: isGradient ? 'none' : 'inset 0 1px 3px rgba(0,0,0,0.02)',

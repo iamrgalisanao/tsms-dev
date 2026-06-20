@@ -17,7 +17,24 @@ export default function FinanceDashboardPage() {
     if (loading) return <FinanceLoadingSkeleton />;
 
     return (
-        <Box sx={{ width: '100%', maxWidth: 1440, mx: 'auto', px: { xs: 2, sm: 3, xl: 0 }, pb: 10 }}>
+        <Box
+            sx={{
+                width: '100%',
+                maxWidth: 1320,
+                mx: 'auto',
+                px: { xs: 2, sm: 3, xl: 0 },
+                pb: 8,
+                '&::before': {
+                    content: '""',
+                    position: 'fixed',
+                    inset: 0,
+                    pointerEvents: 'none',
+                    backgroundImage: 'linear-gradient(rgba(148,163,184,0.06) 1px, transparent 1px), linear-gradient(90deg, rgba(148,163,184,0.06) 1px, transparent 1px)',
+                    backgroundSize: '24px 24px',
+                    zIndex: -1,
+                },
+            }}
+        >
 
             {/* ── Row 1: Header / Sync / Period ──────────────────────── */}
             <FinanceDashboardHeader
@@ -37,7 +54,7 @@ export default function FinanceDashboardPage() {
             <FinanceAlerts metrics={metrics} />
 
             {/* ── Row 6: Revenue Trend 50% | Revenue Composition 50% ──── */}
-            <Grid container spacing={3} sx={{ mb: 4 }}>
+            <Grid container spacing={3} sx={{ mb: 3 }}>
                 <Grid item xs={12} lg={6}>
                     <RevenueTrendCard charts={charts} />
                 </Grid>
@@ -47,14 +64,14 @@ export default function FinanceDashboardPage() {
             </Grid>
 
             {/* ── Row 7: Top Tenants ───────────────────────────────────── */}
-            <Grid container spacing={3} sx={{ mb: 4 }}>
-                <Grid item xs={12}>
+            <Grid container spacing={3} sx={{ mb: 3 }}>
+                <Grid item xs={12} lg={8}>
                     <TopTenantsCard metrics={metrics} />
                 </Grid>
+                <Grid item xs={12} lg={4}>
+                    <QuickActionsHub compact />
+                </Grid>
             </Grid>
-
-            {/* ── Row 8: Quick Actions (full width) ───────────────────── */}
-            <QuickActionsHub />
 
         </Box>
     );
