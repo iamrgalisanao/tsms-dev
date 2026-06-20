@@ -325,6 +325,15 @@ class DashboardService
             ->limit(20)
             ->get();
 
+        if ($rows->isEmpty()) {
+            $rows = DB::table('pos_terminals as pt')
+                ->leftJoin('tenants as t', 't.id', '=', 'pt.tenant_id')
+                ->selectRaw('pt.id as terminal_id, pt.serial_number, COALESCE(t.trade_name, ?) as trade_name, 0 as total_sales', ['Unknown Tenant'])
+                ->orderBy('pt.serial_number')
+                ->limit(20)
+                ->get();
+        }
+
         return $rows->map(function ($row) {
             return [
                 'terminal_id' => $row->terminal_id,

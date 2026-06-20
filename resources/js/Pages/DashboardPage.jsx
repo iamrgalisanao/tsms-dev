@@ -142,6 +142,13 @@ const updateDashboardCache = (filters, updater) => {
     writeDashboardCache(filters, nextPayload);
 };
 
+const normalizeTerminalPerformance = (response) => {
+    if (Array.isArray(response)) return response;
+    if (Array.isArray(response?.data)) return response.data;
+    if (Array.isArray(response?.terminals)) return response.terminals;
+    return [];
+};
+
 const LoadingPanel = ({ label = 'Loading page details...' }) => (
     <Box sx={{
         minHeight: 180,
@@ -167,7 +174,7 @@ const DashboardPage = () => {
     const [metrics, setMetrics] = useState(() => initialDashboardCache?.metrics ?? null);
     const [chartData, setChartData] = useState(() => initialDashboardCache?.chartData ?? null);
     const [health, setHealth] = useState(() => initialDashboardCache?.health ?? null);
-    const [terminalPerformance, setTerminalPerformance] = useState(() => initialDashboardCache?.terminalPerformance ?? []);
+    const [terminalPerformance, setTerminalPerformance] = useState(() => normalizeTerminalPerformance(initialDashboardCache?.terminalPerformance));
     const [loading, setLoading] = useState(() => !hasInitialDashboardCache);
     const [loadingSections, setLoadingSections] = useState(() => ({
         metrics: !hasInitialDashboardCache,
@@ -214,7 +221,7 @@ const DashboardPage = () => {
         setMetrics(cachedPayload.metrics ?? null);
         setChartData(cachedPayload.chartData ?? null);
         setHealth(cachedPayload.health ?? null);
-        setTerminalPerformance(cachedPayload.terminalPerformance ?? []);
+        setTerminalPerformance(normalizeTerminalPerformance(cachedPayload.terminalPerformance));
         setAlerts(cachedPayload.alerts ?? []);
         setLastUpdated(cachedPayload.lastUpdated ? new Date(cachedPayload.lastUpdated) : null);
         setLoading(false);
@@ -239,7 +246,7 @@ const DashboardPage = () => {
                 runDashboardRequest('metrics', () => api.getMetrics(), setMetrics, isInitial),
                 runDashboardRequest('charts', () => api.getCharts(), setChartData, isInitial),
                 runDashboardRequest('health', () => api.getSystemHealth(), setHealth, isInitial),
-                runDashboardRequest('terminalPerformance', () => api.getTerminalPerformance(), (response) => setTerminalPerformance(response || []), isInitial),
+                runDashboardRequest('terminalPerformance', () => api.getTerminalPerformance(), (response) => setTerminalPerformance(normalizeTerminalPerformance(response)), isInitial),
                 runDashboardRequest('notifications', () => api.getNotifications(), (response) => setAlerts(response?.data || []), isInitial)
             ]);
 
@@ -251,7 +258,7 @@ const DashboardPage = () => {
                 metrics: metricsRes ?? previousCachedPayload.metrics ?? null,
                 chartData: chartsRes ?? previousCachedPayload.chartData ?? null,
                 health: healthRes ?? previousCachedPayload.health ?? null,
-                terminalPerformance: terminalPerformanceRes ?? previousCachedPayload.terminalPerformance ?? [],
+                terminalPerformance: normalizeTerminalPerformance(terminalPerformanceRes ?? previousCachedPayload.terminalPerformance),
                 alerts: notificationsRes?.data ?? previousCachedPayload.alerts ?? [],
                 lastUpdated: updatedAt.toISOString()
             });
@@ -273,8 +280,12 @@ const DashboardPage = () => {
         const cachedPayload = readDashboardCache(filters);
         if (cachedPayload) {
             applyCachedDashboardData(cachedPayload);
-            // Cached dashboard sections are session-scoped, so revisiting the page
-            // should paint retained alerts/terminal rankings without an immediate refetch.
+            // Cached dashboard sections are session-scoped. If terminal rows are
+            // missing, repair stale empty cache by fetching once instead of
+            // leaving the pie chart permanently empty.
+            if (normalizeTerminalPerformance(cachedPayload.terminalPerformance).length === 0) {
+                fetchDashboardData(false);
+            }
             return;
         }
 
