@@ -5,6 +5,7 @@ import FinanceLoadingSkeleton from '../../features/finance/components/FinanceLoa
 import FinanceDashboardHeader from '../../features/finance/components/FinanceDashboardHeader';
 import { FinanceKpiGrid, FinanceLeakageGrid } from '../../features/finance/components/FinanceKpiGrids';
 import FinanceAlerts from '../../features/finance/components/FinanceAlerts';
+import FinanceActivityHeatmap from '../../features/finance/components/FinanceActivityHeatmap';
 import RevenueTrendCard from '../../features/finance/components/RevenueTrendCard';
 import RevenueCompositionCard from '../../features/finance/components/RevenueCompositionCard';
 import TopTenantsCard from '../../features/finance/components/TopTenantsCard';
@@ -52,6 +53,9 @@ export default function FinanceDashboardPage() {
 
             {/* ── Row 4: Finance Alerts (full width) ──────────────────── */}
             <FinanceAlerts metrics={metrics} />
+
+            {/* ── Row 5: Activity Heatmap (full width) ────────────────── */}
+            <FinanceActivityHeatmap charts={charts} dateRange={dateRange} />
 
             {/* ── Bottom analytics: 2 cards per row (6 / 6 columns) ──── */}
             <Box
