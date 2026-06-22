@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { ThemeProvider } from '@mui/material/styles';
 import CssBaseline from '@mui/material/CssBaseline';
 import Tooltip from '@mui/material/Tooltip';
@@ -20,7 +20,6 @@ import { useAuth } from '../Contexts/AuthContext';
 const MainLayout = ({ children }) => {
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
     const location = useLocation();
-    const navigate = useNavigate();
     const { user: authUser, logout } = useAuth();
     const fullBleedRoutes = ['/dashboard'];
     const isFullBleedPage = fullBleedRoutes.includes(location.pathname);
@@ -234,7 +233,6 @@ const MainLayout = ({ children }) => {
                             <button
                                 onClick={async () => {
                                     await logout();
-                                    navigate('/login');
                                 }}
                                 aria-label={isSidebarOpen ? undefined : 'Logout'}
                                 className="flex items-center w-full p-2.5 rounded-lg text-[#A8B8D8] hover:bg-[#162558] hover:text-white transition-all duration-150 group"

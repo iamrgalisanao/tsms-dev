@@ -104,14 +104,31 @@ function _looksLikeHtml(body) {
     return /<!doctype html|<html|<head|<body|<form|<title>/.test(s);
 }
 
+let _authRedirecting = false;
+
+function _redirectToLogin() {
+    if (_authRedirecting || window.location.pathname === '/login') return;
+
+    _authRedirecting = true;
+    try {
+        window.authUser = null;
+        window.localStorage.removeItem('auth_token');
+        window.sessionStorage.clear();
+    } catch (e) {
+        // Storage cleanup is best effort; redirecting is the important part.
+    }
+
+    window.location.replace('/login');
+}
+
 // Axios response interceptor to detect HTML responses and auth failures
 if (window.axios && window.axios.interceptors) {
     window.axios.interceptors.response.use(function(response) {
         try {
             const ct = (response && response.headers && (response.headers['content-type'] || response.headers['Content-Type'])) || '';
             if (typeof response.data === 'string' && (ct.indexOf('text/html') !== -1 || _looksLikeHtml(response.data))) {
-                console.warn('AJAX returned HTML (possible session/login page). Showing session-expired banner.');
-                _createSessionBanner();
+                console.warn('AJAX returned HTML (possible session/login page). Redirecting to login.');
+                _redirectToLogin();
                 return Promise.reject(new Error('HTML response received for XHR'));
             }
         } catch (e) {
@@ -123,11 +140,11 @@ if (window.axios && window.axios.interceptors) {
             const resp = error && error.response;
             if (resp) {
                 // common auth/session statuses
-                if ([401, 419, 403].indexOf(resp.status) !== -1) {
-                    console.warn('AJAX error status', resp.status, '— showing session-expired banner.');
-                    _createSessionBanner();
+                if ([401, 419].indexOf(resp.status) !== -1) {
+                    console.warn('AJAX error status', resp.status, '— redirecting to login.');
+                    _redirectToLogin();
                 } else if (resp.data && typeof resp.data === 'string' && _looksLikeHtml(resp.data)) {
-                    _createSessionBanner();
+                    _redirectToLogin();
                 }
             }
         } catch (e) {}

@@ -2,6 +2,25 @@ import React, { createContext, useState, useContext, useEffect } from 'react';
 
 const AuthContext = createContext(null);
 
+const readCookie = (name) => {
+    const match = document.cookie.match(new RegExp(`(^|;)\\s*${name}=([^;]+)`));
+    return match ? match.pop() : null;
+};
+
+const getCsrfToken = () => {
+    const metaToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+    if (metaToken) return metaToken;
+
+    const cookieToken = readCookie('XSRF-TOKEN');
+    if (!cookieToken) return null;
+
+    try {
+        return decodeURIComponent(cookieToken);
+    } catch (error) {
+        return cookieToken;
+    }
+};
+
 export const AuthProvider = ({ children }) => {
     const [user, setUser] = useState(null);
     const [loading, setLoading] = useState(true);
@@ -88,22 +107,28 @@ export const AuthProvider = ({ children }) => {
 
     const logout = async () => {
         try {
-            const token = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
-            await fetch('/logout', {
+            const token = getCsrfToken();
+            const response = await fetch('/logout', {
                 method: 'POST',
                 headers: {
                     'Accept': 'application/json',
+                    'X-Requested-With': 'XMLHttpRequest',
                     ...(token ? { 'X-CSRF-TOKEN': token } : {})
                 },
                 credentials: 'include'
             });
+
+            if (!response.ok && ![401, 419].includes(response.status)) {
+                throw new Error(`Logout failed with status ${response.status}`);
+            }
         } catch (error) {
             console.error('Logout error:', error);
         } finally {
             localStorage.removeItem('auth_token');
+            sessionStorage.clear();
             window.authUser = null;
             setUser(null);
-            window.location.href = '/login';
+            window.location.replace('/login');
         }
     };
 
