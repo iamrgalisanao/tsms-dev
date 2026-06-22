@@ -2,12 +2,11 @@
 
 namespace App\Exports;
 
-use App\Models\Log;
+use App\Models\SystemLog;
 use Illuminate\Http\Request;
-use Maatwebsite\Excel\Concerns\FromCollection;
-use Maatwebsite\Excel\Concerns\WithHeadings;
+use Illuminate\Support\Collection;
 
-class LogExport implements FromCollection, WithHeadings
+class LogExport
 {
     protected $request;
 
@@ -16,9 +15,9 @@ class LogExport implements FromCollection, WithHeadings
         $this->request = $request;
     }
 
-    public function collection()
+    public function collection(): Collection
     {
-        $query = Log::query();
+        $query = SystemLog::query()->with('posTerminal');
         
         // Apply filters from request
         if ($this->request->filled('type')) {
@@ -34,19 +33,32 @@ class LogExport implements FromCollection, WithHeadings
             $query->whereDate('created_at', '<=', $this->request->date_to);
         }
 
-        return $query->get();
+        return $query->latest()->limit(5000)->get();
     }
 
     public function headings(): array
     {
         return [
-            'ID',
+            'Time',
             'Type',
             'Severity',
+            'Terminal',
+            'Transaction ID',
             'Message',
             'Context',
-            'Created At',
-            'Updated At'
+        ];
+    }
+
+    public function row(SystemLog $log): array
+    {
+        return [
+            optional($log->created_at)->format('Y-m-d H:i:s'),
+            $log->log_type ?? $log->type ?? 'general',
+            strtoupper($log->severity ?? 'info'),
+            $log->posTerminal->serial_number ?? $log->terminal_uid ?? 'N/A',
+            $log->transaction_id ?? 'N/A',
+            $log->message ?? '',
+            json_encode($log->context ?? [], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
         ];
     }
 }
