@@ -99,12 +99,17 @@ class SalesReportExportController extends Controller
         }
         $dailyMain = $mainQuery->groupBy('report_date')->get()->keyBy('report_date');
 
-        // Optimized Adjustments (Employee/VIP Discounts)
+        // Optimized Adjustments. Some POS payloads persist senior/PWD discounts
+        // in transaction_adjustments while transactions.senior_discount remains
+        // lower or zero; include those fallback totals so generated CMSR matches
+        // detailed transaction logs.
         $adjQuery = DB::table('transaction_adjustments')
             ->join('transactions', 'transaction_adjustments.transaction_pk', '=', 'transactions.id')
             ->selectRaw("
                 {$joinedReportDateExpr} as report_date,
                 SUM(IF(transaction_adjustments.adjustment_type IN ('employee_discount', 'EMPLOYEE'), transaction_adjustments.amount, 0)) as employee_discount,
+                SUM(IF(transaction_adjustments.adjustment_type IN ('senior_discount', 'senior_citizen_discount', 'senior'), transaction_adjustments.amount, 0)) as senior_discount,
+                SUM(IF(transaction_adjustments.adjustment_type IN ('pwd_discount', 'pwd_citizen_discount', 'pwddiscount', 'pwd'), transaction_adjustments.amount, 0)) as pwd_discount,
                 SUM(IF(transaction_adjustments.adjustment_type IN ('vip_card_discount', 'VIP'), transaction_adjustments.amount, 0)) as vip_discount
             ")
             ->whereRaw("{$joinedReportDateExpr} BETWEEN ? AND ?", [$startDate, $endDate]);
@@ -153,8 +158,8 @@ class SalesReportExportController extends Controller
                 'promo_with_approval' => max((float)($tx->promo_with_approval ?? 0), (float)($dailyPayloadAdjustments[$date]['promo_with_approval'] ?? 0)),
                 'promo_without_approval' => max((float)($tx->promo_without_approval ?? 0), (float)($dailyPayloadAdjustments[$date]['promo_without_approval'] ?? 0)),
                 'employee_discount' => max((float)($adj->employee_discount ?? 0), (float)($dailyPayloadAdjustments[$date]['employee_discount'] ?? 0)),
-                'senior_discount' => max((float)($tx->senior_discount ?? 0), (float)($dailyPayloadAdjustments[$date]['senior_discount'] ?? 0)),
-                'pwd_discount' => max((float)($tx->pwd_discount ?? 0), (float)($dailyPayloadAdjustments[$date]['pwd_discount'] ?? 0)),
+                'senior_discount' => max((float)($tx->senior_discount ?? 0), (float)($adj->senior_discount ?? 0), (float)($dailyPayloadAdjustments[$date]['senior_discount'] ?? 0)),
+                'pwd_discount' => max((float)($tx->pwd_discount ?? 0), (float)($adj->pwd_discount ?? 0), (float)($dailyPayloadAdjustments[$date]['pwd_discount'] ?? 0)),
                 'vip_discount' => max((float)($adj->vip_discount ?? 0), (float)($dailyPayloadAdjustments[$date]['vip_discount'] ?? 0)),
                 'other_tax' => (float)($tax->other_tax_basis ?? 0),
                 'service_charge_distributed' => max((float)($tx->service_charge_distributed ?? 0), (float)($dailyPayloadAdjustments[$date]['service_charge_distributed'] ?? 0)),
@@ -353,26 +358,21 @@ class SalesReportExportController extends Controller
 
     private function localReportDateExpression(string $timestampExpression): string
     {
-        $offsetMinutes = Carbon::now($this->reportTimezone())->utcOffset();
         $driver = DB::connection()->getDriverName();
 
+        // CMSR must follow the POS business date stored on the transaction.
+        // The live Bacolod June 21 case showed transaction_timestamp values are
+        // already local business timestamps; applying +08:00 shifted evening
+        // sales into June 22 and understated June 21 SC discounts.
         if ($driver === 'sqlite') {
-            $modifier = sprintf('%+d minutes', $offsetMinutes);
-
-            return "DATE(datetime({$timestampExpression}, '{$modifier}'))";
+            return "DATE({$timestampExpression})";
         }
 
         if ($driver === 'pgsql') {
-            $operator = $offsetMinutes >= 0 ? '+' : '-';
-            $minutes = abs($offsetMinutes);
-
-            return "DATE({$timestampExpression} {$operator} INTERVAL '{$minutes} minutes')";
+            return "DATE({$timestampExpression})";
         }
 
-        $function = $offsetMinutes >= 0 ? 'DATE_ADD' : 'DATE_SUB';
-        $minutes = abs($offsetMinutes);
-
-        return "DATE({$function}({$timestampExpression}, INTERVAL {$minutes} MINUTE))";
+        return "DATE({$timestampExpression})";
     }
 
     private function reportTimezone(): string
