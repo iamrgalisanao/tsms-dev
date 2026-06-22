@@ -19,10 +19,6 @@ try {
     const token = document.head.querySelector('meta[name="csrf-token"]');
     if (token) {
         window.axios.defaults.headers.common["X-CSRF-TOKEN"] = token.content;
-    } else {
-        console.error(
-            "CSRF token not found: https://laravel.com/docs/csrf#csrf-x-csrf-token"
-        );
     }
 } catch (e) {
     console.error("Error setting up axios:", e);
@@ -37,21 +33,23 @@ function _readCookie(name) {
 // Ensure axios has a fallback CSRF header if meta is missing (use XSRF-TOKEN cookie)
 function ensureAxiosCSRF() {
     try {
-        const meta = document.head.querySelector('meta[name="csrf-token"]');
-        if (meta && meta.content) {
-            window.axios.defaults.headers.common['X-CSRF-TOKEN'] = meta.content;
+        // Prefer the live XSRF-TOKEN cookie. In the SPA, the meta token can be
+        // older than the session cookie after login/session rotation.
+        const xsrf = _readCookie('XSRF-TOKEN');
+        if (xsrf) {
+            try {
+                window.axios.defaults.headers.common['X-XSRF-TOKEN'] = decodeURIComponent(xsrf);
+            } catch (e) {
+                window.axios.defaults.headers.common['X-XSRF-TOKEN'] = xsrf;
+            }
+            delete window.axios.defaults.headers.common['X-CSRF-TOKEN'];
             return;
         }
 
-        // Try cookie fallback (Laravel sets XSRF-TOKEN cookie)
-        const xsrf = _readCookie('XSRF-TOKEN');
-        if (xsrf) {
-            // cookie is URL encoded
-            try {
-                window.axios.defaults.headers.common['X-CSRF-TOKEN'] = decodeURIComponent(xsrf);
-            } catch (e) {
-                window.axios.defaults.headers.common['X-CSRF-TOKEN'] = xsrf;
-            }
+        const meta = document.head.querySelector('meta[name="csrf-token"]');
+        if (meta && meta.content) {
+            window.axios.defaults.headers.common['X-CSRF-TOKEN'] = meta.content;
+            delete window.axios.defaults.headers.common['X-XSRF-TOKEN'];
             return;
         }
 

@@ -7,23 +7,61 @@ const readCookie = (name) => {
     return match ? match.pop() : null;
 };
 
-const getCsrfToken = () => {
-    const metaToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
-    if (metaToken) return metaToken;
-
+const getCsrfHeaders = () => {
     const cookieToken = readCookie('XSRF-TOKEN');
-    if (!cookieToken) return null;
-
-    try {
-        return decodeURIComponent(cookieToken);
-    } catch (error) {
-        return cookieToken;
+    if (cookieToken) {
+        try {
+            return { 'X-XSRF-TOKEN': decodeURIComponent(cookieToken) };
+        } catch (error) {
+            return { 'X-XSRF-TOKEN': cookieToken };
+        }
     }
+
+    const metaToken = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
+    return metaToken ? { 'X-CSRF-TOKEN': metaToken } : {};
+};
+
+const refreshCsrfCookie = async () => {
+    await fetch('/sanctum/csrf-cookie', {
+        method: 'GET',
+        headers: {
+            'Accept': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest',
+        },
+        credentials: 'include',
+    });
+};
+
+const postLogout = () => {
+    return fetch('/logout', {
+        method: 'POST',
+        headers: {
+            'Accept': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest',
+            ...getCsrfHeaders()
+        },
+        credentials: 'include'
+    });
+};
+
+const postLogin = (email, password) => {
+    return fetch('/login', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+            'X-Requested-With': 'XMLHttpRequest',
+            ...getCsrfHeaders()
+        },
+        credentials: 'include',
+        body: JSON.stringify({ email, password }),
+    });
 };
 
 export const AuthProvider = ({ children }) => {
     const [user, setUser] = useState(null);
     const [loading, setLoading] = useState(true);
+    const [loggingOut, setLoggingOut] = useState(false);
 
     useEffect(() => {
         checkAuth();
@@ -73,17 +111,12 @@ export const AuthProvider = ({ children }) => {
 
     const login = async (email, password) => {
         try {
-            const token = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content');
-            const response = await fetch('/login', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Accept': 'application/json',
-                    ...(token ? { 'X-CSRF-TOKEN': token } : {})
-                },
-                credentials: 'include',
-                body: JSON.stringify({ email, password }),
-            });
+            let response = await postLogin(email, password);
+
+            if (response.status === 419) {
+                await refreshCsrfCookie();
+                response = await postLogin(email, password);
+            }
 
             if (!response.ok) {
                 const err = await response.json();
@@ -106,34 +139,41 @@ export const AuthProvider = ({ children }) => {
     };
 
     const logout = async () => {
-        try {
-            const token = getCsrfToken();
-            const response = await fetch('/logout', {
-                method: 'POST',
-                headers: {
-                    'Accept': 'application/json',
-                    'X-Requested-With': 'XMLHttpRequest',
-                    ...(token ? { 'X-CSRF-TOKEN': token } : {})
-                },
-                credentials: 'include'
-            });
+        if (loggingOut) return;
+        setLoggingOut(true);
+        let shouldRedirectToLogin = false;
 
-            if (!response.ok && ![401, 419].includes(response.status)) {
+        try {
+            let response = await postLogout();
+
+            if (response.status === 419) {
+                await refreshCsrfCookie();
+                response = await postLogout();
+            }
+
+            if (response.ok || response.status === 401) {
+                shouldRedirectToLogin = true;
+            } else {
                 throw new Error(`Logout failed with status ${response.status}`);
             }
         } catch (error) {
             console.error('Logout error:', error);
         } finally {
-            localStorage.removeItem('auth_token');
-            sessionStorage.clear();
-            window.authUser = null;
-            setUser(null);
-            window.location.replace('/login');
+            if (shouldRedirectToLogin) {
+                localStorage.removeItem('auth_token');
+                sessionStorage.clear();
+                window.authUser = null;
+                setUser(null);
+                window.location.replace('/login');
+                return;
+            }
+
+            setLoggingOut(false);
         }
     };
 
     return (
-        <AuthContext.Provider value={{ user, loading, login, logout }}>
+        <AuthContext.Provider value={{ user, loading, login, logout, loggingOut }}>
             {children}
         </AuthContext.Provider>
     );

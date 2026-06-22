@@ -20,7 +20,7 @@ import { useAuth } from '../Contexts/AuthContext';
 const MainLayout = ({ children }) => {
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
     const location = useLocation();
-    const { user: authUser, logout } = useAuth();
+    const { user: authUser, logout, loggingOut } = useAuth();
     const fullBleedRoutes = ['/dashboard'];
     const isFullBleedPage = fullBleedRoutes.includes(location.pathname);
 
@@ -231,14 +231,17 @@ const MainLayout = ({ children }) => {
                         {renderCollapsedTooltip(
                             'Logout',
                             <button
-                                onClick={async () => {
+                                type="button"
+                                disabled={loggingOut}
+                                onClick={async (event) => {
+                                    event.preventDefault();
                                     await logout();
                                 }}
                                 aria-label={isSidebarOpen ? undefined : 'Logout'}
-                                className="flex items-center w-full p-2.5 rounded-lg text-[#A8B8D8] hover:bg-[#162558] hover:text-white transition-all duration-150 group"
+                                className="flex items-center w-full p-2.5 rounded-lg text-[#A8B8D8] hover:bg-[#162558] hover:text-white transition-all duration-150 group disabled:cursor-wait disabled:opacity-60"
                             >
                                 <LogoutIcon sx={{ fontSize: 18, color: 'inherit' }} />
-                                {isSidebarOpen && <span className="ml-3 text-[13px] font-semibold">Logout</span>}
+                                {isSidebarOpen && <span className="ml-3 text-[13px] font-semibold">{loggingOut ? 'Logging out...' : 'Logout'}</span>}
                             </button>
                         )}
                     </div>
