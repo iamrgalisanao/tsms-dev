@@ -53,23 +53,41 @@ class SalesReportExportController extends Controller
         $reportDateExpr = $this->localReportDateExpression('COALESCE(transaction_timestamp, created_at)');
         $joinedReportDateExpr = $this->localReportDateExpression('COALESCE(transactions.transaction_timestamp, transactions.created_at)');
 
+        $grossExpr = Schema::hasColumn('transactions', 'gross_sales') ? 'SUM(gross_sales)' : '0';
+        $netExpr = Schema::hasColumn('transactions', 'net_sales') ? 'SUM(net_sales)' : '0';
+        $vatableExpr = Schema::hasColumn('transactions', 'vatable_sales') ? 'SUM(vatable_sales)' : '0';
+        $scVatExpr = Schema::hasColumn('transactions', 'sc_vat_exempt_sales') ? 'SUM(sc_vat_exempt_sales)' : '0';
+        $vatExpr = Schema::hasColumn('transactions', 'vat_amount') ? 'SUM(vat_amount)' : '0';
+        $promoWithExpr = (Schema::hasColumn('transactions', 'promo_discount') && Schema::hasColumn('transactions', 'promo_status'))
+            ? "SUM(IF(promo_status = 'WITH_APPROVAL', promo_discount, 0))"
+            : '0';
+        $promoWithoutExpr = Schema::hasColumn('transactions', 'promo_discount')
+            ? (Schema::hasColumn('transactions', 'promo_status')
+                ? "SUM(IF(promo_status != 'WITH_APPROVAL' OR promo_status IS NULL, promo_discount, 0))"
+                : 'SUM(promo_discount)')
+            : '0';
+        $seniorExpr = Schema::hasColumn('transactions', 'senior_discount') ? 'SUM(senior_discount)' : '0';
+        $pwdExpr = Schema::hasColumn('transactions', 'pwd_discount') ? 'SUM(pwd_discount)' : '0';
+        $regularExpr = Schema::hasColumn('transactions', 'discount_total') ? 'SUM(discount_total)' : '0';
+        $serviceChargeExpr = Schema::hasColumn('transactions', 'service_charge') ? 'SUM(service_charge)' : '0';
+        $managementServiceChargeExpr = Schema::hasColumn('transactions', 'management_service_charge') ? 'SUM(management_service_charge)' : '0';
+
         // Optimized Main Aggregation
         $mainQuery = Transaction::query()
             ->selectRaw("
                 {$reportDateExpr} as report_date,
-                SUM(gross_sales) as gross_sales,
-                SUM(net_sales) as net_sales,
-                SUM(vatable_sales) as vatable_sales,
-                SUM(sc_vat_exempt_sales) as sc_vat_exempt_sales,
-                SUM(vat_amount) as vat_amount,
-                SUM(promo_discount) as promo_discount,
-                SUM(senior_discount) as senior_discount,
-                SUM(pwd_discount) as pwd_discount,
-                SUM(discount_total) as regular_discount,
-                SUM(service_charge) as service_charge_distributed,
-                SUM(management_service_charge) as service_charge_retained,
-                SUM(IF(promo_status = 'WITH_APPROVAL', promo_discount, 0)) as promo_with_approval,
-                SUM(IF(promo_status != 'WITH_APPROVAL', promo_discount, 0)) as promo_without_approval
+                {$grossExpr} as gross_sales,
+                {$netExpr} as net_sales,
+                {$vatableExpr} as vatable_sales,
+                {$scVatExpr} as sc_vat_exempt_sales,
+                {$vatExpr} as vat_amount,
+                {$seniorExpr} as senior_discount,
+                {$pwdExpr} as pwd_discount,
+                {$regularExpr} as regular_discount,
+                {$serviceChargeExpr} as service_charge_distributed,
+                {$managementServiceChargeExpr} as service_charge_retained,
+                {$promoWithExpr} as promo_with_approval,
+                {$promoWithoutExpr} as promo_without_approval
             ")
             ->whereRaw("{$reportDateExpr} BETWEEN ? AND ?", [$startDate, $endDate]);
 
@@ -299,9 +317,13 @@ class SalesReportExportController extends Controller
 
         $rows = DB::table('transactions')
             ->selectRaw($reportDateExpr . ' as report_date')
-            ->addSelect('promo_status', 'original_payload')
+            ->addSelect('original_payload')
             ->whereRaw($reportDateExpr . ' BETWEEN ? AND ?', [$startDate, $endDate])
             ->when($tenantId, fn ($query) => $query->where('tenant_id', $tenantId));
+
+        if (Schema::hasColumn('transactions', 'promo_status')) {
+            $rows->addSelect('promo_status');
+        }
 
         if (config('tsms.reporting.exclude_voids_from_totals', true)) {
             $rows->where('transaction_type', '!=', 'VOID')->whereNull('voided_at');
@@ -321,7 +343,7 @@ class SalesReportExportController extends Controller
                 'service_charge_retained' => 0.0,
             ];
 
-            foreach ($service->adjustmentComponentsFromPayload($row->original_payload, $row->promo_status) as $key => $value) {
+            foreach ($service->adjustmentComponentsFromPayload($row->original_payload, $row->promo_status ?? null) as $key => $value) {
                 $totals[$date][$key] += $value;
             }
         }

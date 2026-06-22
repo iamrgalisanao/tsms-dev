@@ -55,8 +55,6 @@ const ActionRow = ({ icon, title, description, onClick, primary = false }) => (
 );
 
 export default function QuickActionsHub({ compact = false }) {
-    const now = new Date();
-
     return (
         <Box sx={{ ...CARD_STYLE, width: '100%' }}>
             <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2.5 }}>
@@ -83,11 +81,8 @@ export default function QuickActionsHub({ compact = false }) {
                     primary
                     icon={<AssessmentIcon sx={{ fontSize: 18 }} />}
                     title="Generate CMSR Report"
-                    description="Monthly tenant sales report"
-                    onClick={() => handleExport('/finance/reports/export', {
-                        year: now.getFullYear(),
-                        month: now.getMonth() + 1,
-                    })}
+                    description="Open CMSR report workspace"
+                    onClick={() => { window.location.href = '/reports'; }}
                 />
                 <ActionRow
                     icon={<AssessmentIcon sx={{ fontSize: 18 }} />}
