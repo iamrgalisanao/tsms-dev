@@ -49,7 +49,7 @@ const MainLayout = ({ children }) => {
         { name: 'Dashboard', path: '/commercial', icon: DashboardIcon, roles: ['commercial'] },
         { name: 'Reports', path: '/commercial/reports', icon: DescriptionIcon, roles: ['commercial'] },
         { name: 'Tenants', path: '/commercial/tenants', icon: PeopleIcon, roles: ['commercial'] },
-        { name: 'Tenant Management', path: '/commercial/tenants/manage', icon: DescriptionIcon, roles: ['admin', 'manager'] },
+        { name: 'Tenant Management', path: '/commercial/tenants/manage', icon: DescriptionIcon, roles: ['admin'] },
     ];
 
     const filteredItems = menuItems.filter(item => {

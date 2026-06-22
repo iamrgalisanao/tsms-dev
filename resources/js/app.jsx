@@ -174,7 +174,7 @@ const App = () => {
                       </ProtectedRoute>
                     } />
                     <Route path="/commercial/tenants/manage" element={
-                      <ProtectedRoute roles={['admin', 'manager']}>
+                      <ProtectedRoute roles={['admin']}>
                         <TenantUserManagementPage />
                       </ProtectedRoute>
                     } />

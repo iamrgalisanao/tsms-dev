@@ -75,8 +75,8 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::post('dashboard/notifications/dismiss', [DashboardController::class, 'apiDismissNotification']);
     });
 
-    // Admin/Manager ONLY (Sensitive administration)
-    Route::middleware(['role:admin|manager'])->group(function () {
+    // Admin ONLY (Sensitive administration)
+    Route::middleware(['role:admin'])->group(function () {
         // User Management API Routes
         Route::prefix('users')->group(function () {
             Route::get('/', [UserController::class, 'apiIndex']);

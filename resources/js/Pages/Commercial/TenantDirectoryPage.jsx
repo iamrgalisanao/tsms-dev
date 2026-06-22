@@ -183,7 +183,7 @@ const TenantDirectoryPage = () => {
 
     const { user } = useAuth();
     const userRole = user?.role?.toUpperCase() || (user?.roles?.[0]?.name || user?.roles?.[0] || '').toUpperCase();
-    const canManageTenants = userRole === 'ADMIN' || userRole === 'MANAGER';
+    const canManageTenants = userRole === 'ADMIN';
 
     return (
         <div style={{ paddingBottom: 48 }}>

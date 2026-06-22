@@ -135,7 +135,7 @@ const TenantUserManagementPage = () => {
     if (!isAuthorized) {
         return (
             <Container sx={{ py: 4 }}>
-                <Alert severity="error">Access denied. Only admin and commercial roles can manage tenants.</Alert>
+                <Alert severity="error">Access denied. Only administrators can manage tenant details.</Alert>
             </Container>
         );
     }
