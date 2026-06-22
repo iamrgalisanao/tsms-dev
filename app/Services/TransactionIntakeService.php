@@ -243,9 +243,12 @@ class TransactionIntakeService
         try {
             $threshold = config('tsms.intake.backpressure.max_queue_depth', 5000);
             
-            // Laravel's Redis queue prefix is usually 'queues:'
+            // Laravel's Redis queue prefix is usually 'queues:'. Use the
+            // configured queue Redis connection instead of assuming a
+            // dedicated "horizon" Redis connection exists on every server.
             $fullQueueName = 'queues:' . $queueName;
-            $currentDepth = \Illuminate\Support\Facades\Redis::connection('horizon')->llen($fullQueueName);
+            $redisConnection = config('queue.connections.redis.connection', 'default');
+            $currentDepth = \Illuminate\Support\Facades\Redis::connection($redisConnection)->llen($fullQueueName);
 
             if ($currentDepth >= $threshold) {
                 Log::warning('TransactionIntakeService: Backpressure triggered on shard', [
@@ -255,7 +258,7 @@ class TransactionIntakeService
                 ]);
                 return true;
             }
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             Log::error('TransactionIntakeService: Failed to check queue depth for backpressure', ['error' => $e->getMessage()]);
         }
 
