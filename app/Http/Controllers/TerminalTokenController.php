@@ -41,6 +41,57 @@ class TerminalTokenController extends Controller
             ], 500);
         }
     }
+
+    /**
+     * Update admin-managed terminal metadata without rotating API credentials.
+     */
+    public function apiUpdateTerminal(Request $request, PosTerminal $terminal)
+    {
+        try {
+            $validated = $request->validate([
+                'tenant_id' => ['required', 'exists:tenants,id'],
+                'serial_number' => ['required', 'string', 'max:255', 'unique:pos_terminals,serial_number,' . $terminal->id],
+                'machine_number' => ['nullable', 'string', 'max:255'],
+                'ip_address' => ['nullable', 'string', 'max:255'],
+            ], [
+                'serial_number.unique' => 'Terminal serial number is already registered in the system.',
+                'tenant_id.exists' => 'Selected tenant does not exist.',
+            ]);
+
+            $terminal->update($validated);
+
+            Log::info('POS terminal details updated via admin UI', [
+                'terminal_id' => $terminal->id,
+                'serial_number' => $terminal->serial_number,
+                'tenant_id' => $terminal->tenant_id,
+                'user_id' => auth()->id(),
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Terminal details updated successfully.',
+                'data' => $terminal->fresh()->load('tenant:id,trade_name'),
+            ]);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => 'The provided terminal details were invalid.',
+                'errors' => $e->errors(),
+            ], 422);
+        } catch (\Exception $e) {
+            Log::error('Error updating POS terminal details via admin UI', [
+                'terminal_id' => $terminal->id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Error updating terminal details: ' . $e->getMessage(),
+            ], 500);
+        }
+    }
+
     /**
      * API endpoint to register a new POS terminal and optionally
      * provision an initial Bearer token for it.

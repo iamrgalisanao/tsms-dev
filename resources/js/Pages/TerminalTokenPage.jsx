@@ -79,6 +79,15 @@ const TerminalTokenPage = () => {
     });
     const [registerSubmitting, setRegisterSubmitting] = useState(false);
     const [tenants, setTenants] = useState([]);
+    const [editDialogOpen, setEditDialogOpen] = useState(false);
+    const [editingTerminal, setEditingTerminal] = useState(null);
+    const [editForm, setEditForm] = useState({
+        tenant_id: '',
+        serial_number: '',
+        machine_number: '',
+        ip_address: ''
+    });
+    const [editSubmitting, setEditSubmitting] = useState(false);
 
     // Custom Confirmation Dialog State
     const [confirmDialog, setConfirmDialog] = useState({
@@ -283,6 +292,80 @@ const TerminalTokenPage = () => {
         setRegisterForm((prev) => ({ ...prev, [field]: value }));
     };
 
+    const handleOpenEdit = (terminal) => {
+        setEditingTerminal(terminal);
+        setEditForm({
+            tenant_id: terminal.tenant_id || '',
+            serial_number: terminal.serial_number || '',
+            machine_number: terminal.machine_number || '',
+            ip_address: terminal.ip_address || ''
+        });
+        setEditDialogOpen(true);
+    };
+
+    const handleCloseEdit = () => {
+        if (editSubmitting) return;
+        setEditDialogOpen(false);
+        setEditingTerminal(null);
+    };
+
+    const handleEditChange = (field, value) => {
+        setEditForm((prev) => ({ ...prev, [field]: value }));
+    };
+
+    const handleEditSubmit = async (event) => {
+        event.preventDefault();
+
+        if (!editingTerminal || !editForm.tenant_id || !editForm.serial_number) {
+            setNotification({
+                open: true,
+                message: 'Tenant and Serial Number are required.',
+                severity: 'warning'
+            });
+            return;
+        }
+
+        try {
+            setEditSubmitting(true);
+            const response = await terminalTokenService.updateTerminal(editingTerminal.id, editForm);
+
+            if (response.success) {
+                setNotification({
+                    open: true,
+                    message: `Terminal ${editForm.serial_number} updated successfully.`,
+                    severity: 'success'
+                });
+                setEditDialogOpen(false);
+                setEditingTerminal(null);
+                fetchData();
+            } else {
+                setNotification({
+                    open: true,
+                    message: response.message || 'Failed to update terminal.',
+                    severity: 'error'
+                });
+            }
+        } catch (error) {
+            let message = error.response?.data?.message || 'Terminal update failed.';
+
+            if (error.response?.data?.errors) {
+                const errors = error.response.data.errors;
+                const firstField = Object.keys(errors)[0];
+                if (firstField && errors[firstField][0]) {
+                    message = errors[firstField][0];
+                }
+            }
+
+            setNotification({
+                open: true,
+                message,
+                severity: 'error'
+            });
+        } finally {
+            setEditSubmitting(false);
+        }
+    };
+
     const handleRegisterSubmit = async (event) => {
         event.preventDefault();
 
@@ -442,6 +525,7 @@ const TerminalTokenPage = () => {
                     totalCount={totalCount}
                     onPageChange={handlePageChange}
                     onRowsPerPageChange={handleRowsPerPageChange}
+                    onEdit={handleOpenEdit}
                     onRegenerate={handleRegenerate}
                     onRevoke={handleRevoke}
                     onExtendExpiry={handleExtendExpiry}
@@ -593,6 +677,79 @@ const TerminalTokenPage = () => {
                         disabled={registerSubmitting}
                     >
                         {registerSubmitting ? 'Registering…' : 'Register Terminal'}
+                    </Button>
+                </DialogActions>
+            </Dialog>
+
+            {/* Edit POS Terminal Dialog */}
+            <Dialog
+                open={editDialogOpen}
+                onClose={handleCloseEdit}
+                maxWidth="sm"
+                fullWidth
+            >
+                <DialogTitle sx={{ fontWeight: 900 }}>Edit Terminal Details</DialogTitle>
+                <DialogContent dividers>
+                    <Box component="form" onSubmit={handleEditSubmit} sx={{ mt: 1 }}>
+                        <Stack spacing={2.5}>
+                            <TextField
+                                select
+                                label="Tenant"
+                                value={editForm.tenant_id}
+                                onChange={(e) => handleEditChange('tenant_id', e.target.value)}
+                                fullWidth
+                                required
+                                size="small"
+                            >
+                                {tenants.map((tenant) => (
+                                    <MenuItem key={tenant.id} value={tenant.id}>
+                                        {tenant.trade_name}
+                                    </MenuItem>
+                                ))}
+                            </TextField>
+
+                            <TextField
+                                label="Serial Number"
+                                value={editForm.serial_number}
+                                onChange={(e) => handleEditChange('serial_number', e.target.value)}
+                                fullWidth
+                                required
+                                size="small"
+                                inputProps={{ maxLength: 255 }}
+                            />
+
+                            <TextField
+                                label="Machine Number"
+                                value={editForm.machine_number}
+                                onChange={(e) => handleEditChange('machine_number', e.target.value)}
+                                fullWidth
+                                size="small"
+                                inputProps={{ maxLength: 255 }}
+                            />
+
+                            <TextField
+                                label="IP Address (optional)"
+                                value={editForm.ip_address}
+                                onChange={(e) => handleEditChange('ip_address', e.target.value)}
+                                fullWidth
+                                size="small"
+                                inputProps={{ maxLength: 255 }}
+                            />
+                        </Stack>
+                    </Box>
+                </DialogContent>
+                <DialogActions sx={{ px: 3, py: 2.5 }}>
+                    <Button onClick={handleCloseEdit} color="inherit" sx={{ fontWeight: 600 }} disabled={editSubmitting}>
+                        Cancel
+                    </Button>
+                    <Button
+                        onClick={handleEditSubmit}
+                        variant="contained"
+                        color="primary"
+                        sx={{ fontWeight: 700 }}
+                        disabled={editSubmitting}
+                    >
+                        {editSubmitting ? 'Updating…' : 'Update Terminal'}
                     </Button>
                 </DialogActions>
             </Dialog>

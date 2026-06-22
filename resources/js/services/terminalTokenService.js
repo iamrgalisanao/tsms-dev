@@ -88,6 +88,14 @@ export const terminalTokenService = {
     },
 
     /**
+     * Update admin-managed terminal metadata without rotating API tokens.
+     */
+    updateTerminal: async (terminalId, payload) => {
+        const response = await axios.put(`${API_BASE}/terminals/${terminalId}`, payload);
+        return response.data;
+    },
+
+    /**
      * Get list of tenants for filter dropdown
      */
     getTenants: async () => {

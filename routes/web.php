@@ -151,7 +151,7 @@ Route::middleware(['auth'])->group(function () {
     Route::get('/circuit-breakers', [CircuitBreakerController::class, 'index'])->name('circuit-breakers');
 
     // Terminal Token Routes
-    Route::prefix('terminal-tokens')->group(function () {
+    Route::prefix('terminal-tokens')->middleware('role:admin')->group(function () {
         Route::get('/', function () {
             return view('app');
         })->name('terminal-tokens');

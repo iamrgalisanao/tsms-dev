@@ -57,6 +57,10 @@ Route::middleware(['auth:sanctum'])->group(function () {
     Route::middleware(['role:admin|manager|commercial'])->group(function () {
         Route::get('dashboard/system-health', [DashboardController::class, 'apiSystemHealth']);
         Route::get('dashboard/audit-logs', [DashboardController::class, 'apiAuditLogs']);
+    });
+
+    // Admin ONLY (Terminal Token Management)
+    Route::middleware(['role:admin'])->group(function () {
         // Terminal Token Management
         Route::prefix('terminals/tokens')->group(function () {
             Route::get('/', [TerminalTokenController::class, 'apiIndex']);
@@ -66,6 +70,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
         });
 
         Route::post('terminals', [TerminalTokenController::class, 'apiStore']);
+        Route::put('terminals/{terminal}', [TerminalTokenController::class, 'apiUpdateTerminal']);
         Route::put('terminals/{terminal}/expiry', [TerminalTokenController::class, 'updateExpiry']);
     });
 

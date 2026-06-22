@@ -60,11 +60,11 @@ const App = () => {
                     <Route path="/dashboard" element={<DashboardPage />} />
                     <Route path="/transactions" element={<TransactionLogsPage />} />
                     
-                    {/* Admin / Manager / Commercial */}
+                    {/* Admin */}
                     <Route 
                       path="/terminal-tokens" 
                       element={
-                        <ProtectedRoute roles={['admin', 'manager', 'commercial']}>
+                        <ProtectedRoute roles={['admin']}>
                           <TerminalTokenPage />
                         </ProtectedRoute>
                       } 
