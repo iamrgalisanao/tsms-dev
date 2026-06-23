@@ -19,9 +19,10 @@ $intakeQueues = array_merge(
 return [
     'domain' => env('HORIZON_DOMAIN'),
     'path'   => env('HORIZON_PATH', 'horizon'),
-    // Ensure Horizon uses the same Redis connection as your queues.
-    // Priority: HORIZON_CONNECTION > QUEUE_REDIS_CONNECTION > 'horizon' > 'default'.
-    'use'    => env('HORIZON_CONNECTION', env('QUEUE_REDIS_CONNECTION', env('QUEUE_HORIZON_FALLBACK', 'horizon'))),
+    // Ensure Horizon's metadata store uses a Redis connection that is always
+    // defined in config/database.php. Keep this aligned with the Redis queue
+    // store unless a dedicated Horizon Redis store is explicitly configured.
+    'use'    => env('HORIZON_CONNECTION', env('QUEUE_REDIS_CONNECTION', 'default')),
     'prefix' => env('HORIZON_PREFIX', 'tsms:horizon:'),
 
     // Optional: CORS headers for Horizon API when served under a subdomain
