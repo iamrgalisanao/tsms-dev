@@ -313,7 +313,7 @@ class TransactionLogController extends Controller
         if (!empty($transaction->original_payload)) {
             $decoded = json_decode($transaction->original_payload, true);
             if (json_last_error() === JSON_ERROR_NONE && !empty($decoded)) {
-                return $decoded;
+                return $this->completeTransactionPayload($decoded, $transaction);
             }
         }
 
@@ -349,11 +349,62 @@ class TransactionLogController extends Controller
                     }
                 }
 
-                return $payload;
+                return $this->completeTransactionPayload($payload, $transaction);
             }
         }
 
-        return $this->buildPayloadFromTransaction($transaction);
+        return $this->completeTransactionPayload($this->buildPayloadFromTransaction($transaction), $transaction);
+    }
+
+    private function completeTransactionPayload(array $payload, Transaction $transaction): array
+    {
+        $looksLikeTransactionBody = isset($payload['transaction_id'])
+            || isset($payload['receipt_no'])
+            || isset($payload['gross_sales'])
+            || isset($payload['taxes'])
+            || isset($payload['adjustments']);
+
+        if ($looksLikeTransactionBody && !isset($payload['transaction']) && !isset($payload['transactions'])) {
+            $payload = [
+                'transaction' => $payload,
+            ];
+        }
+
+        $payload['submission_uuid'] ??= $transaction->submission_uuid;
+        $payload['submission_timestamp'] ??= optional($transaction->submission_timestamp)->toIso8601String();
+        $payload['tenant_id'] ??= $transaction->tenant_id;
+        $payload['terminal_id'] ??= $transaction->terminal_id;
+        $payload['transaction_count'] ??= isset($payload['transactions']) && is_array($payload['transactions'])
+            ? count($payload['transactions'])
+            : 1;
+        $payload['payload_checksum'] ??= $transaction->payload_checksum;
+
+        if (isset($payload['transaction']) && is_array($payload['transaction'])) {
+            $payload['transaction'] = $this->completeTransactionBody($payload['transaction'], $transaction);
+        }
+
+        if (isset($payload['transactions']) && is_array($payload['transactions'])) {
+            $payload['transactions'] = array_map(
+                fn ($body) => is_array($body) ? $this->completeTransactionBody($body, $transaction) : $body,
+                $payload['transactions']
+            );
+        }
+
+        return $payload;
+    }
+
+    private function completeTransactionBody(array $body, Transaction $transaction): array
+    {
+        $body['tenant_id'] ??= $transaction->tenant_id;
+        $body['terminal_id'] ??= $transaction->terminal_id;
+        $body['transaction_id'] ??= $transaction->transaction_id;
+        $body['transaction_timestamp'] ??= optional($transaction->transaction_timestamp)->toIso8601String();
+        $body['receipt_no'] ??= $transaction->receipt_no;
+        $body['gross_sales'] ??= (float) ($transaction->gross_sales ?? 0);
+        $body['net_sales'] ??= (float) ($transaction->net_sales ?? 0);
+        $body['payload_checksum'] ??= $transaction->payload_checksum;
+
+        return $body;
     }
 
     /**

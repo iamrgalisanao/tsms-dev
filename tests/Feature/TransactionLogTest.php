@@ -109,6 +109,43 @@ class TransactionLogTest extends TestCase
     }
 
     /** @test */
+    public function test_transaction_detail_payload_is_completed_with_tenant_and_terminal_ids()
+    {
+        $transaction = Transaction::factory()->create([
+            'tenant_id' => $this->tenant->id,
+            'terminal_id' => $this->terminal->id,
+            'transaction_id' => 'TXN-DETAIL-PAYLOAD',
+            'receipt_no' => 'REC-DETAIL-PAYLOAD',
+            'gross_sales' => 240.00,
+            'net_sales' => 214.29,
+            'payload_checksum' => str_repeat('a', 64),
+            'original_payload' => json_encode([
+                'transaction_id' => 'TXN-DETAIL-PAYLOAD',
+                'receipt_no' => 'REC-DETAIL-PAYLOAD',
+                'gross_sales' => '240.00',
+                'net_sales' => '214.29',
+                'taxes' => [
+                    ['tax_type' => 'VAT', 'amount' => '25.71'],
+                    ['tax_type' => 'VATABLE_SALES', 'amount' => '214.25'],
+                ],
+                'adjustments' => [],
+            ]),
+        ]);
+
+        $response = $this->actingAs($this->adminUser)
+            ->getJson(route('transactions.logs.show', $transaction->id));
+
+        $response->assertOk();
+        $this->assertSame($this->tenant->id, $response->json('payload.tenant_id'));
+        $this->assertSame($this->terminal->id, $response->json('payload.terminal_id'));
+        $this->assertSame(1, $response->json('payload.transaction_count'));
+        $this->assertSame('TXN-DETAIL-PAYLOAD', $response->json('payload.transaction.transaction_id'));
+        $this->assertSame($this->tenant->id, $response->json('payload.transaction.tenant_id'));
+        $this->assertSame($this->terminal->id, $response->json('payload.transaction.terminal_id'));
+        $this->assertSame('REC-DETAIL-PAYLOAD', $response->json('payload.transaction.receipt_no'));
+    }
+
+    /** @test */
     public function test_detailed_endpoint_without_filters_uses_lightweight_pagination()
     {
         $olderTransaction = Transaction::factory()->create([
