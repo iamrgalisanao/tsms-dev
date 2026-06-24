@@ -230,6 +230,52 @@ class TransactionLogTest extends TestCase
     }
 
     /** @test */
+    public function test_export_transaction_date_filter_uses_manila_business_day_for_utc_timestamps()
+    {
+        $matchingTransaction = Transaction::factory()->create([
+            'tenant_id' => $this->tenant->id,
+            'terminal_id' => $this->terminal->id,
+            'receipt_no' => 'REC-EXPORT-MANILA-JUNE-22',
+            'transaction_timestamp' => '2026-06-21 22:03:54',
+            'gross_sales' => 120.00,
+            'net_sales' => 107.14,
+            'validation_status' => 'VALID',
+        ]);
+
+        Transaction::factory()->create([
+            'tenant_id' => $this->tenant->id,
+            'terminal_id' => $this->terminal->id,
+            'receipt_no' => 'REC-EXPORT-MANILA-JUNE-21',
+            'transaction_timestamp' => '2026-06-21 15:59:59',
+            'gross_sales' => 99.00,
+            'net_sales' => 88.39,
+            'validation_status' => 'VALID',
+        ]);
+
+        Transaction::factory()->create([
+            'tenant_id' => $this->tenant->id,
+            'terminal_id' => $this->terminal->id,
+            'receipt_no' => 'REC-EXPORT-MANILA-JUNE-23',
+            'transaction_timestamp' => '2026-06-22 16:00:00',
+            'gross_sales' => 101.00,
+            'net_sales' => 90.18,
+            'validation_status' => 'VALID',
+        ]);
+
+        $export = new TransactionLogsExport([
+            'tenant_id' => $this->tenant->id,
+            'terminal_id' => $this->terminal->id,
+            'date_from' => '2026-06-22',
+            'date_to' => '2026-06-22',
+            'date_basis' => 'transaction',
+        ]);
+
+        $exportedTransactions = $export->query()->get();
+
+        $this->assertSame([$matchingTransaction->id], $exportedTransactions->pluck('id')->all());
+    }
+
+    /** @test */
     public function test_summary_endpoint_returns_react_summary_contract()
     {
         $secondTerminal = PosTerminal::factory()->create([
@@ -541,7 +587,7 @@ class TransactionLogTest extends TestCase
             'tenant_id' => $this->tenant->id,
             'terminal_id' => $this->terminal->id,
             'transaction_id' => 'TXN-EXPORT-OUTSIDE-DATE',
-            'transaction_timestamp' => '2026-05-31 23:59:59',
+            'transaction_timestamp' => '2026-05-31 15:59:59',
         ]);
 
         Sanctum::actingAs($financeUser);

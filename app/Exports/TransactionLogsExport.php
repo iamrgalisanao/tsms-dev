@@ -50,38 +50,10 @@ class TransactionLogsExport
                 $query->whereDate('created_at', $date);
             })
             ->when($this->filters['date_from'] ?? null, function ($query, $dateFrom) use ($dateColumn) {
-                if ($dateColumn === 'transaction_timestamp') {
-                    $query->where(function ($q) use ($dateFrom) {
-                        $q->where(function ($subQ) use ($dateFrom) {
-                            $subQ->whereNotNull('transaction_timestamp')
-                                ->where('transaction_timestamp', '>=', $dateFrom . ' 00:00:00');
-                        })->orWhere(function ($subQ) use ($dateFrom) {
-                            $subQ->whereNull('transaction_timestamp')
-                                ->where('created_at', '>=', $dateFrom . ' 00:00:00');
-                        });
-                    });
-
-                    return;
-                }
-
-                $query->where($dateColumn, '>=', $dateFrom . ' 00:00:00');
+                $query->where($dateColumn, '>=', $this->dateFilterValue($dateColumn, $dateFrom, false));
             })
             ->when($this->filters['date_to'] ?? null, function ($query, $dateTo) use ($dateColumn) {
-                if ($dateColumn === 'transaction_timestamp') {
-                    $query->where(function ($q) use ($dateTo) {
-                        $q->where(function ($subQ) use ($dateTo) {
-                            $subQ->whereNotNull('transaction_timestamp')
-                                ->where('transaction_timestamp', '<=', $dateTo . ' 23:59:59');
-                        })->orWhere(function ($subQ) use ($dateTo) {
-                            $subQ->whereNull('transaction_timestamp')
-                                ->where('created_at', '<=', $dateTo . ' 23:59:59');
-                        });
-                    });
-
-                    return;
-                }
-
-                $query->where($dateColumn, '<=', $dateTo . ' 23:59:59');
+                $query->where($dateColumn, '<=', $this->dateFilterValue($dateColumn, $dateTo, true));
             })
             ->when($this->filters['tenant_id'] ?? null, function ($query, $tenantId) {
                 $query->where('tenant_id', $tenantId);
@@ -100,6 +72,23 @@ class TransactionLogsExport
             }, function ($query) use ($dateColumn) {
                 $query->orderBy($dateColumn, 'desc');
             });
+    }
+
+    private function dateFilterValue(string $dateColumn, string $date, bool $endOfDay): string
+    {
+        if ($dateColumn === 'transaction_timestamp') {
+            $boundary = Carbon::createFromFormat('Y-m-d', $date, $this->transactionLogTimezone());
+            $boundary = $endOfDay ? $boundary->endOfDay() : $boundary->startOfDay();
+
+            return $boundary->setTimezone('UTC')->format('Y-m-d H:i:s');
+        }
+
+        return $date . ($endOfDay ? ' 23:59:59' : ' 00:00:00');
+    }
+
+    private function transactionLogTimezone(): string
+    {
+        return config('tsms.transaction_logs.timezone', 'Asia/Manila') ?: 'Asia/Manila';
     }
 
     public function headings(): array
