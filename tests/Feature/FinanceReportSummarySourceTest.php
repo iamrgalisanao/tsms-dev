@@ -95,7 +95,7 @@ class FinanceReportSummarySourceTest extends TestCase
         $this->assertEquals(19.75, (float) $response->json('totals.senior_pwd'));
     }
 
-    public function test_finance_report_groups_pos_timestamps_by_stored_business_day(): void
+    public function test_finance_report_groups_utc_timestamps_by_manila_business_day(): void
     {
         Transaction::factory()->create([
             'tenant_id' => $this->tenant->id,
@@ -124,8 +124,8 @@ class FinanceReportSummarySourceTest extends TestCase
         $response = $this->getJson('/reports/data?month=2026-06&tenant=' . $this->tenant->id);
 
         $response->assertOk();
-        $this->assertEquals(219.00, (float) $response->json('daily_totals.2026-06-17.gross_sales'));
-        $this->assertNull($response->json('daily_totals.2026-06-18'));
+        $this->assertEquals(99.00, (float) $response->json('daily_totals.2026-06-17.gross_sales'));
+        $this->assertEquals(120.00, (float) $response->json('daily_totals.2026-06-18.gross_sales'));
     }
 
     public function test_finance_report_aligns_gross_sales_with_transaction_summary_formula(): void

@@ -360,20 +360,26 @@ class ReportsController extends Controller
 
     private function localReportDateExpression(string $timestampExpression): string
     {
+        $offsetMinutes = Carbon::now($this->reportTimezone())->utcOffset();
         $driver = DB::connection()->getDriverName();
 
-        // Finance CMSR preview must follow the POS business date stored on the
-        // transaction. These timestamps are already local business timestamps;
-        // applying +08:00 shifts evening sales into the next report day.
         if ($driver === 'sqlite') {
-            return "DATE({$timestampExpression})";
+            $modifier = sprintf('%+d minutes', $offsetMinutes);
+
+            return "DATE(datetime({$timestampExpression}, '{$modifier}'))";
         }
 
         if ($driver === 'pgsql') {
-            return "DATE({$timestampExpression})";
+            $operator = $offsetMinutes >= 0 ? '+' : '-';
+            $minutes = abs($offsetMinutes);
+
+            return "DATE({$timestampExpression} {$operator} INTERVAL '{$minutes} minutes')";
         }
 
-        return "DATE({$timestampExpression})";
+        $function = $offsetMinutes >= 0 ? 'DATE_ADD' : 'DATE_SUB';
+        $minutes = abs($offsetMinutes);
+
+        return "DATE({$function}({$timestampExpression}, INTERVAL {$minutes} MINUTE))";
     }
 
     private function reportTimezone(): string
