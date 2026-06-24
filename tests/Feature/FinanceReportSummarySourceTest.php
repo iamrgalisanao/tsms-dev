@@ -95,7 +95,7 @@ class FinanceReportSummarySourceTest extends TestCase
         $this->assertEquals(19.75, (float) $response->json('totals.senior_pwd'));
     }
 
-    public function test_finance_report_groups_utc_timestamps_by_manila_business_day(): void
+    public function test_finance_report_groups_pos_timestamps_by_stored_business_day(): void
     {
         Transaction::factory()->create([
             'tenant_id' => $this->tenant->id,
@@ -124,8 +124,8 @@ class FinanceReportSummarySourceTest extends TestCase
         $response = $this->getJson('/reports/data?month=2026-06&tenant=' . $this->tenant->id);
 
         $response->assertOk();
-        $this->assertEquals(99.00, (float) $response->json('daily_totals.2026-06-17.gross_sales'));
-        $this->assertEquals(120.00, (float) $response->json('daily_totals.2026-06-18.gross_sales'));
+        $this->assertEquals(219.00, (float) $response->json('daily_totals.2026-06-17.gross_sales'));
+        $this->assertNull($response->json('daily_totals.2026-06-18'));
     }
 
     public function test_finance_report_uses_daily_summaries_only_when_every_requested_date_is_refreshed(): void
@@ -197,5 +197,36 @@ class FinanceReportSummarySourceTest extends TestCase
         $this->assertEquals(42.00, (float) $response->json('totals.gross_sales'));
         $this->assertEquals(4.00, (float) $response->json('totals.senior_discount'));
         $this->assertEquals(3.00, (float) $response->json('totals.pwd_discount'));
+    }
+
+    public function test_finance_user_can_download_cmsr_excel_export(): void
+    {
+        \Spatie\Permission\Models\Role::firstOrCreate([
+            'name' => 'finance',
+            'guard_name' => 'web',
+        ]);
+
+        $financeUser = User::factory()->create();
+        $financeUser->assignRole('finance');
+
+        Transaction::factory()->create([
+            'tenant_id' => $this->tenant->id,
+            'terminal_id' => $this->terminal->id,
+            'transaction_timestamp' => '2026-06-15 09:01:00',
+            'gross_sales' => 35.00,
+            'net_sales' => 31.25,
+            'vat_amount' => 3.75,
+            'vatable_sales' => 31.25,
+            'validation_status' => 'VALID',
+        ]);
+
+        Sanctum::actingAs($financeUser);
+
+        $response = $this->get('/finance/reports/export?year=2026&month=06&tenant=' . $this->tenant->id);
+
+        $response->assertOk();
+        $response->assertHeader('content-type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        $response->assertHeader('content-disposition');
+        $this->assertStringStartsWith('PK', $response->streamedContent());
     }
 }

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
     Box,
     TextField,
@@ -68,6 +68,10 @@ const resolveDatePreset = (filters) => {
     return 'custom';
 };
 
+const normalizeTenantName = (tenant) => (tenant?.trade_name || '').trim().toLowerCase();
+
+const tenantOptionLabel = (tenant) => tenant?.display_label || tenant?.trade_name || '';
+
 const FilterBar = ({ filters, onFilterChange, onReset, actionDisabled = false }) => {
     const [terminals, setTerminals] = useState([]);
     const [tenants, setTenants] = useState([]);
@@ -91,6 +95,35 @@ const FilterBar = ({ filters, onFilterChange, onReset, actionDisabled = false })
     useEffect(() => {
         setLocalSearch(filters.transaction_id || '');
     }, [filters.transaction_id]);
+
+    const tenantOptions = useMemo(() => {
+        const nameCounts = tenants.reduce((counts, tenant) => {
+            const name = normalizeTenantName(tenant);
+            if (name) {
+                counts[name] = (counts[name] || 0) + 1;
+            }
+
+            return counts;
+        }, {});
+
+        return tenants.map((tenant) => {
+            const name = tenant.trade_name || `Tenant ${tenant.id}`;
+            const isDuplicateName = nameCounts[normalizeTenantName(tenant)] > 1;
+            const details = [
+                tenant.customer_code,
+                tenant.unit_no ? `Unit ${tenant.unit_no}` : null,
+                tenant.location,
+            ].filter(Boolean);
+            const duplicateDetails = details.length > 0 ? details : [`ID ${tenant.id}`];
+
+            return {
+                ...tenant,
+                display_label: isDuplicateName
+                    ? `${name} (${duplicateDetails.join(' - ')})`
+                    : name,
+            };
+        });
+    }, [tenants]);
 
     useEffect(() => {
         if (localSearch === (filters.transaction_id || '')) {
@@ -204,10 +237,25 @@ const FilterBar = ({ filters, onFilterChange, onReset, actionDisabled = false })
                     <Box sx={{ minWidth: 220, flex: 1 }}>
                         <Autocomplete
                             size="small"
-                            options={tenants}
-                            getOptionLabel={(option) => option.trade_name || ''}
-                            value={tenants.find(t => t.id === filters.tenant_id) || null}
+                            options={tenantOptions}
+                            getOptionLabel={tenantOptionLabel}
+                            isOptionEqualToValue={(option, value) => String(option.id) === String(value.id)}
+                            value={tenantOptions.find(t => String(t.id) === String(filters.tenant_id)) || null}
                             onChange={(e, newValue) => handleChange('tenant_id', newValue?.id || '')}
+                            renderOption={(props, option) => (
+                                <Box component="li" {...props} key={option.id}>
+                                    <Box>
+                                        <Typography variant="body2" sx={{ fontWeight: 700 }}>
+                                            {tenantOptionLabel(option)}
+                                        </Typography>
+                                        {(option.customer_code || option.status) && (
+                                            <Typography variant="caption" color="text.secondary">
+                                                {[option.customer_code, option.status].filter(Boolean).join(' · ')}
+                                            </Typography>
+                                        )}
+                                    </Box>
+                                </Box>
+                            )}
                             renderInput={(params) => <TextField {...params} label="Tenant" placeholder="Filter by tenant" />}
                             sx={{ '& .MuiOutlinedInput-root': { borderRadius: 2 } }}
                         />

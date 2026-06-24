@@ -242,8 +242,9 @@ class ReportsController extends Controller
 
         $service = app(\App\Services\Reports\FinanceCalculationService::class);
         $reportDateExpr = $this->localReportDateExpression('COALESCE(transaction_timestamp, created_at)');
+        $joinedReportDateExpr = $this->localReportDateExpression('COALESCE(transactions.transaction_timestamp, transactions.created_at)');
         $payloadAdjustments = $this->payloadAdjustmentTotals($startDate, $endDate, $tenantId, $reportDateExpr, $service);
-        $adjustmentTotals = $this->dailyAdjustmentTotals($startDate, $endDate, $tenantId, $reportDateExpr);
+        $adjustmentTotals = $this->dailyAdjustmentTotals($startDate, $endDate, $tenantId, $joinedReportDateExpr);
         $dailyTotals = [];
         $allComponents = [];
 

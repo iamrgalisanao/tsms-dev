@@ -297,16 +297,14 @@ class SalesReportExportController extends Controller
 
             Log::info('Streaming export file: ' . $filename);
 
-            // Hardened Streaming
-            if (ob_get_level()) ob_end_clean();
-            
-            header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-            header('Content-Disposition: attachment; filename="' . $filename . '"');
-            header('Cache-Control: max-age=0');
-            
-            $writer = IOFactory::createWriter($spreadsheet, 'Xlsx');
-            $writer->save('php://output');
-            exit;
+            return response()->streamDownload(function () use ($spreadsheet) {
+                $writer = IOFactory::createWriter($spreadsheet, 'Xlsx');
+                $writer->save('php://output');
+                $spreadsheet->disconnectWorksheets();
+            }, $filename, [
+                'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                'Cache-Control' => 'max-age=0',
+            ]);
 
         } catch (\Exception $e) {
             Log::error('Export failed: ' . $e->getMessage());
