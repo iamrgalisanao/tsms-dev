@@ -71,6 +71,7 @@ class SalesReportExportController extends Controller
         $regularExpr = Schema::hasColumn('transactions', 'discount_total') ? 'SUM(discount_total)' : '0';
         $serviceChargeExpr = Schema::hasColumn('transactions', 'service_charge') ? 'SUM(service_charge)' : '0';
         $managementServiceChargeExpr = Schema::hasColumn('transactions', 'management_service_charge') ? 'SUM(management_service_charge)' : '0';
+        $otherTaxExpr = Schema::hasColumn('transactions', 'tax_exempt') ? 'SUM(tax_exempt)' : '0';
 
         // Optimized Main Aggregation
         $mainQuery = Transaction::query()
@@ -86,6 +87,7 @@ class SalesReportExportController extends Controller
                 {$regularExpr} as regular_discount,
                 {$serviceChargeExpr} as service_charge_distributed,
                 {$managementServiceChargeExpr} as service_charge_retained,
+                {$otherTaxExpr} as transaction_other_tax,
                 {$promoWithExpr} as promo_with_approval,
                 {$promoWithoutExpr} as promo_without_approval
             ")
@@ -161,7 +163,7 @@ class SalesReportExportController extends Controller
                 'senior_discount' => max((float)($tx->senior_discount ?? 0), (float)($adj->senior_discount ?? 0), (float)($dailyPayloadAdjustments[$date]['senior_discount'] ?? 0)),
                 'pwd_discount' => max((float)($tx->pwd_discount ?? 0), (float)($adj->pwd_discount ?? 0), (float)($dailyPayloadAdjustments[$date]['pwd_discount'] ?? 0)),
                 'vip_discount' => max((float)($adj->vip_discount ?? 0), (float)($dailyPayloadAdjustments[$date]['vip_discount'] ?? 0)),
-                'other_tax' => (float)($tax->other_tax_basis ?? 0),
+                'other_tax' => max((float)($tx->transaction_other_tax ?? 0), (float)($tax->other_tax_basis ?? 0)),
                 'service_charge_distributed' => max((float)($tx->service_charge_distributed ?? 0), (float)($dailyPayloadAdjustments[$date]['service_charge_distributed'] ?? 0)),
                 'service_charge_retained' => max((float)($tx->service_charge_retained ?? 0), (float)($dailyPayloadAdjustments[$date]['service_charge_retained'] ?? 0)),
                 // CMSR does not expose a standalone "regular discount" column.
@@ -180,12 +182,10 @@ class SalesReportExportController extends Controller
                 $allComponents[$key] = ($allComponents[$key] ?? 0) + $val;
             }
             $derived = $service->deriveMetrics($components, ['gross_sales_basis' => 'pre_deduction']);
-            $derived['gross_sales'] = round($components['gross_sales'], 2);
             $byDate[$date] = $derived;
         }
 
         $totals = $service->deriveMetrics($allComponents, ['gross_sales_basis' => 'pre_deduction']);
-        $totals['gross_sales'] = round($allComponents['gross_sales'] ?? 0, 2);
 
         // 3) Spreadsheet Generation
         $tpl = storage_path('app/templates/monthly_sales_template.xlsx');

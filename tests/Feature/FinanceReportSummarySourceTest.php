@@ -128,13 +128,13 @@ class FinanceReportSummarySourceTest extends TestCase
         $this->assertNull($response->json('daily_totals.2026-06-18'));
     }
 
-    public function test_finance_report_preserves_raw_gross_sales_when_component_sum_differs(): void
+    public function test_finance_report_aligns_gross_sales_with_transaction_summary_formula(): void
     {
-        Transaction::factory()->create([
+        $transaction = Transaction::factory()->create([
             'tenant_id' => $this->tenant->id,
             'terminal_id' => $this->terminal->id,
             'transaction_timestamp' => '2026-06-22 09:01:00',
-            'gross_sales' => 102074.33,
+            'gross_sales' => 98663.86,
             'net_sales' => 99149.26,
             'vatable_sales' => 83846.90,
             'sc_vat_exempt_sales' => 4758.78,
@@ -142,6 +142,21 @@ class FinanceReportSummarySourceTest extends TestCase
             'senior_discount' => 235.69,
             'pwd_discount' => 716.05,
             'validation_status' => 'VALID',
+        ]);
+
+        DB::table('transaction_adjustments')->insert([
+            'transaction_pk' => $transaction->id,
+            'adjustment_type' => 'employee_discount',
+            'amount' => 940.00,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+        DB::table('transaction_taxes')->insert([
+            'transaction_pk' => $transaction->id,
+            'tax_type' => 'LOCAL_TAX',
+            'amount' => 1515.28,
+            'created_at' => now(),
+            'updated_at' => now(),
         ]);
 
         Sanctum::actingAs($this->adminUser);
@@ -152,6 +167,7 @@ class FinanceReportSummarySourceTest extends TestCase
         $this->assertSame('raw_transactions', $response->json('source'));
         $this->assertEquals(102074.33, (float) $response->json('daily_totals.2026-06-22.gross_sales'));
         $this->assertEquals(102074.33, (float) $response->json('totals.gross_sales'));
+        $this->assertEquals(1515.28, (float) $response->json('totals.other_tax'));
     }
 
     public function test_finance_report_uses_daily_summaries_only_when_every_requested_date_is_refreshed(): void
@@ -194,7 +210,7 @@ class FinanceReportSummarySourceTest extends TestCase
             'pwd_discount' => 0,
             'vip_discount' => 0,
             'regular_discount' => 0,
-            'other_tax' => 0,
+            'other_tax' => 7.00,
             'service_charge_distributed' => 0,
             'service_charge_retained' => 0,
             'refreshed_at' => now(),
@@ -220,7 +236,7 @@ class FinanceReportSummarySourceTest extends TestCase
 
         $response->assertOk();
         $this->assertSame('daily_transaction_summaries', $response->json('source'));
-        $this->assertEquals(42.00, (float) $response->json('totals.gross_sales'));
+        $this->assertEquals(49.00, (float) $response->json('totals.gross_sales'));
         $this->assertEquals(4.00, (float) $response->json('totals.senior_discount'));
         $this->assertEquals(3.00, (float) $response->json('totals.pwd_discount'));
     }

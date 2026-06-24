@@ -62,6 +62,7 @@ class RefreshDailyTransactionSummaries extends Command
         $regularExpr = Schema::hasColumn('transactions', 'discount_total') ? 'COALESCE(SUM(t.discount_total),0)' : '0';
         $serviceChargeExpr = Schema::hasColumn('transactions', 'service_charge') ? 'COALESCE(SUM(t.service_charge),0)' : '0';
         $managementServiceChargeExpr = Schema::hasColumn('transactions', 'management_service_charge') ? 'COALESCE(SUM(t.management_service_charge),0)' : '0';
+        $otherTaxExpr = Schema::hasColumn('transactions', 'tax_exempt') ? 'COALESCE(SUM(t.tax_exempt),0)' : '0';
         $excludeVoids = config('tsms.reporting.exclude_voids_from_totals', true);
         $hasAdjustmentPk = Schema::hasTable('transaction_adjustments')
             && Schema::hasColumn('transaction_adjustments', 'transaction_pk');
@@ -86,6 +87,7 @@ class RefreshDailyTransactionSummaries extends Command
             ->selectRaw($regularExpr . ' as regular_discount')
             ->selectRaw($serviceChargeExpr . ' as service_charge_distributed')
             ->selectRaw($managementServiceChargeExpr . ' as service_charge_retained')
+            ->selectRaw($otherTaxExpr . ' as transaction_other_tax')
             ->whereRaw($dateExpr . ' BETWEEN ? AND ?', [$from, $to])
             ->when($tenantId, fn ($q) => $q->where('t.tenant_id', $tenantId));
 
@@ -158,7 +160,7 @@ class RefreshDailyTransactionSummaries extends Command
                     'pwd_discount' => max((float) $row->pwd_discount, (float) ($payload['pwd_discount'] ?? 0)),
                     'vip_discount' => max((float) $row->vip_discount, (float) ($payload['vip_discount'] ?? 0)),
                     'regular_discount' => $row->regular_discount,
-                    'other_tax' => $row->other_tax,
+                    'other_tax' => max((float) $row->transaction_other_tax, (float) $row->other_tax),
                     'service_charge_distributed' => $row->service_charge_distributed,
                     'service_charge_retained' => $row->service_charge_retained,
                     'refreshed_at' => now(),
