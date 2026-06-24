@@ -39,7 +39,7 @@ class RefreshDailyTransactionSummaries extends Command
             return self::FAILURE;
         }
 
-        $dateExpr = $this->localReportDateExpression('COALESCE(t.transaction_timestamp, t.created_at)');
+        $dateExpr = $this->reportDateExpression('COALESCE(t.transaction_timestamp, t.created_at)', 't.original_payload');
         $receiptExpr = Schema::hasColumn('transactions', 'receipt_no')
             ? "COUNT(DISTINCT NULLIF(t.receipt_no, ''))"
             : 'COUNT(*)';
@@ -231,6 +231,59 @@ class RefreshDailyTransactionSummaries extends Command
         }
 
         return $totals;
+    }
+
+    private function reportDateExpression(string $timestampExpression, string $payloadExpression): string
+    {
+        if (! Schema::hasColumn('transactions', 'original_payload')) {
+            return $this->localReportDateExpression($timestampExpression);
+        }
+
+        $driver = DB::connection()->getDriverName();
+        $localDateExpression = $this->localReportDateExpression($timestampExpression);
+
+        if ($driver === 'pgsql') {
+            $payloadTimestamp = "COALESCE(({$payloadExpression})::jsonb->>'transaction_timestamp', ({$payloadExpression})::jsonb#>>'{transaction,transaction_timestamp}')";
+
+            return "CASE
+                WHEN {$payloadExpression} IS NOT NULL
+                    AND {$payloadExpression} != ''
+                    AND {$payloadTimestamp} IS NOT NULL
+                    AND {$payloadTimestamp} !~ '(Z|[+-][0-9]{2}:?[0-9]{2})$'
+                THEN DATE({$timestampExpression})
+                ELSE {$localDateExpression}
+            END";
+        }
+
+        if ($driver === 'sqlite') {
+            $payloadTimestamp = "COALESCE(json_extract({$payloadExpression}, '$.transaction_timestamp'), json_extract({$payloadExpression}, '$.transaction.transaction_timestamp'))";
+
+            return "CASE
+                WHEN {$payloadExpression} IS NOT NULL
+                    AND {$payloadExpression} != ''
+                    AND {$payloadTimestamp} IS NOT NULL
+                    AND {$payloadTimestamp} NOT LIKE '%Z'
+                    AND {$payloadTimestamp} NOT GLOB '*[+-][0-9][0-9]:[0-9][0-9]'
+                    AND {$payloadTimestamp} NOT GLOB '*[+-][0-9][0-9][0-9][0-9]'
+                THEN DATE({$timestampExpression})
+                ELSE {$localDateExpression}
+            END";
+        }
+
+        $payloadTimestamp = "CASE
+            WHEN {$payloadExpression} IS NOT NULL AND {$payloadExpression} != '' AND JSON_VALID({$payloadExpression})
+            THEN COALESCE(JSON_UNQUOTE(JSON_EXTRACT({$payloadExpression}, '$.transaction_timestamp')), JSON_UNQUOTE(JSON_EXTRACT({$payloadExpression}, '$.transaction.transaction_timestamp')))
+            ELSE NULL
+        END";
+
+        return "CASE
+            WHEN {$payloadExpression} IS NOT NULL
+                AND {$payloadExpression} != ''
+                AND {$payloadTimestamp} IS NOT NULL
+                AND {$payloadTimestamp} NOT REGEXP '(Z|[+-][0-9]{2}:?[0-9]{2})$'
+            THEN DATE({$timestampExpression})
+            ELSE {$localDateExpression}
+        END";
     }
 
     private function localReportDateExpression(string $timestampExpression): string

@@ -129,6 +129,63 @@ class FinanceReportSummarySourceTest extends TestCase
         $this->assertEquals(120.00, (float) $response->json('daily_totals.2026-06-18.gross_sales'));
     }
 
+    public function test_finance_report_keeps_plain_payload_timestamps_on_stored_business_day(): void
+    {
+        Transaction::factory()->create([
+            'tenant_id' => $this->tenant->id,
+            'terminal_id' => $this->terminal->id,
+            'transaction_timestamp' => '2026-06-18 22:03:54',
+            'gross_sales' => 50.00,
+            'net_sales' => 44.64,
+            'vat_amount' => 5.36,
+            'vatable_sales' => 44.64,
+            'validation_status' => 'VALID',
+            'original_payload' => json_encode([
+                'transaction_timestamp' => '2026-06-18 22:03:54',
+            ]),
+        ]);
+
+        Sanctum::actingAs($this->adminUser);
+
+        $response = $this->getJson('/reports/data?month=2026-06&tenant=' . $this->tenant->id);
+
+        $response->assertOk();
+        $this->assertEquals(50.00, (float) $response->json('daily_totals.2026-06-18.gross_sales'));
+        $this->assertNull($response->json('daily_totals.2026-06-19'));
+    }
+
+    public function test_daily_summary_refresh_keeps_plain_payload_timestamps_on_stored_business_day(): void
+    {
+        Transaction::factory()->create([
+            'tenant_id' => $this->tenant->id,
+            'terminal_id' => $this->terminal->id,
+            'transaction_timestamp' => '2026-06-18 22:03:54',
+            'gross_sales' => 50.00,
+            'net_sales' => 44.64,
+            'vat_amount' => 5.36,
+            'vatable_sales' => 44.64,
+            'validation_status' => 'VALID',
+            'original_payload' => json_encode([
+                'transaction_timestamp' => '2026-06-18 22:03:54',
+            ]),
+        ]);
+
+        $this->artisan('reports:refresh-daily-transaction-summaries', [
+            '--from' => '2026-06-18',
+            '--to' => '2026-06-19',
+            '--tenant' => $this->tenant->id,
+        ])->assertExitCode(0);
+
+        $this->assertSame('50.00', DB::table('daily_transaction_summaries')
+            ->where('tenant_id', $this->tenant->id)
+            ->where('business_date', '2026-06-18')
+            ->value('gross_sales'));
+        $this->assertFalse(DB::table('daily_transaction_summaries')
+            ->where('tenant_id', $this->tenant->id)
+            ->where('business_date', '2026-06-19')
+            ->exists());
+    }
+
     public function test_finance_report_aligns_gross_sales_with_transaction_summary_formula(): void
     {
         $transaction = Transaction::factory()->create([
