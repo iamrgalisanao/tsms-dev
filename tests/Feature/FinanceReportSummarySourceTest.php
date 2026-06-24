@@ -142,6 +142,11 @@ class FinanceReportSummarySourceTest extends TestCase
             'senior_discount' => 235.69,
             'pwd_discount' => 716.05,
             'validation_status' => 'VALID',
+            'original_payload' => json_encode([
+                'taxes' => [
+                    ['tax_type' => 'LOCAL_TAX', 'amount' => '1515.28'],
+                ],
+            ]),
         ]);
 
         DB::table('transaction_adjustments')->insert([
@@ -151,14 +156,6 @@ class FinanceReportSummarySourceTest extends TestCase
             'created_at' => now(),
             'updated_at' => now(),
         ]);
-        DB::table('transaction_taxes')->insert([
-            'transaction_pk' => $transaction->id,
-            'tax_type' => 'LOCAL_TAX',
-            'amount' => 1515.28,
-            'created_at' => now(),
-            'updated_at' => now(),
-        ]);
-
         Sanctum::actingAs($this->adminUser);
 
         $response = $this->getJson('/reports/data?month=2026-06&tenant=' . $this->tenant->id);

@@ -160,7 +160,7 @@ class RefreshDailyTransactionSummaries extends Command
                     'pwd_discount' => max((float) $row->pwd_discount, (float) ($payload['pwd_discount'] ?? 0)),
                     'vip_discount' => max((float) $row->vip_discount, (float) ($payload['vip_discount'] ?? 0)),
                     'regular_discount' => $row->regular_discount,
-                    'other_tax' => max((float) $row->transaction_other_tax, (float) $row->other_tax),
+                    'other_tax' => max((float) $row->transaction_other_tax, (float) $row->other_tax, (float) ($payload['other_tax'] ?? 0)),
                     'service_charge_distributed' => $row->service_charge_distributed,
                     'service_charge_retained' => $row->service_charge_retained,
                     'refreshed_at' => now(),
@@ -220,6 +220,7 @@ class RefreshDailyTransactionSummaries extends Command
                 'senior_discount' => 0.0,
                 'pwd_discount' => 0.0,
                 'vip_discount' => 0.0,
+                'other_tax' => 0.0,
             ];
 
             foreach ($service->adjustmentComponentsFromPayload($row->original_payload, $row->promo_status) as $key => $value) {

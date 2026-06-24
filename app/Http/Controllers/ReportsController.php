@@ -172,7 +172,7 @@ class ReportsController extends Controller
                 'senior_discount' => max((float)($tx->senior_discount ?? 0), (float)($adj->senior_discount ?? 0), (float)($dailyPayloadAdjustments[$date]['senior_discount'] ?? 0)),
                 'pwd_discount' => max((float)($tx->pwd_discount ?? 0), (float)($adj->pwd_discount ?? 0), (float)($dailyPayloadAdjustments[$date]['pwd_discount'] ?? 0)),
                 'vip_discount' => max((float)($adj->vip_discount ?? 0), (float)($dailyPayloadAdjustments[$date]['vip_discount'] ?? 0)),
-                'other_tax' => max((float)($tx->transaction_other_tax ?? 0), (float)($tax->other_tax_basis ?? 0)),
+                'other_tax' => max((float)($tx->transaction_other_tax ?? 0), (float)($tax->other_tax_basis ?? 0), (float)($dailyPayloadAdjustments[$date]['other_tax'] ?? 0)),
                 'service_charge_distributed' => max((float)($tx->service_charge_distributed ?? 0), (float)($dailyPayloadAdjustments[$date]['service_charge_distributed'] ?? 0)),
                 'service_charge_retained' => max((float)($tx->service_charge_retained ?? 0), (float)($dailyPayloadAdjustments[$date]['service_charge_retained'] ?? 0)),
                 // CMSR-style views do not have a standalone regular discount column.
@@ -262,7 +262,7 @@ class ReportsController extends Controller
                 'senior_discount' => max((float) ($row->senior_discount ?? 0), (float) ($adjustments['senior_discount'] ?? 0), (float) ($payloadAdjustments[$date]['senior_discount'] ?? 0)),
                 'pwd_discount' => max((float) ($row->pwd_discount ?? 0), (float) ($adjustments['pwd_discount'] ?? 0), (float) ($payloadAdjustments[$date]['pwd_discount'] ?? 0)),
                 'vip_discount' => max((float) ($row->vip_discount ?? 0), (float) ($payloadAdjustments[$date]['vip_discount'] ?? 0)),
-                'other_tax' => (float) ($row->other_tax ?? 0),
+                'other_tax' => max((float) ($row->other_tax ?? 0), (float) ($payloadAdjustments[$date]['other_tax'] ?? 0)),
                 'service_charge_distributed' => max((float) ($row->service_charge_distributed ?? 0), (float) ($payloadAdjustments[$date]['service_charge_distributed'] ?? 0)),
                 'service_charge_retained' => max((float) ($row->service_charge_retained ?? 0), (float) ($payloadAdjustments[$date]['service_charge_retained'] ?? 0)),
                 'regular_discount' => 0.0,
@@ -319,6 +319,7 @@ class ReportsController extends Controller
                 'vip_discount' => 0.0,
                 'service_charge_distributed' => 0.0,
                 'service_charge_retained' => 0.0,
+                'other_tax' => 0.0,
             ];
 
             foreach ($service->adjustmentComponentsFromPayload($row->original_payload, $row->promo_status) as $key => $value) {

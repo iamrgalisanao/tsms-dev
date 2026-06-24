@@ -349,6 +349,7 @@ class FinanceCalculationService
             'vip_discount' => 0.0,
             'service_charge_distributed' => 0.0,
             'service_charge_retained' => 0.0,
+            'other_tax' => 0.0,
         ];
 
         if (is_string($payload)) {
@@ -385,6 +386,20 @@ class FinanceCalculationService
                 $components['service_charge_distributed'] += $amount;
             } elseif (in_array($type, ['management_service_charge', 'service_charge_retained_by_management'], true)) {
                 $components['service_charge_retained'] += $amount;
+            }
+        }
+
+        $taxRows = $payload['taxes'] ?? $payload['transaction']['taxes'] ?? [];
+        foreach ($taxRows as $tax) {
+            if (! is_array($tax)) {
+                continue;
+            }
+
+            $type = strtoupper(trim((string) ($tax['tax_type'] ?? '')));
+            $amount = (float) ($tax['amount'] ?? 0);
+
+            if ($type !== '' && ! in_array($type, self::NON_OTHER_TAX_TYPES, true)) {
+                $components['other_tax'] += $amount;
             }
         }
 
