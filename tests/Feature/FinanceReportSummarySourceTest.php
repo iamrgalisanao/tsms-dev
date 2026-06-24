@@ -9,6 +9,7 @@ use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\DB;
 use Laravel\Sanctum\Sanctum;
+use PhpOffice\PhpSpreadsheet\IOFactory;
 use Tests\TestCase;
 
 class FinanceReportSummarySourceTest extends TestCase
@@ -267,5 +268,96 @@ class FinanceReportSummarySourceTest extends TestCase
         $response->assertHeader('content-type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
         $response->assertHeader('content-disposition');
         $this->assertStringStartsWith('PK', $response->streamedContent());
+    }
+
+    public function test_cmsr_excel_export_uses_same_daily_summary_source_as_web_report(): void
+    {
+        \Spatie\Permission\Models\Role::firstOrCreate([
+            'name' => 'finance',
+            'guard_name' => 'web',
+        ]);
+
+        $financeUser = User::factory()->create();
+        $financeUser->assignRole('finance');
+
+        Transaction::factory()->create([
+            'tenant_id' => $this->tenant->id,
+            'terminal_id' => $this->terminal->id,
+            'transaction_timestamp' => '2026-06-15 09:01:00',
+            'gross_sales' => 35.00,
+            'net_sales' => 31.25,
+            'vat_amount' => 3.75,
+            'vatable_sales' => 31.25,
+            'senior_discount' => 0,
+            'pwd_discount' => 0,
+            'validation_status' => 'VALID',
+            'original_payload' => json_encode([
+                'adjustments' => [
+                    ['adjustment_type' => 'senior_discount', 'amount' => '4.00'],
+                    ['adjustment_type' => 'pwd_discount', 'amount' => '3.00'],
+                ],
+            ]),
+        ]);
+
+        DB::table('daily_transaction_summaries')->insert([
+            'tenant_id' => $this->tenant->id,
+            'terminal_id' => $this->terminal->id,
+            'business_date' => '2026-06-15',
+            'transaction_count' => 1,
+            'unique_receipts' => 1,
+            'gross_sales' => 42.00,
+            'net_sales' => 31.25,
+            'vatable_sales' => 31.25,
+            'vat_amount' => 3.75,
+            'sc_vat_exempt_sales' => 0,
+            'refund_amount' => 0,
+            'promo_with_approval' => 0,
+            'promo_without_approval' => 0,
+            'employee_discount' => 0,
+            'senior_discount' => 0,
+            'pwd_discount' => 0,
+            'vip_discount' => 0,
+            'regular_discount' => 0,
+            'other_tax' => 7.00,
+            'service_charge_distributed' => 0,
+            'service_charge_retained' => 0,
+            'refreshed_at' => now(),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        for ($day = 1; $day <= 30; $day++) {
+            DB::table('report_refresh_states')->insert([
+                'report_type' => 'daily_transaction_summaries',
+                'tenant_id' => null,
+                'business_date' => sprintf('2026-06-%02d', $day),
+                'status' => 'completed',
+                'refreshed_at' => now(),
+                'created_at' => now(),
+                'updated_at' => now(),
+            ]);
+        }
+
+        Sanctum::actingAs($financeUser);
+
+        $response = $this->get('/finance/reports/export?year=2026&month=06&tenant=' . $this->tenant->id);
+
+        $response->assertOk();
+
+        $tmp = tempnam(sys_get_temp_dir(), 'cmsr-export-');
+        file_put_contents($tmp, $response->streamedContent());
+
+        try {
+            $sheet = IOFactory::load($tmp)->getActiveSheet();
+
+            $this->assertEquals(31.25, (float) $sheet->getCell('B31')->getCalculatedValue());
+            $this->assertEquals(4.00, (float) $sheet->getCell('H31')->getCalculatedValue());
+            $this->assertEquals(3.00, (float) $sheet->getCell('I31')->getCalculatedValue());
+            $this->assertEquals(7.00, (float) $sheet->getCell('K31')->getCalculatedValue());
+            $this->assertEquals(49.00, (float) $sheet->getCell('N31')->getCalculatedValue());
+            $this->assertEquals(49.00, (float) $sheet->getCell('N49')->getCalculatedValue());
+        } finally {
+            @unlink($tmp);
+        }
     }
 }

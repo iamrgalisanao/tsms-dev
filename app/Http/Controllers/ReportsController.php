@@ -161,20 +161,21 @@ class ReportsController extends Controller
             $tx = $dailyMain->get($date);
             $adj = $dailyAdj->get($date);
             $tax = $dailyTax->get($date);
+            $payload = $dailyPayloadAdjustments[$date] ?? [];
 
             $components = [
                 'vatable_sales' => (float)($tx->vatable_sales ?? 0),
                 'sc_vat_exempt_sales' => (float)($tx->sc_vat_exempt_sales ?? 0),
                 'vat_amount' => (float)($tx->vat_amount ?? 0),
-                'promo_with_approval' => max((float)($tx->promo_with_approval ?? 0), (float)($dailyPayloadAdjustments[$date]['promo_with_approval'] ?? 0)),
-                'promo_without_approval' => max((float)($tx->promo_without_approval ?? 0), (float)($dailyPayloadAdjustments[$date]['promo_without_approval'] ?? 0)),
-                'employee_discount' => max((float)($adj->employee_discount ?? 0), (float)($dailyPayloadAdjustments[$date]['employee_discount'] ?? 0)),
-                'senior_discount' => max((float)($tx->senior_discount ?? 0), (float)($adj->senior_discount ?? 0), (float)($dailyPayloadAdjustments[$date]['senior_discount'] ?? 0)),
-                'pwd_discount' => max((float)($tx->pwd_discount ?? 0), (float)($adj->pwd_discount ?? 0), (float)($dailyPayloadAdjustments[$date]['pwd_discount'] ?? 0)),
-                'vip_discount' => max((float)($adj->vip_discount ?? 0), (float)($dailyPayloadAdjustments[$date]['vip_discount'] ?? 0)),
-                'other_tax' => max((float)($tx->transaction_other_tax ?? 0), (float)($tax->other_tax_basis ?? 0), (float)($dailyPayloadAdjustments[$date]['other_tax'] ?? 0)),
-                'service_charge_distributed' => max((float)($tx->service_charge_distributed ?? 0), (float)($dailyPayloadAdjustments[$date]['service_charge_distributed'] ?? 0)),
-                'service_charge_retained' => max((float)($tx->service_charge_retained ?? 0), (float)($dailyPayloadAdjustments[$date]['service_charge_retained'] ?? 0)),
+                'promo_with_approval' => max((float)($tx->promo_with_approval ?? 0), (float)($payload['promo_with_approval'] ?? 0)),
+                'promo_without_approval' => max((float)($tx->promo_without_approval ?? 0), (float)($payload['promo_without_approval'] ?? 0)),
+                'employee_discount' => max((float)($adj->employee_discount ?? 0), (float)($payload['employee_discount'] ?? 0)),
+                'senior_discount' => max((float)($tx->senior_discount ?? 0), (float)($adj->senior_discount ?? 0), (float)($payload['senior_discount'] ?? 0)),
+                'pwd_discount' => max((float)($tx->pwd_discount ?? 0), (float)($adj->pwd_discount ?? 0), (float)($payload['pwd_discount'] ?? 0)),
+                'vip_discount' => max((float)($adj->vip_discount ?? 0), (float)($payload['vip_discount'] ?? 0)),
+                'other_tax' => max((float)($tx->transaction_other_tax ?? 0), (float)($tax->other_tax_basis ?? 0), (float)($payload['other_tax'] ?? 0)),
+                'service_charge_distributed' => max((float)($tx->service_charge_distributed ?? 0), (float)($payload['service_charge_distributed'] ?? 0)),
+                'service_charge_retained' => max((float)($tx->service_charge_retained ?? 0), (float)($payload['service_charge_retained'] ?? 0)),
                 // CMSR-style views do not have a standalone regular discount column.
                 // Excluding discount_total avoids hidden double-counting in gross math.
                 'regular_discount' => 0.0,
@@ -242,6 +243,10 @@ class ReportsController extends Controller
             ->get()
             ->keyBy('report_date');
 
+        if ($rows->isEmpty()) {
+            return null;
+        }
+
         $service = app(\App\Services\Reports\FinanceCalculationService::class);
         $reportDateExpr = $this->localReportDateExpression('COALESCE(transaction_timestamp, created_at)');
         $joinedReportDateExpr = $this->localReportDateExpression('COALESCE(transactions.transaction_timestamp, transactions.created_at)');
@@ -252,19 +257,20 @@ class ReportsController extends Controller
 
         foreach ($rows as $date => $row) {
             $adjustments = $adjustmentTotals[$date] ?? [];
+            $payload = $payloadAdjustments[$date] ?? [];
             $components = [
                 'vatable_sales' => (float) ($row->vatable_sales ?? 0),
                 'sc_vat_exempt_sales' => (float) ($row->sc_vat_exempt_sales ?? 0),
                 'vat_amount' => (float) ($row->vat_amount ?? 0),
-                'promo_with_approval' => max((float) ($row->promo_with_approval ?? 0), (float) ($payloadAdjustments[$date]['promo_with_approval'] ?? 0)),
-                'promo_without_approval' => max((float) ($row->promo_without_approval ?? 0), (float) ($payloadAdjustments[$date]['promo_without_approval'] ?? 0)),
-                'employee_discount' => max((float) ($row->employee_discount ?? 0), (float) ($payloadAdjustments[$date]['employee_discount'] ?? 0)),
-                'senior_discount' => max((float) ($row->senior_discount ?? 0), (float) ($adjustments['senior_discount'] ?? 0), (float) ($payloadAdjustments[$date]['senior_discount'] ?? 0)),
-                'pwd_discount' => max((float) ($row->pwd_discount ?? 0), (float) ($adjustments['pwd_discount'] ?? 0), (float) ($payloadAdjustments[$date]['pwd_discount'] ?? 0)),
-                'vip_discount' => max((float) ($row->vip_discount ?? 0), (float) ($payloadAdjustments[$date]['vip_discount'] ?? 0)),
-                'other_tax' => max((float) ($row->other_tax ?? 0), (float) ($payloadAdjustments[$date]['other_tax'] ?? 0)),
-                'service_charge_distributed' => max((float) ($row->service_charge_distributed ?? 0), (float) ($payloadAdjustments[$date]['service_charge_distributed'] ?? 0)),
-                'service_charge_retained' => max((float) ($row->service_charge_retained ?? 0), (float) ($payloadAdjustments[$date]['service_charge_retained'] ?? 0)),
+                'promo_with_approval' => max((float) ($row->promo_with_approval ?? 0), (float) ($payload['promo_with_approval'] ?? 0)),
+                'promo_without_approval' => max((float) ($row->promo_without_approval ?? 0), (float) ($payload['promo_without_approval'] ?? 0)),
+                'employee_discount' => max((float) ($row->employee_discount ?? 0), (float) ($payload['employee_discount'] ?? 0)),
+                'senior_discount' => max((float) ($row->senior_discount ?? 0), (float) ($adjustments['senior_discount'] ?? 0), (float) ($payload['senior_discount'] ?? 0)),
+                'pwd_discount' => max((float) ($row->pwd_discount ?? 0), (float) ($adjustments['pwd_discount'] ?? 0), (float) ($payload['pwd_discount'] ?? 0)),
+                'vip_discount' => max((float) ($row->vip_discount ?? 0), (float) ($payload['vip_discount'] ?? 0)),
+                'other_tax' => max((float) ($row->other_tax ?? 0), (float) ($payload['other_tax'] ?? 0)),
+                'service_charge_distributed' => max((float) ($row->service_charge_distributed ?? 0), (float) ($payload['service_charge_distributed'] ?? 0)),
+                'service_charge_retained' => max((float) ($row->service_charge_retained ?? 0), (float) ($payload['service_charge_retained'] ?? 0)),
                 'regular_discount' => 0.0,
                 'gross_sales' => (float) ($row->gross_sales ?? 0),
                 'net_sales' => (float) ($row->net_sales ?? 0),
