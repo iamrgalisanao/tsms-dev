@@ -191,11 +191,13 @@ class ReportsController extends Controller
             }
 
             $derived = $service->deriveMetrics($components, ['gross_sales_basis' => 'pre_deduction']);
+            $derived['gross_sales'] = round($components['gross_sales'], 2);
             $dailyTotals[$date] = $derived;
         }
 
         // Build total month metrics
         $totals = $service->deriveMetrics($allComponents, ['gross_sales_basis' => 'pre_deduction']);
+        $totals['gross_sales'] = round($allComponents['gross_sales'] ?? 0, 2);
 
         return response()->json([
             'status' => 'success',
@@ -272,15 +274,20 @@ class ReportsController extends Controller
                 $allComponents[$key] = ($allComponents[$key] ?? 0) + $value;
             }
 
-            $dailyTotals[$date] = $service->deriveMetrics($components, ['gross_sales_basis' => 'pre_deduction']);
+            $derived = $service->deriveMetrics($components, ['gross_sales_basis' => 'pre_deduction']);
+            $derived['gross_sales'] = round($components['gross_sales'], 2);
+            $dailyTotals[$date] = $derived;
         }
+
+        $totals = $service->deriveMetrics($allComponents, ['gross_sales_basis' => 'pre_deduction']);
+        $totals['gross_sales'] = round($allComponents['gross_sales'] ?? 0, 2);
 
         return [
             'status' => 'success',
             'year' => $year,
             'month' => $month,
             'daily_totals' => $dailyTotals,
-            'totals' => $service->deriveMetrics($allComponents, ['gross_sales_basis' => 'pre_deduction']),
+            'totals' => $totals,
             'source' => 'daily_transaction_summaries',
             'generated_at' => now()->toIso8601String(),
         ];

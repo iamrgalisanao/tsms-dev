@@ -128,6 +128,32 @@ class FinanceReportSummarySourceTest extends TestCase
         $this->assertNull($response->json('daily_totals.2026-06-18'));
     }
 
+    public function test_finance_report_preserves_raw_gross_sales_when_component_sum_differs(): void
+    {
+        Transaction::factory()->create([
+            'tenant_id' => $this->tenant->id,
+            'terminal_id' => $this->terminal->id,
+            'transaction_timestamp' => '2026-06-22 09:01:00',
+            'gross_sales' => 102074.33,
+            'net_sales' => 99149.26,
+            'vatable_sales' => 83846.90,
+            'sc_vat_exempt_sales' => 4758.78,
+            'vat_amount' => 10061.63,
+            'senior_discount' => 235.69,
+            'pwd_discount' => 716.05,
+            'validation_status' => 'VALID',
+        ]);
+
+        Sanctum::actingAs($this->adminUser);
+
+        $response = $this->getJson('/reports/data?month=2026-06&tenant=' . $this->tenant->id);
+
+        $response->assertOk();
+        $this->assertSame('raw_transactions', $response->json('source'));
+        $this->assertEquals(102074.33, (float) $response->json('daily_totals.2026-06-22.gross_sales'));
+        $this->assertEquals(102074.33, (float) $response->json('totals.gross_sales'));
+    }
+
     public function test_finance_report_uses_daily_summaries_only_when_every_requested_date_is_refreshed(): void
     {
         Transaction::factory()->create([
@@ -155,7 +181,7 @@ class FinanceReportSummarySourceTest extends TestCase
             'business_date' => '2026-06-15',
             'transaction_count' => 1,
             'unique_receipts' => 1,
-            'gross_sales' => 35.00,
+            'gross_sales' => 42.00,
             'net_sales' => 31.25,
             'vatable_sales' => 31.25,
             'vat_amount' => 3.75,
