@@ -292,14 +292,8 @@ const FinanceReportsPage = () => {
         if (!selectedTenant) return;
         const [year, month] = reportMonth.split('-');
         const url = `/finance/reports/export?year=${year}&month=${month}&tenant=${selectedTenant.id}`;
-        
-        // Use an anchor tag to ensure download behavior is consistent
-        const link = document.createElement('a');
-        link.href = url;
-        link.setAttribute('download', `SalesReport_${year}_${month}.xlsx`);
-        document.body.appendChild(link);
-        link.click();
-        document.body.removeChild(link);
+
+        window.location.href = url;
     };
 
     return (
