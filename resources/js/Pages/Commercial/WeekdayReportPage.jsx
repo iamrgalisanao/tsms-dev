@@ -58,7 +58,7 @@ const WeekdayReportPage = () => {
         try {
             setLoading(true);
             setError(null);
-            const response = await axios.get('/commercial/reports/sales-report/transactions/weekday', {
+            const response = await axios.get('/commercial/reports/transactions/weekday', {
                 params: { date_from: dateFrom, date_to: dateTo, tenant_id: tenantId }
             });
             setData(response.data);
@@ -71,8 +71,13 @@ const WeekdayReportPage = () => {
     };
 
     const handleExport = () => {
-        const url = `/commercial/reports/sales-report/export?date=${dateFrom}&tenant_id=${tenantId || 'all'}`;
-        window.open(url, '_blank');
+        const params = new URLSearchParams({
+            report_type: 'weekday',
+            date_from: dateFrom,
+            date_to: dateTo,
+        });
+        if (tenantId) params.set('tenant_id', tenantId);
+        window.open(`/commercial/reports/export?${params.toString()}`, '_blank');
     };
 
     const formatCurrency = (val) => new Intl.NumberFormat('en-PH', { style: 'currency', currency: 'PHP' }).format(val || 0);

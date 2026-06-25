@@ -16,10 +16,7 @@ class DashboardController extends Controller
             // Create a base query
             $query = IntegrationLog::query();
 
-            // Eager load relationships only if we have records
-            if ($query->count() > 0) {
-                $query->with(['tenant:id,name', 'terminal:id,terminal_id']);
-            }
+            $query->with(['tenant:id,name', 'terminal:id,terminal_id']);
 
             // Select specific fields
             $query->select([

@@ -7,6 +7,17 @@ use Illuminate\Support\Facades\Schema;
 
 class DailyReportService
 {
+    private static ?bool $hasTransactionDate = null;
+
+    private function reportDateExpression(): string
+    {
+        self::$hasTransactionDate ??= Schema::hasColumn('transactions', 'transaction_date');
+
+        return self::$hasTransactionDate
+            ? 'transaction_date'
+            : 'DATE(transaction_timestamp)';
+    }
+
     /**
      * Return a summary and optional hourly breakdown for a single date.
      *
@@ -22,14 +33,16 @@ class DailyReportService
         $terminalId = null,
         bool $includeHourly = false
     ): array {
-        $dateExpr = Schema::hasColumn('transactions', 'transaction_date')
-            ? 'transaction_date'
-            : 'DATE(transaction_timestamp)';
+        $dateExpr = $this->reportDateExpression();
 
         $excludeVoids = config('tsms.reporting.exclude_voids_from_totals', true);
 
         $base = Transaction::query()
-            ->whereRaw("{$dateExpr} = ?", [$date]);
+            ->when(
+                self::$hasTransactionDate,
+                fn ($query) => $query->where('transaction_date', $date),
+                fn ($query) => $query->whereRaw("{$dateExpr} = ?", [$date])
+            );
 
         if ($tenantId && $tenantId !== 'all') {
             $base->where('tenant_id', $tenantId);

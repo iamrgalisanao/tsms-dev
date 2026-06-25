@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import axios from 'axios';
-import { format, subDays, startOfMonth, startOfYear } from 'date-fns';
+import { format, subDays, startOfMonth } from 'date-fns';
 import MetricCard from '../../Components/Commercial/MetricCard';
 import TransactionChart from '../../Components/dashboard/TransactionChart';
 import RecentTransactionsTable from '../../Components/dashboard/RecentTransactionsTable';
@@ -30,7 +30,12 @@ const CommercialDashboardPage = () => {
         monthly: { labels: [], sales: [], volume: [] },
         yearly: { labels: [], sales: [], volume: [] }
     });
-    const [loading, setLoading] = useState(true);
+    const [sectionLoading, setSectionLoading] = useState({
+        daily: true,
+        weekly: true,
+        monthly: true,
+        transactions: true
+    });
     const [refreshing, setRefreshing] = useState(false);
     const [recentTransactions, setRecentTransactions] = useState([]);
     const [error, setError] = useState(null);
@@ -39,66 +44,107 @@ const CommercialDashboardPage = () => {
 
     const fetchData = useCallback(async (isInitial = false) => {
         setRefreshing(true);
-        if (isInitial) setLoading(true);
         setError(null);
         try {
             // Define date parameters for the endpoints
             const todayStr = format(new Date(), 'yyyy-MM-dd');
             const sevenDaysAgoStr = format(subDays(new Date(), 6), 'yyyy-MM-dd'); // 7 days including today
             const monthStartStr = format(startOfMonth(new Date()), 'yyyy-MM-dd');
-            const yearStartStr = format(startOfYear(new Date()), 'yyyy-MM-dd');
 
-            // Daily: use hourly endpoint for chart breakdown + daily for summary
-            // Weekly/Monthly/Yearly use their respective endpoints
-            const [hourlyResp, dailyResp, weeklyResp, monthlyResp, transactionsRes] = await Promise.all([
-                axios.get('/commercial/reports/transactions/hourly', { params: { date: todayStr } }),
-                axios.get('/commercial/reports/transactions/daily', { params: { date: todayStr } }),
-                axios.get('/commercial/reports/transactions/weekly', { params: { date_from: sevenDaysAgoStr, date_to: todayStr } }),
-                axios.get('/commercial/reports/transactions/monthly', { params: { date_from: monthStartStr, date_to: todayStr } }),
-                api.getTransactions(1, {})
-            ]);
-
-            const todaySum = dailyResp.data?.summary?.gross_sales || 0;
-            const weekTotal = (weeklyResp.data?.days || []).reduce((acc, d) => acc + Number(d.gross_sales || 0), 0);
-            const monthTotal = (monthlyResp.data?.days || []).reduce((acc, d) => acc + Number(d.gross_sales || 0), 0);
-            const yearTotal = monthTotal; // Placeholder
-
-            setMetrics({
-                today_gross: Number(todaySum) || 0,
-                this_week_total: Number(weekTotal) || 0,
-                this_month_total: Number(monthTotal) || 0,
-                this_year_total: Number(yearTotal) || 0
+            setSectionLoading({
+                daily: true,
+                weekly: true,
+                monthly: true,
+                transactions: true
             });
 
-            const hourlyData = hourlyResp.data?.data || [];
+            const dashboardParams = { source: 'dashboard' };
+            const markSectionDone = (section) => {
+                setSectionLoading((current) => ({ ...current, [section]: false }));
+            };
 
-            setCharts({
-                daily: {
-                    labels: (hourlyData || []).map(h => h.hour || ''),
-                    sales: (hourlyData || []).map(h => h.gross_sales || 0),
-                    volume: (hourlyData || []).map(h => h.transaction_count || 0)
-                },
-                weekly: {
-                    labels: (weeklyResp.data?.days || []).map(d => d.date || ''),
-                    sales: (weeklyResp.data?.days || []).map(d => d.gross_sales || 0),
-                    volume: (weeklyResp.data?.days || []).map(d => d.transaction_count || 0)
-                },
-                monthly: {
-                    labels: (monthlyResp.data?.days || []).map(d => d.date || ''),
-                    sales: (monthlyResp.data?.days || []).map(d => d.gross_sales || 0),
-                    volume: (monthlyResp.data?.days || []).map(d => d.transaction_count || 0)
-                },
-                yearly: { labels: [], sales: [], volume: [] }
-            });
+            const requests = [
+                ['daily', axios.get('/commercial/reports/transactions/daily', { params: { date: todayStr, ...dashboardParams } })
+                    .then((dailyResp) => {
+                        const hourlyData = dailyResp.data?.data || [];
+                        const todaySum = dailyResp.data?.summary?.gross_sales || 0;
 
-            setRecentTransactions(transactionsRes.data || []);
+                        setMetrics((current) => ({
+                            ...current,
+                            today_gross: Number(todaySum) || 0
+                        }));
+                        setCharts((current) => ({
+                            ...current,
+                            daily: {
+                                labels: hourlyData.map(h => h.hour || ''),
+                                sales: hourlyData.map(h => h.gross_sales || 0),
+                                volume: hourlyData.map(h => h.transaction_count || 0)
+                            }
+                        }));
+                    })
+                    .finally(() => markSectionDone('daily'))],
+                ['weekly', axios.get('/commercial/reports/transactions/weekly', { params: { date_from: sevenDaysAgoStr, date_to: todayStr, ...dashboardParams } })
+                    .then((weeklyResp) => {
+                        const days = weeklyResp.data?.days || [];
+                        const weekTotal = days.reduce((acc, d) => acc + Number(d.gross_sales || 0), 0);
+
+                        setMetrics((current) => ({
+                            ...current,
+                            this_week_total: Number(weekTotal) || 0
+                        }));
+                        setCharts((current) => ({
+                            ...current,
+                            weekly: {
+                                labels: days.map(d => d.date || ''),
+                                sales: days.map(d => d.gross_sales || 0),
+                                volume: days.map(d => d.transaction_count || 0)
+                            }
+                        }));
+                    })
+                    .finally(() => markSectionDone('weekly'))],
+                ['monthly', axios.get('/commercial/reports/transactions/monthly', { params: { date_from: monthStartStr, date_to: todayStr, ...dashboardParams } })
+                    .then((monthlyResp) => {
+                        const days = monthlyResp.data?.days || [];
+                        const monthTotal = days.reduce((acc, d) => acc + Number(d.gross_sales || 0), 0);
+
+                        setMetrics((current) => ({
+                            ...current,
+                            this_month_total: Number(monthTotal) || 0,
+                            this_year_total: Number(monthTotal) || 0
+                        }));
+                        setCharts((current) => ({
+                            ...current,
+                            monthly: {
+                                labels: days.map(d => d.date || ''),
+                                sales: days.map(d => d.gross_sales || 0),
+                                volume: days.map(d => d.transaction_count || 0)
+                            }
+                        }));
+                    })
+                    .finally(() => markSectionDone('monthly'))],
+                ['transactions', api.getTransactions(1, { per_page: 10 })
+                    .then((transactionsRes) => {
+                        setRecentTransactions(transactionsRes.data?.data || transactionsRes.data || []);
+                    })
+                    .finally(() => markSectionDone('transactions'))]
+            ];
+
+            const settled = await Promise.allSettled(requests.map(([, request]) => request));
+            const failedSections = requests
+                .filter((_, index) => settled[index].status === 'rejected')
+                .map(([key]) => key);
+
+            if (failedSections.length > 0) {
+                console.error('Commercial dashboard sections failed:', failedSections, settled);
+                setError(`Some dashboard sections could not sync: ${failedSections.join(', ')}.`);
+                setNotification({ message: 'Some commercial dashboard sections failed to synchronize.', type: 'error' });
+            }
 
         } catch (err) {
             console.error('Error fetching commercial dashboard data:', err);
             setError('Failed to sync ecosystem vitals. The data shown might be outdated.');
             setNotification({ message: 'Critical: Failed to synchronize with TSMS core.', type: 'error' });
         } finally {
-            setLoading(false);
             setRefreshing(false);
         }
     }, [setError]);
@@ -184,7 +230,7 @@ const CommercialDashboardPage = () => {
                         <QueryStatsIcon sx={{ color: 'grey.300', fontSize: 32 }} />
                     </div>
                     <div className="h-[350px] relative z-10">
-                        <TransactionChart data={charts.daily} loading={loading} />
+                        <TransactionChart data={charts.daily} loading={sectionLoading.daily} />
                     </div>
                     <div className="absolute -bottom-10 -right-10 opacity-5 grayscale pointer-events-none">
                         <QueryStatsIcon sx={{ fontSize: 240 }} />
@@ -200,7 +246,7 @@ const CommercialDashboardPage = () => {
                         <TimelineIcon sx={{ color: 'grey.300', fontSize: 32 }} />
                     </div>
                     <div className="h-[350px] relative z-10">
-                        <TransactionChart data={charts.weekly} loading={loading} />
+                        <TransactionChart data={charts.weekly} loading={sectionLoading.weekly} />
                     </div>
                     <div className="absolute -bottom-10 -right-10 opacity-5 grayscale pointer-events-none">
                         <TimelineIcon sx={{ fontSize: 240 }} />
@@ -221,7 +267,7 @@ const CommercialDashboardPage = () => {
                         </div>
                     </div>
                     <div className="h-[400px] relative z-10">
-                        <TransactionChart data={charts.monthly} loading={loading} />
+                        <TransactionChart data={charts.monthly} loading={sectionLoading.monthly} />
                     </div>
                     <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 opacity-[0.02] pointer-events-none group-hover:opacity-[0.05] transition-opacity">
                         <AnalyticsIcon sx={{ fontSize: 500 }} />
@@ -240,7 +286,7 @@ const CommercialDashboardPage = () => {
                 <div className="glass-card rounded-[32px] border border-white/40 shadow-xl overflow-hidden bg-white/50 backdrop-blur-3xl">
                     <RecentTransactionsTable
                         transactions={recentTransactions}
-                        loading={loading}
+                        loading={sectionLoading.transactions}
                     />
                 </div>
             </div>

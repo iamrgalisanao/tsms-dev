@@ -60,6 +60,7 @@ class HourlyReportService
                         'refund_status' => $txSchema->hasColumn('transactions', 'refund_status'),
                         'transaction_timestamp' => $txSchema->hasColumn('transactions', 'transaction_timestamp'),
                         'completed_at' => $txSchema->hasColumn('transactions', 'completed_at'),
+                        'transaction_date' => $txSchema->hasColumn('transactions', 'transaction_date'),
                     ];
                 }
 
@@ -74,10 +75,10 @@ class HourlyReportService
             // Use a COALESCE expression so rows with NULL transaction_timestamp
             // still get included using completed_at/created_at as fallback.
                 $tsParts = [];
-            if ($txSchema->hasColumn('transactions', 'transaction_timestamp')) {
+            if ($schemaCache[$schemaKey]['transaction_timestamp']) {
                 $tsParts[] = 'transaction_timestamp';
             }
-            if ($txSchema->hasColumn('transactions', 'completed_at')) {
+            if ($schemaCache[$schemaKey]['completed_at']) {
                 $tsParts[] = 'completed_at';
             }
             // always include created_at as last-resort
@@ -152,9 +153,14 @@ class HourlyReportService
             // Group & filter using COALESCE-based date checks to match TransactionLog
             // behavior and avoid missing rows when transaction_timestamp is NULL.
                 $query = $primary->table('transactions')->select($selects)
-                    ->whereRaw('DATE(' . $tsExpr . ') >= ?', [$dateFrom])
-                    ->whereRaw('DATE(' . $tsExpr . ') <= ?', [$dateTo])
                     ->groupBy('tenant_id')->groupBy('terminal_id')->groupBy('hour');
+
+                if ($schemaCache[$schemaKey]['transaction_date']) {
+                    $query->whereBetween('transaction_date', [$dateFrom, $dateTo]);
+                } else {
+                    $query->whereRaw('DATE(' . $tsExpr . ') >= ?', [$dateFrom])
+                        ->whereRaw('DATE(' . $tsExpr . ') <= ?', [$dateTo]);
+                }
 
                 if (! empty($tenantId)) {
                     $query->where('tenant_id', $tenantId);
@@ -162,11 +168,6 @@ class HourlyReportService
                 if (! empty($terminalId)) {
                     $query->where('terminal_id', $terminalId);
                 }
-
-                // Log SQL for debugging / EXPLAIN run by ops
-                try {
-                    Log::info('HourlyReportService SQL', ['sql' => $query->toSql(), 'bindings' => $query->getBindings()]);
-                } catch (\Throwable $__e) {}
 
                 $rows = $query->get();
 

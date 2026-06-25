@@ -8,6 +8,17 @@ use Illuminate\Support\Facades\Schema;
 
 class WeeklyReportService
 {
+    private static ?bool $hasTransactionDate = null;
+
+    private function reportDateExpression(): string
+    {
+        self::$hasTransactionDate ??= Schema::hasColumn('transactions', 'transaction_date');
+
+        return self::$hasTransactionDate
+            ? 'transaction_date'
+            : 'DATE(transaction_timestamp)';
+    }
+
     /**
      * Aggregate daily rows between $from and $to.
      *
@@ -27,9 +38,7 @@ class WeeklyReportService
         bool $weekendOnly = false,
         bool $flatDays = false
     ): array {
-        $dateExpr = Schema::hasColumn('transactions', 'transaction_date')
-            ? 'transaction_date'
-            : 'DATE(transaction_timestamp)';
+        $dateExpr = $this->reportDateExpression();
 
         $excludeVoids = config('tsms.reporting.exclude_voids_from_totals', true);
 
@@ -46,7 +55,11 @@ class WeeklyReportService
                 SUM(pwd_discount)         as pwd_discount,
                 COUNT(*)                  as transaction_count
             ")
-            ->whereRaw("{$dateExpr} BETWEEN ? AND ?", [$from, $to]);
+            ->when(
+                self::$hasTransactionDate,
+                fn ($query) => $query->whereBetween('transaction_date', [$from, $to]),
+                fn ($query) => $query->whereRaw("{$dateExpr} BETWEEN ? AND ?", [$from, $to])
+            );
 
         if ($tenantId && $tenantId !== 'all') {
             $query->where('tenant_id', $tenantId);

@@ -89,6 +89,21 @@ const SalesReportPage = ({ type = 'daily' }) => {
         return base;
     };
 
+    const buildExportUrl = () => {
+        const params = new URLSearchParams({ report_type: type });
+        Object.entries(buildParams()).forEach(([key, value]) => {
+            if (value !== null && value !== undefined && value !== '') {
+                params.set(key, value);
+            }
+        });
+
+        return `/commercial/reports/export?${params.toString()}`;
+    };
+
+    const exportReport = () => {
+        window.open(buildExportUrl(), '_blank');
+    };
+
     const loadReport = useCallback(async () => {
         setLoading(true);
         setError(null);
@@ -196,10 +211,9 @@ const SalesReportPage = ({ type = 'daily' }) => {
 
                     {summary && (
                         <Button variant="outlined" color="primary" startIcon={<DownloadIcon />}
-                            href={`/commercial/reports/sales-report/export?date_from=${dateFrom}&date_to=${dateTo}&tenant_id=${selectedTenant?.id || ''}`}
-                            target="_blank"
+                            onClick={exportReport}
                             sx={{ borderRadius: '12px', fontWeight: 800, px: 3, whiteSpace: 'nowrap' }}>
-                            Export
+                            Export Excel
                         </Button>
                     )}
                 </Stack>

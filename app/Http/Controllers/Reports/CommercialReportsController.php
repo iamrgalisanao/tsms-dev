@@ -6,15 +6,26 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use App\Models\Tenant;
 use App\Http\Controllers\Api\Webapp\HourlyTransactionsController as ApiHourlyController;
-use App\Http\Controllers\Finance\SalesReportExportController as FinanceExportController;
 use App\Services\Reports\HourlyReportService;
 use App\Services\Reports\DailyReportService;
 use App\Services\Reports\WeeklyReportService;
 use App\Models\AuditLog;
 use Illuminate\Support\Facades\Log;
+use PhpOffice\PhpSpreadsheet\Cell\DataType;
+use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
+use PhpOffice\PhpSpreadsheet\IOFactory;
+use PhpOffice\PhpSpreadsheet\Spreadsheet;
+use PhpOffice\PhpSpreadsheet\Style\Alignment;
+use PhpOffice\PhpSpreadsheet\Style\Fill;
+use PhpOffice\PhpSpreadsheet\Style\NumberFormat;
 
 class CommercialReportsController extends Controller
 {
+    private function shouldAuditReportView(Request $request): bool
+    {
+        return $request->input('source') !== 'dashboard';
+    }
+
     // Show hourly report UI
     public function hourly()
     {
@@ -60,7 +71,7 @@ class CommercialReportsController extends Controller
         $result = $service->getWeeklySummary($from, $to, $tenantId, false, false, true);
 
         // Log result shape for debugging client 'No data' cases
-        try {
+        if (config('app.debug')) try {
             Log::info('commercial.weeklyData result', [
                 'from' => $from,
                 'to' => $to,
@@ -73,7 +84,7 @@ class CommercialReportsController extends Controller
             Log::warning('Failed to log weeklyData debug info: ' . $__e->getMessage());
         }
 
-        try {
+        if ($this->shouldAuditReportView($request)) try {
             AuditLog::create([
                 'user_id' => auth()->id(),
                 'action' => 'report.weekly_view',
@@ -113,7 +124,7 @@ class CommercialReportsController extends Controller
         $service = new WeeklyReportService();
         $result = $service->getWeeklySummary($from, $to, $tenantId, true, false, true);
 
-        try {
+        if ($this->shouldAuditReportView($request)) try {
             AuditLog::create([
                 'user_id' => auth()->id(),
                 'action' => 'report.weekday_view',
@@ -153,7 +164,7 @@ class CommercialReportsController extends Controller
         $service = new WeeklyReportService();
         $result = $service->getWeeklySummary($from, $to, $tenantId, false, true, true);
 
-        try {
+        if ($this->shouldAuditReportView($request)) try {
             AuditLog::create([
                 'user_id' => auth()->id(),
                 'action' => 'report.weekend_view',
@@ -227,7 +238,7 @@ class CommercialReportsController extends Controller
         $service = new WeeklyReportService();
         $result = $service->getWeeklySummary($from, $to, $tenantId, false, false, true);
 
-        try {
+        if (config('app.debug')) try {
             Log::info('commercial.monthlyData result', [
                 'from' => $from,
                 'to' => $to,
@@ -240,7 +251,7 @@ class CommercialReportsController extends Controller
             Log::warning('Failed to log monthlyData debug info: ' . $__e->getMessage());
         }
 
-        try {
+        if ($this->shouldAuditReportView($request)) try {
             AuditLog::create([
                 'user_id' => auth()->id(),
                 'action' => 'report.monthly_view',
@@ -350,7 +361,7 @@ class CommercialReportsController extends Controller
                 $summary[$k] = round($summary[$k], 2);
             }
 
-            try {
+            if ($this->shouldAuditReportView($request)) try {
                 AuditLog::create([
                     'user_id' => auth()->id(),
                     'action' => 'report.yearly_view',
@@ -368,14 +379,16 @@ class CommercialReportsController extends Controller
                 Log::warning('Failed to write AuditLog for yearly report view: ' . $e->getMessage(), ['from' => $from, 'to' => $to, 'tenant' => $tenantId]);
             }
 
-            Log::info('commercial.yearlyData result', [
-                'from' => $from,
-                'to' => $to,
-                'tenant' => $tenantId,
-                'summary' => $summary,
-                'months_count' => count($months),
-                'sample_months' => array_slice($months, 0, 3),
-            ]);
+            if (config('app.debug')) {
+                Log::info('commercial.yearlyData result', [
+                    'from' => $from,
+                    'to' => $to,
+                    'tenant' => $tenantId,
+                    'summary' => $summary,
+                    'months_count' => count($months),
+                    'sample_months' => array_slice($months, 0, 3),
+                ]);
+            }
 
             return response()->json(['summary' => $summary, 'months' => $months]);
         } catch (\Throwable $e) {
@@ -610,7 +623,7 @@ class CommercialReportsController extends Controller
         $data = $service->getHourlyAggregates($date, $date, $tenantId, null, true);
 
         // Record a lightweight audit event so UI "Load Report" actions are visible in audit logs.
-        try {
+        if ($this->shouldAuditReportView($request)) try {
             AuditLog::create([
                 'user_id' => auth()->id(),
                 'action' => 'report.hourly_view',
@@ -655,7 +668,7 @@ class CommercialReportsController extends Controller
         ];
 
         // Audit the UI action (non-blocking)
-        try {
+        if ($this->shouldAuditReportView($request)) try {
             AuditLog::create([
                 'user_id' => auth()->id(),
                 'action' => 'report.daily_view',
@@ -683,23 +696,309 @@ class CommercialReportsController extends Controller
     public function exportProxy(Request $request)
     {
         $request->validate([
-            'date' => ['required', 'date'],
-            'tenant_id' => ['required']
+            'report_type' => ['nullable', 'in:hourly,daily,weekly,weekday,weekend,monthly,yearly'],
+            'date' => ['nullable', 'date'],
+            'date_from' => ['nullable', 'date'],
+            'date_to' => ['nullable', 'date'],
+            'month' => ['nullable', 'string'],
+            'year' => ['nullable', 'string'],
+            'tenant_id' => ['nullable'],
         ]);
 
-        $date = \Carbon\Carbon::parse($request->input('date'));
-        $year = $date->year;
-        $month = str_pad($date->month, 2, '0', STR_PAD_LEFT);
-        $tenant = $request->input('tenant_id');
+        $type = $this->resolveExportType($request);
+        [$periodLabel, $rows, $summary] = $this->buildCommercialExportData($request, $type);
+        $tenantLabel = $this->exportTenantLabel($request->input('tenant_id'));
 
-        // Build a sub-request for the finance export controller
-        $apiRequest = Request::create('/finance/reports/export', 'GET', [
-            'year' => $year,
-            'month' => $month,
-            'tenant' => $tenant,
+        $spreadsheet = new Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+        $sheet->setTitle(substr(ucfirst($type), 0, 31));
+
+        $title = ucwords(str_replace('_', ' ', "{$type} sales report"));
+        $sheet->setCellValue('A1', $title);
+        $sheet->setCellValue('A2', "Tenant: {$tenantLabel}");
+        $sheet->setCellValue('A3', "Period: {$periodLabel}");
+        $sheet->setCellValue('A4', 'Generated: ' . now()->format('Y-m-d H:i:s'));
+
+        $headers = [
+            'Period',
+            'Gross Sales',
+            'Net Sales',
+            'Vatable Sales',
+            'VAT Amount',
+            'VAT Exempt Sales',
+            'SC/PWD Discount',
+            'Regular Discount',
+            'Cash Payment',
+            'Card Payment',
+            'Other Tender',
+            'Transactions',
+            'Guests',
+        ];
+
+        $headerRow = 6;
+        foreach ($headers as $index => $header) {
+            $sheet->setCellValue(Coordinate::stringFromColumnIndex($index + 1) . $headerRow, $header);
+        }
+
+        $dataRow = $headerRow + 1;
+        foreach ($rows as $row) {
+            $values = [
+                $row['period'] ?? '',
+                (float) ($row['gross_sales'] ?? 0),
+                (float) ($row['net_sales'] ?? 0),
+                (float) ($row['vatable_sales'] ?? 0),
+                (float) ($row['vat_amount'] ?? 0),
+                (float) ($row['vat_exempt_sales'] ?? 0),
+                (float) ($row['sc_pwd_discount'] ?? 0),
+                (float) ($row['regular_discount'] ?? 0),
+                (float) ($row['cash_payment'] ?? 0),
+                (float) ($row['card_payment'] ?? 0),
+                (float) ($row['other_tender'] ?? 0),
+                (int) ($row['transaction_count'] ?? 0),
+                (int) ($row['guest_count'] ?? 0),
+            ];
+
+            foreach ($values as $index => $value) {
+                $typeHint = $index === 0 ? DataType::TYPE_STRING : DataType::TYPE_NUMERIC;
+                $sheet->setCellValueExplicit(Coordinate::stringFromColumnIndex($index + 1) . $dataRow, $value, $typeHint);
+            }
+            $dataRow++;
+        }
+
+        $totalRow = $dataRow + 1;
+        $sheet->setCellValue("A{$totalRow}", 'TOTAL');
+        foreach (range(2, count($headers)) as $columnIndex) {
+            $key = [
+                2 => 'gross_sales',
+                3 => 'net_sales',
+                4 => 'vatable_sales',
+                5 => 'vat_amount',
+                6 => 'vat_exempt_sales',
+                7 => 'sc_pwd_discount',
+                8 => 'regular_discount',
+                9 => 'cash_payment',
+                10 => 'card_payment',
+                11 => 'other_tender',
+                12 => 'transaction_count',
+                13 => 'guest_count',
+            ][$columnIndex];
+
+            $sheet->setCellValueExplicit(
+                Coordinate::stringFromColumnIndex($columnIndex) . $totalRow,
+                $summary[$key] ?? 0,
+                DataType::TYPE_NUMERIC
+            );
+        }
+
+        $lastColumn = $sheet->getHighestColumn();
+        $sheet->mergeCells("A1:{$lastColumn}1");
+        $sheet->getStyle('A1')->getFont()->setBold(true)->setSize(16);
+        $sheet->getStyle("A{$headerRow}:{$lastColumn}{$headerRow}")->getFont()->setBold(true);
+        $sheet->getStyle("A{$headerRow}:{$lastColumn}{$headerRow}")
+            ->getFill()
+            ->setFillType(Fill::FILL_SOLID)
+            ->getStartColor()
+            ->setARGB('FFEFF6FF');
+        $sheet->getStyle("A{$headerRow}:{$lastColumn}{$totalRow}")
+            ->getAlignment()
+            ->setVertical(Alignment::VERTICAL_CENTER);
+        $sheet->getStyle("B7:K{$totalRow}")->getNumberFormat()->setFormatCode(NumberFormat::FORMAT_NUMBER_COMMA_SEPARATED1);
+        $sheet->getStyle("L7:M{$totalRow}")->getNumberFormat()->setFormatCode(NumberFormat::FORMAT_NUMBER);
+        $sheet->getStyle("A{$totalRow}:{$lastColumn}{$totalRow}")->getFont()->setBold(true);
+        $sheet->freezePane('A7');
+
+        foreach (range('A', $lastColumn) as $column) {
+            $sheet->getColumnDimension($column)->setAutoSize(true);
+        }
+
+        try {
+            AuditLog::create([
+                'user_id' => auth()->id(),
+                'action' => 'commercial_report_export',
+                'action_type' => 'export',
+                'resource_type' => 'report',
+                'message' => "Exported {$type} commercial report",
+                'metadata' => [
+                    'report_type' => $type,
+                    'period' => $periodLabel,
+                    'tenant_id' => $request->input('tenant_id'),
+                ],
+                'logged_at' => now(),
+            ]);
+        } catch (\Throwable $e) {
+            Log::warning('Failed to write AuditLog for commercial report export: ' . $e->getMessage());
+        }
+
+        $safePeriod = preg_replace('/[^A-Za-z0-9-]+/', '-', $periodLabel) ?: now()->format('Y-m-d');
+        $filename = "commercial-{$type}-sales-{$safePeriod}.xlsx";
+
+        return response()->streamDownload(function () use ($spreadsheet) {
+            $writer = IOFactory::createWriter($spreadsheet, 'Xlsx');
+            $writer->save('php://output');
+            $spreadsheet->disconnectWorksheets();
+        }, $filename, [
+            'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            'Cache-Control' => 'max-age=0',
         ]);
+    }
 
-        $exportController = new FinanceExportController();
-        return $exportController->export($apiRequest);
+    private function resolveExportType(Request $request): string
+    {
+        if ($request->filled('report_type')) {
+            return $request->input('report_type');
+        }
+
+        if ($request->filled('year')) {
+            return 'yearly';
+        }
+
+        if ($request->filled('month')) {
+            return 'monthly';
+        }
+
+        if ($request->filled('date_from') && $request->filled('date_to')) {
+            return 'monthly';
+        }
+
+        return $request->filled('date') ? 'hourly' : 'daily';
+    }
+
+    private function buildCommercialExportData(Request $request, string $type): array
+    {
+        $tenantId = $request->input('tenant_id');
+
+        return match ($type) {
+            'hourly' => $this->hourlyExportData($request, $tenantId),
+            'daily' => $this->dailyExportData($request, $tenantId),
+            'weekly' => $this->weeklyExportData($request, $tenantId, false, false),
+            'weekday' => $this->weeklyExportData($request, $tenantId, true, false),
+            'weekend' => $this->weeklyExportData($request, $tenantId, false, true),
+            'monthly' => $this->monthlyExportData($request, $tenantId),
+            'yearly' => $this->yearlyExportData($request, $tenantId),
+        };
+    }
+
+    private function hourlyExportData(Request $request, $tenantId): array
+    {
+        $date = $request->input('date') ?: now()->toDateString();
+        $data = (new HourlyReportService())->getHourlyAggregates($date, $date, $tenantId, null, true);
+        $rows = collect($data)->map(fn ($row) => $this->normalizeExportRow($row, $row['hour'] ?? ''))->all();
+
+        return [$date, $rows, $this->summarizeExportRows($rows)];
+    }
+
+    private function dailyExportData(Request $request, $tenantId): array
+    {
+        $date = $request->input('date') ?: now()->toDateString();
+        $result = (new DailyReportService())->getDailySummary($date, $tenantId, null, true);
+        $rows = collect($result['hours'] ?? [])->map(fn ($row) => $this->normalizeExportRow($row, $row['hour'] ?? ''))->all();
+
+        return [$date, $rows, $result['summary'] ?? $this->summarizeExportRows($rows)];
+    }
+
+    private function weeklyExportData(Request $request, $tenantId, bool $weekdayOnly, bool $weekendOnly): array
+    {
+        $from = $request->input('date_from') ?: now()->subDays(6)->toDateString();
+        $to = $request->input('date_to') ?: now()->toDateString();
+        $result = (new WeeklyReportService())->getWeeklySummary($from, $to, $tenantId, $weekdayOnly, $weekendOnly, true);
+        $rows = collect($result['days'] ?? [])->map(fn ($row) => $this->normalizeExportRow($row, $row['date'] ?? ''))->all();
+
+        return ["{$from}-to-{$to}", $rows, $result['summary'] ?? $this->summarizeExportRows($rows)];
+    }
+
+    private function monthlyExportData(Request $request, $tenantId): array
+    {
+        if ($request->filled('month')) {
+            $month = \Carbon\Carbon::parse($request->input('month'));
+            $from = $month->copy()->startOfMonth()->toDateString();
+            $to = $month->copy()->endOfMonth()->toDateString();
+        } else {
+            $from = $request->input('date_from') ?: now()->startOfMonth()->toDateString();
+            $to = $request->input('date_to') ?: now()->toDateString();
+        }
+
+        $result = (new WeeklyReportService())->getWeeklySummary($from, $to, $tenantId, false, false, true);
+        $rows = collect($result['days'] ?? [])->map(fn ($row) => $this->normalizeExportRow($row, $row['date'] ?? ''))->all();
+
+        return ["{$from}-to-{$to}", $rows, $result['summary'] ?? $this->summarizeExportRows($rows)];
+    }
+
+    private function yearlyExportData(Request $request, $tenantId): array
+    {
+        $year = $request->input('year') ?: now()->year;
+        $from = $request->input('date_from') ?: "{$year}-01-01";
+        $to = $request->input('date_to') ?: "{$year}-12-31";
+        $start = \Carbon\Carbon::parse($from)->startOfMonth();
+        $end = \Carbon\Carbon::parse($to)->startOfMonth();
+
+        $rows = [];
+        for ($date = $start->copy(); $date->lte($end); $date->addMonth()) {
+            $monthFrom = $date->copy()->startOfMonth()->toDateString();
+            $monthTo = $date->copy()->endOfMonth()->toDateString();
+            $result = (new WeeklyReportService())->getWeeklySummary($monthFrom, $monthTo, $tenantId, false, false, true);
+            $rows[] = $this->normalizeExportRow($result['summary'] ?? [], $date->format('Y-m'));
+        }
+
+        return ["{$from}-to-{$to}", $rows, $this->summarizeExportRows($rows)];
+    }
+
+    private function normalizeExportRow(array $row, string $period): array
+    {
+        return [
+            'period' => $period,
+            'gross_sales' => round((float) ($row['gross_sales'] ?? 0), 2),
+            'net_sales' => round((float) ($row['net_sales'] ?? 0), 2),
+            'vatable_sales' => round((float) ($row['vatable_sales'] ?? 0), 2),
+            'vat_amount' => round((float) ($row['vat_amount'] ?? 0), 2),
+            'vat_exempt_sales' => round((float) ($row['vat_exempt_sales'] ?? 0), 2),
+            'sc_pwd_discount' => round((float) ($row['sc_pwd_discount'] ?? 0), 2),
+            'regular_discount' => round((float) ($row['regular_discount'] ?? 0), 2),
+            'cash_payment' => round((float) ($row['cash_payment'] ?? 0), 2),
+            'card_payment' => round((float) ($row['card_payment'] ?? 0), 2),
+            'other_tender' => round((float) ($row['other_tender'] ?? 0), 2),
+            'transaction_count' => (int) ($row['transaction_count'] ?? 0),
+            'guest_count' => (int) ($row['guest_count'] ?? 0),
+        ];
+    }
+
+    private function summarizeExportRows(array $rows): array
+    {
+        $summary = [
+            'gross_sales' => 0,
+            'net_sales' => 0,
+            'vatable_sales' => 0,
+            'vat_amount' => 0,
+            'vat_exempt_sales' => 0,
+            'sc_pwd_discount' => 0,
+            'regular_discount' => 0,
+            'cash_payment' => 0,
+            'card_payment' => 0,
+            'other_tender' => 0,
+            'transaction_count' => 0,
+            'guest_count' => 0,
+        ];
+
+        foreach ($rows as $row) {
+            foreach ($summary as $key => $value) {
+                $summary[$key] += $row[$key] ?? 0;
+            }
+        }
+
+        foreach (array_keys($summary) as $key) {
+            if (! in_array($key, ['transaction_count', 'guest_count'], true)) {
+                $summary[$key] = round((float) $summary[$key], 2);
+            }
+        }
+
+        return $summary;
+    }
+
+    private function exportTenantLabel($tenantId): string
+    {
+        if (! $tenantId || $tenantId === 'all') {
+            return 'All Tenants';
+        }
+
+        return Tenant::find($tenantId)?->trade_name ?? "Tenant #{$tenantId}";
     }
 }

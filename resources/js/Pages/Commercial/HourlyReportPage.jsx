@@ -73,7 +73,12 @@ const HourlyReportPage = () => {
     }, [date, selectedTenant]);
 
     const handleExport = () => {
-        window.open(`/commercial/reports/sales-report/export?date=${date}&tenant_id=${selectedTenant?.id || ''}`, '_blank');
+        const params = new URLSearchParams({
+            report_type: 'hourly',
+            date,
+            tenant_id: selectedTenant?.id || ''
+        });
+        window.open(`/commercial/reports/export?${params.toString()}`, '_blank');
     };
 
     // Build 24-hour rows — fill gaps with zeros
@@ -132,7 +137,7 @@ const HourlyReportPage = () => {
                     {totals && (
                         <Button variant="outlined" onClick={handleExport} startIcon={<DownloadIcon />}
                             sx={{ borderRadius: '12px', fontWeight: 800, px: 3, whiteSpace: 'nowrap' }}>
-                            Export
+                            Export Excel
                         </Button>
                     )}
                 </Stack>
