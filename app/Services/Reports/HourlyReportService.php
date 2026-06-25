@@ -2,9 +2,12 @@
 
 namespace App\Services\Reports;
 
+use App\Models\Transaction;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
+use Illuminate\Support\Facades\Schema;
 
 /**
  * Service that encapsulates the hourly aggregation logic used by both
@@ -12,8 +15,6 @@ use Illuminate\Support\Carbon;
  */
 class HourlyReportService
 {
-    protected $connectionName = 'reporting';
-
     /**
      * Fetch hourly aggregates for the given date range and optional tenant/terminal filters.
      * Returns a collection (array) of normalized rows with the same contract
@@ -27,185 +28,180 @@ class HourlyReportService
      */
     public function getHourlyAggregates(string $dateFrom, string $dateTo, ?string $tenantId = null, ?string $terminalId = null, bool $scaleToMillions = false): array
     {
-        // Prefer live aggregation from the primary `transactions` table.
-        // The reporting summary table may be present in some deployments, but
-        // for consistent, authoritative results we always aggregate from the
-        // primary DB here.
-
-        // Otherwise, fall back to live aggregation from the primary `transactions` table.
         try {
-            // prefer the configured reporting connection if present
-            $primary = DB::connection($this->connectionName);
-            // build a cache key so frequently re-opened dashboards don't re-run heavy queries
             $cacheKey = sprintf('reports:hourly:%s:%s:tenant:%s:terminal:%s:scale:%s', $dateFrom, $dateTo, $tenantId ?? 'all', $terminalId ?? 'all', $scaleToMillions ? '1' : '0');
-            // short TTL - dashboard should show near-real-time data but we avoid repeated identical queries
-            $ttl = 60; // seconds
+            $ttl = 60;
 
-            return Cache::remember($cacheKey, $ttl, function() use ($primary, $dateFrom, $dateTo, $tenantId, $terminalId, $scaleToMillions) {
-                $txSchema = $primary->getSchemaBuilder();
+            return Cache::remember($cacheKey, $ttl, function () use ($dateFrom, $dateTo, $tenantId, $terminalId) {
+                $reportDateExpr = $this->reportDateExpression('COALESCE(transaction_timestamp, completed_at, created_at)', 'original_payload');
 
-                // cache hasColumn checks in a static to reduce repeated schema introspection costs
-                static $schemaCache = [];
-                $schemaKey = 'transactions_columns';
-                if (!isset($schemaCache[$schemaKey])) {
-                    $schemaCache[$schemaKey] = [
-                        'net_sales' => $txSchema->hasColumn('transactions', 'net_sales'),
-                        'discount_total' => $txSchema->hasColumn('transactions', 'discount_total'),
-                        'promo_discount' => $txSchema->hasColumn('transactions', 'promo_discount'),
-                        'vat_amount' => $txSchema->hasColumn('transactions', 'vat_amount'),
-                        'tax_amount' => $txSchema->hasColumn('transactions', 'tax_amount'),
-                        'service_charge' => $txSchema->hasColumn('transactions', 'service_charge'),
-                        'voided_at' => $txSchema->hasColumn('transactions', 'voided_at'),
-                        'refund_amount' => $txSchema->hasColumn('transactions', 'refund_amount'),
-                        'refund_status' => $txSchema->hasColumn('transactions', 'refund_status'),
-                        'transaction_timestamp' => $txSchema->hasColumn('transactions', 'transaction_timestamp'),
-                        'completed_at' => $txSchema->hasColumn('transactions', 'completed_at'),
-                        'transaction_date' => $txSchema->hasColumn('transactions', 'transaction_date'),
-                    ];
-                }
-
-                $hasNet = $schemaCache[$schemaKey]['net_sales'];
-                $hasDiscount = $schemaCache[$schemaKey]['discount_total'] || $schemaCache[$schemaKey]['promo_discount'];
-                $hasVat = $schemaCache[$schemaKey]['vat_amount'] || $schemaCache[$schemaKey]['tax_amount'];
-                $hasSc = $schemaCache[$schemaKey]['service_charge'];
-                $hasVoided = $schemaCache[$schemaKey]['voided_at'];
-                $hasRefund = $schemaCache[$schemaKey]['refund_amount'] || $schemaCache[$schemaKey]['refund_status'];
-
-            // Determine the best timestamp columns to use for grouping/filtering.
-            // Use a COALESCE expression so rows with NULL transaction_timestamp
-            // still get included using completed_at/created_at as fallback.
-                $tsParts = [];
-            if ($schemaCache[$schemaKey]['transaction_timestamp']) {
-                $tsParts[] = 'transaction_timestamp';
-            }
-            if ($schemaCache[$schemaKey]['completed_at']) {
-                $tsParts[] = 'completed_at';
-            }
-            // always include created_at as last-resort
-            $tsParts[] = 'created_at';
-                $tsExpr = 'COALESCE(' . implode(', ', $tsParts) . ')';
-
-                $selects = [
-                'tenant_id',
-                DB::raw("COALESCE(terminal_id, 0) AS terminal_id"),
-                DB::raw("DATE_FORMAT({$tsExpr}, '%Y-%m-%d %H:00:00') AS hour"),
-                DB::raw('COUNT(*) AS tx_count'),
-                DB::raw('SUM(COALESCE(gross_sales,0)) AS total_amount'),
-                DB::raw('SUM(COALESCE(gross_sales,0)) AS total_gross_amount'),
-            ];
-
-            $selects[] = $hasNet ? DB::raw('SUM(COALESCE(net_sales,0)) AS total_net_amount') : DB::raw('0 AS total_net_amount');
-
-            if ($hasDiscount) {
-                $hasDiscountTotal = $txSchema->hasColumn('transactions', 'discount_total');
-                $hasPromoDiscount = $txSchema->hasColumn('transactions', 'promo_discount');
-                if ($hasDiscountTotal && $hasPromoDiscount) {
-                    $selects[] = DB::raw('SUM(COALESCE(discount_total, promo_discount, 0)) AS total_discount_amount');
-                } elseif ($hasDiscountTotal) {
-                    $selects[] = DB::raw('SUM(COALESCE(discount_total, 0)) AS total_discount_amount');
-                } else {
-                    $selects[] = DB::raw('SUM(COALESCE(promo_discount, 0)) AS total_discount_amount');
-                }
-            } else {
-                $selects[] = DB::raw('0 AS total_discount_amount');
-            }
-
-            if ($hasVat) {
-                $hasVatAmount = $txSchema->hasColumn('transactions', 'vat_amount');
-                $hasTaxAmount = $txSchema->hasColumn('transactions', 'tax_amount');
-                if ($hasVatAmount && $hasTaxAmount) {
-                    $selects[] = DB::raw('SUM(COALESCE(vat_amount, tax_amount, 0)) AS total_tax_amount');
-                } elseif ($hasVatAmount) {
-                    $selects[] = DB::raw('SUM(COALESCE(vat_amount, 0)) AS total_tax_amount');
-                } else {
-                    $selects[] = DB::raw('SUM(COALESCE(tax_amount, 0)) AS total_tax_amount');
-                }
-            } else {
-                $selects[] = DB::raw('0 AS total_tax_amount');
-            }
-
-            $selects[] = $hasSc ? DB::raw('SUM(COALESCE(service_charge,0)) AS total_service_charge_amount') : DB::raw('0 AS total_service_charge_amount');
-            $selects[] = DB::raw('AVG(COALESCE(gross_sales,0)) AS avg_amount');
-            $selects[] = DB::raw('MIN(COALESCE(gross_sales,0)) AS min_amount');
-            $selects[] = DB::raw('MAX(COALESCE(gross_sales,0)) AS max_amount');
-
-            $selects[] = DB::raw("SUM(CASE WHEN transaction_type = 'success' THEN 1 ELSE 0 END) AS success_count");
-            $selects[] = DB::raw("SUM(CASE WHEN transaction_type = 'decline' THEN 1 ELSE 0 END) AS decline_count");
-            $selects[] = DB::raw("SUM(CASE WHEN validation_status = 'WITH_ISSUES' THEN 1 ELSE 0 END) AS issues_count");
-            $selects[] = DB::raw("SUM(CASE WHEN validation_status = 'WITH_ISSUES' THEN gross_sales ELSE 0 END) AS issues_amount");
-
-            $selects[] = $hasVoided ? DB::raw('SUM(CASE WHEN voided_at IS NOT NULL THEN 1 ELSE 0 END) AS void_count') : DB::raw('0 AS void_count');
-
-            if ($hasRefund) {
-                $hasRefundAmount = $txSchema->hasColumn('transactions', 'refund_amount');
-                $hasRefundStatus = $txSchema->hasColumn('transactions', 'refund_status');
-                if ($hasRefundAmount && $hasRefundStatus) {
-                    $selects[] = DB::raw("SUM(CASE WHEN COALESCE(refund_amount,0) > 0 OR refund_status = 'REFUNDED' THEN 1 ELSE 0 END) AS refunded_count");
-                } elseif ($hasRefundAmount) {
-                    $selects[] = DB::raw("SUM(CASE WHEN COALESCE(refund_amount,0) > 0 THEN 1 ELSE 0 END) AS refunded_count");
-                } else {
-                    $selects[] = DB::raw("SUM(CASE WHEN refund_status = 'REFUNDED' THEN 1 ELSE 0 END) AS refunded_count");
-                }
-            } else {
-                $selects[] = DB::raw('0 AS refunded_count');
-            }
-
-            // Group & filter using COALESCE-based date checks to match TransactionLog
-            // behavior and avoid missing rows when transaction_timestamp is NULL.
-                $query = $primary->table('transactions')->select($selects)
-                    ->groupBy('tenant_id')->groupBy('terminal_id')->groupBy('hour');
-
-                if ($schemaCache[$schemaKey]['transaction_date']) {
-                    $query->whereBetween('transaction_date', [$dateFrom, $dateTo]);
-                } else {
-                    $query->whereRaw('DATE(' . $tsExpr . ') >= ?', [$dateFrom])
-                        ->whereRaw('DATE(' . $tsExpr . ') <= ?', [$dateTo]);
-                }
-
+                $query = Transaction::query()
+                    ->with(['adjustments', 'taxes'])
+                    ->whereRaw("{$reportDateExpr} BETWEEN ? AND ?", [$dateFrom, $dateTo]);
+    
                 if (! empty($tenantId)) {
                     $query->where('tenant_id', $tenantId);
                 }
                 if (! empty($terminalId)) {
                     $query->where('terminal_id', $terminalId);
                 }
+                if (config('tsms.reporting.exclude_voids_from_totals', true)) {
+                    $query->where('transaction_type', '!=', 'VOID')->whereNull('voided_at');
+                }
 
-                $rows = $query->get();
+                $finance = app(FinanceCalculationService::class);
+                $groups = $query->get()->groupBy(fn ($tx) => $this->reportHour($tx));
 
-                $data = $rows->map(function ($r) use ($scaleToMillions) {
-                return [
-                    'customer_code' => null,
-                    'tenant_name' => null,
-                    'location' => null,
-                    'zone' => null,
-                    'sales_date' => \Carbon\Carbon::parse($r->hour)->setTimezone(config('app.timezone'))->toDateString(),
-                    'hour' => \Carbon\Carbon::parse($r->hour)->setTimezone(config('app.timezone'))->format('H:00'),
-                    'gross_sales' => isset($r->total_gross_amount) ? (float) $r->total_gross_amount : (isset($r->total_amount) ? (float) $r->total_amount : 0.0),
-                    'vatable_sales' => isset($r->total_net_amount) ? (float) $r->total_net_amount : 0.0,
-                    'vat_exempt_sales' => 0.0,
-                    'vat_amount' => isset($r->total_tax_amount) ? (float) $r->total_tax_amount : 0.0,
-                    'sc_pwd_discount' => 0.0,
-                    'regular_discount' => isset($r->total_discount_amount) ? (float) $r->total_discount_amount : 0.0,
-                    'void' => isset($r->void_count) ? (float) $r->void_count : 0.0,
-                    'return' => isset($r->refunded_count) ? (float) $r->refunded_count : 0.0,
-                    'net_sales' => isset($r->total_net_amount) ? (float) $r->total_net_amount : 0.0,
-                    'cash_payment' => 0.0,
-                    'card_payment' => 0.0,
-                    'other_tender' => 0.0,
-                    'net_sales_percentage_rent' => 0.0,
-                    'transaction_count' => (int) ($r->tx_count ?? 0),
-                    'guest_count' => 0,
-                    // Add optional scaled fields for dashboards that request server-side millions
-                    'gross_sales_m' => isset($r->total_gross_amount) ? round(((float) $r->total_gross_amount) / 1000000.0, 4) : (isset($r->total_amount) ? round(((float) $r->total_amount) / 1000000.0, 4) : 0.0),
-                    'net_sales_m' => isset($r->total_net_amount) ? round(((float) $r->total_net_amount) / 1000000.0, 4) : 0.0,
-                ];
-            })->values()->toArray();
+                return $groups->sortKeys()->map(function (Collection $transactions, string $hour) use ($finance) {
+                    $metrics = $finance->deriveMetrics(
+                        $finance->aggregateComponents($transactions),
+                        ['gross_sales_basis' => 'pre_deduction']
+                    );
 
-                return $data;
+                    return [
+                        'customer_code' => null,
+                        'tenant_name' => null,
+                        'location' => null,
+                        'zone' => null,
+                        'sales_date' => substr($hour, 0, 10),
+                        'hour' => substr($hour, 11, 5),
+                        'gross_sales' => round((float) ($metrics['gross_sales'] ?? 0), 2),
+                        'vatable_sales' => round((float) ($metrics['vatable_sales'] ?? 0), 2),
+                        'vat_exempt_sales' => round((float) ($metrics['sc_vat_exempt_sales'] ?? 0), 2),
+                        'vat_amount' => round((float) ($metrics['vat_amount'] ?? 0), 2),
+                        'sc_pwd_discount' => round((float) ($metrics['senior_pwd'] ?? 0), 2),
+                        'regular_discount' => round((float) (($metrics['regular_discount'] ?? 0) + ($metrics['total_promotions'] ?? 0)), 2),
+                        'void' => 0.0,
+                        'return' => 0.0,
+                        'net_sales' => round((float) ($metrics['net_total'] ?? $metrics['net_sales'] ?? 0), 2),
+                        'cash_payment' => 0.0,
+                        'card_payment' => 0.0,
+                        'other_tender' => 0.0,
+                        'net_sales_percentage_rent' => round((float) ($metrics['net_subject_to_rent'] ?? 0), 2),
+                        'transaction_count' => $transactions->count(),
+                        'guest_count' => 0,
+                        'gross_sales_m' => round(((float) ($metrics['gross_sales'] ?? 0)) / 1000000.0, 4),
+                        'net_sales_m' => round(((float) ($metrics['net_total'] ?? $metrics['net_sales'] ?? 0)) / 1000000.0, 4),
+                    ];
+                })->values()->toArray();
             });
         } catch (\Throwable $e) {
-            // On failure, log and return empty array to keep API contract non-breaking
             \Illuminate\Support\Facades\Log::warning('HourlyReportService live aggregation failed: ' . $e->getMessage(), ['date_from' => $dateFrom, 'date_to' => $dateTo]);
             return [];
         }
+    }
+
+    private function reportHour(Transaction $transaction): string
+    {
+        $timestamp = $transaction->transaction_timestamp
+            ?? $transaction->completed_at
+            ?? $transaction->created_at;
+
+        $carbon = Carbon::parse($timestamp);
+        if (! $this->payloadTimestampIsPlainLocal($transaction->original_payload ?? null)) {
+            $carbon = $carbon->copy()->timezone($this->reportTimezone());
+        }
+
+        return $carbon->format('Y-m-d H:00');
+    }
+
+    private function payloadTimestampIsPlainLocal(mixed $payload): bool
+    {
+        if (! is_string($payload) || $payload === '') {
+            return false;
+        }
+
+        $decoded = json_decode($payload, true);
+        if (! is_array($decoded)) {
+            return false;
+        }
+
+        $timestamp = $decoded['transaction_timestamp'] ?? $decoded['transaction']['transaction_timestamp'] ?? null;
+
+        return is_string($timestamp)
+            && $timestamp !== ''
+            && ! preg_match('/(Z|[+-][0-9]{2}:?[0-9]{2})$/', $timestamp);
+    }
+
+    private function reportDateExpression(string $timestampExpression, string $payloadExpression): string
+    {
+        if (! Schema::hasColumn('transactions', 'original_payload')) {
+            return $this->localReportDateExpression($timestampExpression);
+        }
+
+        $driver = DB::connection()->getDriverName();
+        $localDateExpression = $this->localReportDateExpression($timestampExpression);
+
+        if ($driver === 'pgsql') {
+            $payloadTimestamp = "COALESCE(({$payloadExpression})::jsonb->>'transaction_timestamp', ({$payloadExpression})::jsonb#>>'{transaction,transaction_timestamp}')";
+
+            return "CASE
+                WHEN {$payloadExpression} IS NOT NULL
+                    AND {$payloadExpression} != ''
+                    AND {$payloadTimestamp} IS NOT NULL
+                    AND {$payloadTimestamp} !~ '(Z|[+-][0-9]{2}:?[0-9]{2})$'
+                THEN DATE({$timestampExpression})
+                ELSE {$localDateExpression}
+            END";
+        }
+
+        $payloadTimestamp = "CASE
+            WHEN {$payloadExpression} IS NOT NULL AND {$payloadExpression} != '' AND JSON_VALID({$payloadExpression})
+            THEN COALESCE(JSON_UNQUOTE(JSON_EXTRACT({$payloadExpression}, '$.transaction_timestamp')), JSON_UNQUOTE(JSON_EXTRACT({$payloadExpression}, '$.transaction.transaction_timestamp')))
+            ELSE NULL
+        END";
+
+        if ($driver === 'sqlite') {
+            $payloadTimestamp = "COALESCE(json_extract({$payloadExpression}, '$.transaction_timestamp'), json_extract({$payloadExpression}, '$.transaction.transaction_timestamp'))";
+
+            return "CASE
+                WHEN {$payloadExpression} IS NOT NULL
+                    AND {$payloadExpression} != ''
+                    AND {$payloadTimestamp} IS NOT NULL
+                    AND {$payloadTimestamp} NOT LIKE '%Z'
+                    AND {$payloadTimestamp} NOT GLOB '*[+-][0-9][0-9]:[0-9][0-9]'
+                    AND {$payloadTimestamp} NOT GLOB '*[+-][0-9][0-9][0-9][0-9]'
+                THEN DATE({$timestampExpression})
+                ELSE {$localDateExpression}
+            END";
+        }
+
+        return "CASE
+            WHEN {$payloadExpression} IS NOT NULL
+                AND {$payloadExpression} != ''
+                AND {$payloadTimestamp} IS NOT NULL
+                AND {$payloadTimestamp} NOT REGEXP '(Z|[+-][0-9]{2}:?[0-9]{2})$'
+            THEN DATE({$timestampExpression})
+            ELSE {$localDateExpression}
+        END";
+    }
+
+    private function localReportDateExpression(string $timestampExpression): string
+    {
+        $offsetMinutes = Carbon::now($this->reportTimezone())->utcOffset();
+        $driver = DB::connection()->getDriverName();
+
+        if ($driver === 'sqlite') {
+            $modifier = sprintf('%+d minutes', $offsetMinutes);
+
+            return "DATE(datetime({$timestampExpression}, '{$modifier}'))";
+        }
+
+        if ($driver === 'pgsql') {
+            $operator = $offsetMinutes >= 0 ? '+' : '-';
+            $minutes = abs($offsetMinutes);
+
+            return "DATE({$timestampExpression} {$operator} INTERVAL '{$minutes} minutes')";
+        }
+
+        $function = $offsetMinutes >= 0 ? 'DATE_ADD' : 'DATE_SUB';
+        $minutes = abs($offsetMinutes);
+
+        return "DATE({$function}({$timestampExpression}, INTERVAL {$minutes} MINUTE))";
+    }
+
+    private function reportTimezone(): string
+    {
+        return config('tsms.transaction_logs.timezone', 'Asia/Manila') ?: 'Asia/Manila';
     }
 }

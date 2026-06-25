@@ -151,9 +151,23 @@ class FinanceCalculationService
             $c['senior_discount'] += $seniorDiscount;
             $c['pwd_discount'] += $pwdDiscount;
             $c['vip_discount'] += $vipDiscount;
-            $c['other_tax'] += $this->sumRelated($tx, 'taxes', 'tax_type', self::NON_OTHER_TAX_TYPES, true);
-            $c['service_charge_distributed'] += (float) ($tx->service_charge ?? 0);
-            $c['service_charge_retained'] += (float) ($tx->management_service_charge ?? 0);
+            $c['other_tax'] += max(
+                $this->sumRelated($tx, 'taxes', 'tax_type', self::NON_OTHER_TAX_TYPES, true),
+                $payloadAdjustments['other_tax']
+            );
+
+            $serviceChargeDistributed = (float) ($tx->service_charge ?? 0);
+            if ($serviceChargeDistributed === 0.0) {
+                $serviceChargeDistributed = $payloadAdjustments['service_charge_distributed'];
+            }
+
+            $serviceChargeRetained = (float) ($tx->management_service_charge ?? 0);
+            if ($serviceChargeRetained === 0.0) {
+                $serviceChargeRetained = $payloadAdjustments['service_charge_retained'];
+            }
+
+            $c['service_charge_distributed'] += $serviceChargeDistributed;
+            $c['service_charge_retained'] += $serviceChargeRetained;
             $c['regular_discount'] += (float) ($tx->discount_total ?? 0);
             $c['gross_sales'] += (float) ($tx->gross_sales ?? 0);
             $c['net_sales'] += (float) ($tx->net_sales ?? 0);

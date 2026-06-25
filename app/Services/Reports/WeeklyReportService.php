@@ -2,21 +2,12 @@
 
 namespace App\Services\Reports;
 
-use App\Models\Transaction;
 use Carbon\Carbon;
-use Illuminate\Support\Facades\Schema;
 
 class WeeklyReportService
 {
-    private static ?bool $hasTransactionDate = null;
-
-    private function reportDateExpression(): string
+    public function __construct(private readonly ?SalesReportDataService $salesReportData = null)
     {
-        self::$hasTransactionDate ??= Schema::hasColumn('transactions', 'transaction_date');
-
-        return self::$hasTransactionDate
-            ? 'transaction_date'
-            : 'DATE(transaction_timestamp)';
     }
 
     /**
@@ -38,48 +29,8 @@ class WeeklyReportService
         bool $weekendOnly = false,
         bool $flatDays = false
     ): array {
-        $dateExpr = $this->reportDateExpression();
-
-        $excludeVoids = config('tsms.reporting.exclude_voids_from_totals', true);
-
-        $query = Transaction::query()
-            ->selectRaw("
-                {$dateExpr}               as report_date,
-                SUM(gross_sales)          as gross_sales,
-                SUM(net_sales)            as net_sales,
-                SUM(vatable_sales)        as vatable_sales,
-                SUM(vat_amount)           as vat_amount,
-                SUM(sc_vat_exempt_sales)  as sc_vat_exempt_sales,
-                SUM(discount_total)       as discount_total,
-                SUM(senior_discount)      as senior_discount,
-                SUM(pwd_discount)         as pwd_discount,
-                COUNT(*)                  as transaction_count
-            ")
-            ->when(
-                self::$hasTransactionDate,
-                fn ($query) => $query->whereBetween('transaction_date', [$from, $to]),
-                fn ($query) => $query->whereRaw("{$dateExpr} BETWEEN ? AND ?", [$from, $to])
-            );
-
-        if ($tenantId && $tenantId !== 'all') {
-            $query->where('tenant_id', $tenantId);
-        }
-        if ($excludeVoids) {
-            $query->where('transaction_type', '!=', 'VOID')->whereNull('voided_at');
-        }
-        if ($weekdayOnly) {
-            // MySQL DAYOFWEEK: 1=Sun, 2=Mon … 7=Sat — weekdays are 2–6
-            $query->whereRaw("DAYOFWEEK({$dateExpr}) BETWEEN 2 AND 6");
-        }
-        if ($weekendOnly) {
-            $query->whereRaw("DAYOFWEEK({$dateExpr}) IN (1, 7)");
-        }
-
-        $rows = $query
-            ->groupBy('report_date')
-            ->orderBy('report_date')
-            ->get()
-            ->keyBy('report_date');
+        $result = ($this->salesReportData ?? app(SalesReportDataService::class))
+            ->getCmsrReportData(SalesReportFilter::forTenantDateRange($tenantId, $from, $to));
 
         $days = [];
         $summary = [
@@ -109,22 +60,20 @@ class WeeklyReportService
             }
 
             $date = $d->format('Y-m-d');
-            $r    = $rows->get($date);
-
-            $scPwd = round((float) (($r->senior_discount ?? 0) + ($r->pwd_discount ?? 0)), 2);
-            $day   = [
+            $metrics = $result->dailyTotals[$date] ?? [];
+            $day = [
                 'date'              => $date,
-                'gross_sales'       => round((float) ($r->gross_sales ?? 0), 2),
-                'net_sales'         => round((float) ($r->net_sales ?? 0), 2),
-                'vatable_sales'     => round((float) ($r->vatable_sales ?? 0), 2),
-                'vat_amount'        => round((float) ($r->vat_amount ?? 0), 2),
-                'vat_exempt_sales'  => round((float) ($r->sc_vat_exempt_sales ?? 0), 2),
-                'sc_pwd_discount'   => $scPwd,
-                'regular_discount'  => round((float) ($r->discount_total ?? 0), 2),
+                'gross_sales'       => round((float) ($metrics['gross_sales'] ?? 0), 2),
+                'net_sales'         => round((float) ($metrics['net_total'] ?? $metrics['net_sales'] ?? 0), 2),
+                'vatable_sales'     => round((float) ($metrics['vatable_sales'] ?? 0), 2),
+                'vat_amount'        => round((float) ($metrics['vat_amount'] ?? 0), 2),
+                'vat_exempt_sales'  => round((float) ($metrics['sc_vat_exempt_sales'] ?? 0), 2),
+                'sc_pwd_discount'   => round((float) ($metrics['senior_pwd'] ?? 0), 2),
+                'regular_discount'  => round((float) (($metrics['regular_discount'] ?? 0) + ($metrics['total_promotions'] ?? 0)), 2),
                 'cash_payment'      => 0.0,
                 'card_payment'      => 0.0,
                 'other_tender'      => 0.0,
-                'transaction_count' => (int) ($r->transaction_count ?? 0),
+                'transaction_count' => (int) ($metrics['transaction_count'] ?? 0),
                 'guest_count'       => 0,
             ];
             $days[] = $day;

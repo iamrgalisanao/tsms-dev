@@ -60,7 +60,8 @@ class SalesReportDataService
                 {$managementServiceChargeExpr} as service_charge_retained,
                 {$otherTaxExpr} as transaction_other_tax,
                 {$promoWithExpr} as promo_with_approval,
-                {$promoWithoutExpr} as promo_without_approval
+                {$promoWithoutExpr} as promo_without_approval,
+                COUNT(*) as transaction_count
             ")
             ->whereRaw("{$reportDateExpr} BETWEEN ? AND ?", [$startDate, $endDate]);
 
@@ -118,6 +119,7 @@ class SalesReportDataService
             ->selectRaw('SUM(other_tax) as other_tax')
             ->selectRaw('SUM(service_charge_distributed) as service_charge_distributed')
             ->selectRaw('SUM(service_charge_retained) as service_charge_retained')
+            ->selectRaw('SUM(transaction_count) as transaction_count')
             ->whereBetween('business_date', [$startDate, $endDate])
             ->when($filter->hasTenantScope(), fn ($query) => $query->where('tenant_id', $tenantId))
             ->groupBy('business_date')
@@ -153,6 +155,7 @@ class SalesReportDataService
                 'regular_discount' => 0.0,
                 'gross_sales' => (float) ($row->gross_sales ?? 0),
                 'net_sales' => (float) ($row->net_sales ?? 0),
+                'transaction_count' => (int) ($row->transaction_count ?? 0),
             ];
 
             foreach ($components as $key => $value) {
@@ -246,6 +249,7 @@ class SalesReportDataService
                 'regular_discount' => 0.0,
                 'gross_sales' => (float) ($tx->gross_sales ?? 0),
                 'net_sales' => (float) ($tx->net_sales ?? 0),
+                'transaction_count' => (int) ($tx->transaction_count ?? 0),
             ];
 
             if ($components['sc_vat_exempt_sales'] === 0.0 && isset($tax->sc_vat_exempt_fallback)) {

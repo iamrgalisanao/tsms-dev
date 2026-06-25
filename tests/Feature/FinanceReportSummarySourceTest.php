@@ -417,4 +417,103 @@ class FinanceReportSummarySourceTest extends TestCase
             @unlink($tmp);
         }
     }
+
+    public function test_commercial_daily_report_uses_cmsr_finance_calculation_source(): void
+    {
+        $this->createCocoLikeTransaction();
+        $commercialUser = $this->commercialUser();
+
+        $this->actingAs($commercialUser);
+
+        $response = $this->getJson('/commercial/reports/transactions/daily?date=2026-06-22&tenant_id=' . $this->tenant->id);
+
+        $response->assertOk();
+        $this->assertEquals(102074.33, (float) $response->json('summary.gross_sales'));
+        $this->assertEquals(83846.90, (float) $response->json('summary.vatable_sales'));
+        $this->assertEquals(4758.78, (float) $response->json('summary.vat_exempt_sales'));
+        $this->assertEquals(951.74, (float) $response->json('summary.sc_pwd_discount'));
+        $this->assertEquals(1, (int) $response->json('summary.transaction_count'));
+    }
+
+    public function test_commercial_weekly_report_uses_cmsr_finance_calculation_source(): void
+    {
+        $this->createCocoLikeTransaction();
+        $commercialUser = $this->commercialUser();
+
+        $this->actingAs($commercialUser);
+
+        $response = $this->getJson('/commercial/reports/transactions/weekly?date_from=2026-06-22&date_to=2026-06-22&tenant_id=' . $this->tenant->id);
+
+        $response->assertOk();
+        $this->assertEquals(102074.33, (float) $response->json('summary.gross_sales'));
+        $this->assertEquals(102074.33, (float) $response->json('days.0.gross_sales'));
+        $this->assertEquals(1, (int) $response->json('days.0.transaction_count'));
+    }
+
+    public function test_commercial_hourly_report_uses_cmsr_finance_calculation_source(): void
+    {
+        $this->createCocoLikeTransaction();
+        $commercialUser = $this->commercialUser();
+
+        $this->actingAs($commercialUser);
+
+        $response = $this->getJson('/commercial/reports/transactions/hourly?date=2026-06-22&tenant_id=' . $this->tenant->id);
+
+        $response->assertOk();
+        $rows = $response->json('data');
+
+        $this->assertCount(1, $rows);
+        $this->assertSame('17:00', $rows[0]['hour']);
+        $this->assertEquals(102074.33, (float) $rows[0]['gross_sales']);
+        $this->assertEquals(83846.90, (float) $rows[0]['vatable_sales']);
+        $this->assertEquals(4758.78, (float) $rows[0]['vat_exempt_sales']);
+        $this->assertEquals(951.74, (float) $rows[0]['sc_pwd_discount']);
+        $this->assertEquals(1, (int) $rows[0]['transaction_count']);
+    }
+
+    private function commercialUser(): User
+    {
+        \Spatie\Permission\Models\Role::firstOrCreate([
+            'name' => 'commercial',
+            'guard_name' => 'web',
+        ]);
+
+        $user = User::factory()->create();
+        $user->assignRole('commercial');
+
+        return $user;
+    }
+
+    private function createCocoLikeTransaction(): Transaction
+    {
+        $transaction = Transaction::factory()->create([
+            'tenant_id' => $this->tenant->id,
+            'terminal_id' => $this->terminal->id,
+            'transaction_timestamp' => '2026-06-22 09:01:00',
+            'gross_sales' => 98663.86,
+            'net_sales' => 99149.26,
+            'vatable_sales' => 83846.90,
+            'sc_vat_exempt_sales' => 4758.78,
+            'vat_amount' => 10061.63,
+            'senior_discount' => 235.69,
+            'pwd_discount' => 716.05,
+            'validation_status' => 'VALID',
+            'original_payload' => json_encode([
+                'transaction_timestamp' => '2026-06-22T09:01:00Z',
+                'taxes' => [
+                    ['tax_type' => 'LOCAL_TAX', 'amount' => '1515.28'],
+                ],
+            ]),
+        ]);
+
+        DB::table('transaction_adjustments')->insert([
+            'transaction_pk' => $transaction->id,
+            'adjustment_type' => 'employee_discount',
+            'amount' => 940.00,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        return $transaction;
+    }
 }

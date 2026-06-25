@@ -9,6 +9,8 @@ class SalesReportFilter
     public function __construct(
         public readonly mixed $tenantId,
         public readonly Carbon $monthDate,
+        private readonly ?Carbon $rangeStart = null,
+        private readonly ?Carbon $rangeEnd = null,
     ) {
     }
 
@@ -31,14 +33,26 @@ class SalesReportFilter
         return new self($tenantId, Carbon::create($year, $month, 1));
     }
 
+    public static function forTenantDateRange(mixed $tenantId, string $startDate, string $endDate): self
+    {
+        $start = Carbon::parse($startDate)->startOfDay();
+        $end = Carbon::parse($endDate)->startOfDay();
+
+        if ($end->lt($start)) {
+            [$start, $end] = [$end, $start];
+        }
+
+        return new self($tenantId, $start->copy()->startOfMonth(), $start, $end);
+    }
+
     public function startDate(): string
     {
-        return $this->monthDate->copy()->startOfMonth()->toDateString();
+        return ($this->rangeStart ?? $this->monthDate->copy()->startOfMonth())->toDateString();
     }
 
     public function endDate(): string
     {
-        return $this->monthDate->copy()->endOfMonth()->toDateString();
+        return ($this->rangeEnd ?? $this->monthDate->copy()->endOfMonth())->toDateString();
     }
 
     public function year(): int
