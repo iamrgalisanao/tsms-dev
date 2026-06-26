@@ -219,13 +219,11 @@ class CorrectProviderLocalTimestamps extends Command
             return null;
         }
 
-        try {
-            $newTransactionTimestamp = CarbonImmutable::createFromFormat('Y-m-d\TH:i:s\Z', $payloadTimestamp, $timezone)
-                ->utc()
-                ->format('Y-m-d H:i:s');
-        } catch (\Throwable) {
+        $localTimestamp = $this->providerLocalTimestamp($payloadTimestamp, $timezone);
+        if ($localTimestamp === null) {
             return null;
         }
+        $newTransactionTimestamp = $localTimestamp->utc()->format('Y-m-d H:i:s');
 
         $oldTransactionTimestamp = CarbonImmutable::parse($row->transaction_timestamp)
             ->utc()
@@ -255,5 +253,30 @@ class CorrectProviderLocalTimestamps extends Command
             'gross_sales' => number_format((float) $row->gross_sales, 2, '.', ''),
             'net_sales' => number_format((float) $row->net_sales, 2, '.', ''),
         ];
+    }
+
+    private function providerLocalTimestamp(string $timestamp, string $timezone): ?CarbonImmutable
+    {
+        $value = trim($timestamp);
+        if ($value === '') {
+            return null;
+        }
+
+        // Treat UTC-looking provider timestamps as local wall-clock values.
+        $value = preg_replace('/\.\d+Z$/', 'Z', $value) ?? $value;
+        $value = preg_replace('/Z$/', '', $value) ?? $value;
+        $value = preg_replace('/([+-]\d{2}:?\d{2})$/', '', $value) ?? $value;
+        $value = str_replace('T', ' ', $value);
+        $value = trim($value);
+
+        foreach (['Y-m-d H:i:s', 'Y-m-d H:i'] as $format) {
+            try {
+                return CarbonImmutable::createFromFormat($format, $value, $timezone);
+            } catch (\Throwable) {
+                continue;
+            }
+        }
+
+        return null;
     }
 }
