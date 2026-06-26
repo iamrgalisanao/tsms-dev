@@ -11,6 +11,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Carbon;
 use App\Jobs\ProcessTransactionJob;
 use App\Jobs\CheckTransactionFailureThresholdsJob;
 use App\Services\PayloadChecksumService; // Add this import
@@ -1121,13 +1122,19 @@ class TransactionController extends Controller
                 ], 200);
             }
 
+            $terminalForTimestamps = PosTerminal::with('provider')->findOrFail($request->terminal_id);
+            $normalizedSubmissionTimestamp = $this->normalizeProviderTimestamp(
+                (string) $request->submission_timestamp,
+                $terminalForTimestamps
+            );
+
             // NOW create submission envelope (status RECEIVED) - after all validations pass
             try {
                 $submission = \App\Models\TransactionSubmission::create([
                     'tenant_id' => $request->tenant_id,
                     'terminal_id' => $request->terminal_id,
                     'submission_uuid' => $request->submission_uuid,
-                    'submission_timestamp' => $request->submission_timestamp,
+                    'submission_timestamp' => $normalizedSubmissionTimestamp,
                     'transaction_count' => $request->transaction_count,
                     'payload_checksum' => $request->payload_checksum,
                     'status' => \App\Models\TransactionSubmission::STATUS_RECEIVED,
@@ -1195,7 +1202,7 @@ class TransactionController extends Controller
             // Proceeding with transaction processing...
 
             // Get terminal and validate tenant
-            $terminal = PosTerminal::with(['tenant.company'])->findOrFail($request->terminal_id);
+            $terminal = PosTerminal::with(['tenant.company', 'provider'])->findOrFail($request->terminal_id);
             if ($terminal->tenant_id !== $request->tenant_id) {
                 Log::warning('storeOfficial: Terminal tenant mismatch', [
                     'submission_uuid' => $request->submission_uuid,
@@ -1255,7 +1262,11 @@ class TransactionController extends Controller
                         continue;
                     }
 
-                    $receiptConflict = $this->findReceiptDateConflict($terminal, $transactionData);
+                    $normalizedTransactionTimestamp = $this->normalizeProviderTimestamp(
+                        (string) ($transactionData['transaction_timestamp'] ?? ''),
+                        $terminal
+                    );
+                    $receiptConflict = $this->findReceiptDateConflict($terminal, $transactionData, $normalizedTransactionTimestamp);
                     if ($receiptConflict) {
                         $samePayload = hash_equals(
                             (string) $receiptConflict->payload_checksum,
@@ -1305,7 +1316,7 @@ class TransactionController extends Controller
                                 'receipt_no' => $transactionData['receipt_no'] ?? null,
                                 'tenant_id' => $terminal->tenant_id,
                                 'terminal_id' => $terminal->id,
-                                'transaction_date' => $this->transactionDate($transactionData['transaction_timestamp'] ?? null),
+                                'transaction_date' => $this->transactionDate($normalizedTransactionTimestamp),
                                 'existing_transaction_id' => $receiptConflict->transaction_id,
                                 'incoming_transaction_id' => $transactionData['transaction_id'],
                             ],
@@ -1333,14 +1344,14 @@ class TransactionController extends Controller
                         }
                     }
                     
-                    // Keep the submitted timestamp untouched; original_payload preserves
-                    // the exact provider value for audit and timezone investigations.
+                    // Store normalized UTC timestamps; original_payload preserves
+                    // the exact provider values for audit and timezone investigations.
                     $txPayload = [
                         'tenant_id' => $terminal->tenant_id,
                         'terminal_id' => $terminal->id,
                         'transaction_id' => $transactionData['transaction_id'],
                         'hardware_id' => $terminal->serial_number ?? 'UNKNOWN',
-                        'transaction_timestamp' => $transactionData['transaction_timestamp'],
+                        'transaction_timestamp' => $normalizedTransactionTimestamp,
                         'gross_sales' => $transactionData['gross_sales'] ?? 0,
                         'net_sales' => $transactionData['net_sales'] ?? 0,
                         'vatable_sales' => $vatableSales,
@@ -1351,7 +1362,7 @@ class TransactionController extends Controller
                         'payload_checksum' => $transactionData['payload_checksum'],
                         'validation_status' => 'PENDING',
                         'submission_uuid' => $request->submission_uuid,
-                        'submission_timestamp' => $request->submission_timestamp,
+                        'submission_timestamp' => $normalizedSubmissionTimestamp,
                     ];
                     $txPayload = array_merge($txPayload, $this->adjustmentColumnTotals($transactionData['adjustments'] ?? [], $transactionData['promo_status'] ?? null));
                     if (Schema::hasColumn('transactions', 'receipt_no')) {
@@ -1649,14 +1660,14 @@ class TransactionController extends Controller
         return null;
     }
 
-    private function findReceiptDateConflict(PosTerminal $terminal, array $transactionData): ?Transaction
+    private function findReceiptDateConflict(PosTerminal $terminal, array $transactionData, ?string $normalizedTimestamp = null): ?Transaction
     {
         if (! Schema::hasColumn('transactions', 'receipt_no')) {
             return null;
         }
 
         $receiptNo = trim((string) ($transactionData['receipt_no'] ?? ''));
-        $transactionDate = $this->transactionDate($transactionData['transaction_timestamp'] ?? null);
+        $transactionDate = $this->transactionDate($normalizedTimestamp ?? ($transactionData['transaction_timestamp'] ?? null));
 
         if ($receiptNo === '' || $transactionDate === null) {
             return null;
@@ -1679,6 +1690,32 @@ class TransactionController extends Controller
         $parsed = strtotime($timestamp);
 
         return $parsed === false ? null : date('Y-m-d', $parsed);
+    }
+
+    private function normalizeProviderTimestamp(string $timestamp, PosTerminal $terminal): string
+    {
+        $mode = $this->providerTimestampMode($terminal);
+        $timezone = $this->providerTimestampTimezone($terminal);
+
+        if ($mode === 'local_time_with_z') {
+            return Carbon::createFromFormat('Y-m-d\TH:i:s\Z', $timestamp, $timezone)
+                ->utc()
+                ->format('Y-m-d H:i:s');
+        }
+
+        return Carbon::parse($timestamp)->utc()->format('Y-m-d H:i:s');
+    }
+
+    private function providerTimestampMode(PosTerminal $terminal): string
+    {
+        $mode = (string) ($terminal->provider?->timestamp_mode ?? config('tsms.intake.timestamp_mode', 'true_utc'));
+
+        return in_array($mode, ['true_utc', 'local_time_with_z'], true) ? $mode : 'true_utc';
+    }
+
+    private function providerTimestampTimezone(PosTerminal $terminal): string
+    {
+        return (string) ($terminal->provider?->timezone ?? config('tsms.intake.provider_timezone', 'Asia/Manila') ?: 'Asia/Manila');
     }
 
     private function quarantineRejectedPayload(Request $request, string $rawPayload, array $checksumResults, string $reason): void
@@ -1818,7 +1855,7 @@ class TransactionController extends Controller
 
         try {
             // Find terminal
-            $terminal = PosTerminal::with('tenant.company')->findOrFail($submission['terminal_id']);
+            $terminal = PosTerminal::with(['tenant.company', 'provider'])->findOrFail($submission['terminal_id']);
 
             Log::info('storeOfficial: Terminal loaded', ['terminal_id' => $terminal->id, 'tenant_id' => $terminal->tenant_id]);
 
@@ -1966,13 +2003,18 @@ class TransactionController extends Controller
                 ];
             }
 
-            // Create transaction. Keep transaction_timestamp as submitted; the raw
-            // payload is stored separately when the audit column is available.
+            $normalizedTransactionTimestamp = $this->normalizeProviderTimestamp(
+                (string) $transaction['transaction_timestamp'],
+                $terminal
+            );
+
+            // Store normalized UTC timestamp; the raw payload is stored
+            // separately when the audit column is available.
             $txPayload = [
                 'tenant_id' => $terminal->tenant_id,
                 'terminal_id' => $terminal->id,
                 'transaction_id' => $transaction['transaction_id'],
-                'transaction_timestamp' => $transaction['transaction_timestamp'],
+                'transaction_timestamp' => $normalizedTransactionTimestamp,
                 'gross_sales' => $transaction['gross_sales'] ?? 0,
                 'net_sales' => $transaction['net_sales'] ?? 0,
                 'customer_code' => $transaction['customer_code'] ?? ($terminal->tenant->company->customer_code ?? 'UNKNOWN'),

@@ -2,6 +2,7 @@
 
 namespace Tests\Feature;
 
+use App\Models\PosProvider;
 use App\Models\PosTerminal;
 use App\Models\Tenant;
 use App\Models\Transaction;
@@ -38,7 +39,48 @@ class OfficialTransactionTimestampNoMutationTest extends TestCase
         $originalPayload = json_decode((string) $transaction->getRawOriginal('original_payload'), true);
 
         $this->assertSame($timestamp, $originalPayload['transaction_timestamp']);
+        $this->assertSame($timestamp, Carbon::parse($transaction->transaction_timestamp)->utc()->format('Y-m-d\TH:i:s\Z'));
         $this->assertSame($payload['transaction']['receipt_no'], $transaction->receipt_no);
+    }
+
+    public function test_official_ingestion_normalizes_provider_local_time_with_z_without_mutating_payload(): void
+    {
+        Queue::fake();
+
+        $tenant = Tenant::factory()->create();
+        $provider = PosProvider::factory()->create([
+            'timezone' => 'Asia/Manila',
+            'timestamp_mode' => 'local_time_with_z',
+        ]);
+        $terminal = PosTerminal::factory()->create([
+            'tenant_id' => $tenant->id,
+            'provider_id' => $provider->id,
+        ]);
+        $timestamp = '2026-06-23T16:14:13Z';
+        $submissionTimestamp = '2026-06-23T16:14:22Z';
+        $payload = $this->makeOfficialPayload(
+            $tenant->id,
+            $terminal->id,
+            $timestamp,
+            $terminal->serial_number,
+            $submissionTimestamp
+        );
+
+        $response = $this
+            ->withHeaders([
+                'Authorization' => 'Bearer '.$terminal->generateAccessToken(),
+                'Content-Type' => 'application/json',
+            ])
+            ->postJson('/api/v1/transactions/official', $payload);
+
+        $response->assertOk();
+
+        $transaction = Transaction::where('transaction_id', $payload['transaction']['transaction_id'])->firstOrFail();
+        $originalPayload = json_decode((string) $transaction->getRawOriginal('original_payload'), true);
+
+        $this->assertSame($timestamp, $originalPayload['transaction_timestamp']);
+        $this->assertSame('2026-06-23T08:14:13Z', Carbon::parse($transaction->transaction_timestamp)->utc()->format('Y-m-d\TH:i:s\Z'));
+        $this->assertSame('2026-06-23T08:14:22Z', Carbon::parse($transaction->submission_timestamp)->utc()->format('Y-m-d\TH:i:s\Z'));
     }
 
     public function test_official_ingestion_accepts_checksum_valid_financial_values_without_formula_enforcement(): void
@@ -115,7 +157,13 @@ class OfficialTransactionTimestampNoMutationTest extends TestCase
         ]);
     }
 
-    private function makeOfficialPayload(int $tenantId, int $terminalId, string $timestamp, string $hardwareId): array
+    private function makeOfficialPayload(
+        int $tenantId,
+        int $terminalId,
+        string $timestamp,
+        string $hardwareId,
+        ?string $submissionTimestamp = null
+    ): array
     {
         $checksum = new PayloadChecksumService();
 
@@ -159,7 +207,7 @@ class OfficialTransactionTimestampNoMutationTest extends TestCase
             'submission_uuid' => (string) Str::uuid(),
             'tenant_id' => $tenantId,
             'terminal_id' => $terminalId,
-            'submission_timestamp' => Carbon::now('UTC')->format('Y-m-d\TH:i:s\Z'),
+            'submission_timestamp' => $submissionTimestamp ?? Carbon::now('UTC')->format('Y-m-d\TH:i:s\Z'),
             'transaction_count' => 1,
             'transaction' => $transaction,
         ];

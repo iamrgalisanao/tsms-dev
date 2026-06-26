@@ -17,6 +17,7 @@ class PosTerminal extends Model implements Authenticatable, Authorizable
 
     protected $fillable = [
         'tenant_id',
+        'provider_id',
         'serial_number',
         'machine_number',
         'supports_guest_count',

@@ -12,6 +12,8 @@ class PosProviderFactory extends Factory
     {
         return [
             'name' => $this->faker->company,
+            'timezone' => 'Asia/Manila',
+            'timestamp_mode' => 'true_utc',
             'created_at' => now(),
             'updated_at' => now(),
         ];

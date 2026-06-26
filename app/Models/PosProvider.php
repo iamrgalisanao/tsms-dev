@@ -16,7 +16,9 @@ class PosProvider extends Model
      */
     protected $fillable = [
         'name', 
-        'code', 
+        'code',
+        'timezone',
+        'timestamp_mode',
         'api_key', 
         'description', 
         'contact_email', 

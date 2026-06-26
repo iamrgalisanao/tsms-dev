@@ -69,6 +69,12 @@ return [
     ],
 
     'intake' => [
+        // Default provider timezone used only when a provider is configured to
+        // submit local timestamps using a UTC-looking format.
+        'provider_timezone' => env('TSMS_INTAKE_PROVIDER_TIMEZONE', 'Asia/Manila'),
+        // true_utc: provider timestamps are real UTC.
+        // local_time_with_z: provider sends local wall-clock time in Y-m-dTH:i:sZ.
+        'timestamp_mode' => env('TSMS_INTAKE_TIMESTAMP_MODE', 'true_utc'),
         'backpressure' => [
             'enabled' => (bool) env('TSMS_INTAKE_BACKPRESSURE_ENABLED', true),
             'max_queue_depth' => (int) env('TSMS_INTAKE_MAX_QUEUE_DEPTH', 5000),
