@@ -225,7 +225,7 @@ class CorrectProviderLocalTimestamps extends Command
         }
         $newTransactionTimestamp = $localTimestamp->utc()->format('Y-m-d H:i:s');
 
-        $oldTransactionTimestamp = CarbonImmutable::parse($row->transaction_timestamp)
+        $oldTransactionTimestamp = CarbonImmutable::parse($row->transaction_timestamp, 'UTC')
             ->utc()
             ->format('Y-m-d H:i:s');
 
