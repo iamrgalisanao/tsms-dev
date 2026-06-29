@@ -28,7 +28,7 @@ class TSMSTransactionRequest extends FormRequest
             'submission_uuid' => 'required|string|uuid',
             'tenant_id' => 'required|integer',
             'terminal_id' => 'required|integer|exists:pos_terminals,id',
-            'submission_timestamp' => 'required|date_format:Y-m-d\TH:i:s\Z',
+            'submission_timestamp' => 'required|date',
             'transaction_count' => 'required|integer|min:1',
             'payload_checksum' => 'required|string|min:64|max:64',
         ];
@@ -37,7 +37,7 @@ class TSMSTransactionRequest extends FormRequest
             $rules = array_merge($rules, [
                 'transaction' => 'required|array',
                 'transaction.transaction_id' => 'required|string|uuid',
-                'transaction.transaction_timestamp' => 'required|date_format:Y-m-d\TH:i:s\Z',
+                'transaction.transaction_timestamp' => 'required|date',
                 'transaction.gross_sales' => 'required|numeric|min:0',
                 'transaction.net_sales' => 'required|numeric',
                 'transaction.promo_status' => 'required|string',
@@ -55,7 +55,7 @@ class TSMSTransactionRequest extends FormRequest
             $rules = array_merge($rules, [
                 'transactions' => 'required|array|min:1',
                 'transactions.*.transaction_id' => 'required|string|uuid',
-                'transactions.*.transaction_timestamp' => 'required|date_format:Y-m-d\TH:i:s\Z',
+                'transactions.*.transaction_timestamp' => 'required|date',
                 'transactions.*.gross_sales' => 'required|numeric|min:0',
                 'transactions.*.net_sales' => 'required|numeric',
                 'transactions.*.promo_status' => 'required|string',

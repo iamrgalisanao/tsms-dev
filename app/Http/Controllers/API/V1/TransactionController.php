@@ -846,7 +846,7 @@ class TransactionController extends Controller
                 'submission_uuid' => 'required|string|uuid',
                 'tenant_id' => 'required|integer',
                 'terminal_id' => 'required|integer|exists:pos_terminals,id',
-                'submission_timestamp' => 'required|date_format:Y-m-d\TH:i:s\Z',
+                'submission_timestamp' => 'required|date',
                 'transaction_count' => 'required|integer|min:1',
                 'payload_checksum' => 'required|string|min:64|max:64', // SHA-256 hash
             ]);
@@ -976,7 +976,7 @@ class TransactionController extends Controller
                     'transaction' => 'required|array',
                     'transaction.transaction_id' => 'required|string|uuid',
                     'transaction.hardware_id' => 'required|string',
-                    'transaction.transaction_timestamp' => 'required|date_format:Y-m-d\TH:i:s\Z',
+                    'transaction.transaction_timestamp' => 'required|date',
                     'transaction.gross_sales' => 'required|numeric|min:0',
                     'transaction.net_sales' => 'required|numeric|min:0',
                     'transaction.promo_status' => 'required|string',
@@ -995,7 +995,7 @@ class TransactionController extends Controller
                     'transactions' => 'required|array|min:1',
                     'transactions.*.transaction_id' => 'required|string|uuid',
                     'transactions.*.hardware_id' => 'required|string',
-                    'transactions.*.transaction_timestamp' => 'required|date_format:Y-m-d\TH:i:s\Z',
+                    'transactions.*.transaction_timestamp' => 'required|date',
                     'transactions.*.gross_sales' => 'required|numeric|min:0',
                     'transactions.*.net_sales' => 'required|numeric|min:0',
                     'transactions.*.promo_status' => 'required|string',
@@ -1698,7 +1698,7 @@ class TransactionController extends Controller
         $timezone = $this->providerTimestampTimezone($terminal);
 
         if ($mode === 'local_time_with_z') {
-            return Carbon::createFromFormat('Y-m-d\TH:i:s\Z', $timestamp, $timezone)
+            return $this->parseProviderLocalTimestamp($timestamp, $timezone)
                 ->utc()
                 ->format('Y-m-d H:i:s');
         }
@@ -1715,7 +1715,32 @@ class TransactionController extends Controller
 
     private function providerTimestampTimezone(PosTerminal $terminal): string
     {
-        return (string) ($terminal->provider?->timezone ?? config('tsms.intake.provider_timezone', 'Asia/Manila') ?: 'Asia/Manila');
+        $timezone = (string) ($terminal->provider?->timezone ?? config('tsms.intake.provider_timezone', 'Asia/Manila') ?: 'Asia/Manila');
+
+        return in_array($timezone, timezone_identifiers_list(), true) ? $timezone : 'Asia/Manila';
+    }
+
+    private function parseProviderLocalTimestamp(string $timestamp, string $timezone): Carbon
+    {
+        $value = trim($timestamp);
+        if ($value === '') {
+            throw new \InvalidArgumentException('Provider timestamp is empty.');
+        }
+
+        $value = preg_replace('/\.\d+Z$/', 'Z', $value) ?? $value;
+        $value = preg_replace('/Z$/', '', $value) ?? $value;
+        $value = preg_replace('/([+-]\d{2}:?\d{2})$/', '', $value) ?? $value;
+        $value = trim(str_replace('T', ' ', $value));
+
+        foreach (['Y-m-d H:i:s', 'Y-m-d H:i'] as $format) {
+            try {
+                return Carbon::createFromFormat($format, $value, $timezone);
+            } catch (\Throwable) {
+                continue;
+            }
+        }
+
+        return Carbon::parse($value, $timezone);
     }
 
     private function quarantineRejectedPayload(Request $request, string $rawPayload, array $checksumResults, string $reason): void
@@ -1785,7 +1810,7 @@ class TransactionController extends Controller
             'submission_uuid' => 'required|string|uuid',
             'tenant_id' => 'required|integer',
             'terminal_id' => 'required|integer|exists:pos_terminals,id',
-            'submission_timestamp' => 'required|date_format:Y-m-d\TH:i:s\Z',
+            'submission_timestamp' => 'required|date',
             'transaction_count' => 'required|integer|min:1',
             'payload_checksum' => 'required|string|min:64|max:64',
         ])->validate();
@@ -1797,7 +1822,7 @@ class TransactionController extends Controller
             validator($submission, [
                 'transaction' => 'required|array',
                 'transaction.transaction_id' => 'required|string|uuid',
-                'transaction.transaction_timestamp' => 'required|date_format:Y-m-d\TH:i:s\Z',
+                'transaction.transaction_timestamp' => 'required|date',
                 'transaction.gross_sales' => 'required|numeric|min:0',
                 'transaction.net_sales' => 'required|numeric|min:0',
                 'transaction.promo_status' => 'required|string',
@@ -1815,7 +1840,7 @@ class TransactionController extends Controller
             validator($submission, [
                 'transactions' => 'required|array|min:1',
                 'transactions.*.transaction_id' => 'required|string|uuid',
-                'transactions.*.transaction_timestamp' => 'required|date_format:Y-m-d\TH:i:s\Z',
+                'transactions.*.transaction_timestamp' => 'required|date',
                 'transactions.*.gross_sales' => 'required|numeric|min:0',
                 'transactions.*.net_sales' => 'required|numeric|min:0',
                 'transactions.*.promo_status' => 'required|string',

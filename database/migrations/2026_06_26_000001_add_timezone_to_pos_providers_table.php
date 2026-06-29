@@ -7,12 +7,11 @@ use Illuminate\Support\Facades\Schema;
 return new class extends Migration
 {
     /**
-     * Add timezone column to pos_providers so each provider's
-     * incoming transaction_timestamp can be converted to Manila time.
+     * Add timezone column to pos_providers so each provider's local
+     * transaction_timestamp can be normalized to true UTC on ingest.
      *
-     * Default is 'Asia/Manila' — providers already sending Manila time
-     * require no configuration change. Providers sending UTC (or any
-     * other timezone) are converted on ingest.
+     * Default is 'Asia/Manila' and is only used when timestamp_mode is
+     * configured for local wall-clock timestamps.
      */
     public function up(): void
     {
