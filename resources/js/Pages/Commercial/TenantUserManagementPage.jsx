@@ -46,6 +46,8 @@ import {
 import api from '../../services/api';
 import { useRole } from '../../hooks/useRole';
 
+const tenantRouteKey = (tenant) => tenant?.uuid || tenant?.id;
+
 const TenantUserManagementPage = () => {
     const isAuthorized = useRole();
     const [tenants, setTenants] = useState([]);
@@ -144,7 +146,7 @@ const TenantUserManagementPage = () => {
         e.preventDefault();
         try {
             if (selectedTenant && !userDialogOpen) {
-                await api.updateTenant(selectedTenant.id, tenantForm);
+                await api.updateTenant(tenantRouteKey(selectedTenant), tenantForm);
                 setSuccess('Tenant updated successfully!');
             } else {
                 await api.createTenant(tenantForm);
@@ -160,7 +162,7 @@ const TenantUserManagementPage = () => {
     const handleUserSubmit = async (e) => {
         e.preventDefault();
         try {
-            await api.createTenantUser(selectedTenant.id, userForm);
+            await api.createTenantUser(tenantRouteKey(selectedTenant), userForm);
             setSuccess('User added successfully!');
             setUserDialogOpen(false);
             setUserForm({ name: '', email: '', password: '' });
@@ -175,7 +177,7 @@ const TenantUserManagementPage = () => {
         setUsersLoading(true);
         setUserDialogOpen(true);
         try {
-            const users = await api.getTenantUsers(tenant.id);
+            const users = await api.getTenantUsers(tenantRouteKey(tenant));
             setTenantUsers(users);
         } catch (err) {
             setError('Failed to fetch tenant users.');
@@ -199,7 +201,7 @@ const TenantUserManagementPage = () => {
     const handleDeleteUser = async (userId) => {
         if (window.confirm('Are you sure you want to remove this user?')) {
             try {
-                await api.deleteTenantUser(selectedTenant.id, userId);
+                await api.deleteTenantUser(tenantRouteKey(selectedTenant), userId);
                 handleManageUsers(selectedTenant);
             } catch (err) {
                 setError('Failed to delete user.');
@@ -468,7 +470,7 @@ const TenantUserManagementPage = () => {
                                         </IconButton>
                                     </Tooltip>
                                     <Tooltip title="Delete">
-                                        <IconButton onClick={() => handleDeleteTenant(tenant.id)} color="error">
+                                        <IconButton onClick={() => handleDeleteTenant(tenantRouteKey(tenant))} color="error">
                                             <DeleteIcon />
                                         </IconButton>
                                     </Tooltip>
