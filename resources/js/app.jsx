@@ -14,6 +14,7 @@ import IntakeHealthPage from './Pages/Observability/IntakeHealthPage.jsx';
 import ProviderActivityPage from './Pages/Monitoring/ProviderActivityPage.jsx';
 import PayloadSandboxPage from './Pages/PayloadSandboxPage.jsx';
 import ProviderApiDocsPage from './Pages/ProviderApiDocsPage.jsx';
+import TemporaryCorrectionsPage from './Pages/Admin/TemporaryCorrectionsPage.jsx';
 // Finance
 import FinanceDashboardPage from './Pages/Finance/FinanceDashboardPage.jsx';
 import FinanceReportsPage from './Pages/Finance/FinanceReportsPage.jsx';
@@ -98,6 +99,14 @@ const App = () => {
                       element={
                         <ProtectedRoute roles={['admin', 'manager']}>
                           <ProviderActivityPage />
+                        </ProtectedRoute>
+                      }
+                    />
+                    <Route
+                      path="/admin/corrections"
+                      element={
+                        <ProtectedRoute roles={['admin']}>
+                          <TemporaryCorrectionsPage />
                         </ProtectedRoute>
                       }
                     />

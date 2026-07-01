@@ -102,6 +102,12 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::get('tenants/{tenant}/users', [TenantUserController::class, 'index']);
         Route::post('tenants/{tenant}/users', [TenantUserController::class, 'store']);
         Route::delete('tenants/{tenant}/users/{user}', [TenantUserController::class, 'destroy']);
+
+        Route::prefix('admin/corrections')->group(function () {
+            Route::get('/tenants', [\App\Http\Controllers\Admin\TemporaryCorrectionController::class, 'tenants']);
+            Route::post('/backup', [\App\Http\Controllers\Admin\TemporaryCorrectionController::class, 'backup']);
+            Route::post('/apply', [\App\Http\Controllers\Admin\TemporaryCorrectionController::class, 'apply']);
+        });
     });
 
     // Dashboard Data (Authorized roles)

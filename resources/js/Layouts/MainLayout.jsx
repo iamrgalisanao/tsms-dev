@@ -15,6 +15,7 @@ import PeopleIcon from '@mui/icons-material/People';
 import FlashOnIcon from '@mui/icons-material/FlashOn';
 import FactCheckIcon from '@mui/icons-material/FactCheck';
 import QueryStatsIcon from '@mui/icons-material/QueryStats';
+import BuildIcon from '@mui/icons-material/Build';
 import { useAuth } from '../Contexts/AuthContext';
 
 const MainLayout = ({ children }) => {
@@ -38,6 +39,7 @@ const MainLayout = ({ children }) => {
         { name: 'Intake Health', path: '/observability/intake', icon: FlashOnIcon, roles: ['admin', 'manager'] },
         { name: 'Provider Activity', path: '/monitoring/activity', icon: QueryStatsIcon, roles: ['admin', 'manager'] },
         { name: 'Payload Sandbox', path: '/sandbox/payload', icon: FactCheckIcon, roles: ['admin', 'manager'] },
+        { name: 'Corrections', path: '/admin/corrections', icon: BuildIcon, roles: ['admin'] },
         { name: 'Settings', path: '/admin/settings', icon: SettingsIcon, roles: ['admin'] },
 
         // ── Finance (exclusive set) ───────────────────────────────────

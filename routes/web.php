@@ -300,6 +300,9 @@ Route::middleware(['auth'])->group(function () {
     Route::middleware(['role:admin'])->prefix('admin')->name('admin.')->group(function () {
         Route::get('/settings', [\App\Http\Controllers\Admin\SystemSettingsController::class, 'edit'])->name('settings.edit');
         Route::post('/settings', [\App\Http\Controllers\Admin\SystemSettingsController::class, 'update'])->name('settings.update');
+        Route::get('/corrections', function () {
+            return view('app');
+        })->name('corrections.index');
         // RBAC audit viewer
         Route::get('/rbac-audits', [\App\Http\Controllers\Admin\RbacAuditController::class, 'index'])->name('rbac-audits.index');
     });
