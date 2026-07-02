@@ -450,11 +450,15 @@ class TransactionLogTest extends TestCase
         $this->assertEquals(12.50, (float) $response->json('summary.data.0.senior_discount'));
         $this->assertEquals(7.25, (float) $response->json('summary.data.0.pwd_discount'));
         $this->assertEquals(5.00, (float) $response->json('summary.data.0.employee_discount'));
-        $this->assertEquals(123.75, (float) $response->json('summary.data.0.gross'));
+        $this->assertEquals(99.00, (float) $response->json('summary.data.0.gross'));
+        $this->assertEquals(123.75, (float) $response->json('summary.data.0.computed_gross_sales'));
+        $this->assertEquals(24.75, (float) $response->json('summary.data.0.gross_sales_variance'));
         $this->assertEquals(12.50, (float) $response->json('grandTotal.senior_discount'));
         $this->assertEquals(7.25, (float) $response->json('grandTotal.pwd_discount'));
         $this->assertEquals(5.00, (float) $response->json('grandTotal.employee_discount'));
-        $this->assertEquals(123.75, (float) $response->json('grandTotal.gross'));
+        $this->assertEquals(99.00, (float) $response->json('grandTotal.gross'));
+        $this->assertEquals(123.75, (float) $response->json('grandTotal.computed_gross_sales'));
+        $this->assertEquals(24.75, (float) $response->json('grandTotal.gross_sales_variance'));
     }
 
     /** @test */

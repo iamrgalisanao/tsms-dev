@@ -186,7 +186,7 @@ class FinanceReportSummarySourceTest extends TestCase
             ->exists());
     }
 
-    public function test_finance_report_aligns_gross_sales_with_transaction_summary_formula(): void
+    public function test_finance_report_preserves_raw_gross_sales_and_exposes_computed_reconciliation(): void
     {
         $transaction = Transaction::factory()->create([
             'tenant_id' => $this->tenant->id,
@@ -220,8 +220,10 @@ class FinanceReportSummarySourceTest extends TestCase
 
         $response->assertOk();
         $this->assertSame('raw_transactions', $response->json('source'));
-        $this->assertEquals(102074.33, (float) $response->json('daily_totals.2026-06-22.gross_sales'));
-        $this->assertEquals(102074.33, (float) $response->json('totals.gross_sales'));
+        $this->assertEquals(98663.86, (float) $response->json('daily_totals.2026-06-22.gross_sales'));
+        $this->assertEquals(98663.86, (float) $response->json('totals.gross_sales'));
+        $this->assertEquals(102074.33, (float) $response->json('daily_totals.2026-06-22.computed_gross_sales'));
+        $this->assertEquals(3410.47, (float) $response->json('daily_totals.2026-06-22.gross_sales_variance'));
         $this->assertEquals(1515.28, (float) $response->json('totals.other_tax'));
     }
 
@@ -291,7 +293,9 @@ class FinanceReportSummarySourceTest extends TestCase
 
         $response->assertOk();
         $this->assertSame('daily_transaction_summaries', $response->json('source'));
-        $this->assertEquals(49.00, (float) $response->json('totals.gross_sales'));
+        $this->assertEquals(42.00, (float) $response->json('totals.gross_sales'));
+        $this->assertEquals(49.00, (float) $response->json('totals.computed_gross_sales'));
+        $this->assertEquals(7.00, (float) $response->json('totals.gross_sales_variance'));
         $this->assertEquals(4.00, (float) $response->json('totals.senior_discount'));
         $this->assertEquals(3.00, (float) $response->json('totals.pwd_discount'));
     }
@@ -411,8 +415,8 @@ class FinanceReportSummarySourceTest extends TestCase
             $this->assertEquals(4.00, (float) $sheet->getCell('H31')->getCalculatedValue());
             $this->assertEquals(3.00, (float) $sheet->getCell('I31')->getCalculatedValue());
             $this->assertEquals(7.00, (float) $sheet->getCell('K31')->getCalculatedValue());
-            $this->assertEquals(49.00, (float) $sheet->getCell('N31')->getCalculatedValue());
-            $this->assertEquals(49.00, (float) $sheet->getCell('N49')->getCalculatedValue());
+            $this->assertEquals(42.00, (float) $sheet->getCell('N31')->getCalculatedValue());
+            $this->assertEquals(42.00, (float) $sheet->getCell('N49')->getCalculatedValue());
         } finally {
             @unlink($tmp);
         }
@@ -428,7 +432,7 @@ class FinanceReportSummarySourceTest extends TestCase
         $response = $this->getJson('/commercial/reports/transactions/daily?date=2026-06-22&tenant_id=' . $this->tenant->id);
 
         $response->assertOk();
-        $this->assertEquals(102074.33, (float) $response->json('summary.gross_sales'));
+        $this->assertEquals(98663.86, (float) $response->json('summary.gross_sales'));
         $this->assertEquals(83846.90, (float) $response->json('summary.vatable_sales'));
         $this->assertEquals(4758.78, (float) $response->json('summary.vat_exempt_sales'));
         $this->assertEquals(951.74, (float) $response->json('summary.sc_pwd_discount'));
@@ -445,8 +449,8 @@ class FinanceReportSummarySourceTest extends TestCase
         $response = $this->getJson('/commercial/reports/transactions/weekly?date_from=2026-06-22&date_to=2026-06-22&tenant_id=' . $this->tenant->id);
 
         $response->assertOk();
-        $this->assertEquals(102074.33, (float) $response->json('summary.gross_sales'));
-        $this->assertEquals(102074.33, (float) $response->json('days.0.gross_sales'));
+        $this->assertEquals(98663.86, (float) $response->json('summary.gross_sales'));
+        $this->assertEquals(98663.86, (float) $response->json('days.0.gross_sales'));
         $this->assertEquals(1, (int) $response->json('days.0.transaction_count'));
     }
 
@@ -464,7 +468,7 @@ class FinanceReportSummarySourceTest extends TestCase
 
         $this->assertCount(1, $rows);
         $this->assertSame('17:00', $rows[0]['hour']);
-        $this->assertEquals(102074.33, (float) $rows[0]['gross_sales']);
+        $this->assertEquals(98663.86, (float) $rows[0]['gross_sales']);
         $this->assertEquals(83846.90, (float) $rows[0]['vatable_sales']);
         $this->assertEquals(4758.78, (float) $rows[0]['vat_exempt_sales']);
         $this->assertEquals(951.74, (float) $rows[0]['sc_pwd_discount']);

@@ -35,7 +35,7 @@ class FinanceCalculationServiceTest extends TestCase
         $this->assertEqualsWithDelta(15311.14, $metrics['gross_sales'], 0.001);
     }
 
-    public function test_csmr_pre_deduction_gross_uses_visible_sum_when_it_reconciles(): void
+    public function test_csmr_pre_deduction_gross_preserves_raw_pos_gross_and_exposes_reconciliation(): void
     {
         $service = new FinanceCalculationService();
 
@@ -58,6 +58,36 @@ class FinanceCalculationServiceTest extends TestCase
         ], ['gross_sales_basis' => 'pre_deduction']);
 
         $this->assertEqualsWithDelta(94746.54, $metrics['gross_sales'], 0.001);
+        $this->assertEqualsWithDelta(94746.54, $metrics['raw_gross_sales'], 0.001);
+        $this->assertEqualsWithDelta(94746.54, $metrics['computed_gross_sales'], 0.001);
+        $this->assertEqualsWithDelta(0.0, $metrics['gross_sales_variance'], 0.001);
+    }
+
+    public function test_csmr_gross_uses_raw_pos_value_when_component_formula_differs(): void
+    {
+        $service = new FinanceCalculationService();
+
+        $metrics = $service->deriveMetrics([
+            'vatable_sales' => 83846.90,
+            'sc_vat_exempt_sales' => 4758.78,
+            'vat_amount' => 10061.63,
+            'promo_with_approval' => 0,
+            'promo_without_approval' => 0,
+            'employee_discount' => 940.00,
+            'senior_discount' => 235.69,
+            'pwd_discount' => 716.05,
+            'vip_discount' => 0,
+            'other_tax' => 1515.28,
+            'service_charge_distributed' => 0,
+            'service_charge_retained' => 0,
+            'regular_discount' => 0,
+            'gross_sales' => 98663.86,
+            'net_sales' => 99149.26,
+        ], ['gross_sales_basis' => 'pre_deduction']);
+
+        $this->assertEqualsWithDelta(98663.86, $metrics['gross_sales'], 0.001);
+        $this->assertEqualsWithDelta(102074.33, $metrics['computed_gross_sales'], 0.001);
+        $this->assertEqualsWithDelta(3410.47, $metrics['gross_sales_variance'], 0.001);
     }
 
     public function test_csmr_does_not_derive_vat_when_taxable_buckets_are_zero(): void

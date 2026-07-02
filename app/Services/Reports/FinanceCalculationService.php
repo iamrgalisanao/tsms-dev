@@ -179,11 +179,10 @@ class FinanceCalculationService
     /**
      * Derives final financial metrics from raw CMSR components.
      *
-     * CMSR uses visible-column math rather than simply echoing raw payload
-     * fields. Some providers submit VATABLE_SALES as VAT-inclusive; this
-     * normalizes those rows so the report matches the Z-reading layout:
-     * vatable sales ex-VAT, VAT in its own column, and gross reconstructed
-     * from the visible CMSR components.
+     * CMSR keeps Gross Sales anchored to the POS-reported pre-deduction
+     * amount when available. Component math is still returned as reconciliation
+     * metadata so dashboard variances remain explainable without mutating raw
+     * transaction values.
      */
     public function deriveMetrics(array $c, array $options = []): array
     {
@@ -276,12 +275,13 @@ class FinanceCalculationService
                 : $normalizedComponentSum;
         }
 
-        $gross = $grossBasis === 'pre_deduction'
-            ? $componentSum
-            : ($nominalGross > 0 ? $nominalGross : $componentSum);
+        $gross = $nominalGross > 0 ? $nominalGross : $componentSum;
+        $computedGross = $componentSum;
+        $grossVariance = round($computedGross - $gross, 2);
+        $calculationGross = $grossBasis === 'pre_deduction' ? $computedGross : $gross;
 
         $derivedNetSales = round(
-            $gross
+            $calculationGross
             - $promotions
             - ($c['employee_discount'] ?? 0)
             - $seniorPwd
@@ -346,6 +346,9 @@ class FinanceCalculationService
             'vatable_sales' => $reportedVatableSales,
             'sc_vat_exempt_sales' => $reportedScVatExempt,
             'gross_sales' => $gross,
+            'raw_gross_sales' => $nominalGross,
+            'computed_gross_sales' => $computedGross,
+            'gross_sales_variance' => $grossVariance,
             'net_ex_vat' => $netExVAT,
             'net_subject_to_rent' => $netSubjectToRent,
             'net_total' => round($netSales + $reportedScVatExempt, 2),

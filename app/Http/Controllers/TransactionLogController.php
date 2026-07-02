@@ -910,6 +910,9 @@ class TransactionLogController extends Controller
                 'tx_count' => (int) $grandTotalRaw->tx_count,
                 'unique_receipts' => (int) ($grandTotalRaw->unique_receipts ?? 0),
                 'gross' => $grandTotalDerived['gross_sales'],
+                'raw_gross_sales' => $grandTotalDerived['raw_gross_sales'],
+                'computed_gross_sales' => $grandTotalDerived['computed_gross_sales'],
+                'gross_sales_variance' => $grandTotalDerived['gross_sales_variance'],
                 'net' => $grandTotalDerived['net_total'],
                 'refund' => (float) $grandTotalRaw->refund,
                 'promo_discount' => $grandTotalDerived['total_promotions'],
@@ -993,6 +996,9 @@ class TransactionLogController extends Controller
             $derived = $this->financeService->deriveMetrics($components, ['gross_sales_basis' => 'pre_deduction']);
 
             $row->gross = $derived['gross_sales'];
+            $row->raw_gross_sales = $derived['raw_gross_sales'];
+            $row->computed_gross_sales = $derived['computed_gross_sales'];
+            $row->gross_sales_variance = $derived['gross_sales_variance'];
             $row->net = $derived['net_total'];
             $row->vat = $derived['vat_amount'];
             $row->vatable_sales = $derived['vatable_sales'];
