@@ -41,9 +41,28 @@ import { adminCorrectionService } from '../../services/adminCorrectionService';
 const defaultFrom = '2026-06-01 00:00:00';
 const defaultTo = '2026-06-30 23:59:59';
 
+const utcOffsetOptions = [
+    '-12:00', '-11:00', '-10:00', '-09:30', '-09:00', '-08:00', '-07:00', '-06:00',
+    '-05:00', '-04:30', '-04:00', '-03:30', '-03:00', '-02:00', '-01:00', '+00:00',
+    '+01:00', '+02:00', '+03:00', '+03:30', '+04:00', '+04:30', '+05:00', '+05:30',
+    '+05:45', '+06:00', '+06:30', '+07:00', '+08:00', '+08:45', '+09:00', '+09:30',
+    '+10:00', '+10:30', '+11:00', '+12:00', '+12:45', '+13:00', '+13:45', '+14:00'
+];
+
 const statusColor = {
     eligible: 'success',
     not_eligible: 'default'
+};
+
+const toDateTimePickerValue = (value) => {
+    if (!value) return '';
+    return value.replace(' ', 'T');
+};
+
+const fromDateTimePickerValue = (value) => {
+    if (!value) return '';
+    const normalized = value.replace('T', ' ');
+    return normalized.length === 16 ? `${normalized}:00` : normalized;
 };
 
 const formatProvider = (tenant) => {
@@ -285,14 +304,41 @@ const TemporaryCorrectionsPage = () => {
                                 </Select>
                             </FormControl>
                         </Grid>
-                        <Grid item xs={12} md={2}>
-                            <TextField fullWidth label="From" value={from} onChange={(event) => setFrom(event.target.value)} />
+                        <Grid item xs={12} sm={6} md={2}>
+                            <TextField
+                                fullWidth
+                                label="From"
+                                type="datetime-local"
+                                value={toDateTimePickerValue(from)}
+                                onChange={(event) => setFrom(fromDateTimePickerValue(event.target.value))}
+                                InputLabelProps={{ shrink: true }}
+                                inputProps={{ step: 1 }}
+                            />
                         </Grid>
-                        <Grid item xs={12} md={2}>
-                            <TextField fullWidth label="To" value={to} onChange={(event) => setTo(event.target.value)} />
+                        <Grid item xs={12} sm={6} md={2}>
+                            <TextField
+                                fullWidth
+                                label="To"
+                                type="datetime-local"
+                                value={toDateTimePickerValue(to)}
+                                onChange={(event) => setTo(fromDateTimePickerValue(event.target.value))}
+                                InputLabelProps={{ shrink: true }}
+                                inputProps={{ step: 1 }}
+                            />
                         </Grid>
                         <Grid item xs={12} md={1.5}>
-                            <TextField fullWidth label="UTC offset" value={utcOffset} onChange={(event) => setUtcOffset(event.target.value)} />
+                            <FormControl fullWidth>
+                                <InputLabel>UTC offset</InputLabel>
+                                <Select
+                                    label="UTC offset"
+                                    value={utcOffset}
+                                    onChange={(event) => setUtcOffset(event.target.value)}
+                                >
+                                    {utcOffsetOptions.map((offset) => (
+                                        <MenuItem key={offset} value={offset}>{offset}</MenuItem>
+                                    ))}
+                                </Select>
+                            </FormControl>
                         </Grid>
                         <Grid item xs={12} md={1.5}>
                             <Button fullWidth variant="contained" startIcon={<RefreshIcon />} onClick={loadTenants} disabled={loading}>
