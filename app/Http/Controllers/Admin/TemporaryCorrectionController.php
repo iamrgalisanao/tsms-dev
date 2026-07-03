@@ -15,6 +15,7 @@ use Illuminate\Validation\ValidationException;
 class TemporaryCorrectionController extends Controller
 {
     private const SAMPLE_LIMIT = 20;
+    private const PAYLOAD_CHUNK_SIZE = 100;
 
     public function tenants(Request $request): JsonResponse
     {
@@ -312,7 +313,7 @@ class TemporaryCorrectionController extends Controller
                         'term.serial_number',
                         'term.provider_id',
                     ])
-                    ->chunkById(500, function ($rows) use ($offsetMinutes, &$updatedTransactions) {
+                    ->chunkById(self::PAYLOAD_CHUNK_SIZE, function ($rows) use ($offsetMinutes, &$updatedTransactions) {
                         foreach ($rows as $row) {
                             $proposal = $this->correctionProposal($row, $offsetMinutes);
                             if ($proposal === null) {
@@ -395,47 +396,6 @@ class TemporaryCorrectionController extends Controller
             ->orderBy('id')
             ->get(['id', 'tenant_id', 'serial_number', 'machine_number', 'provider_id', 'updated_at']);
 
-        $transactions = DB::table('transactions')
-            ->where('tenant_id', $tenantId)
-            ->whereBetween('transaction_timestamp', [$from, $to])
-            ->orderBy('id')
-            ->get([
-                'id',
-                'tenant_id',
-                'terminal_id',
-                'transaction_id',
-                'receipt_no',
-                'transaction_timestamp',
-                'submission_timestamp',
-                'submission_uuid',
-                'gross_sales',
-                'net_sales',
-                'original_payload',
-                'updated_at',
-            ]);
-
-        $summaries = Schema::hasTable('daily_transaction_summaries')
-            ? DB::table('daily_transaction_summaries')
-                ->where('tenant_id', $tenantId)
-                ->whereBetween('business_date', [
-                    CarbonImmutable::parse($from, 'UTC')->subDay()->toDateString(),
-                    CarbonImmutable::parse($to, 'UTC')->addDay()->toDateString(),
-                ])
-                ->orderBy('business_date')
-                ->get()
-            : collect();
-
-        $payload = [
-            'created_at' => now()->toDateTimeString(),
-            'created_by' => optional(auth()->user())->id,
-            'reason' => $reason,
-            'window' => compact('from', 'to'),
-            'tenant' => $tenant,
-            'terminals' => $terminals,
-            'transactions' => $transactions,
-            'daily_transaction_summaries' => $summaries,
-        ];
-
         $path = sprintf(
             'admin-corrections/tenant_%d_%s_%s.json',
             $tenantId,
@@ -443,17 +403,111 @@ class TemporaryCorrectionController extends Controller
             substr(sha1(json_encode([$tenantId, $from, $to, microtime(true)])), 0, 8)
         );
 
-        $encoded = json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
-        if ($encoded === false || ! Storage::disk('local')->put($path, $encoded)) {
+        $disk = Storage::disk('local');
+        $disk->makeDirectory('admin-corrections');
+        $fullPath = storage_path("app/{$path}");
+        $handle = fopen($fullPath, 'wb');
+
+        if ($handle === false) {
             throw new \RuntimeException('Could not write backup file to storage/app/admin-corrections.');
         }
 
+        $transactionCount = 0;
+        $summaryCount = 0;
+
+        try {
+            fwrite($handle, "{\n");
+            $this->writeJsonProperty($handle, 'created_at', now()->toDateTimeString());
+            $this->writeJsonProperty($handle, 'created_by', optional(auth()->user())->id);
+            $this->writeJsonProperty($handle, 'reason', $reason);
+            $this->writeJsonProperty($handle, 'window', compact('from', 'to'));
+            $this->writeJsonProperty($handle, 'tenant', $tenant);
+            $this->writeJsonProperty($handle, 'terminals', $terminals->values()->all());
+
+            fwrite($handle, "\"transactions\": [\n");
+            $firstTransaction = true;
+            DB::table('transactions')
+                ->where('tenant_id', $tenantId)
+                ->whereBetween('transaction_timestamp', [$from, $to])
+                ->orderBy('id')
+                ->select([
+                    'id',
+                    'tenant_id',
+                    'terminal_id',
+                    'transaction_id',
+                    'receipt_no',
+                    'transaction_timestamp',
+                    'submission_timestamp',
+                    'submission_uuid',
+                    'gross_sales',
+                    'net_sales',
+                    'original_payload',
+                    'updated_at',
+                ])
+                ->chunkById(self::PAYLOAD_CHUNK_SIZE, function ($rows) use ($handle, &$firstTransaction, &$transactionCount) {
+                    foreach ($rows as $row) {
+                        $this->writeJsonArrayItem($handle, $row, $firstTransaction);
+                        $transactionCount++;
+                    }
+                });
+            fwrite($handle, "\n],\n");
+
+            fwrite($handle, "\"daily_transaction_summaries\": [\n");
+            $firstSummary = true;
+            if (Schema::hasTable('daily_transaction_summaries')) {
+                DB::table('daily_transaction_summaries')
+                    ->where('tenant_id', $tenantId)
+                    ->whereBetween('business_date', [
+                        CarbonImmutable::parse($from, 'UTC')->subDay()->toDateString(),
+                        CarbonImmutable::parse($to, 'UTC')->addDay()->toDateString(),
+                    ])
+                    ->orderBy('business_date')
+                    ->cursor()
+                    ->each(function ($row) use ($handle, &$firstSummary, &$summaryCount) {
+                        $this->writeJsonArrayItem($handle, $row, $firstSummary);
+                        $summaryCount++;
+                    });
+            }
+            fwrite($handle, "\n]\n");
+            fwrite($handle, "}\n");
+        } catch (\Throwable $e) {
+            fclose($handle);
+            $disk->delete($path);
+
+            throw $e;
+        }
+
+        fclose($handle);
+
         return [
-            'path' => storage_path("app/{$path}"),
-            'transactions' => $transactions->count(),
+            'path' => $fullPath,
+            'transactions' => $transactionCount,
             'terminals' => $terminals->count(),
-            'summaries' => $summaries->count(),
+            'summaries' => $summaryCount,
         ];
+    }
+
+    private function writeJsonProperty($handle, string $key, mixed $value): void
+    {
+        $encoded = json_encode($value, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        if ($encoded === false || fwrite($handle, "\"{$key}\": {$encoded},\n") === false) {
+            throw new \RuntimeException('Could not write backup JSON property.');
+        }
+    }
+
+    private function writeJsonArrayItem($handle, mixed $value, bool &$first): void
+    {
+        $encoded = json_encode($value, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+        if ($encoded === false) {
+            throw new \RuntimeException('Could not encode backup JSON row.');
+        }
+
+        $prefix = $first ? '' : ",\n";
+        if (fwrite($handle, $prefix . $encoded) === false) {
+            throw new \RuntimeException('Could not write backup JSON row.');
+        }
+
+        $first = false;
     }
 
     private function scanCorrections(int $tenantId, string $from, string $to, int $offsetMinutes): array
@@ -480,7 +534,7 @@ class TemporaryCorrectionController extends Controller
                 'term.serial_number',
                 'term.provider_id',
             ])
-            ->chunkById(500, function ($rows) use (&$eligible, &$sample, &$affectedDates, $offsetMinutes) {
+            ->chunkById(self::PAYLOAD_CHUNK_SIZE, function ($rows) use (&$eligible, &$sample, &$affectedDates, $offsetMinutes) {
                 foreach ($rows as $row) {
                     $proposal = $this->correctionProposal($row, $offsetMinutes);
                     if ($proposal === null) {
