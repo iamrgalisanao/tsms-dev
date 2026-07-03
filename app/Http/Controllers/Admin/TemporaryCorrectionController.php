@@ -100,7 +100,8 @@ class TemporaryCorrectionController extends Controller
                 $results[] = [
                     'tenant_id' => (int) $tenantId,
                     'success' => false,
-                    'message' => $e->getMessage(),
+                    'message' => $this->correctionFailureMessage($e),
+                    'raw_error' => $e->getMessage(),
                 ];
             }
         }
@@ -643,5 +644,19 @@ class TemporaryCorrectionController extends Controller
             ],
             'results' => $results,
         ];
+    }
+
+    private function correctionFailureMessage(\Throwable $e): string
+    {
+        $message = $e->getMessage();
+
+        if (
+            str_contains($message, 'transactions_ux_tx_tenant_terminal_receipt_date_unique')
+            || (str_contains($message, 'Duplicate entry') && str_contains($message, 'receipt'))
+        ) {
+            return 'Correction blocked: moving the transaction timestamp would create a duplicate receipt for the same tenant, terminal, and transaction date. Review the affected receipt before applying this tenant correction.';
+        }
+
+        return $message;
     }
 }

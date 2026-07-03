@@ -67,6 +67,15 @@ const resultMessage = (result) => {
     ].join(' | ');
 };
 
+const failureDetails = (result) => {
+    if (!result || result.success) return null;
+
+    return [
+        result.message,
+        result.raw_error ? `Technical detail: ${result.raw_error}` : null
+    ].filter(Boolean).join('\n');
+};
+
 const TemporaryCorrectionsPage = () => {
     const [tenants, setTenants] = useState([]);
     const [providers, setProviders] = useState([]);
@@ -90,6 +99,11 @@ const TemporaryCorrectionsPage = () => {
     const selectedTenants = useMemo(
         () => tenants.filter((tenant) => selected.includes(tenant.id)),
         [selected, tenants]
+    );
+
+    const failedResults = useMemo(
+        () => Object.values(results).filter((result) => result && !result.success),
+        [results]
     );
 
     const loadTenants = useCallback(async () => {
@@ -195,10 +209,13 @@ const TemporaryCorrectionsPage = () => {
         try {
             const response = await adminCorrectionService.apply(payload);
             applyResults(response.results || []);
+            const failures = (response.results || []).filter((result) => !result.success);
             setNotice({
                 open: true,
                 severity: response.summary?.failed ? 'warning' : 'success',
-                message: `Correction complete: ${response.summary?.succeeded || 0} succeeded, ${response.summary?.failed || 0} failed.`
+                message: failures.length
+                    ? `Correction complete with ${response.summary?.failed || 0} failed tenant(s). Review the red failure details below.`
+                    : `Correction complete: ${response.summary?.succeeded || 0} succeeded, ${response.summary?.failed || 0} failed.`
             });
             await loadTenants();
         } catch (error) {
@@ -313,6 +330,26 @@ const TemporaryCorrectionsPage = () => {
 
                 {loading && <LinearProgress />}
 
+                {failedResults.length > 0 && (
+                    <Alert
+                        severity="error"
+                        variant="filled"
+                        sx={{
+                            borderRadius: 2,
+                            '& .MuiAlert-message': {
+                                width: '100%'
+                            }
+                        }}
+                    >
+                        <Typography fontWeight={800} sx={{ mb: 0.5 }}>
+                            {failedResults.length} tenant correction failed
+                        </Typography>
+                        <Typography variant="body2">
+                            Review the highlighted tenant rows below. Some corrections were blocked to prevent duplicate receipt/date records.
+                        </Typography>
+                    </Alert>
+                )}
+
                 <TableContainer component={Paper} sx={{ borderRadius: 2 }}>
                     <Table size="small">
                         <TableHead>
@@ -393,8 +430,23 @@ const TemporaryCorrectionsPage = () => {
                                             <TableRow>
                                                 <TableCell />
                                                 <TableCell colSpan={6}>
-                                                    <Alert severity={result.success ? 'success' : 'error'} sx={{ my: 1 }}>
-                                                        {resultMessage(result)}
+                                                    <Alert
+                                                        severity={result.success ? 'success' : 'error'}
+                                                        variant={result.success ? 'outlined' : 'filled'}
+                                                        sx={{
+                                                            my: 1,
+                                                            borderRadius: 2,
+                                                            '& .MuiAlert-message': {
+                                                                width: '100%',
+                                                                whiteSpace: 'pre-wrap',
+                                                                overflowWrap: 'anywhere',
+                                                                fontWeight: result.success ? 500 : 700
+                                                            }
+                                                        }}
+                                                    >
+                                                        <Typography variant="body2" fontWeight={result.success ? 600 : 800}>
+                                                            {result.success ? resultMessage(result) : failureDetails(result)}
+                                                        </Typography>
                                                     </Alert>
                                                 </TableCell>
                                             </TableRow>
@@ -474,10 +526,16 @@ const TemporaryCorrectionsPage = () => {
 
             <Snackbar
                 open={notice.open}
-                autoHideDuration={6000}
+                autoHideDuration={notice.severity === 'warning' || notice.severity === 'error' ? 12000 : 6000}
                 onClose={() => setNotice((current) => ({ ...current, open: false }))}
+                anchorOrigin={{ vertical: 'top', horizontal: 'center' }}
             >
-                <Alert severity={notice.severity} onClose={() => setNotice((current) => ({ ...current, open: false }))}>
+                <Alert
+                    severity={notice.severity}
+                    variant="filled"
+                    onClose={() => setNotice((current) => ({ ...current, open: false }))}
+                    sx={{ fontWeight: 800, maxWidth: 720 }}
+                >
                     {notice.message}
                 </Alert>
             </Snackbar>
