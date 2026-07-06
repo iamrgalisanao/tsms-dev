@@ -707,7 +707,7 @@ class CommercialReportsController extends Controller
 
         $type = $this->resolveExportType($request);
         [$periodLabel, $rows, $summary] = $this->buildCommercialExportData($request, $type);
-        $tenantLabel = $this->exportTenantLabel($request->input('tenant_id'));
+        $tenantDetails = $this->exportTenantDetails($request->input('tenant_id'));
 
         $spreadsheet = new Spreadsheet();
         $sheet = $spreadsheet->getActiveSheet();
@@ -715,9 +715,10 @@ class CommercialReportsController extends Controller
 
         $title = ucwords(str_replace('_', ' ', "{$type} sales report"));
         $sheet->setCellValue('A1', $title);
-        $sheet->setCellValue('A2', "Tenant: {$tenantLabel}");
-        $sheet->setCellValue('A3', "Period: {$periodLabel}");
-        $sheet->setCellValue('A4', 'Generated: ' . now()->format('Y-m-d H:i:s'));
+        $sheet->setCellValue('A2', "Tenant Name: {$tenantDetails['name']}");
+        $sheet->setCellValue('A3', "Customer Code: {$tenantDetails['customer_code']}");
+        $sheet->setCellValue('A4', "Period: {$periodLabel}");
+        $sheet->setCellValue('A5', 'Generated: ' . now()->format('Y-m-d H:i:s'));
 
         $headers = [
             'Period',
@@ -735,7 +736,7 @@ class CommercialReportsController extends Controller
             'Guests',
         ];
 
-        $headerRow = 6;
+        $headerRow = 7;
         foreach ($headers as $index => $header) {
             $sheet->setCellValue(Coordinate::stringFromColumnIndex($index + 1) . $headerRow, $header);
         }
@@ -802,10 +803,11 @@ class CommercialReportsController extends Controller
         $sheet->getStyle("A{$headerRow}:{$lastColumn}{$totalRow}")
             ->getAlignment()
             ->setVertical(Alignment::VERTICAL_CENTER);
-        $sheet->getStyle("B7:K{$totalRow}")->getNumberFormat()->setFormatCode(NumberFormat::FORMAT_NUMBER_COMMA_SEPARATED1);
-        $sheet->getStyle("L7:M{$totalRow}")->getNumberFormat()->setFormatCode(NumberFormat::FORMAT_NUMBER);
+        $firstDataRow = $headerRow + 1;
+        $sheet->getStyle("B{$firstDataRow}:K{$totalRow}")->getNumberFormat()->setFormatCode(NumberFormat::FORMAT_NUMBER_COMMA_SEPARATED1);
+        $sheet->getStyle("L{$firstDataRow}:M{$totalRow}")->getNumberFormat()->setFormatCode(NumberFormat::FORMAT_NUMBER);
         $sheet->getStyle("A{$totalRow}:{$lastColumn}{$totalRow}")->getFont()->setBold(true);
-        $sheet->freezePane('A7');
+        $sheet->freezePane('A8');
 
         foreach (range('A', $lastColumn) as $column) {
             $sheet->getColumnDimension($column)->setAutoSize(true);
@@ -993,12 +995,20 @@ class CommercialReportsController extends Controller
         return $summary;
     }
 
-    private function exportTenantLabel($tenantId): string
+    private function exportTenantDetails($tenantId): array
     {
         if (! $tenantId || $tenantId === 'all') {
-            return 'All Tenants';
+            return [
+                'name' => 'All Tenants',
+                'customer_code' => 'Multiple',
+            ];
         }
 
-        return Tenant::find($tenantId)?->trade_name ?? "Tenant #{$tenantId}";
+        $tenant = Tenant::find($tenantId);
+
+        return [
+            'name' => $tenant?->trade_name ?? "Tenant #{$tenantId}",
+            'customer_code' => $tenant?->customer_code ?: 'N/A',
+        ];
     }
 }

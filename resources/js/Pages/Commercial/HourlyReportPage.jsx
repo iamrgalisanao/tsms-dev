@@ -8,6 +8,7 @@ import SyncIcon from '@mui/icons-material/Sync';
 import DownloadIcon from '@mui/icons-material/Download';
 import FilterAltIcon from '@mui/icons-material/FilterAlt';
 import ScheduleIcon from '@mui/icons-material/Schedule';
+import TenantTableHeaderMeta from '../../Components/Commercial/TenantTableHeaderMeta';
 
 const fmt = (v) => Number(v ?? 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const today = () => new Date().toISOString().split('T')[0];
@@ -158,9 +159,12 @@ const HourlyReportPage = () => {
 
             {/* Table */}
             <Box sx={{ bgcolor: 'white', borderRadius: '20px', border: '1px solid', borderColor: 'divider', overflow: 'hidden', boxShadow: '0 4px 16px rgba(0,0,0,0.04)' }}>
-                <Box sx={{ p: 3, borderBottom: '1px solid', borderColor: 'divider' }}>
-                    <Typography variant="subtitle1" sx={{ fontWeight: 900 }}>24-Hour Distribution</Typography>
-                    <Typography variant="caption" sx={{ color: 'text.secondary', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Granular hourly ledger</Typography>
+                <Box sx={{ p: 3, borderBottom: '1px solid', borderColor: 'divider', display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, gap: 2, alignItems: { xs: 'flex-start', sm: 'center' }, justifyContent: 'space-between' }}>
+                    <Box>
+                        <Typography variant="subtitle1" sx={{ fontWeight: 900 }}>24-Hour Distribution</Typography>
+                        <Typography variant="caption" sx={{ color: 'text.secondary', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Granular hourly ledger</Typography>
+                    </Box>
+                    <TenantTableHeaderMeta selectedTenant={selectedTenant} />
                 </Box>
 
                 <Box sx={{ overflowX: 'auto', maxHeight: 640, overflowY: 'auto' }}>

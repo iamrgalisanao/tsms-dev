@@ -24,6 +24,7 @@ import {
     CategoryScale, LinearScale, PointElement, LineElement,
     Title, Tooltip, Legend, Filler
 } from 'chart.js';
+import TenantTableHeaderMeta from '../../Components/Commercial/TenantTableHeaderMeta';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, Filler);
 
@@ -243,8 +244,11 @@ const SalesReportPage = ({ type = 'daily' }) => {
 
             {/* Table */}
             <Box sx={{ bgcolor: 'white', borderRadius: '20px', border: '1px solid', borderColor: 'divider', overflow: 'hidden', boxShadow: '0 4px 16px rgba(0,0,0,0.04)' }}>
-                <Box sx={{ p: 3, borderBottom: '1px solid', borderColor: 'divider', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <Typography variant="subtitle1" sx={{ fontWeight: 900 }}>Granular Ledger</Typography>
+                <Box sx={{ p: 3, borderBottom: '1px solid', borderColor: 'divider', display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, gap: 2, alignItems: { xs: 'flex-start', sm: 'center' }, justifyContent: 'space-between' }}>
+                    <Box>
+                        <Typography variant="subtitle1" sx={{ fontWeight: 900 }}>Granular Ledger</Typography>
+                        <TenantTableHeaderMeta selectedTenant={selectedTenant} />
+                    </Box>
                     <Box sx={{ px: 2, py: 0.5, bgcolor: 'action.hover', borderRadius: '999px' }}>
                         <Typography variant="caption" sx={{ fontWeight: 800, letterSpacing: '0.06em' }}>{reportData.length} records</Typography>
                     </Box>
