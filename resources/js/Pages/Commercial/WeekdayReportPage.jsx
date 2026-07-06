@@ -23,7 +23,7 @@ import {
 } from '@mui/icons-material';
 import ReportHeader from '../../Components/Commercial/ReportHeader';
 import MetricCard from '../../Components/Commercial/MetricCard';
-import TenantTableHeaderMeta from '../../Components/Commercial/TenantTableHeaderMeta';
+import TenantTableHeaderRow from '../../Components/Commercial/TenantTableHeaderRow';
 
 const WeekdayReportPage = () => {
     // Default to current week Mon-Fri
@@ -125,17 +125,17 @@ const WeekdayReportPage = () => {
             </div>
 
             <div className="glass-card rounded-3xl overflow-hidden border border-white/40 shadow-xl">
-                <div className="p-8 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                <div className="p-8 border-b border-slate-100 flex items-center justify-between">
                     <div>
                         <h3 className="text-xl font-black text-slate-900 tracking-tight">Weekday Distribution</h3>
                         <p className="text-xs font-bold text-slate-500 uppercase tracking-widest italic opacity-70">Daily performance breakdown</p>
                     </div>
-                    <TenantTableHeaderMeta tenantId={tenantId} tenants={tenants} />
                 </div>
 
                 <div className="overflow-x-auto">
                     <table className="w-full text-left">
                         <thead className="bg-slate-50/50">
+                            <TenantTableHeaderRow colSpan={7} tenantId={tenantId} tenants={tenants} />
                             <tr className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">
                                 <th className="px-8 py-4">Business Day</th>
                                 <th className="px-8 py-4 text-right">Gross Sales</th>

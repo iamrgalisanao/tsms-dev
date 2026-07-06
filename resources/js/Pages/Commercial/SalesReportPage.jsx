@@ -24,7 +24,7 @@ import {
     CategoryScale, LinearScale, PointElement, LineElement,
     Title, Tooltip, Legend, Filler
 } from 'chart.js';
-import TenantTableHeaderMeta from '../../Components/Commercial/TenantTableHeaderMeta';
+import TenantTableHeaderRow from '../../Components/Commercial/TenantTableHeaderRow';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend, Filler);
 
@@ -244,11 +244,8 @@ const SalesReportPage = ({ type = 'daily' }) => {
 
             {/* Table */}
             <Box sx={{ bgcolor: 'white', borderRadius: '20px', border: '1px solid', borderColor: 'divider', overflow: 'hidden', boxShadow: '0 4px 16px rgba(0,0,0,0.04)' }}>
-                <Box sx={{ p: 3, borderBottom: '1px solid', borderColor: 'divider', display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, gap: 2, alignItems: { xs: 'flex-start', sm: 'center' }, justifyContent: 'space-between' }}>
-                    <Box>
-                        <Typography variant="subtitle1" sx={{ fontWeight: 900 }}>Granular Ledger</Typography>
-                        <TenantTableHeaderMeta selectedTenant={selectedTenant} />
-                    </Box>
+                <Box sx={{ p: 3, borderBottom: '1px solid', borderColor: 'divider', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                    <Typography variant="subtitle1" sx={{ fontWeight: 900 }}>Granular Ledger</Typography>
                     <Box sx={{ px: 2, py: 0.5, bgcolor: 'action.hover', borderRadius: '999px' }}>
                         <Typography variant="caption" sx={{ fontWeight: 800, letterSpacing: '0.06em' }}>{reportData.length} records</Typography>
                     </Box>
@@ -257,6 +254,7 @@ const SalesReportPage = ({ type = 'daily' }) => {
                 <Box sx={{ overflowX: 'auto' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                         <thead>
+                            <TenantTableHeaderRow colSpan={6} selectedTenant={selectedTenant} />
                             <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
                                 {['Period', 'Gross Sales', 'Net Sales', 'VAT', 'Transactions', 'Status'].map(h => (
                                     <th key={h} style={{ padding: '12px 20px', textAlign: h === 'Period' ? 'left' : 'right', fontWeight: 800, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#94a3b8', whiteSpace: 'nowrap' }}>

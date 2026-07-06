@@ -13,10 +13,17 @@ const resolveTenant = ({ selectedTenant, tenantId, tenants }) => {
     return tenants.find((tenant) => String(tenant.id) === String(tenantId)) || null;
 };
 
-const TenantTableHeaderMeta = ({ selectedTenant = null, tenantId = '', tenants = [] }) => {
+export const getTenantHeaderDetails = ({ selectedTenant = null, tenantId = '', tenants = [] }) => {
     const tenant = resolveTenant({ selectedTenant, tenantId, tenants });
-    const tenantName = tenant?.trade_name || 'All Tenants';
-    const customerCode = tenant?.customer_code || (tenant ? 'N/A' : 'Multiple');
+
+    return {
+        tenantName: tenant?.trade_name || 'All Tenants',
+        customerCode: tenant?.customer_code || (tenant ? 'N/A' : 'All Customer Codes'),
+    };
+};
+
+const TenantTableHeaderMeta = ({ selectedTenant = null, tenantId = '', tenants = [] }) => {
+    const { tenantName, customerCode } = getTenantHeaderDetails({ selectedTenant, tenantId, tenants });
 
     return (
         <Box

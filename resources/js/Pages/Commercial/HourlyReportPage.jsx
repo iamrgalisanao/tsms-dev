@@ -8,7 +8,7 @@ import SyncIcon from '@mui/icons-material/Sync';
 import DownloadIcon from '@mui/icons-material/Download';
 import FilterAltIcon from '@mui/icons-material/FilterAlt';
 import ScheduleIcon from '@mui/icons-material/Schedule';
-import TenantTableHeaderMeta from '../../Components/Commercial/TenantTableHeaderMeta';
+import TenantTableHeaderRow from '../../Components/Commercial/TenantTableHeaderRow';
 
 const fmt = (v) => Number(v ?? 0).toLocaleString('en-PH', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const today = () => new Date().toISOString().split('T')[0];
@@ -159,17 +159,15 @@ const HourlyReportPage = () => {
 
             {/* Table */}
             <Box sx={{ bgcolor: 'white', borderRadius: '20px', border: '1px solid', borderColor: 'divider', overflow: 'hidden', boxShadow: '0 4px 16px rgba(0,0,0,0.04)' }}>
-                <Box sx={{ p: 3, borderBottom: '1px solid', borderColor: 'divider', display: 'flex', flexDirection: { xs: 'column', sm: 'row' }, gap: 2, alignItems: { xs: 'flex-start', sm: 'center' }, justifyContent: 'space-between' }}>
-                    <Box>
-                        <Typography variant="subtitle1" sx={{ fontWeight: 900 }}>24-Hour Distribution</Typography>
-                        <Typography variant="caption" sx={{ color: 'text.secondary', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Granular hourly ledger</Typography>
-                    </Box>
-                    <TenantTableHeaderMeta selectedTenant={selectedTenant} />
+                <Box sx={{ p: 3, borderBottom: '1px solid', borderColor: 'divider' }}>
+                    <Typography variant="subtitle1" sx={{ fontWeight: 900 }}>24-Hour Distribution</Typography>
+                    <Typography variant="caption" sx={{ color: 'text.secondary', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Granular hourly ledger</Typography>
                 </Box>
 
                 <Box sx={{ overflowX: 'auto', maxHeight: 640, overflowY: 'auto' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                         <thead style={{ position: 'sticky', top: 0, zIndex: 10, background: '#f8fafc' }}>
+                            <TenantTableHeaderRow colSpan={11} selectedTenant={selectedTenant} />
                             <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
                                 {['Hour', 'Gross Sales', 'Vatable', 'VAT', 'SC/PWD', 'Net Sales', 'Cash', 'Card', 'Other', 'TX Count', 'Guests'].map(h => (
                                     <th key={h} style={{ padding: '10px 14px', textAlign: h === 'Hour' ? 'center' : 'right', fontWeight: 800, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#94a3b8', whiteSpace: 'nowrap' }}>{h}</th>

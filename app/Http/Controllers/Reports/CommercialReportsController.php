@@ -1000,7 +1000,7 @@ class CommercialReportsController extends Controller
         if (! $tenantId || $tenantId === 'all') {
             return [
                 'name' => 'All Tenants',
-                'customer_code' => 'Multiple',
+                'customer_code' => 'All Customer Codes',
             ];
         }
 
