@@ -254,10 +254,10 @@ const SalesReportPage = ({ type = 'daily' }) => {
                 <Box sx={{ overflowX: 'auto' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                         <thead>
-                            <TenantTableHeaderRow colSpan={6} selectedTenant={selectedTenant} />
+                            <TenantTableHeaderRow colSpan={8} selectedTenant={selectedTenant} />
                             <tr style={{ background: '#f8fafc', borderBottom: '1px solid #e2e8f0' }}>
-                                {['Period', 'Gross Sales', 'Net Sales', 'VAT', 'Transactions', 'Status'].map(h => (
-                                    <th key={h} style={{ padding: '12px 20px', textAlign: h === 'Period' ? 'left' : 'right', fontWeight: 800, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#94a3b8', whiteSpace: 'nowrap' }}>
+                                {['Tenant Name', 'Customer Code', 'Period', 'Gross Sales', 'Net Sales', 'VAT', 'Transactions', 'Status'].map(h => (
+                                    <th key={h} style={{ padding: '12px 20px', textAlign: ['Tenant Name', 'Customer Code', 'Period'].includes(h) ? 'left' : 'right', fontWeight: 800, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.08em', color: '#94a3b8', whiteSpace: 'nowrap' }}>
                                         {h === 'Status' ? <span style={{ display: 'flex', justifyContent: 'center' }}>{h}</span> : h}
                                     </th>
                                 ))}
@@ -266,6 +266,8 @@ const SalesReportPage = ({ type = 'daily' }) => {
                         <tbody>
                             {reportData.map((row, idx) => (
                                 <tr key={idx} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                                    <td style={{ padding: '12px 20px', fontWeight: 800, color: '#0f172a', whiteSpace: 'nowrap' }}>{row.tenant_name || selectedTenant?.trade_name || 'All Tenants'}</td>
+                                    <td style={{ padding: '12px 20px', color: '#64748b', fontWeight: 800, fontFamily: 'monospace', whiteSpace: 'nowrap' }}>{row.customer_code || selectedTenant?.customer_code || 'All Customer Codes'}</td>
                                     <td style={{ padding: '12px 20px', fontWeight: 700, color: '#0f172a' }}>{row.hour || row.date || row.day || row.month || row.label || row.period || idx + 1}</td>
                                     <td style={{ padding: '12px 20px', textAlign: 'right', fontWeight: 700, color: '#df1160' }}>₱{fmt(row.gross_sales || row.gross)}</td>
                                     <td style={{ padding: '12px 20px', textAlign: 'right', color: '#475569' }}>₱{fmt(row.net_sales || row.net)}</td>
@@ -285,7 +287,7 @@ const SalesReportPage = ({ type = 'daily' }) => {
                             ))}
                             {reportData.length === 0 && !loading && (
                                 <tr>
-                                    <td colSpan={6} style={{ padding: '60px 20px', textAlign: 'center', color: '#cbd5e1' }}>
+                                    <td colSpan={8} style={{ padding: '60px 20px', textAlign: 'center', color: '#cbd5e1' }}>
                                         <span className="material-symbols-outlined" style={{ fontSize: 48, display: 'block', marginBottom: 8 }}>database_off</span>
                                         <p style={{ fontWeight: 800, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
                                             {loading ? 'Loading...' : 'Select filters and click Load Report'}

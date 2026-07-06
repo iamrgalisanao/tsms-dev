@@ -135,8 +135,10 @@ const WeekendReportPage = () => {
                 <div className="overflow-x-auto">
                     <table className="w-full text-left">
                         <thead className="bg-slate-50/50">
-                            <TenantTableHeaderRow colSpan={6} tenantId={tenantId} tenants={tenants} />
+                            <TenantTableHeaderRow colSpan={8} tenantId={tenantId} tenants={tenants} />
                             <tr className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100">
+                                <th className="px-8 py-4">Tenant Name</th>
+                                <th className="px-8 py-4">Customer Code</th>
                                 <th className="px-8 py-4">Business Date</th>
                                 <th className="px-8 py-4 text-right">Gross Revenue</th>
                                 <th className="px-8 py-4 text-right">Net Revenue</th>
@@ -148,6 +150,12 @@ const WeekendReportPage = () => {
                         <tbody className="divide-y divide-slate-50">
                             {reportData.map((row, idx) => (
                                 <tr key={idx} className="hover:bg-slate-50/80 transition-colors group">
+                                    <td className="px-8 py-4 font-black text-slate-900 text-sm">
+                                        {row.tenant_name || tenants.find(t => String(t.id) === String(tenantId))?.trade_name || 'All Tenants'}
+                                    </td>
+                                    <td className="px-8 py-4 font-mono text-xs font-black text-slate-500">
+                                        {row.customer_code || tenants.find(t => String(t.id) === String(tenantId))?.customer_code || 'All Customer Codes'}
+                                    </td>
                                     <td className="px-8 py-4 font-black text-slate-900 text-sm">
                                         {row.date}
                                     </td>
@@ -177,7 +185,7 @@ const WeekendReportPage = () => {
                             ))}
                             {reportData.length === 0 && !loading && (
                                 <tr>
-                                    <td colSpan="6" className="px-8 py-20 text-center">
+                                    <td colSpan="8" className="px-8 py-20 text-center">
                                         <div className="flex flex-col items-center gap-2 opacity-30">
                                             <span className="material-symbols-outlined text-6xl">nightlife</span>
                                             <p className="text-xs font-black uppercase tracking-widest">No weekend data segments found</p>

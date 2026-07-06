@@ -54,12 +54,11 @@ const HourlyReportPage = () => {
     };
 
     const loadReport = useCallback(async () => {
-        if (!selectedTenant) return;
         setLoading(true);
         setError(null);
         try {
             const resp = await axios.get('/commercial/reports/transactions/hourly', {
-                params: { date, tenant_id: selectedTenant.id }
+                params: { date, tenant_id: selectedTenant?.id || '' }
             });
             const data = resp.data?.data || resp.data?.rows || [];
             setReportData(data);
@@ -82,11 +81,11 @@ const HourlyReportPage = () => {
         window.open(`/commercial/reports/export?${params.toString()}`, '_blank');
     };
 
-    // Build 24-hour rows — fill gaps with zeros
-    const hourRows = Array.from({ length: 24 }, (_, i) => {
+    // Build 24-hour rows for a selected tenant; all-tenant mode shows tenant-level rows.
+    const hourRows = selectedTenant ? Array.from({ length: 24 }, (_, i) => {
         const hourStr = `${String(i).padStart(2, '0')}:00`;
         return reportData.find(r => r.hour === hourStr) || { hour: hourStr };
-    });
+    }) : reportData;
 
     const peakRow = totals && reportData.length
         ? reportData.reduce((max, r) => Number(r.gross_sales || 0) > Number(max.gross_sales || 0) ? r : max, reportData[0])
@@ -121,7 +120,7 @@ const HourlyReportPage = () => {
                         onChange={(_, v) => setSelectedTenant(v)}
                         onOpen={loadTenants}
                         sx={{ minWidth: 260, flex: 1 }}
-                        renderInput={p => <TextField {...p} label="Select Tenant *" size="small" />}
+                        renderInput={p => <TextField {...p} label="Tenant (All)" size="small" />}
                     />
 
                     <TextField type="date" label="Date" value={date} onChange={e => setDate(e.target.value)} size="small" InputLabelProps={{ shrink: true }} sx={{ minWidth: 160 }} />
@@ -129,7 +128,7 @@ const HourlyReportPage = () => {
                     <Button
                         variant="contained" color="secondary"
                         onClick={loadReport}
-                        disabled={loading || !selectedTenant}
+                        disabled={loading}
                         startIcon={loading ? <CircularProgress size={16} color="inherit" /> : <SyncIcon />}
                         sx={{ borderRadius: '12px', fontWeight: 800, px: 3, whiteSpace: 'nowrap' }}>
                         {loading ? 'Loading...' : 'Load Report'}
@@ -167,16 +166,18 @@ const HourlyReportPage = () => {
                 <Box sx={{ overflowX: 'auto', maxHeight: 640, overflowY: 'auto' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 12 }}>
                         <thead style={{ position: 'sticky', top: 0, zIndex: 10, background: '#f8fafc' }}>
-                            <TenantTableHeaderRow colSpan={11} selectedTenant={selectedTenant} />
+                            <TenantTableHeaderRow colSpan={13} selectedTenant={selectedTenant} />
                             <tr style={{ borderBottom: '2px solid #e2e8f0' }}>
-                                {['Hour', 'Gross Sales', 'Vatable', 'VAT', 'SC/PWD', 'Net Sales', 'Cash', 'Card', 'Other', 'TX Count', 'Guests'].map(h => (
-                                    <th key={h} style={{ padding: '10px 14px', textAlign: h === 'Hour' ? 'center' : 'right', fontWeight: 800, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#94a3b8', whiteSpace: 'nowrap' }}>{h}</th>
+                                {['Tenant Name', 'Customer Code', 'Hour', 'Gross Sales', 'Vatable', 'VAT', 'SC/PWD', 'Net Sales', 'Cash', 'Card', 'Other', 'TX Count', 'Guests'].map(h => (
+                                    <th key={h} style={{ padding: '10px 14px', textAlign: ['Tenant Name', 'Customer Code'].includes(h) ? 'left' : h === 'Hour' ? 'center' : 'right', fontWeight: 800, fontSize: 10, textTransform: 'uppercase', letterSpacing: '0.06em', color: '#94a3b8', whiteSpace: 'nowrap' }}>{h}</th>
                                 ))}
                             </tr>
                         </thead>
                         <tbody>
                             {hourRows.map(row => (
-                                <tr key={row.hour} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                                <tr key={`${row.tenant_id || selectedTenant?.id || 'all'}-${row.period || row.hour}`} style={{ borderBottom: '1px solid #f1f5f9' }}>
+                                    <td style={{ padding: '10px 14px', fontWeight: 800, color: '#0f172a', whiteSpace: 'nowrap' }}>{row.tenant_name || selectedTenant?.trade_name || 'All Tenants'}</td>
+                                    <td style={{ padding: '10px 14px', color: '#64748b', fontWeight: 800, fontFamily: 'monospace', whiteSpace: 'nowrap' }}>{row.customer_code || selectedTenant?.customer_code || 'All Customer Codes'}</td>
                                     <td style={{ padding: '10px 14px', textAlign: 'center', fontWeight: 800, color: '#0f172a', background: '#f8fafc' }}>{row.hour}</td>
                                     <td style={{ padding: '10px 14px', textAlign: 'right', fontWeight: 700, color: '#df1160' }}>₱{fmt(row.gross_sales)}</td>
                                     <td style={{ padding: '10px 14px', textAlign: 'right', color: '#475569' }}>₱{fmt(row.vatable_sales)}</td>
@@ -198,7 +199,9 @@ const HourlyReportPage = () => {
                         {totals && (
                             <tfoot style={{ position: 'sticky', bottom: 0, background: '#e2e8f0', fontWeight: 900 }}>
                                 <tr style={{ borderTop: '2px solid #cbd5e1' }}>
-                                    <td style={{ padding: '12px 14px', textAlign: 'center', fontSize: 10, fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.08em' }}>TOTALS</td>
+                                    <td style={{ padding: '12px 14px', textAlign: 'left', fontSize: 10, fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.08em' }}>TOTALS</td>
+                                    <td style={{ padding: '12px 14px' }}></td>
+                                    <td style={{ padding: '12px 14px' }}></td>
                                     <td style={{ padding: '12px 14px', textAlign: 'right', color: '#df1160' }}>₱{fmt(totals.gross_sales)}</td>
                                     <td style={{ padding: '12px 14px', textAlign: 'right' }}>₱{fmt(totals.vatable_sales)}</td>
                                     <td style={{ padding: '12px 14px', textAlign: 'right' }}>₱{fmt(totals.vat_amount)}</td>
@@ -218,7 +221,7 @@ const HourlyReportPage = () => {
                         <Box sx={{ py: 8, textAlign: 'center', color: 'text.disabled' }}>
                             <span className="material-symbols-outlined" style={{ fontSize: 48, display: 'block', marginBottom: 8 }}>data_exploration</span>
                             <Typography variant="caption" sx={{ fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.08em' }}>
-                                Select a tenant and date, then click Load Report
+                                Select filters and date, then click Load Report
                             </Typography>
                         </Box>
                     )}

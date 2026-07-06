@@ -5,11 +5,14 @@ namespace App\Http\Controllers\Reports;
 use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use App\Models\Tenant;
+use App\Models\Transaction;
 use App\Http\Controllers\Api\Webapp\HourlyTransactionsController as ApiHourlyController;
 use App\Services\Reports\HourlyReportService;
 use App\Services\Reports\DailyReportService;
+use App\Services\Reports\FinanceCalculationService;
 use App\Services\Reports\WeeklyReportService;
 use App\Models\AuditLog;
+use Carbon\Carbon;
 use Illuminate\Support\Facades\Log;
 use PhpOffice\PhpSpreadsheet\Cell\DataType;
 use PhpOffice\PhpSpreadsheet\Cell\Coordinate;
@@ -69,6 +72,9 @@ class CommercialReportsController extends Controller
 
         $service = new WeeklyReportService();
         $result = $service->getWeeklySummary($from, $to, $tenantId, false, false, true);
+        if (! $this->hasTenantScope($tenantId)) {
+            $result['days'] = $this->tenantBreakdownRows($from, $to, 'date');
+        }
 
         // Log result shape for debugging client 'No data' cases
         if (config('app.debug')) try {
@@ -123,6 +129,9 @@ class CommercialReportsController extends Controller
 
         $service = new WeeklyReportService();
         $result = $service->getWeeklySummary($from, $to, $tenantId, true, false, true);
+        if (! $this->hasTenantScope($tenantId)) {
+            $result['days'] = $this->tenantBreakdownRows($from, $to, 'date', true, false);
+        }
 
         if ($this->shouldAuditReportView($request)) try {
             AuditLog::create([
@@ -163,6 +172,9 @@ class CommercialReportsController extends Controller
 
         $service = new WeeklyReportService();
         $result = $service->getWeeklySummary($from, $to, $tenantId, false, true, true);
+        if (! $this->hasTenantScope($tenantId)) {
+            $result['days'] = $this->tenantBreakdownRows($from, $to, 'date', false, true);
+        }
 
         if ($this->shouldAuditReportView($request)) try {
             AuditLog::create([
@@ -237,6 +249,9 @@ class CommercialReportsController extends Controller
 
         $service = new WeeklyReportService();
         $result = $service->getWeeklySummary($from, $to, $tenantId, false, false, true);
+        if (! $this->hasTenantScope($tenantId)) {
+            $result['days'] = $this->tenantBreakdownRows($from, $to, 'date');
+        }
 
         if (config('app.debug')) try {
             Log::info('commercial.monthlyData result', [
@@ -355,6 +370,10 @@ class CommercialReportsController extends Controller
                 foreach (['vatable_sales', 'vat_exempt_sales', 'vat_amount', 'sc_pwd_discount', 'regular_discount', 'cash_payment', 'card_payment', 'other_tender'] as $k) {
                     $summary[$k] += (float) ($s[$k] ?? 0.0);
                 }
+            }
+
+            if (! $this->hasTenantScope($tenantId)) {
+                $months = $this->tenantBreakdownRows($from, $to, 'month');
             }
 
             foreach (['gross_sales', 'net_sales', 'vatable_sales', 'vat_exempt_sales', 'vat_amount', 'sc_pwd_discount', 'regular_discount', 'cash_payment', 'card_payment', 'other_tender'] as $k) {
@@ -621,6 +640,9 @@ class CommercialReportsController extends Controller
         // Use HourlyReportService (direct call) to avoid controller-to-controller calls
         $service = new HourlyReportService();
         $data = $service->getHourlyAggregates($date, $date, $tenantId, null, true);
+        if (! $this->hasTenantScope($tenantId)) {
+            $data = $this->tenantBreakdownRows($date, $date, 'hour');
+        }
 
         // Record a lightweight audit event so UI "Load Report" actions are visible in audit logs.
         if ($this->shouldAuditReportView($request)) try {
@@ -666,6 +688,9 @@ class CommercialReportsController extends Controller
             'summary' => $result['summary'] ?? ['gross_sales' => 0.0, 'net_sales' => 0.0, 'transaction_count' => 0, 'guest_count' => 0],
             'data' => $result['hours'] ?? []
         ];
+        if (! $this->hasTenantScope($tenantId)) {
+            $result['data'] = $this->tenantBreakdownRows($date, $date, 'hour');
+        }
 
         // Audit the UI action (non-blocking)
         if ($this->shouldAuditReportView($request)) try {
@@ -721,6 +746,8 @@ class CommercialReportsController extends Controller
         $sheet->setCellValue('A5', 'Generated: ' . now()->format('Y-m-d H:i:s'));
 
         $headers = [
+            'Tenant Name',
+            'Customer Code',
             'Period',
             'Gross Sales',
             'Net Sales',
@@ -744,6 +771,8 @@ class CommercialReportsController extends Controller
         $dataRow = $headerRow + 1;
         foreach ($rows as $row) {
             $values = [
+                $row['tenant_name'] ?? $tenantDetails['name'],
+                $row['customer_code'] ?? $tenantDetails['customer_code'],
                 $row['period'] ?? '',
                 (float) ($row['gross_sales'] ?? 0),
                 (float) ($row['net_sales'] ?? 0),
@@ -760,7 +789,7 @@ class CommercialReportsController extends Controller
             ];
 
             foreach ($values as $index => $value) {
-                $typeHint = $index === 0 ? DataType::TYPE_STRING : DataType::TYPE_NUMERIC;
+                $typeHint = $index <= 2 ? DataType::TYPE_STRING : DataType::TYPE_NUMERIC;
                 $sheet->setCellValueExplicit(Coordinate::stringFromColumnIndex($index + 1) . $dataRow, $value, $typeHint);
             }
             $dataRow++;
@@ -768,20 +797,20 @@ class CommercialReportsController extends Controller
 
         $totalRow = $dataRow + 1;
         $sheet->setCellValue("A{$totalRow}", 'TOTAL');
-        foreach (range(2, count($headers)) as $columnIndex) {
+        foreach (range(4, count($headers)) as $columnIndex) {
             $key = [
-                2 => 'gross_sales',
-                3 => 'net_sales',
-                4 => 'vatable_sales',
-                5 => 'vat_amount',
-                6 => 'vat_exempt_sales',
-                7 => 'sc_pwd_discount',
-                8 => 'regular_discount',
-                9 => 'cash_payment',
-                10 => 'card_payment',
-                11 => 'other_tender',
-                12 => 'transaction_count',
-                13 => 'guest_count',
+                4 => 'gross_sales',
+                5 => 'net_sales',
+                6 => 'vatable_sales',
+                7 => 'vat_amount',
+                8 => 'vat_exempt_sales',
+                9 => 'sc_pwd_discount',
+                10 => 'regular_discount',
+                11 => 'cash_payment',
+                12 => 'card_payment',
+                13 => 'other_tender',
+                14 => 'transaction_count',
+                15 => 'guest_count',
             ][$columnIndex];
 
             $sheet->setCellValueExplicit(
@@ -804,8 +833,8 @@ class CommercialReportsController extends Controller
             ->getAlignment()
             ->setVertical(Alignment::VERTICAL_CENTER);
         $firstDataRow = $headerRow + 1;
-        $sheet->getStyle("B{$firstDataRow}:K{$totalRow}")->getNumberFormat()->setFormatCode(NumberFormat::FORMAT_NUMBER_COMMA_SEPARATED1);
-        $sheet->getStyle("L{$firstDataRow}:M{$totalRow}")->getNumberFormat()->setFormatCode(NumberFormat::FORMAT_NUMBER);
+        $sheet->getStyle("D{$firstDataRow}:M{$totalRow}")->getNumberFormat()->setFormatCode(NumberFormat::FORMAT_NUMBER_COMMA_SEPARATED1);
+        $sheet->getStyle("N{$firstDataRow}:O{$totalRow}")->getNumberFormat()->setFormatCode(NumberFormat::FORMAT_NUMBER);
         $sheet->getStyle("A{$totalRow}:{$lastColumn}{$totalRow}")->getFont()->setBold(true);
         $sheet->freezePane('A8');
 
@@ -883,6 +912,14 @@ class CommercialReportsController extends Controller
     private function hourlyExportData(Request $request, $tenantId): array
     {
         $date = $request->input('date') ?: now()->toDateString();
+        if (! $this->hasTenantScope($tenantId)) {
+            $rows = collect($this->tenantBreakdownRows($date, $date, 'hour'))
+                ->map(fn ($row) => $this->normalizeExportRow($row, $row['period'] ?? $row['hour'] ?? ''))
+                ->all();
+
+            return [$date, $rows, $this->summarizeExportRows($rows)];
+        }
+
         $data = (new HourlyReportService())->getHourlyAggregates($date, $date, $tenantId, null, true);
         $rows = collect($data)->map(fn ($row) => $this->normalizeExportRow($row, $row['hour'] ?? ''))->all();
 
@@ -892,6 +929,14 @@ class CommercialReportsController extends Controller
     private function dailyExportData(Request $request, $tenantId): array
     {
         $date = $request->input('date') ?: now()->toDateString();
+        if (! $this->hasTenantScope($tenantId)) {
+            $rows = collect($this->tenantBreakdownRows($date, $date, 'hour'))
+                ->map(fn ($row) => $this->normalizeExportRow($row, $row['period'] ?? $row['hour'] ?? ''))
+                ->all();
+
+            return [$date, $rows, $this->summarizeExportRows($rows)];
+        }
+
         $result = (new DailyReportService())->getDailySummary($date, $tenantId, null, true);
         $rows = collect($result['hours'] ?? [])->map(fn ($row) => $this->normalizeExportRow($row, $row['hour'] ?? ''))->all();
 
@@ -902,6 +947,14 @@ class CommercialReportsController extends Controller
     {
         $from = $request->input('date_from') ?: now()->subDays(6)->toDateString();
         $to = $request->input('date_to') ?: now()->toDateString();
+        if (! $this->hasTenantScope($tenantId)) {
+            $rows = collect($this->tenantBreakdownRows($from, $to, 'date', $weekdayOnly, $weekendOnly))
+                ->map(fn ($row) => $this->normalizeExportRow($row, $row['date'] ?? ''))
+                ->all();
+
+            return ["{$from}-to-{$to}", $rows, $this->summarizeExportRows($rows)];
+        }
+
         $result = (new WeeklyReportService())->getWeeklySummary($from, $to, $tenantId, $weekdayOnly, $weekendOnly, true);
         $rows = collect($result['days'] ?? [])->map(fn ($row) => $this->normalizeExportRow($row, $row['date'] ?? ''))->all();
 
@@ -919,6 +972,14 @@ class CommercialReportsController extends Controller
             $to = $request->input('date_to') ?: now()->toDateString();
         }
 
+        if (! $this->hasTenantScope($tenantId)) {
+            $rows = collect($this->tenantBreakdownRows($from, $to, 'date'))
+                ->map(fn ($row) => $this->normalizeExportRow($row, $row['date'] ?? ''))
+                ->all();
+
+            return ["{$from}-to-{$to}", $rows, $this->summarizeExportRows($rows)];
+        }
+
         $result = (new WeeklyReportService())->getWeeklySummary($from, $to, $tenantId, false, false, true);
         $rows = collect($result['days'] ?? [])->map(fn ($row) => $this->normalizeExportRow($row, $row['date'] ?? ''))->all();
 
@@ -932,6 +993,14 @@ class CommercialReportsController extends Controller
         $to = $request->input('date_to') ?: "{$year}-12-31";
         $start = \Carbon\Carbon::parse($from)->startOfMonth();
         $end = \Carbon\Carbon::parse($to)->startOfMonth();
+
+        if (! $this->hasTenantScope($tenantId)) {
+            $rows = collect($this->tenantBreakdownRows($from, $to, 'month'))
+                ->map(fn ($row) => $this->normalizeExportRow($row, $row['month'] ?? ''))
+                ->all();
+
+            return ["{$from}-to-{$to}", $rows, $this->summarizeExportRows($rows)];
+        }
 
         $rows = [];
         for ($date = $start->copy(); $date->lte($end); $date->addMonth()) {
@@ -947,6 +1016,8 @@ class CommercialReportsController extends Controller
     private function normalizeExportRow(array $row, string $period): array
     {
         return [
+            'tenant_name' => $row['tenant_name'] ?? null,
+            'customer_code' => $row['customer_code'] ?? null,
             'period' => $period,
             'gross_sales' => round((float) ($row['gross_sales'] ?? 0), 2),
             'net_sales' => round((float) ($row['net_sales'] ?? 0), 2),
@@ -993,6 +1064,113 @@ class CommercialReportsController extends Controller
         }
 
         return $summary;
+    }
+
+    private function hasTenantScope($tenantId): bool
+    {
+        return filled($tenantId) && $tenantId !== 'all';
+    }
+
+    private function tenantBreakdownRows(
+        string $from,
+        string $to,
+        string $bucket,
+        bool $weekdayOnly = false,
+        bool $weekendOnly = false
+    ): array {
+        $start = Carbon::parse($from)->startOfDay();
+        $end = Carbon::parse($to)->endOfDay();
+
+        $query = Transaction::query()
+            ->with(['tenant:id,trade_name,customer_code', 'adjustments', 'taxes'])
+            ->whereBetween('transaction_timestamp', [$start, $end]);
+
+        if (config('tsms.reporting.exclude_voids_from_totals', true)) {
+            $query->where('transaction_type', '!=', 'VOID')->whereNull('voided_at');
+        }
+
+        $finance = app(FinanceCalculationService::class);
+        $rows = $query->get()
+            ->filter(function (Transaction $transaction) use ($weekdayOnly, $weekendOnly) {
+                $date = $this->reportCarbon($transaction);
+
+                if ($weekdayOnly && $date->isWeekend()) {
+                    return false;
+                }
+
+                if ($weekendOnly && ! $date->isWeekend()) {
+                    return false;
+                }
+
+                return true;
+            })
+            ->groupBy(fn (Transaction $transaction) => implode('|', [
+                $transaction->tenant_id ?? 'unassigned',
+                $this->tenantBucket($transaction, $bucket),
+            ]))
+            ->map(function ($transactions) use ($finance, $bucket) {
+                $first = $transactions->first();
+                $tenant = $first?->tenant;
+                $period = $this->tenantBucket($first, $bucket);
+                $metrics = $finance->deriveMetrics(
+                    $finance->aggregateComponents($transactions),
+                    ['gross_sales_basis' => 'pre_deduction']
+                );
+
+                return [
+                    'tenant_id' => $first?->tenant_id,
+                    'tenant_name' => $tenant?->trade_name ?? 'Unassigned Tenant',
+                    'customer_code' => $tenant?->customer_code ?? 'N/A',
+                    'period' => $period,
+                    'date' => $bucket === 'date' ? $period : null,
+                    'day' => $bucket === 'date' ? $period : null,
+                    'month' => $bucket === 'month' ? $period : null,
+                    'hour' => $bucket === 'hour' ? substr($period, 11, 5) : null,
+                    'gross_sales' => round((float) ($metrics['gross_sales'] ?? 0), 2),
+                    'net_sales' => round((float) ($metrics['net_total'] ?? $metrics['net_sales'] ?? 0), 2),
+                    'vatable_sales' => round((float) ($metrics['vatable_sales'] ?? 0), 2),
+                    'vat_amount' => round((float) ($metrics['vat_amount'] ?? 0), 2),
+                    'vat_exempt_sales' => round((float) ($metrics['sc_vat_exempt_sales'] ?? 0), 2),
+                    'sc_pwd_discount' => round((float) ($metrics['senior_pwd'] ?? 0), 2),
+                    'regular_discount' => round((float) (($metrics['regular_discount'] ?? 0) + ($metrics['total_promotions'] ?? 0)), 2),
+                    'void' => 0.0,
+                    'return' => 0.0,
+                    'cash_payment' => 0.0,
+                    'card_payment' => 0.0,
+                    'other_tender' => 0.0,
+                    'transaction_count' => $transactions->count(),
+                    'guest_count' => 0,
+                ];
+            })
+            ->sortBy([
+                ['period', 'asc'],
+                ['tenant_name', 'asc'],
+            ])
+            ->values()
+            ->all();
+
+        return $rows;
+    }
+
+    private function tenantBucket(?Transaction $transaction, string $bucket): string
+    {
+        $date = $this->reportCarbon($transaction);
+
+        return match ($bucket) {
+            'hour' => $date->format('Y-m-d H:00'),
+            'month' => $date->format('Y-m'),
+            default => $date->format('Y-m-d'),
+        };
+    }
+
+    private function reportCarbon(?Transaction $transaction): Carbon
+    {
+        return Carbon::parse(
+            $transaction?->transaction_timestamp
+                ?? $transaction?->completed_at
+                ?? $transaction?->created_at
+                ?? now()
+        )->timezone(config('tsms.transaction_logs.timezone', 'Asia/Manila') ?: 'Asia/Manila');
     }
 
     private function exportTenantDetails($tenantId): array
