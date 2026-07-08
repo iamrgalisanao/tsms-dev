@@ -18,6 +18,7 @@ class RepairOvercorrectedProviderTimestamps extends Command
         {--from= : Required current stored UTC timestamp lower bound, e.g. "2026-07-03 00:00:00"}
         {--to= : Required current stored UTC timestamp upper bound, e.g. "2026-07-05 23:59:59"}
         {--timezone=Asia/Manila : Local timezone the provider timestamp actually represents}
+        {--payload-mode=local_time_with_z : Interpret payload timestamp as local_time_with_z or true_utc}
         {--chunk=500 : Chunk size}
         {--limit= : Optional maximum rows to inspect}
         {--apply : Actually update rows; omitted means dry-run}
@@ -37,6 +38,7 @@ class RepairOvercorrectedProviderTimestamps extends Command
         $from = $this->option('from');
         $to = $this->option('to');
         $timezone = (string) $this->option('timezone');
+        $payloadMode = (string) $this->option('payload-mode');
         $apply = (bool) $this->option('apply');
         $chunk = max((int) $this->option('chunk'), 1);
         $limit = $this->option('limit') !== null ? max((int) $this->option('limit'), 1) : null;
@@ -49,6 +51,12 @@ class RepairOvercorrectedProviderTimestamps extends Command
 
         if (! in_array($timezone, timezone_identifiers_list(), true)) {
             $this->error("Invalid timezone: {$timezone}");
+
+            return self::FAILURE;
+        }
+
+        if (! in_array($payloadMode, ['local_time_with_z', 'true_utc'], true)) {
+            $this->error('Invalid payload mode. Use local_time_with_z or true_utc.');
 
             return self::FAILURE;
         }
@@ -73,6 +81,7 @@ class RepairOvercorrectedProviderTimestamps extends Command
         $this->line("Tenant: {$tenantId}");
         $this->line("Stored UTC window: {$from} to {$to}");
         $this->line("Provider local timezone: {$timezone}");
+        $this->line("Payload timestamp mode: {$payloadMode}");
         if ($backup !== null) {
             $this->line("Backup: {$backup['path']}");
         }
@@ -86,6 +95,7 @@ class RepairOvercorrectedProviderTimestamps extends Command
             &$affectedLocalDates,
             $limit,
             $timezone,
+            $payloadMode,
             $apply
         ) {
             foreach ($rows as $row) {
@@ -94,7 +104,7 @@ class RepairOvercorrectedProviderTimestamps extends Command
                 }
 
                 $inspected++;
-                $proposal = $this->repairProposal($row, $timezone);
+                $proposal = $this->repairProposal($row, $timezone, $payloadMode);
 
                 if ($proposal === null) {
                     $skipped++;
@@ -212,7 +222,7 @@ class RepairOvercorrectedProviderTimestamps extends Command
             ]);
     }
 
-    private function repairProposal(object $row, string $timezone): ?array
+    private function repairProposal(object $row, string $timezone, string $payloadMode): ?array
     {
         $payload = json_decode((string) $row->original_payload, true);
         if (! is_array($payload)) {
@@ -227,13 +237,12 @@ class RepairOvercorrectedProviderTimestamps extends Command
             return null;
         }
 
-        $localTimestamp = $this->providerLocalTimestamp($payloadTimestamp, $timezone);
-        if ($localTimestamp === null) {
+        $expectedUtc = $this->expectedPayloadUtc($payloadTimestamp, $timezone, $payloadMode);
+        if ($expectedUtc === null) {
             return null;
         }
 
-        $expectedUtc = $localTimestamp->utc();
-        $offsetMinutes = $localTimestamp->utcOffset();
+        $offsetMinutes = $expectedUtc->setTimezone($timezone)->utcOffset();
         $overcorrectedUtc = $expectedUtc->subMinutes($offsetMinutes);
         $oldUtc = CarbonImmutable::parse($row->transaction_timestamp, 'UTC')->utc();
 
@@ -255,13 +264,27 @@ class RepairOvercorrectedProviderTimestamps extends Command
             'old_transaction_timestamp' => $oldUtc->format('Y-m-d H:i:s'),
             'new_transaction_timestamp' => $expectedUtc->format('Y-m-d H:i:s'),
             'new_submission_timestamp' => $newSubmissionTimestamp,
-            'payload_local_timestamp' => $localTimestamp->format('Y-m-d H:i:s'),
+            'payload_local_timestamp' => $expectedUtc->setTimezone($timezone)->format('Y-m-d H:i:s'),
+            'payload_mode' => $payloadMode,
             'repair_offset_minutes' => $offsetMinutes,
             'old_local_date' => $oldUtc->setTimezone($timezone)->toDateString(),
             'new_local_date' => $expectedUtc->setTimezone($timezone)->toDateString(),
             'gross_sales' => number_format((float) $row->gross_sales, 2, '.', ''),
             'net_sales' => number_format((float) $row->net_sales, 2, '.', ''),
         ];
+    }
+
+    private function expectedPayloadUtc(string $timestamp, string $timezone, string $payloadMode): ?CarbonImmutable
+    {
+        if ($payloadMode === 'true_utc') {
+            try {
+                return CarbonImmutable::parse($timestamp)->utc();
+            } catch (\Throwable) {
+                return null;
+            }
+        }
+
+        return $this->providerLocalTimestamp($timestamp, $timezone)?->utc();
     }
 
     private function providerLocalTimestamp(string $timestamp, string $timezone): ?CarbonImmutable
