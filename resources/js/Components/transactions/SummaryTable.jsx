@@ -91,6 +91,16 @@ const Row = ({ row, formatCurrency, cellStyles }) => {
                     </Typography>
                 </TableCell>
                 <TableCell align="right">
+                    <Typography variant="body2" sx={{ fontWeight: 800, color: 'text.primary', ...cellStyles }}>
+                        {formatCurrency(row.vatable_sales)}
+                    </Typography>
+                </TableCell>
+                <TableCell align="right">
+                    <Typography variant="body2" sx={{ fontWeight: 800, color: 'text.secondary', ...cellStyles }}>
+                        {formatCurrency(row.vat)}
+                    </Typography>
+                </TableCell>
+                <TableCell align="right">
                     <Typography variant="body2" sx={{ fontWeight: 800, color: row.refund > 0 ? 'error.main' : 'text.secondary', ...cellStyles }}>
                         {formatCurrency(row.refund)}
                     </Typography>
@@ -102,7 +112,7 @@ const Row = ({ row, formatCurrency, cellStyles }) => {
                 </TableCell>
             </TableRow>
             <TableRow>
-                <TableCell style={{ paddingBottom: 0, paddingTop: 0 }} colSpan={9}>
+                <TableCell style={{ paddingBottom: 0, paddingTop: 0 }} colSpan={11}>
                     <Collapse in={open} timeout="auto" unmountOnExit>
                         <Box sx={{ py: 3, px: 5, bgcolor: 'rgba(248, 250, 252, 0.8)', borderBottom: '1px solid', borderColor: 'divider' }}>
                             <Typography variant="subtitle2" gutterBottom sx={{ fontWeight: 800, color: 'text.secondary', fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.12em', mb: 2.5 }}>
@@ -249,6 +259,8 @@ const SummaryTable = ({ summary, grandTotal, loading, page, rowsPerPage, totalCo
                             <TableCell align="right" sx={headerStyles}>Unique Receipts</TableCell>
                             <TableCell align="right" sx={headerStyles}>Gross Total</TableCell>
                             <TableCell align="right" sx={headerStyles}>Net Total</TableCell>
+                            <TableCell align="right" sx={headerStyles}>VATable Sales</TableCell>
+                            <TableCell align="right" sx={headerStyles}>VAT</TableCell>
                             <TableCell align="right" sx={headerStyles}>Refund</TableCell>
                             <TableCell align="right" sx={headerStyles}>SC (Emp)</TableCell>
                         </TableRow>
