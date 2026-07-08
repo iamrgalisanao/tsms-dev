@@ -153,6 +153,30 @@ const Row = ({ transaction, onViewDetails, getStatusColor, formatCurrency, forma
                         </Typography>
                     </Tooltip>
                 </TableCell>
+                <TableCell align="left" sx={{ minWidth: 130 }}>
+                    <Tooltip title={transaction.voided_at ? "Voided transactions contribute ₱0.00 to reconciled totals" : ""} arrow>
+                        <Typography variant="body2" sx={{
+                            fontWeight: 800,
+                            fontFamily: 'monospace',
+                            color: transaction.voided_at ? 'error.light' : 'text.primary',
+                            textDecoration: transaction.voided_at ? 'line-through' : 'none'
+                        }}>
+                            {transaction.voided_at ? formatCurrency(0) : formatCurrency(transaction.vatable_sales)}
+                        </Typography>
+                    </Tooltip>
+                </TableCell>
+                <TableCell align="left" sx={{ minWidth: 110 }}>
+                    <Tooltip title={transaction.voided_at ? "Voided transactions contribute ₱0.00 to reconciled totals" : ""} arrow>
+                        <Typography variant="body2" sx={{
+                            fontWeight: 800,
+                            fontFamily: 'monospace',
+                            color: transaction.voided_at ? 'error.light' : 'text.secondary',
+                            textDecoration: transaction.voided_at ? 'line-through' : 'none'
+                        }}>
+                            {transaction.voided_at ? formatCurrency(0) : formatCurrency(transaction.vat)}
+                        </Typography>
+                    </Tooltip>
+                </TableCell>
                 <TableCell align="center" sx={{ minWidth: 110 }}>
                     <Chip
                         label={transaction.validation_status || 'UNKNOWN'}
@@ -183,7 +207,7 @@ const Row = ({ transaction, onViewDetails, getStatusColor, formatCurrency, forma
                 </TableCell>
             </TableRow>
             <TableRow>
-                <TableCell style={{ paddingBottom: 0, paddingTop: 0 }} colSpan={9}>
+                <TableCell style={{ paddingBottom: 0, paddingTop: 0 }} colSpan={11}>
                     <Collapse in={open} timeout="auto" unmountOnExit>
                         <Box sx={{ py: 3, px: 4, bgcolor: 'rgba(248, 250, 252, 0.7)', borderTop: '1px solid', borderColor: 'divider' }}>
                             <Grid container spacing={4}>
@@ -353,6 +377,8 @@ const TransactionTable = ({ transactions, loading, page, rowsPerPage, totalCount
                             <TableCell sx={{ ...headerStyles, verticalAlign: 'bottom', pb: 1.5 }}>Tenant / Terminal</TableCell>
                             <TableCell align="left" sx={{ ...headerStyles, verticalAlign: 'bottom', pb: 1.5 }}>Gross Sales</TableCell>
                             <TableCell align="left" sx={{ ...headerStyles, verticalAlign: 'bottom', pb: 1.5 }}>Net Sales</TableCell>
+                            <TableCell align="left" sx={{ ...headerStyles, verticalAlign: 'bottom', pb: 1.5 }}>VATable Sales</TableCell>
+                            <TableCell align="left" sx={{ ...headerStyles, verticalAlign: 'bottom', pb: 1.5 }}>VAT</TableCell>
                             <TableCell align="center" sx={{ ...headerStyles, verticalAlign: 'bottom', pb: 1.5 }}>Audit</TableCell>
                             <TableCell align="center" sx={{ ...headerStyles, verticalAlign: 'bottom', pb: 1.5 }}>Status</TableCell>
                             <TableCell align="center" sx={{ ...headerStyles, verticalAlign: 'bottom', pb: 1.5 }}>Actions</TableCell>
