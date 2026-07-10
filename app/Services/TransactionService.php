@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\Transaction;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use App\Events\TransactionUpdated;
 
 class TransactionService
@@ -20,13 +21,24 @@ class TransactionService
         if (!$transaction->canRefund()) {
             throw new \Exception('Transaction cannot be refunded.');
         }
-        $transaction->update([
+
+        if (($refundData['refund_amount'] ?? 0) > $transaction->gross_sales) {
+            throw new \Exception('Refund amount cannot exceed transaction gross sales.');
+        }
+
+        $updates = [
             'refund_status' => $refundData['refund_status'] ?? 'REFUNDED',
             'refund_amount' => $refundData['refund_amount'] ?? null,
             'refund_reason' => $refundData['refund_reason'] ?? null,
             'refund_reference_id' => $refundData['refund_reference_id'] ?? null,
             'refund_processed_at' => $refundData['refund_processed_at'] ?? now(),
-        ]);
+        ];
+
+        if (Schema::hasColumn('transactions', 'is_refunded')) {
+            $updates['is_refunded'] = true;
+        }
+
+        $transaction->update($updates);
         $this->logTransactionHistory($transaction, 'REFUNDED', $refundData['refund_reason'] ?? null);
         event(new TransactionUpdated($transaction));
         return $transaction;

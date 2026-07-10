@@ -159,6 +159,29 @@ class VoidTransactionTest extends TestCase
         $this->assertEquals(25.00, (float) $this->transaction->refund_amount);
         $this->assertEquals('Customer returned item', $this->transaction->refund_reason);
         $this->assertEquals($this->transaction->transaction_id, $this->transaction->refund_reference_id);
+        $this->assertTrue((bool) $this->transaction->is_refunded);
+    }
+
+    public function test_refund_amount_cannot_exceed_gross_sales()
+    {
+        $this->actingAs($this->terminal, 'sanctum');
+        $this->transaction->update(['gross_sales' => 100.00]);
+
+        $response = $this->postJson("/api/v1/transactions/{$this->transaction->transaction_id}/refund", [
+            'refund_amount' => '100.01',
+            'refund_reason' => 'Refund exceeds sale amount',
+        ]);
+
+        $response->assertStatus(400)
+            ->assertJson([
+                'status' => 'error',
+                'message' => 'Refund amount cannot exceed transaction gross sales.',
+            ]);
+
+        $this->transaction->refresh();
+        $this->assertNull($this->transaction->refund_status);
+        $this->assertNull($this->transaction->refund_amount);
+        $this->assertFalse((bool) $this->transaction->is_refunded);
     }
 
     public function test_refund_transaction_not_owned_by_terminal()

@@ -149,6 +149,7 @@ class Transaction extends Model
         'refund_status',
         'refund_amount',
         'refund_reason',
+        'is_refunded',
         'refund_reference_id',
         'refund_processed_at',
         'voided_at',
