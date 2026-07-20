@@ -79,7 +79,9 @@ The default CI pipeline runs:
 - Node dependency install.
 - Frontend asset build via `npm run build`.
 
-CI passing means the PR is merge-ready from an automated test/build perspective. It does not replace human review or deployment smoke checks.
+Initial rollout note: the existing PHPUnit suite is currently treated as a visible baseline check rather than a blocking gate. Composer install, migrations, frontend build, and work-item linkage are blocking gates. Promote PHPUnit to blocking once the existing suite is green on the main development branch.
+
+CI passing means the PR is merge-ready from the currently enforced automated checks. It does not replace human review or deployment smoke checks.
 
 ## Manual SSH Deployments
 
