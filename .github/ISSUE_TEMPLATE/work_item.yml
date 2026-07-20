@@ -1,0 +1,70 @@
+name: Work item
+description: Track a feature, bug, chore, or deployment task.
+title: "[TSMS-000] "
+labels: ["work-item"]
+body:
+  - type: input
+    id: work_id
+    attributes:
+      label: Work ID
+      description: Use TSMS-### for general work or LRC-## for license redeployment control.
+      placeholder: TSMS-001
+    validations:
+      required: true
+  - type: dropdown
+    id: type
+    attributes:
+      label: Type
+      options:
+        - feature
+        - fix
+        - chore
+        - docs
+        - refactor
+        - test
+        - deploy
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - API
+        - frontend
+        - licensing
+        - reporting
+        - transactions
+        - infrastructure
+        - documentation
+        - other
+    validations:
+      required: true
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+      description: What user, system, or operational outcome should be true when this is done?
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: List observable conditions that prove the work is complete.
+      placeholder: |
+        - ...
+        - ...
+    validations:
+      required: true
+  - type: textarea
+    id: rollout
+    attributes:
+      label: Rollout and deployment notes
+      description: Include feature flags, config modes, migration/backfill notes, or manual SSH steps.
+  - type: textarea
+    id: blockers
+    attributes:
+      label: Blockers
+      description: Decisions, credentials, environment access, or dependencies needed to proceed.
+
