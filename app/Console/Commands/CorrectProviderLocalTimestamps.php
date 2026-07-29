@@ -19,6 +19,7 @@ class CorrectProviderLocalTimestamps extends Command
         {--chunk=500 : Chunk size}
         {--limit= : Optional maximum rows to inspect}
         {--apply : Actually update rows; omitted means dry-run}
+        {--skip-duplicates : Skip rows whose corrected receipt/date key already exists instead of aborting the batch}
         {--refresh-summaries : Refresh daily summaries for affected local dates after --apply}';
 
     protected $description = 'Dry-run/apply correction for provider timestamps sent as local wall-clock time with a UTC-looking Z format.';
@@ -36,6 +37,7 @@ class CorrectProviderLocalTimestamps extends Command
         $to = $this->option('to');
         $timezone = (string) $this->option('timezone');
         $apply = (bool) $this->option('apply');
+        $skipDuplicates = (bool) $this->option('skip-duplicates');
         $chunk = max((int) $this->option('chunk'), 1);
         $limit = $this->option('limit') !== null ? max((int) $this->option('limit'), 1) : null;
 
@@ -81,7 +83,9 @@ class CorrectProviderLocalTimestamps extends Command
         $eligible = 0;
         $updated = 0;
         $skipped = 0;
+        $duplicateConflictSkipped = 0;
         $sample = [];
+        $duplicateConflictSample = [];
         $affectedLocalDates = [];
 
         $this->info(($apply ? 'APPLY' : 'DRY-RUN') . " provider local timestamp correction");
@@ -94,11 +98,14 @@ class CorrectProviderLocalTimestamps extends Command
             &$eligible,
             &$updated,
             &$skipped,
+            &$duplicateConflictSkipped,
             &$sample,
+            &$duplicateConflictSample,
             &$affectedLocalDates,
             $limit,
             $timezone,
-            $apply
+            $apply,
+            $skipDuplicates
         ) {
             foreach ($rows as $row) {
                 if ($limit !== null && $inspected >= $limit) {
@@ -116,6 +123,28 @@ class CorrectProviderLocalTimestamps extends Command
                 $eligible++;
                 $affectedLocalDates[$proposal['old_local_date']] = true;
                 $affectedLocalDates[$proposal['new_local_date']] = true;
+
+                $duplicateConflict = $skipDuplicates
+                    ? $this->duplicateConflictForProposal($proposal)
+                    : null;
+
+                if ($duplicateConflict !== null) {
+                    $duplicateConflictSkipped++;
+
+                    if (count($duplicateConflictSample) < 20) {
+                        $duplicateConflictSample[] = [
+                            'id' => $proposal['id'],
+                            'receipt' => $proposal['receipt_no'],
+                            'terminal' => $proposal['serial_number'],
+                            'target_date' => $proposal['new_transaction_date'],
+                            'existing_id' => $duplicateConflict->id,
+                            'old_utc' => $proposal['old_transaction_timestamp'],
+                            'new_utc' => $proposal['new_transaction_timestamp'],
+                        ];
+                    }
+
+                    continue;
+                }
 
                 if (count($sample) < 20) {
                     $sample[] = [
@@ -177,11 +206,29 @@ class CorrectProviderLocalTimestamps extends Command
         $this->line("Inspected: {$inspected}");
         $this->line("Eligible corrections: {$eligible}");
         $this->line("Skipped: {$skipped}");
+        $this->line("Duplicate conflicts skipped: {$duplicateConflictSkipped}");
         $this->line($apply ? "Updated: {$updated}" : 'Updated: 0 (dry-run)');
 
         $dates = array_keys($affectedLocalDates);
         sort($dates);
         $this->line('Affected local dates: ' . (empty($dates) ? 'none' : implode(', ', $dates)));
+
+        if (! empty($duplicateConflictSample)) {
+            $this->newLine();
+            $this->warn('Rows skipped because the corrected receipt/date key already exists:');
+            $this->table(
+                ['ID', 'Receipt', 'Terminal', 'Target Date', 'Existing ID', 'Old UTC', 'New UTC'],
+                array_map(fn ($row) => [
+                    $row['id'],
+                    $row['receipt'],
+                    $row['terminal'],
+                    $row['target_date'],
+                    $row['existing_id'],
+                    $row['old_utc'],
+                    $row['new_utc'],
+                ], $duplicateConflictSample)
+            );
+        }
 
         if (! $apply) {
             $this->warn('Dry-run only. Re-run with --apply to update rows.');
@@ -243,10 +290,13 @@ class CorrectProviderLocalTimestamps extends Command
 
         return [
             'id' => $row->id,
+            'tenant_id' => $row->tenant_id,
+            'terminal_id' => $row->terminal_id,
             'receipt_no' => $row->receipt_no,
             'serial_number' => $row->serial_number,
             'old_transaction_timestamp' => $oldTransactionTimestamp,
             'new_transaction_timestamp' => $newTransactionTimestamp,
+            'new_transaction_date' => CarbonImmutable::parse($newTransactionTimestamp, 'UTC')->toDateString(),
             'new_submission_timestamp' => $newSubmissionTimestamp,
             'old_local_date' => CarbonImmutable::parse($oldTransactionTimestamp, 'UTC')->setTimezone($timezone)->toDateString(),
             'new_local_date' => CarbonImmutable::parse($newTransactionTimestamp, 'UTC')->setTimezone($timezone)->toDateString(),
@@ -278,5 +328,20 @@ class CorrectProviderLocalTimestamps extends Command
         }
 
         return null;
+    }
+
+    private function duplicateConflictForProposal(array $proposal): ?object
+    {
+        if ($proposal['receipt_no'] === null || trim((string) $proposal['receipt_no']) === '') {
+            return null;
+        }
+
+        return DB::table('transactions')
+            ->where('tenant_id', $proposal['tenant_id'])
+            ->where('terminal_id', $proposal['terminal_id'])
+            ->where('receipt_no', $proposal['receipt_no'])
+            ->where('id', '!=', $proposal['id'])
+            ->whereDate('transaction_timestamp', $proposal['new_transaction_date'])
+            ->first(['id']);
     }
 }
