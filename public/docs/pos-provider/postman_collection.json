@@ -6,7 +6,7 @@
   "variable": [
     {
       "key": "base_url",
-      "value": "https://stagingtsms.pitx.com.ph/api/v1"
+      "value": "https://salesportal.pitx.com.ph/api/v1"
     },
     {
       "key": "token",
@@ -60,7 +60,7 @@
         "url": "{{base_url}}/transactions/official",
         "body": {
           "mode": "raw",
-          "raw": "{\n  \"submission_uuid\": \"{{submission_uuid}}\",\n  \"tenant_id\": 28,\n  \"terminal_id\": 31,\n  \"submission_timestamp\": \"2026-06-13T13:25:45Z\",\n  \"transaction_count\": 1,\n  \"payload_checksum\": \"replace-with-64-char-sha256\",\n  \"transaction\": {\n    \"transaction_id\": \"fc3b0759-d617-487d-9463-1e6d6e5a7985\",\n    \"receipt_no\": \"0000017336\",\n    \"transaction_timestamp\": \"2026-06-13T13:00:44Z\",\n    \"gross_sales\": \"90.00\",\n    \"net_sales\": \"90.00\",\n    \"promo_status\": \"WITH_APPROVAL\",\n    \"customer_code\": \"C-C1036\",\n    \"payload_checksum\": \"replace-with-64-char-sha256\",\n    \"adjustments\": [],\n    \"taxes\": []\n  }\n}"
+          "raw": "{\n  \"submission_uuid\": \"{{submission_uuid}}\",\n  \"tenant_id\": 28,\n  \"terminal_id\": 31,\n  \"submission_timestamp\": \"2026-06-13T13:25:45Z\",\n  \"transaction_count\": 1,\n  \"payload_checksum\": \"replace-with-64-char-sha256\",\n  \"transaction\": {\n    \"transaction_id\": \"fc3b0759-d617-487d-9463-1e6d6e5a7985\",\n    \"hardware_id\": \"TERM-001\",\n    \"receipt_no\": \"0000017336\",\n    \"transaction_timestamp\": \"2026-06-13T13:00:44Z\",\n    \"gross_sales\": \"90.00\",\n    \"net_sales\": \"90.00\",\n    \"promo_status\": \"WITH_APPROVAL\",\n    \"customer_code\": \"C-C1036\",\n    \"payload_checksum\": \"replace-with-64-char-sha256\",\n    \"adjustments\": [\n      { \"adjustment_type\": \"promo_discount\", \"amount\": \"0.00\" },\n      { \"adjustment_type\": \"senior_discount\", \"amount\": \"0.00\" },\n      { \"adjustment_type\": \"pwd_discount\", \"amount\": \"0.00\" },\n      { \"adjustment_type\": \"vip_card_discount\", \"amount\": \"0.00\" },\n      { \"adjustment_type\": \"service_charge_distributed_to_employees\", \"amount\": \"0.00\" },\n      { \"adjustment_type\": \"service_charge_retained_by_management\", \"amount\": \"0.00\" },\n      { \"adjustment_type\": \"employee_discount\", \"amount\": \"0.00\" }\n    ],\n    \"taxes\": [\n      { \"tax_type\": \"VAT\", \"amount\": \"9.64\" },\n      { \"tax_type\": \"VATABLE_SALES\", \"amount\": \"80.36\" },\n      { \"tax_type\": \"SC_VAT_EXEMPT_SALES\", \"amount\": \"0.00\" },\n      { \"tax_type\": \"OTHER_TAX\", \"amount\": \"0.00\" }\n    ]\n  }\n}"
         }
       },
       "response": [

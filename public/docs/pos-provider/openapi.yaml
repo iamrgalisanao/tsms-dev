@@ -11,7 +11,7 @@ info:
 servers:
   - url: https://stagingtsms.pitx.com.ph/api/v1
     description: Staging
-  - url: https://tsms.pitx.com.ph/api/v1
+  - url: https://salesportal.pitx.com.ph/api/v1
     description: Production
 tags:
   - name: Authentication
