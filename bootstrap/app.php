@@ -48,6 +48,8 @@ return Application::configure(basePath: dirname(__DIR__))
             'capture.terminal.ip' => \App\Http\Middleware\CaptureTerminalIp::class,
             'circuit.breaker' => \App\Http\Middleware\CircuitBreakerMiddleware::class,
             'ensure.webapp.token' => \App\Http\Middleware\EnsureWebappToken::class,
+            'license.valid' => \App\Http\Middleware\LicenseMiddleware::class,
+            'license.vendor' => \App\Http\Middleware\EnsureVendorLicenseAuthority::class,
         ]);
     })
     ->withExceptions(function (Exceptions $exceptions) {

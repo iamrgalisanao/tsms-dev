@@ -17,6 +17,10 @@ class PosTerminal extends Model implements Authenticatable, Authorizable
 
     protected $fillable = [
         'tenant_id',
+        'location_code',
+        'deployment_id',
+        'license_id',
+        'activation_status',
         'provider_id',
         'serial_number',
         'machine_number',
@@ -27,6 +31,8 @@ class PosTerminal extends Model implements Authenticatable, Authorizable
         'status_id',
     'ip_address',
         'registered_at',
+        'activated_at',
+        'revoked_at',
         'last_seen_at',
 	'last_sale_at',
     'last_ip_at',
@@ -59,6 +65,8 @@ class PosTerminal extends Model implements Authenticatable, Authorizable
         'updated_at' => 'datetime',
         'expires_at' => 'datetime',
         'registered_at' => 'datetime',
+        'activated_at' => 'datetime',
+        'revoked_at' => 'datetime',
         'last_seen_at' => 'datetime',
         'last_sale_at' => 'datetime',
         'last_ip_at' => 'datetime',
@@ -117,6 +125,11 @@ class PosTerminal extends Model implements Authenticatable, Authorizable
     public function transactions()
     {
         return $this->hasMany(Transaction::class);
+    }
+
+    public function activations()
+    {
+        return $this->hasMany(TerminalActivation::class, 'terminal_id');
     }
 
     public function integrationLogs()

@@ -113,6 +113,7 @@ class Transaction extends Model
     protected $fillable = [
         'tenant_id',
         'terminal_id', 
+        'deployment_id',
         'transaction_id',
         'receipt_no',
         'hardware_id',

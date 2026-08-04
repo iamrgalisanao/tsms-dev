@@ -20,6 +20,7 @@ use App\Http\Controllers\API\V1\SubmissionStatusController;
 use App\Http\Controllers\API\V1\ProviderActivityMonitoringController;
 use App\Http\Controllers\API\V1\IncidentController;
 use App\Http\Controllers\API\V1\ChecksumSandboxController;
+use App\Http\Controllers\API\V1\LicenseController;
 use App\Http\Middleware\AttachCorrelationId;
 use App\Http\Controllers\McpController;
 use App\Http\Controllers\DashboardController;
@@ -37,6 +38,21 @@ Route::prefix('auth')->group(function () {
         Route::get('/user', [\App\Http\Controllers\API\Auth\AuthController::class, 'user']);
     });
 });
+
+// License operations remain outside future license enforcement middleware so
+// vendor-authorized accounts can inspect and recover invalid/restricted deployments.
+Route::prefix('license')
+    ->middleware(['auth:sanctum', 'throttle:30,1'])
+    ->group(function () {
+        Route::get('/status', [LicenseController::class, 'status'])
+            ->middleware('license.vendor:view');
+        Route::get('/capabilities', [LicenseController::class, 'capabilities'])
+            ->middleware('license.vendor:view');
+        Route::post('/upload', [LicenseController::class, 'upload'])
+            ->middleware('license.vendor:upload');
+        Route::post('/recovery-request', [LicenseController::class, 'recoveryRequest'])
+            ->middleware('license.vendor:recovery_request');
+    });
 
 /*
 |--------------------------------------------------------------------------
@@ -168,7 +184,7 @@ Route::prefix('v1')->middleware(['auth:sanctum', 'capture.terminal.ip', AttachCo
 
     // Transaction endpoints with token abilities
     // POS ingestion is throttled per authenticated terminal/tenant, not just IP.
-    Route::middleware(['abilities:transaction:create', 'throttle:pos-ingestion'])->group(function () {
+    Route::middleware(['abilities:transaction:create', 'throttle:pos-ingestion', 'license.valid'])->group(function () {
         // Legacy basic ingestion endpoint disabled (use /v1/transactions/official)
         // Route::post('/transactions', [TransactionController::class, 'store']);
         Route::post('/transactions/batch', [TransactionController::class, 'batchStore'])
