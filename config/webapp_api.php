@@ -1,8 +1,8 @@
 <?php
 
 return [
-    // Enable by default in development/staging; production can disable via env
-    'enabled' => env('WEBAPP_API_ENABLED', true),
+    // Disabled by default; enable explicitly only for environments that use the Webapp read API.
+    'enabled' => env('WEBAPP_API_ENABLED', false),
     'allowed_ips' => array_filter(array_map('trim', explode(',', env('WEBAPP_API_ALLOWED_IPS', '')))),
     'token_ability' => env('WEBAPP_API_TOKEN_ABILITY', 'webapp:read'),
     'cache_ttl_seconds' => (int) env('WEBAPP_API_CACHE_TTL', 10),

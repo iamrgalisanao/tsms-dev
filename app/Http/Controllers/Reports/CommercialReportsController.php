@@ -6,7 +6,7 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use App\Models\Tenant;
 use App\Models\Transaction;
-use App\Http\Controllers\Api\Webapp\HourlyTransactionsController as ApiHourlyController;
+use App\Http\Controllers\API\Webapp\HourlyTransactionsController as ApiHourlyController;
 use App\Services\Reports\HourlyReportService;
 use App\Services\Reports\DailyReportService;
 use App\Services\Reports\FinanceCalculationService;

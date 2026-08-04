@@ -1,9 +1,9 @@
 <?php
 
 use Illuminate\Support\Facades\Route;
-use App\Http\Controllers\Api\Webapp\TransactionController;
-use App\Http\Controllers\Api\Webapp\HourlyTransactionsController;
-use App\Http\Controllers\Api\Webapp\ReportsController;
+use App\Http\Controllers\API\Webapp\TransactionController;
+use App\Http\Controllers\API\Webapp\HourlyTransactionsController;
+use App\Http\Controllers\API\Webapp\ReportsController;
 
 /**
  * Webapp machine-to-machine read-only API

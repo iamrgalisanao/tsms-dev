@@ -50,9 +50,61 @@ docs/DAILY_ACTIVITY_*.md
 # Local test dumps
 tmp_valid_tx_errors.json
 
+# macOS Finder metadata
+.DS_Store
+
+# Unrelated agent tooling (hermes-agent container) that ended up living in
+# this repo's working directory — not part of the TSMS application.
+/docker-compose.yml
+/memory/
+
+# Production/customer data dumps pulled during ad-hoc investigations —
+# never commit real transaction/merchant data.
+/docs/chicknjuicy/
+/docs/coco/
+/docs/PITX 2026-07-01 Transactions.txt
+/data/*.pdf
+
+# One-off debug/investigation/export scripts — not part of the application.
+/export_dunkin_data.php
+/export_subway_data.php
+/export_wendys_data.php
+/scratch/
+/tools/
+/scripts/check_txn.php
+/scripts/investigate_tenant_58.php
+/scripts/generate_dashboard_jsx.js
+/scripts/replace_layout.cjs
+/scripts/generate_smoke_test_payload.php
+
+# HTML/JS prototypes and mockups — not part of the application.
+/branded_edition.html
+/high_fidelity.html
+/operations_command_center.html
+/parse_grid.js
+
+# Uncommitted docs reorganization, not yet finalized.
+/docs/archive/
+
+# Local production env overlays (may carry environment-specific values).
+/ops/*.overlay
+
+# Spec Kit local tooling (kept local-only per project decision).
+/.specify/
+
 # Documentation and spreadsheet artifacts are kept locally, not in Git.
 *.md
 *.markdown
 *.xls
 *.xlsx
 *.xlsm
+!docs/LICENSE_REDEPLOYMENT_CONTROL_TASK_TRACKER.md
+!docs/LICENSE_ROUTE_CLASSIFICATION.md
+!docs/specs/
+!docs/specs/license-redeployment-control/
+!docs/specs/license-redeployment-control/*.md
+!docs/implementation-plans/
+!docs/implementation-plans/epic-42/
+!docs/implementation-plans/epic-42/*.md
+!docs/implementation-plans/epic-42/stories/
+!docs/implementation-plans/epic-42/stories/*.md
