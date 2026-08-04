@@ -3,12 +3,15 @@
 namespace App\Services\Reports;
 
 use App\Models\Transaction;
+use App\Traits\ResolvesReportBusinessDate;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 class SalesReportDataService
 {
+    use ResolvesReportBusinessDate;
+
     public function __construct(private readonly FinanceCalculationService $finance)
     {
     }
@@ -360,88 +363,6 @@ class SalesReportDataService
         }
 
         return (int) $query->distinct('business_date')->count('business_date') >= $expectedDays;
-    }
-
-    private function reportDateExpression(string $timestampExpression, string $payloadExpression): string
-    {
-        if (! Schema::hasColumn('transactions', 'original_payload')) {
-            return $this->localReportDateExpression($timestampExpression);
-        }
-
-        $driver = DB::connection()->getDriverName();
-        $localDateExpression = $this->localReportDateExpression($timestampExpression);
-
-        if ($driver === 'pgsql') {
-            $payloadTimestamp = "COALESCE(({$payloadExpression})::jsonb->>'transaction_timestamp', ({$payloadExpression})::jsonb#>>'{transaction,transaction_timestamp}')";
-
-            return "CASE
-                WHEN {$payloadExpression} IS NOT NULL
-                    AND {$payloadExpression} != ''
-                    AND {$payloadTimestamp} IS NOT NULL
-                    AND {$payloadTimestamp} !~ '(Z|[+-][0-9]{2}:?[0-9]{2})$'
-                THEN DATE({$timestampExpression})
-                ELSE {$localDateExpression}
-            END";
-        }
-
-        $payloadTimestamp = "CASE
-            WHEN {$payloadExpression} IS NOT NULL AND {$payloadExpression} != '' AND JSON_VALID({$payloadExpression})
-            THEN COALESCE(JSON_UNQUOTE(JSON_EXTRACT({$payloadExpression}, '$.transaction_timestamp')), JSON_UNQUOTE(JSON_EXTRACT({$payloadExpression}, '$.transaction.transaction_timestamp')))
-            ELSE NULL
-        END";
-
-        if ($driver === 'sqlite') {
-            $payloadTimestamp = "COALESCE(json_extract({$payloadExpression}, '$.transaction_timestamp'), json_extract({$payloadExpression}, '$.transaction.transaction_timestamp'))";
-
-            return "CASE
-                WHEN {$payloadExpression} IS NOT NULL
-                    AND {$payloadExpression} != ''
-                    AND {$payloadTimestamp} IS NOT NULL
-                    AND {$payloadTimestamp} NOT LIKE '%Z'
-                    AND {$payloadTimestamp} NOT GLOB '*[+-][0-9][0-9]:[0-9][0-9]'
-                    AND {$payloadTimestamp} NOT GLOB '*[+-][0-9][0-9][0-9][0-9]'
-                THEN DATE({$timestampExpression})
-                ELSE {$localDateExpression}
-            END";
-        }
-
-        return "CASE
-            WHEN {$payloadExpression} IS NOT NULL
-                AND {$payloadExpression} != ''
-                AND {$payloadTimestamp} IS NOT NULL
-                AND {$payloadTimestamp} NOT REGEXP '(Z|[+-][0-9]{2}:?[0-9]{2})$'
-            THEN DATE({$timestampExpression})
-            ELSE {$localDateExpression}
-        END";
-    }
-
-    private function localReportDateExpression(string $timestampExpression): string
-    {
-        $offsetMinutes = Carbon::now($this->reportTimezone())->utcOffset();
-        $driver = DB::connection()->getDriverName();
-
-        if ($driver === 'sqlite') {
-            $modifier = sprintf('%+d minutes', $offsetMinutes);
-
-            return "DATE(datetime({$timestampExpression}, '{$modifier}'))";
-        }
-
-        if ($driver === 'pgsql') {
-            $operator = $offsetMinutes >= 0 ? '+' : '-';
-            $minutes = abs($offsetMinutes);
-
-            return "DATE({$timestampExpression} {$operator} INTERVAL '{$minutes} minutes')";
-        }
-
-        $function = $offsetMinutes >= 0 ? 'DATE_ADD' : 'DATE_SUB';
-        $minutes = abs($offsetMinutes);
-
-        return "DATE({$function}({$timestampExpression}, INTERVAL {$minutes} MINUTE))";
-    }
-
-    private function reportTimezone(): string
-    {
-        return config('tsms.transaction_logs.timezone', 'Asia/Manila') ?: 'Asia/Manila';
     }
 
     private function excludeVoids(): bool
