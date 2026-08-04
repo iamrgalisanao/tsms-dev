@@ -339,6 +339,24 @@ class TransactionController extends Controller
             ]);
 
             $terminal = PosTerminal::findOrFail($request->terminal_id);
+
+            // Enforce authenticated-terminal binding: the Sanctum token used for this
+            // request must belong to the exact terminal declared in the payload,
+            // otherwise a valid token for one terminal could attribute transactions
+            // to a different terminal/tenant (mirrors the check in storeOfficial()).
+            $authenticatedTerminal = $request->user();
+            if (!$authenticatedTerminal instanceof PosTerminal || (int) $authenticatedTerminal->id !== (int) $terminal->id) {
+                Log::warning('batchStore: Token does not belong to the declared terminal', [
+                    'authenticated_terminal_id' => optional($authenticatedTerminal)->id,
+                    'declared_terminal_id' => $terminal->id,
+                ]);
+                DB::rollBack();
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Forbidden - token does not match terminal'
+                ], 403);
+            }
+
             $processedTransactions = [];
             $failedTransactions = [];
             $processedCount = 0;
@@ -895,45 +913,53 @@ class TransactionController extends Controller
                 ->where('submission_uuid', $request->submission_uuid)
                 ->get();
 
-            if ($submission || $existingTransactions->count() > 0) {
+            // A submission left at RECEIVED/PROCESSING means a prior attempt did not fully
+            // complete (some transactions failed to persist). Treat a resubmission of the
+            // identical payload as a retry: skip the "already processed" short-circuit below
+            // and let it fall through to the per-transaction loop, which safely skips the
+            // transactions that already exist and only creates/queues the ones still missing.
+            $isRetryOfIncompleteSubmission = $submission
+                && $submission->status !== \App\Models\TransactionSubmission::STATUS_COMPLETED;
+
+            if ($submission) {
                 // Handle submission envelope drift detection (if submission exists)
-                if ($submission) {
-                    $payloadDrift = strtolower($submission->payload_checksum) !== strtolower($request->payload_checksum);
-                    $countMismatch = (int)$submission->transaction_count !== (int)$request->transaction_count;
+                $payloadDrift = strtolower($submission->payload_checksum) !== strtolower($request->payload_checksum);
+                $countMismatch = (int)$submission->transaction_count !== (int)$request->transaction_count;
 
-                    if ($payloadDrift || $countMismatch) {
-                        // Conflict: same terminal + submission_uuid BUT different payload characteristics
-                        Log::warning('storeOfficial: Submission drift conflict detected', [
+                if ($payloadDrift || $countMismatch) {
+                    // Conflict: same terminal + submission_uuid BUT different payload characteristics
+                    Log::warning('storeOfficial: Submission drift conflict detected', [
+                        'submission_uuid' => $request->submission_uuid,
+                        'terminal_id' => $request->terminal_id,
+                        'original_checksum' => $submission->payload_checksum,
+                        'incoming_checksum' => $request->payload_checksum,
+                        'original_count' => $submission->transaction_count,
+                        'incoming_count' => $request->transaction_count,
+                    ]);
+                    $this->safeRollBack('storeOfficial drift conflict rollback', [
+                        'submission_uuid' => $request->submission_uuid,
+                        'terminal_id' => $request->terminal_id,
+                    ]);
+                    return response()->json([
+                        'success' => false,
+                        'message' => 'Submission conflict (payload drift)',
+                        'conflict' => [
                             'submission_uuid' => $request->submission_uuid,
                             'terminal_id' => $request->terminal_id,
-                            'original_checksum' => $submission->payload_checksum,
-                            'incoming_checksum' => $request->payload_checksum,
-                            'original_count' => $submission->transaction_count,
-                            'incoming_count' => $request->transaction_count,
-                        ]);
-                        $this->safeRollBack('storeOfficial drift conflict rollback', [
-                            'submission_uuid' => $request->submission_uuid,
-                            'terminal_id' => $request->terminal_id,
-                        ]);
-                        return response()->json([
-                            'success' => false,
-                            'message' => 'Submission conflict (payload drift)',
-                            'conflict' => [
-                                'submission_uuid' => $request->submission_uuid,
-                                'terminal_id' => $request->terminal_id,
-                                'original' => [
-                                    'payload_checksum' => $submission->payload_checksum,
-                                    'transaction_count' => $submission->transaction_count,
-                                ],
-                                'incoming' => [
-                                    'payload_checksum' => $request->payload_checksum,
-                                    'transaction_count' => $request->transaction_count,
-                                ]
+                            'original' => [
+                                'payload_checksum' => $submission->payload_checksum,
+                                'transaction_count' => $submission->transaction_count,
+                            ],
+                            'incoming' => [
+                                'payload_checksum' => $request->payload_checksum,
+                                'transaction_count' => $request->transaction_count,
                             ]
-                        ], 409);
-                    }
+                        ]
+                    ], 409);
                 }
+            }
 
+            if (($submission || $existingTransactions->count() > 0) && !$isRetryOfIncompleteSubmission) {
                 // Idempotent replay: return previously processed summary
                 Log::info('storeOfficial: Idempotent replay detected (early check)', [
                     'submission_uuid' => $request->submission_uuid,
@@ -968,6 +994,15 @@ class TransactionController extends Controller
                         'transactions' => $existingTransactions->pluck('transaction_id'),
                     ]
                 ], 200);
+            }
+
+            if ($isRetryOfIncompleteSubmission) {
+                Log::info('storeOfficial: Resuming incomplete submission for retry', [
+                    'submission_uuid' => $request->submission_uuid,
+                    'terminal_id' => $request->terminal_id,
+                    'previous_status' => $submission->status,
+                    'already_persisted' => $existingTransactions->count(),
+                ]);
             }
 
             // Validate either single transaction or batch format
@@ -1083,7 +1118,7 @@ class TransactionController extends Controller
             // Cache guard to reduce in-flight duplicates (best-effort; DB unique key remains source of truth)
             $cacheKey = sprintf('submission:lock:%s:%s', $request->terminal_id, $request->submission_uuid);
             $lockAcquired = Cache::add($cacheKey, 1, now()->addSeconds(60));
-            if (!$lockAcquired) {
+            if (!$lockAcquired && !$isRetryOfIncompleteSubmission) {
                 Log::info('storeOfficial: Duplicate submission lock detected (treating as idempotent)', [
                     'submission_uuid' => $request->submission_uuid,
                     'terminal_id' => $request->terminal_id,
@@ -1128,66 +1163,76 @@ class TransactionController extends Controller
                 $terminalForTimestamps
             );
 
-            // NOW create submission envelope (status RECEIVED) - after all validations pass
-            try {
-                $submission = \App\Models\TransactionSubmission::create([
-                    'tenant_id' => $request->tenant_id,
-                    'terminal_id' => $request->terminal_id,
-                    'submission_uuid' => $request->submission_uuid,
-                    'submission_timestamp' => $normalizedSubmissionTimestamp,
-                    'transaction_count' => $request->transaction_count,
-                    'payload_checksum' => $request->payload_checksum,
-                    'status' => \App\Models\TransactionSubmission::STATUS_RECEIVED,
+            if ($submission) {
+                // Retrying an incomplete submission: reuse the existing envelope row
+                // instead of re-inserting (submission_uuid is unique).
+                Log::info('storeOfficial: Reusing existing submission envelope for retry', [
+                    'submission_uuid' => $submission->submission_uuid,
+                    'terminal_id' => $submission->terminal_id,
+                    'previous_status' => $submission->status,
                 ]);
-            } catch (\Illuminate\Database\QueryException $e) {
-                // Handle concurrent duplicate submission insertion gracefully (idempotent replay)
-                $sqlState = $e->getCode();
-                $isDuplicate = $sqlState == '23000' || str_contains(strtolower($e->getMessage()), 'duplicate entry');
-                if ($isDuplicate) {
-                    \Log::info('storeOfficial: Duplicate submission detected at insert (treating as idempotent)', [
-                        'submission_uuid' => $request->submission_uuid,
+            } else {
+                // NOW create submission envelope (status RECEIVED) - after all validations pass
+                try {
+                    $submission = \App\Models\TransactionSubmission::create([
+                        'tenant_id' => $request->tenant_id,
                         'terminal_id' => $request->terminal_id,
-                        'error' => $e->getMessage(),
-                    ]);
-                    $existing = \App\Models\TransactionSubmission::where('terminal_id', $request->terminal_id)
-                        ->where('submission_uuid', $request->submission_uuid)
-                        ->first();
-                    $existingTransactions = \App\Models\Transaction::where('terminal_id', $request->terminal_id)
-                        ->where('submission_uuid', $request->submission_uuid)
-                        ->get();
-
-                    // Touch terminal liveness on duplicate submission insert
-                    try {
-                        if ($terminalFromToken instanceof \App\Models\PosTerminal) {
-                            $terminalFromToken->last_seen_at = now();
-                            $terminalFromToken->save();
-                        }
-                    } catch (\Throwable $te) {
-                        Log::warning('Failed to update terminal last_seen_at on duplicate submission insert', [
-                            'terminal_id' => $request->terminal_id,
-                            'error' => $te->getMessage(),
-                        ]);
-                    }
-
-                    // Commit open transaction (if any) and return idempotent success
-                    $this->safeCommit('storeOfficial duplicate insert idempotent commit', [
                         'submission_uuid' => $request->submission_uuid,
-                        'terminal_id' => $request->terminal_id,
+                        'submission_timestamp' => $normalizedSubmissionTimestamp,
+                        'transaction_count' => $request->transaction_count,
+                        'payload_checksum' => $request->payload_checksum,
+                        'status' => \App\Models\TransactionSubmission::STATUS_RECEIVED,
                     ]);
-                    return response()->json([
-                        'success' => true,
-                        'message' => 'Submission already processed (idempotent)',
-                        'data' => [
+                } catch (\Illuminate\Database\QueryException $e) {
+                    // Handle concurrent duplicate submission insertion gracefully (idempotent replay)
+                    $sqlState = $e->getCode();
+                    $isDuplicate = $sqlState == '23000' || str_contains(strtolower($e->getMessage()), 'duplicate entry');
+                    if ($isDuplicate) {
+                        \Log::info('storeOfficial: Duplicate submission detected at insert (treating as idempotent)', [
                             'submission_uuid' => $request->submission_uuid,
-                            'transaction_count' => $existing ? $existing->transaction_count : $existingTransactions->count(),
-                            'status' => $existing ? $existing->status : 'COMPLETED',
-                            'transactions' => $existingTransactions->pluck('transaction_id'),
-                        ]
-                    ], 200);
+                            'terminal_id' => $request->terminal_id,
+                            'error' => $e->getMessage(),
+                        ]);
+                        $existing = \App\Models\TransactionSubmission::where('terminal_id', $request->terminal_id)
+                            ->where('submission_uuid', $request->submission_uuid)
+                            ->first();
+                        $existingTransactions = \App\Models\Transaction::where('terminal_id', $request->terminal_id)
+                            ->where('submission_uuid', $request->submission_uuid)
+                            ->get();
+
+                        // Touch terminal liveness on duplicate submission insert
+                        try {
+                            if ($terminalFromToken instanceof \App\Models\PosTerminal) {
+                                $terminalFromToken->last_seen_at = now();
+                                $terminalFromToken->save();
+                            }
+                        } catch (\Throwable $te) {
+                            Log::warning('Failed to update terminal last_seen_at on duplicate submission insert', [
+                                'terminal_id' => $request->terminal_id,
+                                'error' => $te->getMessage(),
+                            ]);
+                        }
+
+                        // Commit open transaction (if any) and return idempotent success
+                        $this->safeCommit('storeOfficial duplicate insert idempotent commit', [
+                            'submission_uuid' => $request->submission_uuid,
+                            'terminal_id' => $request->terminal_id,
+                        ]);
+                        return response()->json([
+                            'success' => true,
+                            'message' => 'Submission already processed (idempotent)',
+                            'data' => [
+                                'submission_uuid' => $request->submission_uuid,
+                                'transaction_count' => $existing ? $existing->transaction_count : $existingTransactions->count(),
+                                'status' => $existing ? $existing->status : 'COMPLETED',
+                                'transactions' => $existingTransactions->pluck('transaction_id'),
+                            ]
+                        ], 200);
+                    }
+                    throw $e; // non-duplicate DB error
                 }
-                throw $e; // non-duplicate DB error
             }
-            
+
             Log::info('storeOfficial: Submission envelope created', [
                 'submission_uuid' => $submission->submission_uuid,
                 'terminal_id' => $submission->terminal_id,
@@ -1372,34 +1417,83 @@ class TransactionController extends Controller
                         $txPayload['original_payload'] = json_encode($transactionData, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
                     }
 
-                    $transaction = Transaction::create($txPayload);
+                    // Persist the transaction and everything that must land atomically with it
+                    // (adjustments, taxes, audit rows, job dispatch) inside its own savepoint.
+                    // If any step here throws, only this transaction's writes are rolled back —
+                    // it will NOT leave an orphaned `transactions` row with no job ever queued
+                    // for it, and the rest of the submission (already-processed items, the
+                    // envelope row) is unaffected.
+                    $transaction = null;
+                    DB::transaction(function () use (&$transaction, $txPayload, $transactionData, $terminal, $request) {
+                        $transaction = Transaction::create($txPayload);
 
-                    // Process adjustments if present
-                    if (isset($transactionData['adjustments']) && is_array($transactionData['adjustments'])) {
-                        foreach ($transactionData['adjustments'] as $adjustment) {
-                            \App\Models\TransactionAdjustment::create([
-                                'transaction_pk' => $transaction->id,
-                                'adjustment_type' => $adjustment['adjustment_type'],
-                                'amount' => $adjustment['amount'],
-                            ]);
+                        // Process adjustments if present
+                        if (isset($transactionData['adjustments']) && is_array($transactionData['adjustments'])) {
+                            foreach ($transactionData['adjustments'] as $adjustment) {
+                                \App\Models\TransactionAdjustment::create([
+                                    'transaction_pk' => $transaction->id,
+                                    'adjustment_type' => $adjustment['adjustment_type'],
+                                    'amount' => $adjustment['amount'],
+                                ]);
+                            }
                         }
-                    }
 
-                    // Process taxes if present
-                    if (isset($transactionData['taxes']) && is_array($transactionData['taxes'])) {
-                        foreach ($transactionData['taxes'] as $tax) {
-                            \App\Models\TransactionTax::create([
+                        // Process taxes if present
+                        if (isset($transactionData['taxes']) && is_array($transactionData['taxes'])) {
+                            foreach ($transactionData['taxes'] as $tax) {
+                                \App\Models\TransactionTax::create([
+                                    'transaction_id' => $transaction->transaction_id,
+                                    'tax_type' => $tax['tax_type'],
+                                    'amount' => $tax['amount'],
+                                ]);
+                            }
+                        }
+
+                        // Queue the transaction for processing (deferred until the outermost
+                        // DB transaction actually commits, regardless of this savepoint)
+                        ProcessTransactionJob::dispatch($transaction->id)->afterCommit();
+
+                        // Add system log entry
+                        \App\Models\SystemLog::create([
+                            'type' => 'transaction',
+                            'log_type' => 'OFFICIAL_TRANSACTION_INGESTION',
+                            'severity' => 'info',
+                            'terminal_uid' => $terminal->serial_number,
+                            'transaction_id' => $transaction->transaction_id,
+                            'message' => 'Official format transaction queued for processing',
+                            'context' => json_encode([
+                                'submission_uuid' => $request->submission_uuid,
                                 'transaction_id' => $transaction->transaction_id,
-                                'tax_type' => $tax['tax_type'],
-                                'amount' => $tax['amount'],
-                            ]);
-                        }
-                    }
+                                'gross_sales' => $transaction->gross_sales,
+                                'net_sales' => $transaction->net_sales,
+                                'terminal_id' => $terminal->id,
+                                'adjustments_count' => count($transactionData['adjustments'] ?? []),
+                                'taxes_count' => count($transactionData['taxes'] ?? []),
+                            ])
+                        ]);
 
-                    // Queue the transaction for processing
-                    Log::info('storeOfficial: Dispatching ProcessTransactionJob', ['transaction_id' => $transaction->transaction_id]);
-                    ProcessTransactionJob::dispatch($transaction->id)->afterCommit();
-                    Log::info('storeOfficial: ProcessTransactionJob dispatched', ['transaction_id' => $transaction->transaction_id]);
+                        // Add audit log entry
+                        \App\Models\AuditLog::create([
+                            'user_id' => auth()->id(),
+                            'ip_address' => request()->ip(),
+                            'action' => 'OFFICIAL_TRANSACTION_RECEIVED',
+                            'action_type' => 'OFFICIAL_TRANSACTION_RECEIVED',
+                            'resource_type' => 'transaction',
+                            'resource_id' => $transaction->transaction_id,
+                            'auditable_type' => 'transaction',
+                            'auditable_id' => $transaction->id,
+                            'message' => 'Official format transaction received and queued for processing',
+                            'metadata' => [
+                                'submission_uuid' => $request->submission_uuid,
+                                'transaction_id' => $transaction->transaction_id,
+                                'gross_sales' => $transaction->gross_sales,
+                                'terminal_id' => $terminal->id,
+                                'tenant_id' => $terminal->tenant_id,
+                            ]
+                        ]);
+                    });
+
+                    Log::info('storeOfficial: Transaction persisted and job dispatched', ['transaction_id' => $transaction->transaction_id]);
 
                     // Update terminal activity on successful transaction creation
                     try {
@@ -1417,45 +1511,6 @@ class TransactionController extends Controller
                     }
 
                     // (Notification suppressed here; final status notification sent by ProcessTransactionJob after validation)
-
-                    // Add system log entry
-                    \App\Models\SystemLog::create([
-                        'type' => 'transaction',
-                        'log_type' => 'OFFICIAL_TRANSACTION_INGESTION',
-                        'severity' => 'info',
-                        'terminal_uid' => $terminal->serial_number,
-                        'transaction_id' => $transaction->transaction_id,
-                        'message' => 'Official format transaction queued for processing',
-                        'context' => json_encode([
-                            'submission_uuid' => $request->submission_uuid,
-                            'transaction_id' => $transaction->transaction_id,
-                            'gross_sales' => $transaction->gross_sales,
-                            'net_sales' => $transaction->net_sales,
-                            'terminal_id' => $terminal->id,
-                            'adjustments_count' => count($transactionData['adjustments'] ?? []),
-                            'taxes_count' => count($transactionData['taxes'] ?? []),
-                        ])
-                    ]);
-
-                    // Add audit log entry
-                    \App\Models\AuditLog::create([
-                        'user_id' => auth()->id(),
-                        'ip_address' => request()->ip(),
-                        'action' => 'OFFICIAL_TRANSACTION_RECEIVED',
-                        'action_type' => 'OFFICIAL_TRANSACTION_RECEIVED',
-                        'resource_type' => 'transaction',
-                        'resource_id' => $transaction->transaction_id,
-                        'auditable_type' => 'transaction',
-                        'auditable_id' => $transaction->id,
-                        'message' => 'Official format transaction received and queued for processing',
-                        'metadata' => [
-                            'submission_uuid' => $request->submission_uuid,
-                            'transaction_id' => $transaction->transaction_id,
-                            'gross_sales' => $transaction->gross_sales,
-                            'terminal_id' => $terminal->id,
-                            'tenant_id' => $terminal->tenant_id,
-                        ]
-                    ]);
 
                     $processedTransactions[] = [
                         'transaction_id' => $transaction->transaction_id,

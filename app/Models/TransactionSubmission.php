@@ -12,6 +12,10 @@ use Illuminate\Database\Eloquent\Model;
  * Idempotency rules:
  *  - submission_uuid must be globally unique across terminals
  *  - Same-terminal replays with identical payload_checksum & transaction_count are treated as SUCCESS (idempotent)
+ *    once the envelope has reached STATUS_COMPLETED
+ *  - Same-terminal replays while the envelope is still RECEIVED/PROCESSING (i.e. a prior attempt
+ *    left some transactions unpersisted) are treated as a retry: already-persisted transactions
+ *    are skipped and only the missing ones are (re)created and queued
  *  - Same-terminal replays with differing payload_checksum or transaction_count are treated as CONFLICT
  *  - Cross-terminal submission_uuid reuse is treated as CONFLICT
  */
