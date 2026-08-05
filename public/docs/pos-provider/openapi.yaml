@@ -123,6 +123,9 @@ paths:
         serial_number. Rate-limited per authenticated terminal and tenant, not by
         shared public IP. The submission_uuid must be globally unique; only
         identical retries from the same terminal are treated as idempotent.
+        A successful intake response means TSMS accepted the payload and queued
+        asynchronous processing; transaction items may therefore return
+        status=queued even when the response success flag is true.
       security:
         - bearerAuth: ['transaction:create']
       requestBody:
@@ -133,11 +136,26 @@ paths:
               $ref: '#/components/schemas/OfficialSubmission'
       responses:
         '200':
-          description: Submission accepted, processed idempotently, or queued.
+          description: Submission accepted, processed idempotently, or queued. Response success describes request acceptance; item status describes asynchronous transaction processing.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/OfficialSubmissionResponse'
+              examples:
+                acceptedQueued:
+                  summary: Accepted and queued for asynchronous processing.
+                  value:
+                    success: true
+                    message: "Official submission processed: 1 successful, 0 failed"
+                    data:
+                      submission_uuid: 3515e696-c35b-4a2c-8c75-70f0644ed99c
+                      processed_count: 1
+                      failed_count: 0
+                      checksum_validation: passed
+                      transactions:
+                        - transaction_id: 3515e696-c35b-4a2c-8c75-70f0644ed99c
+                          status: queued
+                          message: Transaction queued for processing
         '401':
           $ref: '#/components/responses/Unauthenticated'
         '403':
@@ -234,7 +252,12 @@ paths:
     get:
       tags: [Status]
       summary: Look up transaction status
-      description: Returns processing status for a submitted transaction. Rate-limited per authenticated terminal and tenant.
+      description: >
+        Returns processing status for a submitted transaction. Top-level
+        status=success, or success=true, means the lookup request succeeded.
+        data.status and data.processing_status describe the transaction's
+        asynchronous processing state, such as queued, processing, completed, or
+        failed. Rate-limited per authenticated terminal and tenant.
       security:
         - bearerAuth: ['transaction:read']
       parameters:
@@ -247,6 +270,31 @@ paths:
       responses:
         '200':
           description: Transaction status found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionStatusResponse'
+              examples:
+                queued:
+                  summary: Lookup succeeded; transaction is still queued.
+                  value:
+                    success: true
+                    status: success
+                    message: Status lookup succeeded
+                    data:
+                      transaction_id: 3515e696-c35b-4a2c-8c75-70f0644ed99c
+                      customer_code: C-Z1013
+                      gross_sales: "265.00"
+                      net_sales: "265.00"
+                      status: queued
+                      processing_status: queued
+                      job_status: QUEUED
+                      validation_status: PENDING
+                      completed_at: null
+                      attempts: 0
+                      error: null
+                      created_at: "2026-07-30T23:02:31.000000Z"
+                      updated_at: "2026-07-30T23:02:34.000000Z"
         '401':
           $ref: '#/components/responses/Unauthenticated'
         '403':
@@ -708,6 +756,54 @@ components:
           type: boolean
         data:
           type: object
+    TransactionStatusResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          description: Whether the status lookup request succeeded.
+          example: true
+        status:
+          type: string
+          description: Backward-compatible response envelope status for the lookup request.
+          enum: [success, error]
+          example: success
+        message:
+          type: string
+          example: Status lookup succeeded
+        data:
+          type: object
+          properties:
+            transaction_id:
+              type: string
+              description: Provider transaction identifier.
+            status:
+              type: string
+              description: Backward-compatible transaction processing status alias.
+              example: queued
+            processing_status:
+              type: string
+              description: Transaction processing state.
+              enum: [queued, processing, completed, failed]
+              example: queued
+            job_status:
+              type: string
+              description: Raw TSMS job status.
+              example: QUEUED
+            validation_status:
+              type: string
+              description: Raw TSMS validation status.
+              example: PENDING
+            completed_at:
+              type: string
+              nullable: true
+              format: date-time
+            attempts:
+              type: integer
+              nullable: true
+            error:
+              type: string
+              nullable: true
     SubmissionConflictResponse:
       type: object
       properties:
