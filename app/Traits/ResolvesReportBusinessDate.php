@@ -9,8 +9,25 @@ use Illuminate\Support\Facades\Schema;
 
 trait ResolvesReportBusinessDate
 {
-    protected function reportDateExpression(string $timestampExpression, string $payloadExpression): string
-    {
+    /**
+     * @param string|null $providerTimestampModeExpression SQL expression resolving to the
+     *   terminal's provider.timestamp_mode (e.g. 'pp.timestamp_mode'), or null to skip the
+     *   legacy no-payload fallback entirely. Only consulted when original_payload is NULL —
+     *   it must never override a payload-confirmed classification.
+     * @param string|null $primaryTimestampColumn Raw column reference for transaction_timestamp
+     *   itself (e.g. 'transactions.transaction_timestamp'), as opposed to the (possibly
+     *   COALESCE-wrapped) $timestampExpression. Required alongside
+     *   $providerTimestampModeExpression: the legacy fallback only applies when
+     *   transaction_timestamp itself supplied the value, not when $timestampExpression fell
+     *   through to a completed_at/created_at fallback (those columns have different, unproven
+     *   timezone semantics).
+     */
+    protected function reportDateExpression(
+        string $timestampExpression,
+        string $payloadExpression,
+        ?string $providerTimestampModeExpression = null,
+        ?string $primaryTimestampColumn = null
+    ): string {
         if (! Schema::hasColumn('transactions', 'original_payload')) {
             return $this->localReportDateExpression($timestampExpression);
         }
@@ -18,11 +35,21 @@ trait ResolvesReportBusinessDate
         $driver = DB::connection()->getDriverName();
         $localDateExpression = $this->localReportDateExpression($timestampExpression);
 
+        // Legacy rows (no payload ever captured): the pre-normalization ingestion pipeline
+        // stored transaction_timestamp verbatim for every provider, so a local_time_with_z
+        // provider's rows are still raw, un-shifted wall-clock time. This arm only fires when
+        // there is genuinely no payload to check, and only when transaction_timestamp itself
+        // (not a completed_at/created_at fallback) is what's being classified — it must come
+        // before, and never replace, the payload-based classification below.
+        $legacyProviderArm = ($providerTimestampModeExpression !== null && $primaryTimestampColumn !== null)
+            ? "WHEN {$payloadExpression} IS NULL AND {$primaryTimestampColumn} IS NOT NULL AND {$providerTimestampModeExpression} = 'local_time_with_z' THEN DATE({$timestampExpression})\n                "
+            : '';
+
         if ($driver === 'pgsql') {
             $payloadTimestamp = "COALESCE(({$payloadExpression})::jsonb->>'transaction_timestamp', ({$payloadExpression})::jsonb#>>'{transaction,transaction_timestamp}')";
 
             return "CASE
-                WHEN {$payloadExpression} IS NOT NULL
+                {$legacyProviderArm}WHEN {$payloadExpression} IS NOT NULL
                     AND {$payloadExpression} != ''
                     AND {$payloadTimestamp} IS NOT NULL
                     AND {$payloadTimestamp} !~ '(Z|[+-][0-9]{2}:?[0-9]{2})$'
@@ -41,7 +68,7 @@ trait ResolvesReportBusinessDate
             $payloadTimestamp = "COALESCE(json_extract({$payloadExpression}, '$.transaction_timestamp'), json_extract({$payloadExpression}, '$.transaction.transaction_timestamp'))";
 
             return "CASE
-                WHEN {$payloadExpression} IS NOT NULL
+                {$legacyProviderArm}WHEN {$payloadExpression} IS NOT NULL
                     AND {$payloadExpression} != ''
                     AND {$payloadTimestamp} IS NOT NULL
                     AND {$payloadTimestamp} NOT LIKE '%Z'
@@ -53,7 +80,7 @@ trait ResolvesReportBusinessDate
         }
 
         return "CASE
-            WHEN {$payloadExpression} IS NOT NULL
+            {$legacyProviderArm}WHEN {$payloadExpression} IS NOT NULL
                 AND {$payloadExpression} != ''
                 AND {$payloadTimestamp} IS NOT NULL
                 AND {$payloadTimestamp} NOT REGEXP '(Z|[+-][0-9]{2}:?[0-9]{2})$'
@@ -117,7 +144,8 @@ trait ResolvesReportBusinessDate
             return Carbon::now($timezone);
         }
 
-        $raw = $transaction->getRawOriginal('transaction_timestamp')
+        $rawTransactionTimestamp = $transaction->getRawOriginal('transaction_timestamp');
+        $raw = $rawTransactionTimestamp
             ?? $transaction->getRawOriginal('completed_at')
             ?? $transaction->getRawOriginal('created_at');
 
@@ -125,10 +153,32 @@ trait ResolvesReportBusinessDate
             return Carbon::now($timezone);
         }
 
-        if ($this->payloadTimestampIsPlainLocal($transaction->original_payload ?? null)) {
+        $payload = $transaction->original_payload ?? null;
+
+        if ($this->payloadTimestampIsPlainLocal($payload)) {
+            // Safety net: raw payload had no explicit offset — trust the stored
+            // wall-clock value as-is (mirrors the SQL CASE fallback branch).
             return Carbon::parse($raw, $timezone);
         }
 
+        if (
+            $payload === null
+            && $rawTransactionTimestamp !== null
+            && $this->providerUsesLocalTimeWithZ($transaction)
+        ) {
+            // Legacy row: no payload was ever captured, so there's no direct evidence, but
+            // the pre-normalization ingestion pipeline stored transaction_timestamp verbatim
+            // for every provider. A local_time_with_z provider's raw digits are therefore
+            // still un-shifted local wall-clock time, not genuine UTC — trust them as-is.
+            return Carbon::parse($rawTransactionTimestamp, $timezone);
+        }
+
+        // Genuinely absolute/UTC (or no better signal available) — perform the real shift.
         return Carbon::parse($raw, 'UTC')->setTimezone($timezone);
+    }
+
+    protected function providerUsesLocalTimeWithZ(Transaction $transaction): bool
+    {
+        return ($transaction->terminal?->provider?->timestamp_mode ?? null) === 'local_time_with_z';
     }
 }

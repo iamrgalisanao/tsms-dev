@@ -21,34 +21,41 @@ class SalesReportDataService
         $startDate = $filter->startDate();
         $endDate = $filter->endDate();
         $tenantId = $filter->tenantId;
-        $reportDateExpr = $this->reportDateExpression('COALESCE(transaction_timestamp, created_at)', 'original_payload');
-        $joinedReportDateExpr = $this->reportDateExpression('COALESCE(transactions.transaction_timestamp, transactions.created_at)', 'transactions.original_payload');
+        $reportDateExpr = $this->reportDateExpression(
+            'COALESCE(transactions.transaction_timestamp, transactions.created_at)',
+            'transactions.original_payload',
+            'pp.timestamp_mode',
+            'transactions.transaction_timestamp'
+        );
+        $joinedReportDateExpr = $reportDateExpr;
 
         if ($summary = $this->dailySummaryResult($filter, $reportDateExpr, $joinedReportDateExpr)) {
             return $summary;
         }
 
-        $grossExpr = Schema::hasColumn('transactions', 'gross_sales') ? 'SUM(gross_sales)' : '0';
-        $netExpr = Schema::hasColumn('transactions', 'net_sales') ? 'SUM(net_sales)' : '0';
-        $vatableExpr = Schema::hasColumn('transactions', 'vatable_sales') ? 'SUM(vatable_sales)' : '0';
-        $scVatExpr = Schema::hasColumn('transactions', 'sc_vat_exempt_sales') ? 'SUM(sc_vat_exempt_sales)' : '0';
-        $vatExpr = Schema::hasColumn('transactions', 'vat_amount') ? 'SUM(vat_amount)' : '0';
+        $grossExpr = Schema::hasColumn('transactions', 'gross_sales') ? 'SUM(transactions.gross_sales)' : '0';
+        $netExpr = Schema::hasColumn('transactions', 'net_sales') ? 'SUM(transactions.net_sales)' : '0';
+        $vatableExpr = Schema::hasColumn('transactions', 'vatable_sales') ? 'SUM(transactions.vatable_sales)' : '0';
+        $scVatExpr = Schema::hasColumn('transactions', 'sc_vat_exempt_sales') ? 'SUM(transactions.sc_vat_exempt_sales)' : '0';
+        $vatExpr = Schema::hasColumn('transactions', 'vat_amount') ? 'SUM(transactions.vat_amount)' : '0';
         $promoWithExpr = (Schema::hasColumn('transactions', 'promo_discount') && Schema::hasColumn('transactions', 'promo_status'))
-            ? "SUM(IF(promo_status = 'WITH_APPROVAL', promo_discount, 0))"
+            ? "SUM(IF(transactions.promo_status = 'WITH_APPROVAL', transactions.promo_discount, 0))"
             : '0';
         $promoWithoutExpr = Schema::hasColumn('transactions', 'promo_discount')
             ? (Schema::hasColumn('transactions', 'promo_status')
-                ? "SUM(IF(promo_status != 'WITH_APPROVAL' OR promo_status IS NULL, promo_discount, 0))"
-                : 'SUM(promo_discount)')
+                ? "SUM(IF(transactions.promo_status != 'WITH_APPROVAL' OR transactions.promo_status IS NULL, transactions.promo_discount, 0))"
+                : 'SUM(transactions.promo_discount)')
             : '0';
-        $seniorExpr = Schema::hasColumn('transactions', 'senior_discount') ? 'SUM(senior_discount)' : '0';
-        $pwdExpr = Schema::hasColumn('transactions', 'pwd_discount') ? 'SUM(pwd_discount)' : '0';
-        $regularExpr = Schema::hasColumn('transactions', 'discount_total') ? 'SUM(discount_total)' : '0';
-        $serviceChargeExpr = Schema::hasColumn('transactions', 'service_charge') ? 'SUM(service_charge)' : '0';
-        $managementServiceChargeExpr = Schema::hasColumn('transactions', 'management_service_charge') ? 'SUM(management_service_charge)' : '0';
-        $otherTaxExpr = Schema::hasColumn('transactions', 'tax_exempt') ? 'SUM(tax_exempt)' : '0';
+        $seniorExpr = Schema::hasColumn('transactions', 'senior_discount') ? 'SUM(transactions.senior_discount)' : '0';
+        $pwdExpr = Schema::hasColumn('transactions', 'pwd_discount') ? 'SUM(transactions.pwd_discount)' : '0';
+        $regularExpr = Schema::hasColumn('transactions', 'discount_total') ? 'SUM(transactions.discount_total)' : '0';
+        $serviceChargeExpr = Schema::hasColumn('transactions', 'service_charge') ? 'SUM(transactions.service_charge)' : '0';
+        $managementServiceChargeExpr = Schema::hasColumn('transactions', 'management_service_charge') ? 'SUM(transactions.management_service_charge)' : '0';
+        $otherTaxExpr = Schema::hasColumn('transactions', 'tax_exempt') ? 'SUM(transactions.tax_exempt)' : '0';
 
         $query = Transaction::query()
+            ->leftJoin('pos_terminals as pt', 'pt.id', '=', 'transactions.terminal_id')
+            ->leftJoin('pos_providers as pp', 'pp.id', '=', 'pt.provider_id')
             ->selectRaw("
                 {$reportDateExpr} as report_date,
                 {$grossExpr} as gross_sales,
@@ -69,11 +76,11 @@ class SalesReportDataService
             ->whereRaw("{$reportDateExpr} BETWEEN ? AND ?", [$startDate, $endDate]);
 
         if ($filter->hasTenantScope()) {
-            $query->where('tenant_id', $tenantId);
+            $query->where('transactions.tenant_id', $tenantId);
         }
 
         if ($this->excludeVoids()) {
-            $query->where('transaction_type', '!=', 'VOID')->whereNull('voided_at');
+            $query->where('transactions.transaction_type', '!=', 'VOID')->whereNull('transactions.voided_at');
         }
 
         $dailyMain = $query->groupBy('report_date')->get()->keyBy('report_date');
@@ -182,6 +189,8 @@ class SalesReportDataService
     {
         $query = DB::table('transaction_adjustments')
             ->join('transactions', 'transaction_adjustments.transaction_pk', '=', 'transactions.id')
+            ->leftJoin('pos_terminals as pt', 'pt.id', '=', 'transactions.terminal_id')
+            ->leftJoin('pos_providers as pp', 'pp.id', '=', 'pt.provider_id')
             ->selectRaw("
                 {$reportDateExpr} as report_date,
                 SUM(IF(transaction_adjustments.adjustment_type IN ('employee_discount', 'EMPLOYEE'), transaction_adjustments.amount, 0)) as employee_discount,
@@ -206,6 +215,8 @@ class SalesReportDataService
     {
         $query = DB::table('transaction_taxes')
             ->join('transactions', 'transaction_taxes.transaction_pk', '=', 'transactions.id')
+            ->leftJoin('pos_terminals as pt', 'pt.id', '=', 'transactions.terminal_id')
+            ->leftJoin('pos_providers as pp', 'pp.id', '=', 'pt.provider_id')
             ->selectRaw("
                 {$reportDateExpr} as report_date,
                 SUM(IF(transaction_taxes.tax_type IN ('SC_VAT_EXEMPT_SALES', 'VAT_EXEMPT_SALES', 'VATEXEMPT_SALES', 'VAT-EXEMPT', 'EXEMPT', 'VATEXEMPT'), transaction_taxes.amount, 0)) as sc_vat_exempt_fallback,
@@ -276,20 +287,22 @@ class SalesReportDataService
         }
 
         $rows = DB::table('transactions')
+            ->leftJoin('pos_terminals as pt', 'pt.id', '=', 'transactions.terminal_id')
+            ->leftJoin('pos_providers as pp', 'pp.id', '=', 'pt.provider_id')
             ->selectRaw($reportDateExpr . ' as report_date')
-            ->addSelect('original_payload')
+            ->addSelect('transactions.original_payload')
             ->whereRaw($reportDateExpr . ' BETWEEN ? AND ?', [$startDate, $endDate]);
 
         if (Schema::hasColumn('transactions', 'promo_status')) {
-            $rows->addSelect('promo_status');
+            $rows->addSelect('transactions.promo_status');
         }
 
         if ($hasTenantScope) {
-            $rows->where('tenant_id', $tenantId);
+            $rows->where('transactions.tenant_id', $tenantId);
         }
 
         if ($this->excludeVoids()) {
-            $rows->where('transaction_type', '!=', 'VOID')->whereNull('voided_at');
+            $rows->where('transactions.transaction_type', '!=', 'VOID')->whereNull('transactions.voided_at');
         }
 
         $totals = [];
@@ -323,6 +336,8 @@ class SalesReportDataService
 
         $query = DB::table('transaction_adjustments')
             ->join('transactions', 'transaction_adjustments.transaction_pk', '=', 'transactions.id')
+            ->leftJoin('pos_terminals as pt', 'pt.id', '=', 'transactions.terminal_id')
+            ->leftJoin('pos_providers as pp', 'pp.id', '=', 'pt.provider_id')
             ->selectRaw($reportDateExpr . ' as report_date')
             ->selectRaw("SUM(IF(transaction_adjustments.adjustment_type IN ('senior_discount', 'senior_citizen_discount', 'senior'), transaction_adjustments.amount, 0)) as senior_discount")
             ->selectRaw("SUM(IF(transaction_adjustments.adjustment_type IN ('pwd_discount', 'pwd_citizen_discount', 'pwddiscount', 'pwd'), transaction_adjustments.amount, 0)) as pwd_discount")

@@ -33,20 +33,28 @@ class HourlyReportService
             $ttl = 60;
 
             return Cache::remember($cacheKey, $ttl, function () use ($dateFrom, $dateTo, $tenantId, $terminalId) {
-                $reportDateExpr = $this->reportDateExpression('COALESCE(transaction_timestamp, completed_at, created_at)', 'original_payload');
+                $reportDateExpr = $this->reportDateExpression(
+                    'COALESCE(transactions.transaction_timestamp, transactions.completed_at, transactions.created_at)',
+                    'transactions.original_payload',
+                    'pp.timestamp_mode',
+                    'transactions.transaction_timestamp'
+                );
 
                 $query = Transaction::query()
-                    ->with(['adjustments', 'taxes'])
+                    ->select('transactions.*')
+                    ->with(['adjustments', 'taxes', 'terminal.provider'])
+                    ->leftJoin('pos_terminals as pt', 'pt.id', '=', 'transactions.terminal_id')
+                    ->leftJoin('pos_providers as pp', 'pp.id', '=', 'pt.provider_id')
                     ->whereRaw("{$reportDateExpr} BETWEEN ? AND ?", [$dateFrom, $dateTo]);
-    
+
                 if (! empty($tenantId)) {
-                    $query->where('tenant_id', $tenantId);
+                    $query->where('transactions.tenant_id', $tenantId);
                 }
                 if (! empty($terminalId)) {
-                    $query->where('terminal_id', $terminalId);
+                    $query->where('transactions.terminal_id', $terminalId);
                 }
                 if (config('tsms.reporting.exclude_voids_from_totals', true)) {
-                    $query->where('transaction_type', '!=', 'VOID')->whereNull('voided_at');
+                    $query->where('transactions.transaction_type', '!=', 'VOID')->whereNull('transactions.voided_at');
                 }
 
                 $finance = app(FinanceCalculationService::class);
