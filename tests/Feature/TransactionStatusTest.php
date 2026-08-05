@@ -7,7 +7,6 @@ use App\Models\Transaction;
 use App\Models\PosTerminal;
 use App\Models\Tenant;
 use Illuminate\Foundation\Testing\RefreshDatabase;
-use Tymon\JWTAuth\Facades\JWTAuth;
 
 class TransactionStatusTest extends TestCase
 {
@@ -28,8 +27,7 @@ class TransactionStatusTest extends TestCase
             'status' => 'active'
         ]);
 
-        // Generate JWT token
-        $this->token = JWTAuth::fromUser($this->terminal);
+        $this->token = $this->terminal->createToken('transaction-status-test', ['transaction:read'])->plainTextToken;
     }
 
     public function test_can_retrieve_transaction_status()
@@ -55,10 +53,51 @@ class TransactionStatusTest extends TestCase
         $response->assertOk()
             ->assertJson([
                 'success' => true,
+                'status' => 'success',
+                'message' => 'Status lookup succeeded',
                 'data' => [
                     'transaction_id' => $transaction->transaction_id,
-                    // If validation status is now in a related table, fetch accordingly
-                    'validation_status' => $transaction->validation_status ?? 'PENDING'
+                    'status' => 'queued',
+                    'processing_status' => 'queued',
+                    'job_status' => 'QUEUED',
+                    'validation_status' => $transaction->validation_status ?? 'PENDING',
+                ]
+            ]);
+    }
+
+    public function test_status_reflects_completed_job_state()
+    {
+        $transaction = Transaction::create([
+            'tenant_id' => $this->tenant->id,
+            'terminal_id' => $this->terminal->id,
+            'transaction_id' => 'TXN-COMPLETED-' . time(),
+            'hardware_id' => 'HW-001',
+            'transaction_timestamp' => now(),
+            'base_amount' => 1000.00,
+            'customer_code' => 'CUST-001',
+            'payload_checksum' => md5('test-completed'),
+            'job_status' => 'COMPLETED',
+            'validation_status' => 'VALID',
+            'completed_at' => now(),
+            'job_attempts' => 1,
+        ]);
+
+        $response = $this->withHeaders([
+            'Authorization' => 'Bearer ' . $this->token,
+            'Accept' => 'application/json'
+        ])->getJson("/api/v1/transactions/{$transaction->transaction_id}/status");
+
+        $response->assertOk()
+            ->assertJson([
+                'success' => true,
+                'status' => 'success',
+                'data' => [
+                    'transaction_id' => $transaction->transaction_id,
+                    'status' => 'completed',
+                    'processing_status' => 'completed',
+                    'job_status' => 'COMPLETED',
+                    'validation_status' => 'VALID',
+                    'attempts' => 1,
                 ]
             ]);
     }
@@ -73,6 +112,7 @@ class TransactionStatusTest extends TestCase
         $response->assertNotFound()
             ->assertJson([
                 'success' => false,
+                'status' => 'error',
                 'message' => 'Transaction not found'
             ]);
     }

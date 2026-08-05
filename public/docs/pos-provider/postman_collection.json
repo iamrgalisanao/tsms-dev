@@ -65,6 +65,23 @@
       },
       "response": [
         {
+          "name": "200 Accepted and Queued",
+          "originalRequest": {
+            "method": "POST",
+            "header": [],
+            "url": "{{base_url}}/transactions/official"
+          },
+          "status": "OK",
+          "code": 200,
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "body": "{\n  \"success\": true,\n  \"message\": \"Official submission processed: 1 successful, 0 failed\",\n  \"data\": {\n    \"submission_uuid\": \"{{submission_uuid}}\",\n    \"processed_count\": 1,\n    \"failed_count\": 0,\n    \"checksum_validation\": \"passed\",\n    \"transactions\": [\n      {\n        \"transaction_id\": \"fc3b0759-d617-487d-9463-1e6d6e5a7985\",\n        \"status\": \"queued\",\n        \"message\": \"Transaction queued for processing\"\n      }\n    ]\n  }\n}"
+        },
+        {
           "name": "429 Too Many Requests",
           "originalRequest": {
             "method": "POST",
@@ -107,6 +124,43 @@
         ],
         "url": "{{base_url}}/submissions/{{submission_uuid}}"
       }
+    },
+    {
+      "name": "Transaction Status",
+      "request": {
+        "method": "GET",
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          },
+          {
+            "key": "Authorization",
+            "value": "Bearer {{token}}"
+          }
+        ],
+        "url": "{{base_url}}/transactions/fc3b0759-d617-487d-9463-1e6d6e5a7985/status",
+        "description": "Top-level status/success indicates the lookup request succeeded. data.status and data.processing_status indicate the transaction processing state."
+      },
+      "response": [
+        {
+          "name": "200 Lookup Succeeded - Queued",
+          "originalRequest": {
+            "method": "GET",
+            "header": [],
+            "url": "{{base_url}}/transactions/fc3b0759-d617-487d-9463-1e6d6e5a7985/status"
+          },
+          "status": "OK",
+          "code": 200,
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "body": "{\n  \"success\": true,\n  \"status\": \"success\",\n  \"message\": \"Status lookup succeeded\",\n  \"data\": {\n    \"transaction_id\": \"fc3b0759-d617-487d-9463-1e6d6e5a7985\",\n    \"customer_code\": \"C-C1036\",\n    \"gross_sales\": \"90.00\",\n    \"net_sales\": \"90.00\",\n    \"status\": \"queued\",\n    \"processing_status\": \"queued\",\n    \"job_status\": \"QUEUED\",\n    \"validation_status\": \"PENDING\",\n    \"completed_at\": null,\n    \"attempts\": 0,\n    \"error\": null,\n    \"created_at\": \"2026-06-13T13:25:45.000000Z\",\n    \"updated_at\": \"2026-06-13T13:25:45.000000Z\"\n  }\n}"
+        }
+      ]
     },
     {
       "name": "Heartbeat",

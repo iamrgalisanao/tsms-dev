@@ -516,22 +516,37 @@ class TransactionController extends Controller
 
     public function status($id)
     {
-        $transaction = Transaction::where('transaction_id', $id)->first();
+        $transaction = Transaction::where('transaction_id', $id)
+            ->orWhere('id', $id)
+            ->first();
+
         if (!$transaction) {
             return response()->json([
+                'success' => false,
                 'status' => 'error',
                 'message' => 'Transaction not found'
             ], 404);
         }
 
+        $processingStatus = strtolower((string) ($transaction->job_status ?: 'QUEUED'));
+
         return response()->json([
+            'success' => true,
             'status' => 'success',
+            'message' => 'Status lookup succeeded',
             'data' => [
                 'transaction_id' => $transaction->transaction_id,
                 'customer_code' => $transaction->customer_code,
                 'gross_sales' => $transaction->gross_sales,
                 'net_sales' => $transaction->net_sales,
-                'status' => 'queued', // Default status for basic implementation
+                // Backward-compatible alias for the transaction processing state.
+                'status' => $processingStatus,
+                'processing_status' => $processingStatus,
+                'job_status' => $transaction->job_status ?: 'QUEUED',
+                'validation_status' => $transaction->validation_status ?: 'PENDING',
+                'completed_at' => optional($transaction->completed_at)->toISOString(),
+                'attempts' => $transaction->job_attempts,
+                'error' => $transaction->last_error,
                 'created_at' => $transaction->created_at->toISOString(),
                 'updated_at' => $transaction->updated_at->toISOString()
             ]
