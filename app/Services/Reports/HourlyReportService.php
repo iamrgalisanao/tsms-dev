@@ -3,11 +3,9 @@
 namespace App\Services\Reports;
 
 use App\Models\Transaction;
-use Illuminate\Support\Facades\DB;
+use App\Traits\ResolvesReportBusinessDate;
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
-use Illuminate\Support\Facades\Schema;
 
 /**
  * Service that encapsulates the hourly aggregation logic used by both
@@ -15,6 +13,8 @@ use Illuminate\Support\Facades\Schema;
  */
 class HourlyReportService
 {
+    use ResolvesReportBusinessDate;
+
     /**
      * Fetch hourly aggregates for the given date range and optional tenant/terminal filters.
      * Returns a collection (array) of normalized rows with the same contract
@@ -93,115 +93,6 @@ class HourlyReportService
 
     private function reportHour(Transaction $transaction): string
     {
-        $timestamp = $transaction->transaction_timestamp
-            ?? $transaction->completed_at
-            ?? $transaction->created_at;
-
-        $carbon = Carbon::parse($timestamp);
-        if (! $this->payloadTimestampIsPlainLocal($transaction->original_payload ?? null)) {
-            $carbon = $carbon->copy()->timezone($this->reportTimezone());
-        }
-
-        return $carbon->format('Y-m-d H:00');
-    }
-
-    private function payloadTimestampIsPlainLocal(mixed $payload): bool
-    {
-        if (! is_string($payload) || $payload === '') {
-            return false;
-        }
-
-        $decoded = json_decode($payload, true);
-        if (! is_array($decoded)) {
-            return false;
-        }
-
-        $timestamp = $decoded['transaction_timestamp'] ?? $decoded['transaction']['transaction_timestamp'] ?? null;
-
-        return is_string($timestamp)
-            && $timestamp !== ''
-            && ! preg_match('/(Z|[+-][0-9]{2}:?[0-9]{2})$/', $timestamp);
-    }
-
-    private function reportDateExpression(string $timestampExpression, string $payloadExpression): string
-    {
-        if (! Schema::hasColumn('transactions', 'original_payload')) {
-            return $this->localReportDateExpression($timestampExpression);
-        }
-
-        $driver = DB::connection()->getDriverName();
-        $localDateExpression = $this->localReportDateExpression($timestampExpression);
-
-        if ($driver === 'pgsql') {
-            $payloadTimestamp = "COALESCE(({$payloadExpression})::jsonb->>'transaction_timestamp', ({$payloadExpression})::jsonb#>>'{transaction,transaction_timestamp}')";
-
-            return "CASE
-                WHEN {$payloadExpression} IS NOT NULL
-                    AND {$payloadExpression} != ''
-                    AND {$payloadTimestamp} IS NOT NULL
-                    AND {$payloadTimestamp} !~ '(Z|[+-][0-9]{2}:?[0-9]{2})$'
-                THEN DATE({$timestampExpression})
-                ELSE {$localDateExpression}
-            END";
-        }
-
-        $payloadTimestamp = "CASE
-            WHEN {$payloadExpression} IS NOT NULL AND {$payloadExpression} != '' AND JSON_VALID({$payloadExpression})
-            THEN COALESCE(JSON_UNQUOTE(JSON_EXTRACT({$payloadExpression}, '$.transaction_timestamp')), JSON_UNQUOTE(JSON_EXTRACT({$payloadExpression}, '$.transaction.transaction_timestamp')))
-            ELSE NULL
-        END";
-
-        if ($driver === 'sqlite') {
-            $payloadTimestamp = "COALESCE(json_extract({$payloadExpression}, '$.transaction_timestamp'), json_extract({$payloadExpression}, '$.transaction.transaction_timestamp'))";
-
-            return "CASE
-                WHEN {$payloadExpression} IS NOT NULL
-                    AND {$payloadExpression} != ''
-                    AND {$payloadTimestamp} IS NOT NULL
-                    AND {$payloadTimestamp} NOT LIKE '%Z'
-                    AND {$payloadTimestamp} NOT GLOB '*[+-][0-9][0-9]:[0-9][0-9]'
-                    AND {$payloadTimestamp} NOT GLOB '*[+-][0-9][0-9][0-9][0-9]'
-                THEN DATE({$timestampExpression})
-                ELSE {$localDateExpression}
-            END";
-        }
-
-        return "CASE
-            WHEN {$payloadExpression} IS NOT NULL
-                AND {$payloadExpression} != ''
-                AND {$payloadTimestamp} IS NOT NULL
-                AND {$payloadTimestamp} NOT REGEXP '(Z|[+-][0-9]{2}:?[0-9]{2})$'
-            THEN DATE({$timestampExpression})
-            ELSE {$localDateExpression}
-        END";
-    }
-
-    private function localReportDateExpression(string $timestampExpression): string
-    {
-        $offsetMinutes = Carbon::now($this->reportTimezone())->utcOffset();
-        $driver = DB::connection()->getDriverName();
-
-        if ($driver === 'sqlite') {
-            $modifier = sprintf('%+d minutes', $offsetMinutes);
-
-            return "DATE(datetime({$timestampExpression}, '{$modifier}'))";
-        }
-
-        if ($driver === 'pgsql') {
-            $operator = $offsetMinutes >= 0 ? '+' : '-';
-            $minutes = abs($offsetMinutes);
-
-            return "DATE({$timestampExpression} {$operator} INTERVAL '{$minutes} minutes')";
-        }
-
-        $function = $offsetMinutes >= 0 ? 'DATE_ADD' : 'DATE_SUB';
-        $minutes = abs($offsetMinutes);
-
-        return "DATE({$function}({$timestampExpression}, INTERVAL {$minutes} MINUTE))";
-    }
-
-    private function reportTimezone(): string
-    {
-        return config('tsms.transaction_logs.timezone', 'Asia/Manila') ?: 'Asia/Manila';
+        return $this->resolveBusinessMoment($transaction)->format('Y-m-d H:00');
     }
 }

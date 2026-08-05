@@ -11,6 +11,7 @@ use App\Services\Reports\HourlyReportService;
 use App\Services\Reports\DailyReportService;
 use App\Services\Reports\FinanceCalculationService;
 use App\Services\Reports\WeeklyReportService;
+use App\Traits\ResolvesReportBusinessDate;
 use App\Models\AuditLog;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Log;
@@ -24,6 +25,8 @@ use PhpOffice\PhpSpreadsheet\Style\NumberFormat;
 
 class CommercialReportsController extends Controller
 {
+    use ResolvesReportBusinessDate;
+
     private function shouldAuditReportView(Request $request): bool
     {
         return $request->input('source') !== 'dashboard';
@@ -1078,12 +1081,14 @@ class CommercialReportsController extends Controller
         bool $weekdayOnly = false,
         bool $weekendOnly = false
     ): array {
-        $start = Carbon::parse($from)->startOfDay();
-        $end = Carbon::parse($to)->endOfDay();
+        $reportDateExpr = $this->reportDateExpression(
+            'COALESCE(transaction_timestamp, completed_at, created_at)',
+            'original_payload'
+        );
 
         $query = Transaction::query()
             ->with(['tenant:id,trade_name,customer_code', 'adjustments', 'taxes'])
-            ->whereBetween('transaction_timestamp', [$start, $end]);
+            ->whereRaw("{$reportDateExpr} BETWEEN ? AND ?", [$from, $to]);
 
         if (config('tsms.reporting.exclude_voids_from_totals', true)) {
             $query->where('transaction_type', '!=', 'VOID')->whereNull('voided_at');
@@ -1165,12 +1170,7 @@ class CommercialReportsController extends Controller
 
     private function reportCarbon(?Transaction $transaction): Carbon
     {
-        return Carbon::parse(
-            $transaction?->transaction_timestamp
-                ?? $transaction?->completed_at
-                ?? $transaction?->created_at
-                ?? now()
-        )->timezone(config('tsms.transaction_logs.timezone', 'Asia/Manila') ?: 'Asia/Manila');
+        return $this->resolveBusinessMoment($transaction);
     }
 
     private function exportTenantDetails($tenantId): array
