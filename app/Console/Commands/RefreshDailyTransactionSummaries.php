@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Traits\ResolvesReportBusinessDate;
 use Carbon\Carbon;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
@@ -9,6 +10,8 @@ use Illuminate\Support\Facades\Schema;
 
 class RefreshDailyTransactionSummaries extends Command
 {
+    use ResolvesReportBusinessDate;
+
     protected $signature = 'reports:refresh-daily-transaction-summaries
         {--from= : Start business date, YYYY-MM-DD}
         {--to= : End business date, YYYY-MM-DD}
@@ -39,7 +42,7 @@ class RefreshDailyTransactionSummaries extends Command
             return self::FAILURE;
         }
 
-        $dateExpr = $this->reportDateExpression('COALESCE(t.transaction_timestamp, t.created_at)', 't.original_payload');
+        $dateExpr = $this->reportDateExpression('COALESCE(t.transaction_timestamp, t.created_at)', 't.original_payload', 'pp.timestamp_mode', 't.transaction_timestamp');
         $receiptExpr = Schema::hasColumn('transactions', 'receipt_no')
             ? "COUNT(DISTINCT NULLIF(t.receipt_no, ''))"
             : 'COUNT(*)';
@@ -70,6 +73,8 @@ class RefreshDailyTransactionSummaries extends Command
             && Schema::hasColumn('transaction_taxes', 'transaction_pk');
 
         $query = DB::table('transactions as t')
+            ->leftJoin('pos_terminals as pt', 'pt.id', '=', 't.terminal_id')
+            ->leftJoin('pos_providers as pp', 'pp.id', '=', 'pt.provider_id')
             ->selectRaw('t.tenant_id, t.terminal_id')
             ->selectRaw($dateExpr . ' as business_date')
             ->selectRaw('COUNT(*) as transaction_count')
@@ -201,6 +206,8 @@ class RefreshDailyTransactionSummaries extends Command
 
         $service = app(\App\Services\Reports\FinanceCalculationService::class);
         $rows = DB::table('transactions as t')
+            ->leftJoin('pos_terminals as pt', 'pt.id', '=', 't.terminal_id')
+            ->leftJoin('pos_providers as pp', 'pp.id', '=', 'pt.provider_id')
             ->selectRaw('t.tenant_id, t.terminal_id')
             ->selectRaw($dateExpr . ' as business_date')
             ->addSelect('t.promo_status', 't.original_payload')
@@ -233,85 +240,4 @@ class RefreshDailyTransactionSummaries extends Command
         return $totals;
     }
 
-    private function reportDateExpression(string $timestampExpression, string $payloadExpression): string
-    {
-        if (! Schema::hasColumn('transactions', 'original_payload')) {
-            return $this->localReportDateExpression($timestampExpression);
-        }
-
-        $driver = DB::connection()->getDriverName();
-        $localDateExpression = $this->localReportDateExpression($timestampExpression);
-
-        if ($driver === 'pgsql') {
-            $payloadTimestamp = "COALESCE(({$payloadExpression})::jsonb->>'transaction_timestamp', ({$payloadExpression})::jsonb#>>'{transaction,transaction_timestamp}')";
-
-            return "CASE
-                WHEN {$payloadExpression} IS NOT NULL
-                    AND {$payloadExpression} != ''
-                    AND {$payloadTimestamp} IS NOT NULL
-                    AND {$payloadTimestamp} !~ '(Z|[+-][0-9]{2}:?[0-9]{2})$'
-                THEN DATE({$timestampExpression})
-                ELSE {$localDateExpression}
-            END";
-        }
-
-        if ($driver === 'sqlite') {
-            $payloadTimestamp = "COALESCE(json_extract({$payloadExpression}, '$.transaction_timestamp'), json_extract({$payloadExpression}, '$.transaction.transaction_timestamp'))";
-
-            return "CASE
-                WHEN {$payloadExpression} IS NOT NULL
-                    AND {$payloadExpression} != ''
-                    AND {$payloadTimestamp} IS NOT NULL
-                    AND {$payloadTimestamp} NOT LIKE '%Z'
-                    AND {$payloadTimestamp} NOT GLOB '*[+-][0-9][0-9]:[0-9][0-9]'
-                    AND {$payloadTimestamp} NOT GLOB '*[+-][0-9][0-9][0-9][0-9]'
-                THEN DATE({$timestampExpression})
-                ELSE {$localDateExpression}
-            END";
-        }
-
-        $payloadTimestamp = "CASE
-            WHEN {$payloadExpression} IS NOT NULL AND {$payloadExpression} != '' AND JSON_VALID({$payloadExpression})
-            THEN COALESCE(JSON_UNQUOTE(JSON_EXTRACT({$payloadExpression}, '$.transaction_timestamp')), JSON_UNQUOTE(JSON_EXTRACT({$payloadExpression}, '$.transaction.transaction_timestamp')))
-            ELSE NULL
-        END";
-
-        return "CASE
-            WHEN {$payloadExpression} IS NOT NULL
-                AND {$payloadExpression} != ''
-                AND {$payloadTimestamp} IS NOT NULL
-                AND {$payloadTimestamp} NOT REGEXP '(Z|[+-][0-9]{2}:?[0-9]{2})$'
-            THEN DATE({$timestampExpression})
-            ELSE {$localDateExpression}
-        END";
-    }
-
-    private function localReportDateExpression(string $timestampExpression): string
-    {
-        $offsetMinutes = Carbon::now($this->reportTimezone())->utcOffset();
-        $driver = DB::connection()->getDriverName();
-
-        if ($driver === 'sqlite') {
-            $modifier = sprintf('%+d minutes', $offsetMinutes);
-
-            return "DATE(datetime({$timestampExpression}, '{$modifier}'))";
-        }
-
-        if ($driver === 'pgsql') {
-            $operator = $offsetMinutes >= 0 ? '+' : '-';
-            $minutes = abs($offsetMinutes);
-
-            return "DATE({$timestampExpression} {$operator} INTERVAL '{$minutes} minutes')";
-        }
-
-        $function = $offsetMinutes >= 0 ? 'DATE_ADD' : 'DATE_SUB';
-        $minutes = abs($offsetMinutes);
-
-        return "DATE({$function}({$timestampExpression}, INTERVAL {$minutes} MINUTE))";
-    }
-
-    private function reportTimezone(): string
-    {
-        return config('tsms.transaction_logs.timezone', 'Asia/Manila') ?: 'Asia/Manila';
-    }
 }

@@ -1082,16 +1082,31 @@ class CommercialReportsController extends Controller
         bool $weekendOnly = false
     ): array {
         $reportDateExpr = $this->reportDateExpression(
-            'COALESCE(transaction_timestamp, completed_at, created_at)',
-            'original_payload'
+            'COALESCE(transactions.transaction_timestamp, transactions.completed_at, transactions.created_at)',
+            'transactions.original_payload',
+            'pp.timestamp_mode',
+            'transactions.transaction_timestamp'
         );
 
+        // Coarse, index-friendly pre-filter so the CASE/DATE-wrapped precise expression only
+        // has to re-check a bounded window, not the whole table. Widened by a day on each side
+        // (business-date shifts can move a row across midnight) and by an explicit NULL
+        // allowance, since a NULL transaction_timestamp falls back to completed_at/created_at
+        // in the precise expression and must not be silently excluded here.
+        $coarseFrom = Carbon::parse($from)->subDay();
+        $coarseTo = Carbon::parse($to)->addDay();
+
         $query = Transaction::query()
-            ->with(['tenant:id,trade_name,customer_code', 'adjustments', 'taxes'])
+            ->select('transactions.*')
+            ->with(['tenant:id,trade_name,customer_code', 'adjustments', 'taxes', 'terminal.provider'])
+            ->leftJoin('pos_terminals as pt', 'pt.id', '=', 'transactions.terminal_id')
+            ->leftJoin('pos_providers as pp', 'pp.id', '=', 'pt.provider_id')
+            ->where(fn ($q) => $q->whereBetween('transactions.transaction_timestamp', [$coarseFrom, $coarseTo])
+                ->orWhereNull('transactions.transaction_timestamp'))
             ->whereRaw("{$reportDateExpr} BETWEEN ? AND ?", [$from, $to]);
 
         if (config('tsms.reporting.exclude_voids_from_totals', true)) {
-            $query->where('transaction_type', '!=', 'VOID')->whereNull('voided_at');
+            $query->where('transactions.transaction_type', '!=', 'VOID')->whereNull('transactions.voided_at');
         }
 
         $finance = app(FinanceCalculationService::class);
