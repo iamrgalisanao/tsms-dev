@@ -47,18 +47,22 @@
 ### Tests
 
 - [x] T012 [P] [US1] Add feature test proving official overload gate runs before FormRequest `exists` validation in `tests/Feature/IngestionBackpressureTest.php`
-- [ ] T013 [P] [US1] Add feature test for async official intake `202 Accepted` and dispatch-after-commit in `tests/Feature/OfficialAsyncIntakeTest.php`
-- [ ] T014 [P] [US1] Add idempotency/conflict tests for `submission_uuid` and payload hash in `tests/Feature/OfficialAsyncIntakeIdempotencyTest.php`
+- [x] T013 [P] [US1] Add feature test for async official intake `202 Accepted` and dispatch-after-commit in `tests/Feature/OfficialAsyncIntakeTest.php`
+- [x] T014 [P] [US1] Add idempotency/conflict tests for `submission_uuid` and payload hash in `tests/Feature/OfficialAsyncIntakeIdempotencyTest.php`
 
 ### Implementation
 
 - [x] T015 [US1] Add lightweight official intake request or middleware that performs cheap structural checks before DB validation in `app/Http/Requests/` or `app/Http/Middleware/`
-- [ ] T016 [US1] Implement official async intake boundary service in `app/Services/`
+- [x] T016 [US1] Implement official async intake boundary service in `app/Services/`
 - [x] T017 [US1] Update official route/controller flow in `routes/api.php` and `app/Http/Controllers/API/V1/TransactionController.php`
-- [ ] T018 [US1] Persist durable intake state and dispatch intake job after commit in `app/Services/` and `app/Jobs/`
-- [ ] T019 [US1] Preserve compatibility response/status lookup behavior in `app/Http/Controllers/API/V1/`
-- [ ] T019a [P] [US1] Test unified 409 `IDEMPOTENCY_CONFLICT` shape across different-terminal submission UUID conflict, same-terminal payload-drift conflict, and intake-layer duplicate cases in `tests/Feature/OfficialAsyncIntakeIdempotencyTest.php`
-- [ ] T019b [US1] Reconcile submission UUID conflict responses onto the contract's `IDEMPOTENCY_CONFLICT` shape while preserving the existing separate `DUPLICATE_RECEIPT_CONFLICT` and `SUBMISSION_ALREADY_REJECTED` semantics in `app/Http/Controllers/API/V1/TransactionController.php`, `app/Services/TransactionIntakeService.php`, and `specs/001-100-tenant-resilience/contracts/ingestion-api.md`
+- [x] T018 [US1] Persist durable intake state and dispatch intake job after commit in `app/Services/` and `app/Jobs/`
+- [x] T019 [US1] Preserve compatibility response/status lookup behavior in `app/Http/Controllers/API/V1/`
+- [x] T019a [P] [US1] Test unified 409 `IDEMPOTENCY_CONFLICT` shape across different-terminal submission UUID conflict, same-terminal payload-drift conflict, and intake-layer duplicate cases in `tests/Feature/OfficialAsyncIntakeIdempotencyTest.php`
+- [x] T019b [US1] Reconcile submission UUID conflict responses onto the contract's `IDEMPOTENCY_CONFLICT` shape while preserving the existing separate `DUPLICATE_RECEIPT_CONFLICT` and `SUBMISSION_ALREADY_REJECTED` semantics in `app/Http/Controllers/API/V1/TransactionController.php`, `app/Services/TransactionIntakeService.php`, and `specs/001-100-tenant-resilience/contracts/ingestion-api.md`
+- [x] T018a [US1] Fix `ProcessTransactionIntakeJob` batch-item orchestration so later item failures cannot strand earlier committed-but-undispatched transactions; dispatch each successful item's `ProcessTransactionJob` immediately after its successful `ingest()` result, continue through item failures, reserve `FAILED_PERMANENT` for zero-success batches, and cover with `tests/Feature/ProcessTransactionIntakeJobBatchFailureTest.php`
+- [x] T019c [US1] Handle concurrent duplicate `transaction_intake.submission_uuid` insert races in `TransactionIntakeService::handleOfficialIntake()` by catching unique-constraint failures and resolving through the existing 202/409 idempotency response path in `tests/Feature/OfficialAsyncIntakeIdempotencyTest.php`
+- [x] T019d [US1] Restore adjustment/tax child shape and required type-presence validation in `TransactionIntakeService::officialStructuralRules()` and its validation after-hook, covering malformed details without accepting a queued intake
+- [x] T019e [US1] Restore registered-vs-submitted hardware ID mismatch validation in `TransactionIntakeService`, preserving `403 HARDWARE_ID_MISMATCH` for single and batch official intake payloads
 - [ ] T020 [US1] Add reconciliation handling for accepted-but-not-queued/queued-but-not-processed intake states in `app/Console/Commands/`
 - [ ] T020a [P] [US1] Test p95 transaction duration and prove the outer official ingestion transaction is not held open across non-atomic validation, logging, notification, or per-item work in `tests/Feature/OfficialIngestionTransactionBoundaryTest.php`
 - [ ] T020b [US1] Split the outer `storeOfficial` DB transaction so request-scope work, validation, logging, notifications, and per-item writes do not hold one long transaction open, extending the existing per-item savepoint pattern in `app/Http/Controllers/API/V1/TransactionController.php` or its Phase 1 replacement service
@@ -189,6 +193,7 @@
 - **US4**: Can begin after queue router foundation and should complete before 100-tenant load confidence.
 - **US5**: Starts early for baseline, completes after all operational signals are implemented.
 - **Final Release Gate**: Depends on selected stories and staging drills.
+- **US1 batch partial-failure safety**: T020, T020a, T020b, and T020c depend on T018a so reconciliation and transaction-boundary work build on the corrected async batch status/dispatch semantics.
 - **Horizon processing capacity increases**: T046 may split supervisors earlier, but worker capacity increases are gated on T020b passing transaction-boundary validation.
 
 ### MVP Scope

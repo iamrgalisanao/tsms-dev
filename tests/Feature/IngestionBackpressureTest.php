@@ -3,7 +3,6 @@
 namespace Tests\Feature;
 
 use App\Jobs\ProcessTransactionIntakeJob;
-use App\Jobs\ProcessTransactionJob;
 use App\Models\PosTerminal;
 use App\Models\Tenant;
 use App\Services\IngestionQueueRouter;
@@ -22,7 +21,7 @@ class IngestionBackpressureTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_official_endpoint_accepts_when_processing_queue_is_below_threshold_and_dispatches_to_checked_shard(): void
+    public function test_official_endpoint_accepts_when_processing_queue_is_below_threshold_and_dispatches_to_checked_intake_shard(): void
     {
         Queue::fake();
         config()->set('tsms.intake.backpressure.enabled', true);
@@ -30,14 +29,18 @@ class IngestionBackpressureTest extends TestCase
         config()->set('tsms.intake.backpressure.max_queue_depth', 10);
 
         [$tenant, $terminal] = $this->seedTenantAndTerminal();
-        $queue = app(IngestionQueueRouter::class)->processingQueueForTenant($tenant->id);
-        $this->mockRedisDepth($queue, 0);
+        $processingQueue = app(IngestionQueueRouter::class)->processingQueueForTenant($tenant->id);
+        $intakeQueue = app(IngestionQueueRouter::class)->intakeQueueForTenant($tenant->id);
+        $this->mockRedisDepths([
+            $processingQueue => 0,
+            $intakeQueue => 0,
+        ]);
 
         $payload = $this->officialPayload($tenant->id, $terminal->id, (string) Str::uuid(), $terminal->serial_number);
         $response = $this->postJson('/api/v1/transactions/official', $payload, $this->headersFor($terminal));
 
-        $response->assertStatus(200);
-        Queue::assertPushed(ProcessTransactionJob::class, fn (ProcessTransactionJob $job) => $job->queue === $queue);
+        $response->assertStatus(202);
+        Queue::assertPushed(ProcessTransactionIntakeJob::class, fn (ProcessTransactionIntakeJob $job) => $job->queue === $intakeQueue);
     }
 
     public function test_official_endpoint_returns_429_with_retry_metadata_when_backpressure_is_enforced(): void
@@ -121,7 +124,7 @@ class IngestionBackpressureTest extends TestCase
         $queue = app(IngestionQueueRouter::class)->intakeQueueForTenant($tenant->id);
         $this->mockRedisDepth($queue, 0);
 
-        $payload = $this->intakePayload();
+        $payload = $this->officialPayload($tenant->id, $terminal->id, (string) Str::uuid(), $terminal->serial_number);
         $request = Request::create('/api/v1/transactions/official', 'POST', $payload);
         $request->setUserResolver(fn () => $terminal);
 
@@ -158,10 +161,17 @@ class IngestionBackpressureTest extends TestCase
 
     private function mockRedisDepth(string $queue, int $depth): void
     {
-        $redis = Mockery::mock();
-        $redis->shouldReceive('llen')->once()->with('queues:' . $queue)->andReturn($depth);
+        $this->mockRedisDepths([$queue => $depth]);
+    }
 
-        Redis::shouldReceive('connection')->once()->with('default')->andReturn($redis);
+    private function mockRedisDepths(array $depths): void
+    {
+        $redis = Mockery::mock();
+        foreach ($depths as $queue => $depth) {
+            $redis->shouldReceive('llen')->once()->with('queues:' . $queue)->andReturn($depth);
+        }
+
+        Redis::shouldReceive('connection')->times(count($depths))->with('default')->andReturn($redis);
     }
 
     private function officialPayload(int $tenantId, int $terminalId, string $submissionUuid, string $hardwareId): array

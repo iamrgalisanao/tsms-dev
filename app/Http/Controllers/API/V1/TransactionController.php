@@ -17,6 +17,7 @@ use App\Jobs\CheckTransactionFailureThresholdsJob;
 use App\Services\PayloadChecksumService; // Add this import
 use App\Services\IngestionQueueRouter;
 use App\Services\NotificationService;
+use App\Services\TransactionIntakeService;
 use App\Http\Requests\TSMSTransactionRequest;
 use App\Rules\ReceiptNumber;
 use Laravel\Sanctum\PersonalAccessToken;
@@ -72,7 +73,8 @@ class TransactionController extends Controller
 
     public function __construct(
         NotificationService $notificationService,
-        private readonly IngestionQueueRouter $queueRouter
+        private readonly IngestionQueueRouter $queueRouter,
+        private readonly TransactionIntakeService $transactionIntakeService
     ) {
         // Extend NotificationService to handle terminal callback notifications
         $this->notificationService = $notificationService;
@@ -804,7 +806,16 @@ class TransactionController extends Controller
      * @param Request $request
      * @return \Illuminate\Http\JsonResponse
      */
-    public function storeOfficial(TSMSTransactionRequest $request)
+    public function storeOfficial(Request $request)
+    {
+        $result = $this->transactionIntakeService->handleOfficialIntake($request);
+        $httpStatus = $result['http_status'] ?? 202;
+        unset($result['http_status']);
+
+        return response()->json($result, $httpStatus);
+    }
+
+    public function storeOfficialLegacy(TSMSTransactionRequest $request)
     {
         try {
             DB::beginTransaction();

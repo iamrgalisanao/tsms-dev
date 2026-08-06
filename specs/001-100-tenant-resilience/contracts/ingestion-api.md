@@ -4,6 +4,8 @@
 
 **Endpoint**: `POST /api/v1/transactions/official`
 
+**Status**: `202 Accepted` for newly queued durable intake records and idempotent replays of already accepted intake records.
+
 **Healthy behavior**:
 
 - Performs cheap overload and payload limit checks before expensive validation.
@@ -91,6 +93,8 @@
 **When**:
 
 - Same `submission_uuid` is replayed with a different payload checksum/hash.
+- Same `submission_uuid` is claimed by a different terminal.
+- Same `submission_uuid` exists in the durable intake layer with different terminal or payload identity.
 
 **Response fields**:
 
@@ -98,6 +102,8 @@
 - `error_code`: `IDEMPOTENCY_CONFLICT`
 - `submission_uuid`
 - `correlation_id`
+
+The existing receipt/date conflict remains a separate `DUPLICATE_RECEIPT_CONFLICT`, and identical resubmission of an already rejected payload remains a validation/rejection replay instead of an idempotency conflict.
 
 ## Fairness Rejection
 

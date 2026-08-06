@@ -71,64 +71,91 @@ class ProcessTransactionIntakeJob implements ShouldQueue
         $startTime = microtime(true);
 
         try {
-            // Prepare payload for the existing ingest service
-            $payload = array_merge($intake->payload['transaction'], [
-                'submission_uuid' => $intake->submission_uuid,
-                'submission_timestamp' => $intake->payload['submission_timestamp'],
-                'tenant_id' => $intake->tenant_id,
-                'terminal_id' => $intake->terminal_id,
-                'payload_checksum' => $intake->payload_checksum,
-            ]);
-
             $isShadowMode = config('tsms.testing.capture_only') === true;
-            $result = null;
+            $transactionPayloads = isset($intake->payload['transactions']) && is_array($intake->payload['transactions'])
+                ? $intake->payload['transactions']
+                : [$intake->payload['transaction'] ?? []];
 
-            if ($isShadowMode) {
-                \Illuminate\Support\Facades\DB::beginTransaction();
-                $result = $ingestService->ingest($payload);
-                
-                // Shadow Audit Logging
-                Log::channel('shadow_audit')->info('SHADOW_MODE_RESULT', [
-                    'intake_id' => $this->intakeId,
+            $results = [];
+            $createdTransactionIds = [];
+            $failedItems = [];
+
+            foreach ($transactionPayloads as $index => $transactionPayload) {
+                $payload = array_merge($transactionPayload, [
                     'submission_uuid' => $intake->submission_uuid,
-                    'result' => $result
-                ]);
-                
-                \Illuminate\Support\Facades\DB::rollBack();
-                
-                // For Shadow Mode, we treat valid outcomes as "PROCESSED" in the intake table
-                // but we don't actually persist the business rows.
-                $status = $result['status'] ?? 'failed';
-            } else {
-                $result = $ingestService->ingest($payload);
-                $status = $result['status'] ?? 'failed';
-            }
-
-            $isDuplicate = $status === 'duplicate' || ($result['message'] ?? '') === 'duplicate_receipt_conflict';
-
-            if ($status === 'success' || $status === 'accepted' || $status === 'already_processed' || $isDuplicate) {
-                $finalStatus = $isDuplicate 
-                    ? TransactionIntake::PROCESSING_STATUS_DUPLICATE 
-                    : TransactionIntake::PROCESSING_STATUS_PROCESSED;
-
-                $intake->update([
-                    'processing_status' => $finalStatus,
-                    'processed_at' => now(),
-                    'last_error_code' => $isDuplicate ? 'duplicate_receipt_conflict' : null,
-                    'last_error_message' => $isDuplicate ? ($result['details'] ?? 'Duplicate detected') : ($isShadowMode ? 'SHADOW_MODE_SUCCESS' : null),
+                    'submission_timestamp' => $intake->payload['submission_timestamp'],
+                    'tenant_id' => $intake->tenant_id,
+                    'terminal_id' => $intake->terminal_id,
                 ]);
 
-                // Trigger second stage ONLY if not in shadow mode
-                if (!$isShadowMode && isset($result['id'])) {
+                $result = null;
+
+                if ($isShadowMode) {
+                    \Illuminate\Support\Facades\DB::beginTransaction();
+                    $result = $ingestService->ingest($payload);
+
+                    Log::channel('shadow_audit')->info('SHADOW_MODE_RESULT', [
+                        'intake_id' => $this->intakeId,
+                        'submission_uuid' => $intake->submission_uuid,
+                        'result' => $result
+                    ]);
+
+                    \Illuminate\Support\Facades\DB::rollBack();
+                } else {
+                    $result = $ingestService->ingest($payload);
+                }
+
+                $results[] = $result;
+                $status = $result['status'] ?? 'failed';
+                $isDuplicate = $status === 'duplicate' || ($result['message'] ?? '') === 'duplicate_receipt_conflict';
+
+                if (!in_array($status, ['success', 'accepted', 'already_processed'], true) && !$isDuplicate) {
+                    $failedItems[] = [
+                        'index' => $index,
+                        'transaction_id' => $payload['transaction_id'] ?? null,
+                        'message' => $result['message'] ?? 'INGEST_FAILED',
+                        'details' => $result['details'] ?? null,
+                    ];
+
+                    continue;
+                }
+
+                if (!$isShadowMode && isset($result['id']) && !$isDuplicate) {
+                    $createdTransactionIds[] = $result['id'];
                     ProcessTransactionJob::dispatch($result['id'])
                         ->onQueue(app(IngestionQueueRouter::class)->processingQueueForTenant($intake->tenant_id))
                         ->afterCommit();
                 }
+            }
+
+            $handledCount = count($results) - count($failedItems);
+
+            if ($handledCount > 0) {
+                $allDuplicates = collect($results)->every(
+                    fn (array $result) => ($result['status'] ?? null) === 'duplicate'
+                        || ($result['message'] ?? '') === 'duplicate_receipt_conflict'
+                );
+                $finalStatus = $allDuplicates
+                    ? TransactionIntake::PROCESSING_STATUS_DUPLICATE
+                    : TransactionIntake::PROCESSING_STATUS_PROCESSED;
+                $partialFailure = $failedItems !== [];
+
+                $intake->update([
+                    'processing_status' => $finalStatus,
+                    'processed_at' => now(),
+                    'last_error_code' => $partialFailure
+                        ? 'PARTIAL_BATCH_FAILURE'
+                        : ($allDuplicates ? 'duplicate_receipt_conflict' : null),
+                    'last_error_message' => $partialFailure
+                        ? json_encode(['failed_items' => $failedItems], JSON_UNESCAPED_SLASHES)
+                        : ($allDuplicates ? 'Duplicate detected' : ($isShadowMode ? 'SHADOW_MODE_SUCCESS' : null)),
+                ]);
 
                 Log::info('ProcessTransactionIntakeJob: Success', [
-                    'status' => $status,
-                    'is_duplicate' => $isDuplicate,
-                    'transaction_pk' => $result['id'] ?? null
+                    'status' => $finalStatus,
+                    'transaction_count' => count($results),
+                    'transaction_pks' => $createdTransactionIds,
+                    'failed_count' => count($failedItems),
                 ]);
 
                 // Performance: Processing Metrics
@@ -148,12 +175,13 @@ class ProcessTransactionIntakeJob implements ShouldQueue
                 // Genuine business failure (Math mismatch, validation error, etc.)
                 $intake->update([
                     'processing_status' => TransactionIntake::PROCESSING_STATUS_FAILED_PERMANENT,
-                    'last_error_code' => $result['message'] ?? 'INGEST_FAILED',
-                    'last_error_message' => $result['details'] ?? 'Unknown ingest failure',
+                    'last_error_code' => $failedItems[0]['message'] ?? 'INGEST_FAILED',
+                    'last_error_message' => json_encode(['failed_items' => $failedItems], JSON_UNESCAPED_SLASHES),
                 ]);
 
                 Log::warning('ProcessTransactionIntakeJob: Permanent failure', [
-                    'message' => $result['message'] ?? 'none'
+                    'message' => $failedItems[0]['message'] ?? 'none',
+                    'failed_count' => count($failedItems),
                 ]);
 
                 Metrics::incr('intake.failed_count');

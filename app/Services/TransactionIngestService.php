@@ -8,7 +8,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 
-final readonly class TransactionIngestService
+class TransactionIngestService
 {
     public function __construct(
         protected DeadlockRetryService $retryService
@@ -24,7 +24,41 @@ final readonly class TransactionIngestService
             return $this->retryService->withDeadlockRetry(function () use ($payload) {
                 return DB::transaction(function () use ($payload) {
                     $parent = $this->normalizePayload($payload);
-                    $inserted = DB::table('transactions')->insertOrIgnore($parent);
+
+                    $receiptConflict = $this->findReceiptConflict($parent);
+                    if ($receiptConflict) {
+                        if (hash_equals(
+                            (string) ($receiptConflict->payload_checksum ?? ''),
+                            (string) ($parent['payload_checksum'] ?? '')
+                        )) {
+                            return [
+                                'status' => 'already_processed',
+                                'id' => $receiptConflict->id,
+                                'transaction_id' => $receiptConflict->transaction_id,
+                                'terminal_id' => $receiptConflict->terminal_id,
+                                'message' => 'already_processed',
+                            ];
+                        }
+
+                        Log::warning('TransactionIngestService: duplicate receipt conflict identified', [
+                            'receipt_no' => $parent['receipt_no'],
+                            'incoming_tx_id' => $parent['transaction_id'],
+                            'existing_tx_id' => $receiptConflict->transaction_id,
+                            'existing_tenant' => $receiptConflict->tenant_id,
+                            'incoming_tenant' => $parent['tenant_id'],
+                        ]);
+
+                        return [
+                            'status' => 'duplicate',
+                            'id' => $receiptConflict->id,
+                            'transaction_id' => $parent['transaction_id'],
+                            'terminal_id' => $parent['terminal_id'],
+                            'message' => 'duplicate_receipt_conflict',
+                            'details' => 'Receipt already exists on this terminal within a 24-hour window',
+                        ];
+                    }
+
+                    $inserted = $this->insertTransactionParent($parent);
 
                     if ($inserted === 1) {
                         $transaction = DB::table('transactions')
@@ -71,19 +105,19 @@ final readonly class TransactionIngestService
                         ];
                     }
 
-                    $conflict = $this->findReceiptConflict($parent);
-                    if ($conflict) {
-                        Log::warning('TransactionIngestService: duplicate receipt conflict identified', [
+                    $receiptConflict = $this->findReceiptConflict($parent);
+                    if ($receiptConflict) {
+                        Log::warning('TransactionIngestService: duplicate receipt conflict identified after insert race', [
                             'receipt_no' => $parent['receipt_no'],
                             'incoming_tx_id' => $parent['transaction_id'],
-                            'existing_tx_id' => $conflict->transaction_id,
-                            'existing_tenant' => $conflict->tenant_id,
+                            'existing_tx_id' => $receiptConflict->transaction_id,
+                            'existing_tenant' => $receiptConflict->tenant_id,
                             'incoming_tenant' => $parent['tenant_id'],
                         ]);
 
                         return [
                             'status' => 'duplicate',
-                            'id' => $conflict->id,
+                            'id' => $receiptConflict->id,
                             'transaction_id' => $parent['transaction_id'],
                             'terminal_id' => $parent['terminal_id'],
                             'message' => 'duplicate_receipt_conflict',
@@ -116,6 +150,11 @@ final readonly class TransactionIngestService
                 'details' => $e->getMessage(),
             ];
         }
+    }
+
+    protected function insertTransactionParent(array $parent): int
+    {
+        return DB::table('transactions')->insertOrIgnore($parent);
     }
 
     /**
