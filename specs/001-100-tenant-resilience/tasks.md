@@ -63,10 +63,10 @@
 - [x] T019c [US1] Handle concurrent duplicate `transaction_intake.submission_uuid` insert races in `TransactionIntakeService::handleOfficialIntake()` by catching unique-constraint failures and resolving through the existing 202/409 idempotency response path in `tests/Feature/OfficialAsyncIntakeIdempotencyTest.php`
 - [x] T019d [US1] Restore adjustment/tax child shape and required type-presence validation in `TransactionIntakeService::officialStructuralRules()` and its validation after-hook, covering malformed details without accepting a queued intake
 - [x] T019e [US1] Restore registered-vs-submitted hardware ID mismatch validation in `TransactionIntakeService`, preserving `403 HARDWARE_ID_MISMATCH` for single and batch official intake payloads
-- [ ] T020 [US1] Add reconciliation handling for accepted-but-not-queued/queued-but-not-processed intake states in `app/Console/Commands/`
-- [ ] T020a [P] [US1] Test p95 transaction duration and prove the outer official ingestion transaction is not held open across non-atomic validation, logging, notification, or per-item work in `tests/Feature/OfficialIngestionTransactionBoundaryTest.php`
-- [ ] T020b [US1] Split the outer `storeOfficial` DB transaction so request-scope work, validation, logging, notifications, and per-item writes do not hold one long transaction open, extending the existing per-item savepoint pattern in `app/Http/Controllers/API/V1/TransactionController.php` or its Phase 1 replacement service
-- [ ] T020c [US1] Add or confirm indexes for tenant, terminal, external transaction ID, receipt/date, status, and timestamp lookups used by the shortened official ingestion path in `database/migrations/`
+- [x] T020 [US1] Add reconciliation handling for accepted-but-not-queued/queued-but-not-processed intake states in `app/Console/Commands/`
+- [x] T020a [P] [US1] Test p95 transaction duration and prove the outer official ingestion transaction is not held open across non-atomic validation, logging, notification, or per-item work in `tests/Feature/OfficialIngestionTransactionBoundaryTest.php`
+- [x] T020b [US1] Split the outer `storeOfficial` DB transaction so request-scope work, validation, logging, notifications, and per-item writes do not hold one long transaction open, extending the existing per-item savepoint pattern in `app/Http/Controllers/API/V1/TransactionController.php` or its Phase 1 replacement service
+- [x] T020c [US1] Add or confirm indexes for tenant, terminal, external transaction ID, receipt/date, status, and timestamp lookups used by the shortened official ingestion path in `database/migrations/`
 
 **Checkpoint**: Official ingestion no longer depends on the large synchronous write path for request acceptance.
 

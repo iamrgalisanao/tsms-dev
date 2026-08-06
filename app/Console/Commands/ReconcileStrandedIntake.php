@@ -20,6 +20,10 @@ class ReconcileStrandedIntake extends Command
         {--tenant= : Limit missing processed intake scan to one tenant ID}
         {--terminal= : Limit missing processed intake scan to one terminal ID}
         {--limit=100 : Maximum processed intake records to inspect}
+        {--accepted-stale-minutes=2 : Minutes before ACCEPTED intake is considered stranded}
+        {--queued-stale-minutes=10 : Minutes before QUEUED intake that never started processing is considered stranded}
+        {--processing-stale-minutes=10 : Minutes before PROCESSING intake is considered stranded}
+        {--retryable-stale-minutes=10 : Minutes before FAILED_RETRYABLE intake is considered stranded}
         {--dry-run : Report processed intakes without matching transactions, without repairing}
         {--repair-missing : Re-ingest processed intake records that have no matching transaction row}';
 
@@ -31,15 +35,21 @@ class ReconcileStrandedIntake extends Command
             return $this->reconcileProcessedMissingTransactions($ingestService, $queueRouter);
         }
 
-        $threshold = now()->subMinutes(2);
+        $acceptedThreshold = now()->subMinutes(max(1, (int) $this->option('accepted-stale-minutes')));
+        $queuedThreshold = now()->subMinutes(max(1, (int) $this->option('queued-stale-minutes')));
+        $processingThreshold = now()->subMinutes(max(1, (int) $this->option('processing-stale-minutes')));
+        $retryableThreshold = now()->subMinutes(max(1, (int) $this->option('retryable-stale-minutes')));
 
-        $stranded = TransactionIntake::query()
-            ->where('intake_status', TransactionIntake::INTAKE_STATUS_ACCEPTED)
-            ->where('received_at', '<=', $threshold)
-            ->get();
+        $stranded = $this->strandedAcceptedQuery($acceptedThreshold)
+            ->get()
+            ->merge($this->staleQueuedPendingQuery($queuedThreshold)->get())
+            ->merge($this->staleQueuedProcessingQuery($processingThreshold)->get())
+            ->merge($this->staleQueuedRetryableQuery($retryableThreshold)->get())
+            ->unique('id')
+            ->values();
 
         if ($stranded->isEmpty()) {
-            $this->info('No stranded accepted intake records found.');
+            $this->info('No stranded accepted or stale queued intake records found.');
             return self::SUCCESS;
         }
 
@@ -51,10 +61,16 @@ class ReconcileStrandedIntake extends Command
                     ->onQueue($queueRouter->intakeQueueForTenant($intake->tenant_id))
                     ->afterCommit();
 
-                $intake->update([
+                $updates = [
                     'intake_status' => TransactionIntake::INTAKE_STATUS_QUEUED,
                     'queued_at' => now(),
-                ]);
+                ];
+
+                if ($intake->processing_status === TransactionIntake::PROCESSING_STATUS_PROCESSING) {
+                    $updates['processing_status'] = null;
+                }
+
+                $intake->update($updates);
             } catch (\Throwable $e) {
                 Log::error('ReconcileStrandedIntake: failed to re-dispatch stranded intake', [
                     'intake_id' => $intake->id,
@@ -65,6 +81,51 @@ class ReconcileStrandedIntake extends Command
         }
 
         return self::SUCCESS;
+    }
+
+    private function strandedAcceptedQuery(\DateTimeInterface $threshold): Builder
+    {
+        return TransactionIntake::query()
+            ->where('intake_status', TransactionIntake::INTAKE_STATUS_ACCEPTED)
+            ->where('received_at', '<=', $threshold);
+    }
+
+    private function staleQueuedPendingQuery(\DateTimeInterface $threshold): Builder
+    {
+        return TransactionIntake::query()
+            ->where('intake_status', TransactionIntake::INTAKE_STATUS_QUEUED)
+            ->whereNull('processing_status')
+            ->where(function (Builder $query) use ($threshold): void {
+                $query->where('queued_at', '<=', $threshold)
+                    ->orWhere(function (Builder $fallback) use ($threshold): void {
+                        $fallback->whereNull('queued_at')
+                            ->where('received_at', '<=', $threshold);
+                    });
+            });
+    }
+
+    private function staleQueuedProcessingQuery(\DateTimeInterface $threshold): Builder
+    {
+        return $this->staleQueuedStatusQuery(TransactionIntake::PROCESSING_STATUS_PROCESSING, $threshold);
+    }
+
+    private function staleQueuedRetryableQuery(\DateTimeInterface $threshold): Builder
+    {
+        return $this->staleQueuedStatusQuery(TransactionIntake::PROCESSING_STATUS_FAILED_RETRYABLE, $threshold);
+    }
+
+    private function staleQueuedStatusQuery(string $processingStatus, \DateTimeInterface $threshold): Builder
+    {
+        return TransactionIntake::query()
+            ->where('intake_status', TransactionIntake::INTAKE_STATUS_QUEUED)
+            ->where('processing_status', $processingStatus)
+            ->where(function (Builder $query) use ($threshold): void {
+                $query->where('updated_at', '<=', $threshold)
+                    ->orWhere(function (Builder $fallback) use ($threshold): void {
+                        $fallback->whereNull('updated_at')
+                            ->where('queued_at', '<=', $threshold);
+                    });
+            });
     }
 
     private function reconcileProcessedMissingTransactions(
@@ -85,39 +146,48 @@ class ReconcileStrandedIntake extends Command
             ->limit($limit)
             ->get()
             ->each(function (TransactionIntake $intake) use ($ingestService, $queueRouter, $repair, &$missing, &$repaired, &$skipped, &$failed) {
-                $transactionId = data_get($intake->payload, 'transaction.transaction_id');
+                $transactionPayloads = $this->transactionPayloads($intake);
 
-                if (!$transactionId) {
+                if ($transactionPayloads === []) {
                     $skipped++;
                     return;
                 }
 
-                if ($this->transactionExists($intake, $transactionId)) {
-                    return;
-                }
+                foreach ($transactionPayloads as $transactionPayload) {
+                    $transactionId = $transactionPayload['transaction_id'] ?? null;
 
-                $missing[] = [
-                    'intake_id' => $intake->id,
-                    'submission_uuid' => $intake->submission_uuid,
-                    'tenant_id' => $intake->tenant_id,
-                    'terminal_id' => $intake->terminal_id,
-                    'transaction_id' => $transactionId,
-                    'receipt_no' => data_get($intake->payload, 'transaction.receipt_no'),
-                    'received_at' => optional($intake->received_at)->toDateTimeString(),
-                    'processed_at' => optional($intake->processed_at)->toDateTimeString(),
-                ];
+                    if (!$transactionId) {
+                        $skipped++;
+                        continue;
+                    }
 
-                if (!$repair) {
-                    return;
-                }
+                    if ($this->transactionExists($intake, $transactionId)) {
+                        continue;
+                    }
 
-                $result = $this->repairProcessedIntake($intake, $transactionId, $ingestService, $queueRouter);
-                if ($result === 'repaired') {
-                    $repaired++;
-                } elseif ($result === 'skipped') {
-                    $skipped++;
-                } else {
-                    $failed++;
+                    $missing[] = [
+                        'intake_id' => $intake->id,
+                        'submission_uuid' => $intake->submission_uuid,
+                        'tenant_id' => $intake->tenant_id,
+                        'terminal_id' => $intake->terminal_id,
+                        'transaction_id' => $transactionId,
+                        'receipt_no' => $transactionPayload['receipt_no'] ?? null,
+                        'received_at' => optional($intake->received_at)->toDateTimeString(),
+                        'processed_at' => optional($intake->processed_at)->toDateTimeString(),
+                    ];
+
+                    if (!$repair) {
+                        continue;
+                    }
+
+                    $result = $this->repairProcessedIntake($intake, $transactionPayload, $transactionId, $ingestService, $queueRouter);
+                    if ($result === 'repaired') {
+                        $repaired++;
+                    } elseif ($result === 'skipped') {
+                        $skipped++;
+                    } else {
+                        $failed++;
+                    }
                 }
             });
 
@@ -178,30 +248,19 @@ class ReconcileStrandedIntake extends Command
     private function transactionExists(TransactionIntake $intake, string $transactionId): bool
     {
         return DB::table('transactions')
-            ->where(function ($query) use ($intake, $transactionId) {
-                $query->where('transaction_id', $transactionId)
-                    ->orWhere('submission_uuid', $intake->submission_uuid);
-            })
+            ->where('tenant_id', $intake->tenant_id)
+            ->where('terminal_id', $intake->terminal_id)
+            ->where('transaction_id', $transactionId)
             ->exists();
     }
 
     private function repairProcessedIntake(
         TransactionIntake $intake,
+        array $transactionPayload,
         string $transactionId,
         TransactionIngestService $ingestService,
         IngestionQueueRouter $queueRouter
     ): string {
-        $transactionPayload = data_get($intake->payload, 'transaction');
-
-        if (! is_array($transactionPayload)) {
-            Log::warning('ReconcileStrandedIntake: missing transaction payload for processed intake repair', [
-                'intake_id' => $intake->id,
-                'submission_uuid' => $intake->submission_uuid,
-            ]);
-
-            return 'skipped';
-        }
-
         try {
             $payload = array_merge($transactionPayload, [
                 'submission_uuid' => $intake->submission_uuid,
@@ -250,5 +309,20 @@ class ReconcileStrandedIntake extends Command
 
             return 'failed';
         }
+    }
+
+    private function transactionPayloads(TransactionIntake $intake): array
+    {
+        $batch = data_get($intake->payload, 'transactions');
+        if (is_array($batch)) {
+            return array_values(array_filter($batch, 'is_array'));
+        }
+
+        $single = data_get($intake->payload, 'transaction');
+        if (is_array($single)) {
+            return [$single];
+        }
+
+        return [];
     }
 }

@@ -21,41 +21,18 @@ class TransactionIngestService
     public function ingest(array $payload): array
     {
         try {
-            return $this->retryService->withDeadlockRetry(function () use ($payload) {
-                return DB::transaction(function () use ($payload) {
-                    $parent = $this->normalizePayload($payload);
+            $parent = $this->normalizePayload($payload);
 
+            $receiptConflict = $this->findReceiptConflict($parent);
+            if ($receiptConflict) {
+                return $this->receiptConflictResult($receiptConflict, $parent);
+            }
+
+            return $this->retryService->withDeadlockRetry(function () use ($payload, $parent) {
+                return DB::transaction(function () use ($payload, $parent) {
                     $receiptConflict = $this->findReceiptConflict($parent);
                     if ($receiptConflict) {
-                        if (hash_equals(
-                            (string) ($receiptConflict->payload_checksum ?? ''),
-                            (string) ($parent['payload_checksum'] ?? '')
-                        )) {
-                            return [
-                                'status' => 'already_processed',
-                                'id' => $receiptConflict->id,
-                                'transaction_id' => $receiptConflict->transaction_id,
-                                'terminal_id' => $receiptConflict->terminal_id,
-                                'message' => 'already_processed',
-                            ];
-                        }
-
-                        Log::warning('TransactionIngestService: duplicate receipt conflict identified', [
-                            'receipt_no' => $parent['receipt_no'],
-                            'incoming_tx_id' => $parent['transaction_id'],
-                            'existing_tx_id' => $receiptConflict->transaction_id,
-                            'existing_tenant' => $receiptConflict->tenant_id,
-                            'incoming_tenant' => $parent['tenant_id'],
-                        ]);
-
-                        return [
-                            'status' => 'duplicate',
-                            'id' => $receiptConflict->id,
-                            'transaction_id' => $parent['transaction_id'],
-                            'terminal_id' => $parent['terminal_id'],
-                            'message' => 'duplicate_receipt_conflict',
-                            'details' => 'Receipt already exists on this terminal within a 24-hour window',
-                        ];
+                        return $this->receiptConflictResult($receiptConflict, $parent);
                     }
 
                     $inserted = $this->insertTransactionParent($parent);
@@ -134,7 +111,7 @@ class TransactionIngestService
                         'message' => 'insert ignored but no existing transaction found',
                     ];
                 }, 1);
-            });
+            }, wrapInTransaction: false);
         } catch (\Throwable $e) {
             Log::error('TransactionIngestService: ingest failed', [
                 'error' => $e->getMessage(),
@@ -150,6 +127,39 @@ class TransactionIngestService
                 'details' => $e->getMessage(),
             ];
         }
+    }
+
+    protected function receiptConflictResult(object $receiptConflict, array $parent): array
+    {
+        if (hash_equals(
+            (string) ($receiptConflict->payload_checksum ?? ''),
+            (string) ($parent['payload_checksum'] ?? '')
+        )) {
+            return [
+                'status' => 'already_processed',
+                'id' => $receiptConflict->id,
+                'transaction_id' => $receiptConflict->transaction_id,
+                'terminal_id' => $receiptConflict->terminal_id,
+                'message' => 'already_processed',
+            ];
+        }
+
+        Log::warning('TransactionIngestService: duplicate receipt conflict identified', [
+            'receipt_no' => $parent['receipt_no'],
+            'incoming_tx_id' => $parent['transaction_id'],
+            'existing_tx_id' => $receiptConflict->transaction_id,
+            'existing_tenant' => $receiptConflict->tenant_id,
+            'incoming_tenant' => $parent['tenant_id'],
+        ]);
+
+        return [
+            'status' => 'duplicate',
+            'id' => $receiptConflict->id,
+            'transaction_id' => $parent['transaction_id'],
+            'terminal_id' => $parent['terminal_id'],
+            'message' => 'duplicate_receipt_conflict',
+            'details' => 'Receipt already exists on this terminal within a 24-hour window',
+        ];
     }
 
     protected function insertTransactionParent(array $parent): int

@@ -10,13 +10,15 @@ class DeadlockRetryService
     /**
      * Retry a database transaction on deadlocks, serialization failures, and lock wait timeouts.
      */
-    public function withDeadlockRetry(callable $callback, int $maxAttempts = 5)
+    public function withDeadlockRetry(callable $callback, int $maxAttempts = 5, bool $wrapInTransaction = true)
     {
         $attempt = 0;
 
         retry:
         try {
-            return DB::transaction($callback, 1);
+            return $wrapInTransaction
+                ? DB::transaction($callback, 1)
+                : $callback();
         } catch (QueryException $e) {
             $attempt++;
             $message = $e->getMessage();

@@ -113,6 +113,8 @@ class TransactionIntakeService
             ];
         }
 
+        $this->observeTransactionBoundary('after_structural_validation');
+
         // 2. Idempotency check: report the stored outcome for an existing submission_uuid.
         $existing = TransactionIntake::where('submission_uuid', $payload['submission_uuid'])->first();
         if ($existing) {
@@ -123,6 +125,8 @@ class TransactionIntakeService
         if ($existingSubmission) {
             return $this->existingLegacySubmissionResponse($existingSubmission, $payload, $traceId, $terminal);
         }
+
+        $this->observeTransactionBoundary('after_idempotency_lookup');
 
         // 3. Stage 2: Cryptographic Integrity (Synchronous Checksum)
         $checksumResult = $this->checksumService->validateSubmissionChecksums($payload);
@@ -140,6 +144,8 @@ class TransactionIntakeService
             ];
         }
 
+        $this->observeTransactionBoundary('after_checksum_validation');
+
         Metrics::incr('intake.received_count');
 
         // 4. Proactive Backpressure Check (Shard-Aware Fail-Fast)
@@ -150,6 +156,8 @@ class TransactionIntakeService
                 'http_status' => $this->backpressureService->rejectionStatus(),
             ] + $this->backpressureService->rejectionPayload($backpressure);
         }
+
+        $this->observeTransactionBoundary('after_backpressure_check');
 
         // 5. Persist raw intake
         try {
@@ -163,6 +171,7 @@ class TransactionIntakeService
                 'is_pilot' => $isPilot,
                 'submission_uuid' => $intake->submission_uuid,
                 'queue' => $shardQueue,
+                'queued' => true,
             ]);
 
             // Performance: Intake Dispatch Latency (Sync path)
@@ -258,7 +267,9 @@ class TransactionIntakeService
         \Carbon\Carbon $receivedAt,
         string $shardQueue
     ): TransactionIntake {
-        return DB::transaction(function () use ($payload, $terminal, $request, $sourceIp, $traceId, $receivedAt, $shardQueue) {
+        $this->observeTransactionBoundary('before_durable_persist');
+
+        $intake = DB::transaction(function () use ($payload, $terminal, $request, $sourceIp, $traceId, $receivedAt) {
             $intake = TransactionIntake::create([
                 'submission_uuid' => $payload['submission_uuid'],
                 'tenant_id' => $terminal->tenant_id,
@@ -272,10 +283,6 @@ class TransactionIntakeService
                 'received_at' => $receivedAt,
             ]);
 
-            \App\Jobs\ProcessTransactionIntakeJob::dispatch($intake->id)
-                ->onQueue($shardQueue)
-                ->afterCommit();
-
             $intake->update([
                 'intake_status' => TransactionIntake::INTAKE_STATUS_QUEUED,
                 'queued_at' => now(),
@@ -283,6 +290,26 @@ class TransactionIntakeService
 
             return $intake->fresh();
         });
+
+        $this->observeTransactionBoundary('after_durable_persist');
+        $this->dispatchIntakeJob($intake, $shardQueue);
+
+        return $intake;
+    }
+
+    protected function dispatchIntakeJob(TransactionIntake $intake, string $shardQueue): void
+    {
+        $this->observeTransactionBoundary('before_intake_dispatch');
+
+        \App\Jobs\ProcessTransactionIntakeJob::dispatch($intake->id)
+            ->onQueue($shardQueue)
+            ->afterCommit();
+
+        $this->observeTransactionBoundary('after_intake_dispatch');
+    }
+
+    protected function observeTransactionBoundary(string $stage): void
+    {
     }
 
     protected function submittedTransactions(array $payload): array
