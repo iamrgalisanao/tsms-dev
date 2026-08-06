@@ -5,7 +5,8 @@
 // Note: forwarding queue removed — webapp forwarding is disabled.
 
 // --- Phase 2: Dynamic Intake Sharding ---
-$shardCount = (int) env('TSMS_INTAKE_SHARD_COUNT', 8);
+$shardCount = max(1, (int) env('TSMS_INTAKE_SHARD_COUNT', 8));
+$processingShardCount = max(1, (int) env('TSMS_PROCESSING_SHARD_COUNT', $shardCount));
 $vipShardSuffix = env('TSMS_INTAKE_VIP_SHARD', 'vip');
 
 // Generate the list of intake shards s0-s7 (or more) plus the VIP lane.
@@ -14,6 +15,11 @@ $intakeQueues = array_merge(
     ['transaction-intake'],
     ['transaction-intake:s-' . $vipShardSuffix],
     array_map(fn($i) => "transaction-intake:s$i", range(0, $shardCount - 1))
+);
+
+$processingQueues = array_merge(
+    ['transaction-processing'],
+    array_map(fn($i) => "transaction-processing:s$i", range(0, $processingShardCount - 1))
 );
 
 return [
@@ -77,15 +83,7 @@ return [
             'high-supervisor' => [
                 'connection' => 'redis',
                 'queue'      => [
-                    'transaction-processing',
-                    'transaction-processing:s0',
-                    'transaction-processing:s1',
-                    'transaction-processing:s2',
-                    'transaction-processing:s3',
-                    'transaction-processing:s4',
-                    'transaction-processing:s5',
-                    'transaction-processing:s6',
-                    'transaction-processing:s7',
+                    ...$processingQueues,
                 ],
                 'balance'    => 'auto',
                 'processes'  => env('HZ_HIGH_PROCESSES', 16), // Increased for more concurrency
@@ -133,15 +131,7 @@ return [
             'default' => [
                 'connection' => 'redis',
                 'queue'      => [
-                    'transaction-processing',
-                    'transaction-processing:s0',
-                    'transaction-processing:s1',
-                    'transaction-processing:s2',
-                    'transaction-processing:s3',
-                    'transaction-processing:s4',
-                    'transaction-processing:s5',
-                    'transaction-processing:s6',
-                    'transaction-processing:s7',
+                    ...$processingQueues,
                     'low',
                     'notifications',
                 ],
@@ -164,15 +154,7 @@ return [
                 'connection' => 'redis',
                 // Include processing queues locally so Horizon runs workers for them
                 'queue'      => array_merge($intakeQueues, [
-                    'transaction-processing',
-                    'transaction-processing:s0',
-                    'transaction-processing:s1',
-                    'transaction-processing:s2',
-                    'transaction-processing:s3',
-                    'transaction-processing:s4',
-                    'transaction-processing:s5',
-                    'transaction-processing:s6',
-                    'transaction-processing:s7',
+                    ...$processingQueues,
                     'low',
                     'notifications',
                     'default',

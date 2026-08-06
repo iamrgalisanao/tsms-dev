@@ -15,6 +15,7 @@ use Illuminate\Support\Carbon;
 use App\Jobs\ProcessTransactionJob;
 use App\Jobs\CheckTransactionFailureThresholdsJob;
 use App\Services\PayloadChecksumService; // Add this import
+use App\Services\IngestionQueueRouter;
 use App\Services\NotificationService;
 use App\Http\Requests\TSMSTransactionRequest;
 use App\Rules\ReceiptNumber;
@@ -69,10 +70,12 @@ class TransactionController extends Controller
      */
     private NotificationService $notificationService;
 
-    public function __construct(NotificationService $notificationService)
-    {
+    public function __construct(
+        NotificationService $notificationService,
+        private readonly IngestionQueueRouter $queueRouter
+    ) {
         // Extend NotificationService to handle terminal callback notifications
-        $this->notificationService = app(NotificationService::class);
+        $this->notificationService = $notificationService;
     }
 
     /**
@@ -415,7 +418,9 @@ class TransactionController extends Controller
                     $transaction = Transaction::create($txPayload);
 
                     // Queue the transaction for processing
-                    ProcessTransactionJob::dispatch($transaction->id)->afterCommit();
+                    ProcessTransactionJob::dispatch($transaction->id)
+                        ->onQueue($this->queueRouter->processingQueueForTenant($terminal->tenant_id))
+                        ->afterCommit();
 
                     // Log system activity
                     \App\Models\SystemLog::create([
@@ -1466,7 +1471,9 @@ class TransactionController extends Controller
 
                         // Queue the transaction for processing (deferred until the outermost
                         // DB transaction actually commits, regardless of this savepoint)
-                        ProcessTransactionJob::dispatch($transaction->id)->afterCommit();
+                        ProcessTransactionJob::dispatch($transaction->id)
+                            ->onQueue($this->queueRouter->processingQueueForTenant($terminal->tenant_id))
+                            ->afterCommit();
 
                         // Add system log entry
                         \App\Models\SystemLog::create([

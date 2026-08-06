@@ -47,6 +47,7 @@ return Application::configure(basePath: dirname(__DIR__))
             'role' => \Spatie\Permission\Middleware\RoleMiddleware::class,
             'capture.terminal.ip' => \App\Http\Middleware\CaptureTerminalIp::class,
             'circuit.breaker' => \App\Http\Middleware\CircuitBreakerMiddleware::class,
+            'ingestion.backpressure' => \App\Http\Middleware\IngestionBackpressureMiddleware::class,
             'ensure.webapp.token' => \App\Http\Middleware\EnsureWebappToken::class,
             'license.valid' => \App\Http\Middleware\LicenseMiddleware::class,
             'license.vendor' => \App\Http\Middleware\EnsureVendorLicenseAuthority::class,

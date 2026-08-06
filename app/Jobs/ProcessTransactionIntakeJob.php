@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Models\TransactionIntake;
+use App\Services\IngestionQueueRouter;
 use App\Services\TransactionIngestService;
 use App\Support\Metrics;
 use Illuminate\Bus\Queueable;
@@ -119,9 +120,8 @@ class ProcessTransactionIntakeJob implements ShouldQueue
 
                 // Trigger second stage ONLY if not in shadow mode
                 if (!$isShadowMode && isset($result['id'])) {
-                    $shard = (int) ($intake->tenant_id % 8);
                     ProcessTransactionJob::dispatch($result['id'])
-                        ->onQueue('transaction-processing:s' . $shard)
+                        ->onQueue(app(IngestionQueueRouter::class)->processingQueueForTenant($intake->tenant_id))
                         ->afterCommit();
                 }
 

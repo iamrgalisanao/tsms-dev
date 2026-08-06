@@ -15,8 +15,11 @@ class TransactionIntakeService
 {
     protected PayloadChecksumService $checksumService;
 
-    public function __construct(PayloadChecksumService $checksumService)
-    {
+    public function __construct(
+        PayloadChecksumService $checksumService,
+        private readonly IngestionQueueRouter $queueRouter,
+        private readonly IngestionBackpressureService $backpressureService
+    ) {
         $this->checksumService = $checksumService;
     }
     /**
@@ -32,7 +35,7 @@ class TransactionIntakeService
         $traceId = $request->header('X-Correlation-ID') ?? Str::uuid()->toString();
         $receivedAt = now();
         $tenantId = $request->user()->tenant_id ?? 0;
-        $shardQueue = $this->getShardQueue($tenantId);
+        $shardQueue = $this->queueRouter->intakeQueueForTenant($tenantId);
 
         // 1. Stage 1: Structural & Format Validation (Gatekeeping)
         $validator = Validator::make($payload, [
@@ -80,12 +83,12 @@ class TransactionIntakeService
         Metrics::incr('intake.received_count');
 
         // 4. Proactive Backpressure Check (Shard-Aware Fail-Fast)
-        if ($this->isSystemOverloaded($shardQueue)) {
+        $backpressure = $this->backpressureService->checkQueue($shardQueue, 'intake');
+        if ($backpressure['enforced']) {
             return [
                 'success' => false,
-                'status' => 429,
-                'message' => 'System is currently experiencing high load. Please retry in a few minutes.',
-            ];
+                'status' => $this->backpressureService->rejectionStatus(),
+            ] + $this->backpressureService->rejectionPayload($backpressure);
         }
 
         // 5. Persist raw intake
@@ -108,7 +111,7 @@ class TransactionIntakeService
 
             // Dispatch processing job (Legacy Async Path for Zero-Impact fix)
             \App\Jobs\ProcessTransactionIntakeJob::dispatch($intake->id)
-                ->onQueue('transaction-intake')
+                ->onQueue($shardQueue)
                 ->afterCommit();
 
             $intake->update([
@@ -119,7 +122,8 @@ class TransactionIntakeService
             Log::info('TransactionIntakeService: Intake queued asychronously', [
                 'tenant_id' => $intake->tenant_id,
                 'is_pilot' => $isPilot,
-                'submission_uuid' => $intake->submission_uuid
+                'submission_uuid' => $intake->submission_uuid,
+                'queue' => $shardQueue,
             ]);
 
             // Performance: Intake Dispatch Latency (Sync path)
@@ -230,56 +234,4 @@ class TransactionIntakeService
         return json_last_error() === JSON_ERROR_NONE ? $decoded : [$storedErrors];
     }
 
-    /**
-     * Determine if the system is currently under excessive load for a specific shard.
-     * This checks the depth of the specific shard's ingestion queue in Redis.
-     */
-    protected function isSystemOverloaded(string $queueName): bool
-    {
-        if (!config('tsms.intake.backpressure.enabled', true)) {
-            return false;
-        }
-
-        try {
-            $threshold = config('tsms.intake.backpressure.max_queue_depth', 5000);
-            
-            // Laravel's Redis queue prefix is usually 'queues:'. Use the
-            // configured queue Redis connection instead of assuming a
-            // dedicated "horizon" Redis connection exists on every server.
-            $fullQueueName = 'queues:' . $queueName;
-            $redisConnection = config('queue.connections.redis.connection', 'default');
-            $currentDepth = \Illuminate\Support\Facades\Redis::connection($redisConnection)->llen($fullQueueName);
-
-            if ($currentDepth >= $threshold) {
-                Log::warning('TransactionIntakeService: Backpressure triggered on shard', [
-                    'queue' => $queueName,
-                    'current_depth' => $currentDepth,
-                    'threshold' => $threshold
-                ]);
-                return true;
-            }
-        } catch (\Throwable $e) {
-            Log::error('TransactionIntakeService: Failed to check queue depth for backpressure', ['error' => $e->getMessage()]);
-        }
-
-        return false;
-    }
-
-    /**
-     * Determine the correct shard queue for a given tenant.
-     * Pilot tenants go to the VIP lane; others are hashed into balanced shards.
-     */
-    protected function getShardQueue(int $tenantId): string
-    {
-        $pilotTenants = config('tsms.rollout.pilot_tenants', []);
-        
-        if (in_array($tenantId, $pilotTenants)) {
-            return 'transaction-intake:s-' . config('tsms.intake.vip_shard', 'vip');
-        }
-
-        $shardCount = config('tsms.intake.shard_count', 8);
-        $shardIndex = crc32((string) $tenantId) % $shardCount;
-
-        return "transaction-intake:s{$shardIndex}";
-    }
 }

@@ -181,9 +181,9 @@ Route::prefix('v1')->middleware(['auth:sanctum', 'capture.terminal.ip', AttachCo
         // Legacy basic ingestion endpoint disabled (use /v1/transactions/official)
         // Route::post('/transactions', [TransactionController::class, 'store']);
         Route::post('/transactions/batch', [TransactionController::class, 'batchStore'])
-            ->middleware('circuit.breaker:transaction-intake');
+            ->middleware(['ingestion.backpressure:processing', 'circuit.breaker:transaction-intake']);
         Route::post('/transactions/official', [TransactionController::class, 'storeOfficial'])
-            ->middleware('circuit.breaker:transaction-intake');
+            ->middleware(['ingestion.backpressure:processing', 'circuit.breaker:transaction-intake']);
         Route::post('/transactions/{transaction_id}/refund', [TransactionController::class, 'refund']);
         Route::post('/transactions/{transaction_id}/void', [TransactionController::class, 'voidFromPOS']);
     });

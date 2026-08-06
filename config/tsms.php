@@ -77,10 +77,17 @@ return [
         'timestamp_mode' => env('TSMS_INTAKE_TIMESTAMP_MODE', 'true_utc'),
         'backpressure' => [
             'enabled' => (bool) env('TSMS_INTAKE_BACKPRESSURE_ENABLED', true),
+            'mode' => env('TSMS_INTAKE_BACKPRESSURE_MODE', 'observe'), // observe|enforce
             'max_queue_depth' => (int) env('TSMS_INTAKE_MAX_QUEUE_DEPTH', 5000),
+            'retry_after_seconds' => (int) env('TSMS_INTAKE_BACKPRESSURE_RETRY_AFTER_SECONDS', 60),
+            'reject_status' => (int) env('TSMS_INTAKE_BACKPRESSURE_REJECT_STATUS', 429),
         ],
         'shard_count' => (int) env('TSMS_INTAKE_SHARD_COUNT', 8),
         'vip_shard' => env('TSMS_INTAKE_VIP_SHARD', 'vip'),
+    ],
+
+    'processing' => [
+        'shard_count' => (int) env('TSMS_PROCESSING_SHARD_COUNT', env('TSMS_INTAKE_SHARD_COUNT', 8)),
     ],
 
     /*

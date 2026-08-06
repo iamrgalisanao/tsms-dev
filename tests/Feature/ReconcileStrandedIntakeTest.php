@@ -3,9 +3,11 @@
 namespace Tests\Feature;
 
 use App\Jobs\ProcessTransactionJob;
+use App\Jobs\ProcessTransactionIntakeJob;
 use App\Models\PosTerminal;
 use App\Models\Tenant;
 use App\Models\TransactionIntake;
+use App\Services\IngestionQueueRouter;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
@@ -14,6 +16,38 @@ use Tests\TestCase;
 class ReconcileStrandedIntakeTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_stranded_accepted_intake_redispatches_to_computed_intake_shard(): void
+    {
+        Queue::fake();
+
+        $tenant = Tenant::factory()->create();
+        $terminal = PosTerminal::factory()->create(['tenant_id' => $tenant->id]);
+        $intake = TransactionIntake::create([
+            'submission_uuid' => (string) Str::uuid(),
+            'tenant_id' => $tenant->id,
+            'terminal_id' => $terminal->id,
+            'payload_checksum' => str_repeat('a', 64),
+            'payload' => [
+                'submission_uuid' => (string) Str::uuid(),
+                'transaction' => ['transaction_id' => (string) Str::uuid()],
+            ],
+            'payload_size_bytes' => 128,
+            'source_ip' => '127.0.0.1',
+            'intake_status' => TransactionIntake::INTAKE_STATUS_ACCEPTED,
+            'processing_status' => TransactionIntake::PROCESSING_STATUS_PROCESSING,
+            'trace_id' => (string) Str::uuid(),
+            'received_at' => now()->subMinutes(3),
+        ]);
+        $queue = app(IngestionQueueRouter::class)->intakeQueueForTenant($tenant->id);
+
+        $this->artisan('tsms:reconcile-intake')->assertSuccessful();
+
+        Queue::assertPushed(
+            ProcessTransactionIntakeJob::class,
+            fn (ProcessTransactionIntakeJob $job) => $job->intakeId === $intake->id && $job->queue === $queue
+        );
+    }
 
     public function test_repair_missing_reingests_processed_intake_without_transaction_row(): void
     {
@@ -91,6 +125,7 @@ class ReconcileStrandedIntakeTest extends TestCase
             'amount' => 0.00,
         ]);
 
-        Queue::assertPushed(ProcessTransactionJob::class);
+        $queue = app(IngestionQueueRouter::class)->processingQueueForTenant($tenant->id);
+        Queue::assertPushed(ProcessTransactionJob::class, fn (ProcessTransactionJob $job) => $job->queue === $queue);
     }
 }

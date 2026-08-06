@@ -5,6 +5,7 @@ namespace App\Console\Commands;
 use App\Jobs\ProcessTransactionIntakeJob;
 use App\Jobs\ProcessTransactionJob;
 use App\Models\TransactionIntake;
+use App\Services\IngestionQueueRouter;
 use App\Services\TransactionIngestService;
 use Illuminate\Console\Command;
 use Illuminate\Database\Eloquent\Builder;
@@ -24,10 +25,10 @@ class ReconcileStrandedIntake extends Command
 
     protected $description = 'Scan for stranded intake records and repair processed intake records missing transaction rows';
 
-    public function handle(TransactionIngestService $ingestService): int
+    public function handle(TransactionIngestService $ingestService, IngestionQueueRouter $queueRouter): int
     {
         if ($this->option('dry-run') || $this->option('repair-missing')) {
-            return $this->reconcileProcessedMissingTransactions($ingestService);
+            return $this->reconcileProcessedMissingTransactions($ingestService, $queueRouter);
         }
 
         $threshold = now()->subMinutes(2);
@@ -47,7 +48,7 @@ class ReconcileStrandedIntake extends Command
         foreach ($stranded as $intake) {
             try {
                 ProcessTransactionIntakeJob::dispatch($intake->id)
-                    ->onQueue('transaction-intake')
+                    ->onQueue($queueRouter->intakeQueueForTenant($intake->tenant_id))
                     ->afterCommit();
 
                 $intake->update([
@@ -66,7 +67,10 @@ class ReconcileStrandedIntake extends Command
         return self::SUCCESS;
     }
 
-    private function reconcileProcessedMissingTransactions(TransactionIngestService $ingestService): int
+    private function reconcileProcessedMissingTransactions(
+        TransactionIngestService $ingestService,
+        IngestionQueueRouter $queueRouter
+    ): int
     {
         $repair = (bool) $this->option('repair-missing');
         $limit = max(1, (int) $this->option('limit'));
@@ -80,7 +84,7 @@ class ReconcileStrandedIntake extends Command
             ->orderBy('id')
             ->limit($limit)
             ->get()
-            ->each(function (TransactionIntake $intake) use ($ingestService, $repair, &$missing, &$repaired, &$skipped, &$failed) {
+            ->each(function (TransactionIntake $intake) use ($ingestService, $queueRouter, $repair, &$missing, &$repaired, &$skipped, &$failed) {
                 $transactionId = data_get($intake->payload, 'transaction.transaction_id');
 
                 if (!$transactionId) {
@@ -107,7 +111,7 @@ class ReconcileStrandedIntake extends Command
                     return;
                 }
 
-                $result = $this->repairProcessedIntake($intake, $transactionId, $ingestService);
+                $result = $this->repairProcessedIntake($intake, $transactionId, $ingestService, $queueRouter);
                 if ($result === 'repaired') {
                     $repaired++;
                 } elseif ($result === 'skipped') {
@@ -184,7 +188,8 @@ class ReconcileStrandedIntake extends Command
     private function repairProcessedIntake(
         TransactionIntake $intake,
         string $transactionId,
-        TransactionIngestService $ingestService
+        TransactionIngestService $ingestService,
+        IngestionQueueRouter $queueRouter
     ): string {
         $transactionPayload = data_get($intake->payload, 'transaction');
 
@@ -211,9 +216,8 @@ class ReconcileStrandedIntake extends Command
 
             if (in_array($status, ['accepted', 'success', 'already_processed'], true) && isset($result['id'])) {
                 if ($status === 'accepted') {
-                    $shard = (int) ($intake->tenant_id % 8);
                     ProcessTransactionJob::dispatch($result['id'])
-                        ->onQueue('transaction-processing:s' . $shard)
+                        ->onQueue($queueRouter->processingQueueForTenant($intake->tenant_id))
                         ->afterCommit();
                 }
 

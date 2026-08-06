@@ -45,6 +45,7 @@ class RouteProviderCharacterizationTest extends TestCase
         $this->assertContains(\Laravel\Sanctum\Http\Middleware\CheckAbilities::class . ':transaction:create', $middleware);
         $this->assertContains(\Illuminate\Routing\Middleware\ThrottleRequests::class . ':pos-ingestion', $middleware);
         $this->assertContains(\App\Http\Middleware\LicenseMiddleware::class, $middleware);
+        $this->assertContains(\App\Http\Middleware\IngestionBackpressureMiddleware::class . ':processing', $middleware);
         $this->assertContains(\App\Http\Middleware\CircuitBreakerMiddleware::class . ':transaction-intake', $middleware);
     }
 
