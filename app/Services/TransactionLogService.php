@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Transaction;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Auth;
 use App\Exports\TransactionLogsExport;
 
 class TransactionLogService
@@ -66,12 +67,39 @@ class TransactionLogService
 
     public function getUpdatesAfter($lastId)
     {
-        return Cache::remember("updates.after.{$lastId}", 30, function() use ($lastId) {
+        $user = Auth::user();
+        $isAdmin = $user && method_exists($user, 'hasRole') && $user->hasRole('admin');
+        $hasTenant = $user && isset($user->tenant_id) && $user->tenant_id !== null;
+
+        if (! $user || (! $isAdmin && ! $hasTenant)) {
+            return collect();
+        }
+
+        return Cache::remember($this->getUpdatesCacheKey($lastId), 30, function() use ($lastId) {
             return Transaction::where('id', '>', $lastId)
                 ->with(['terminal', 'tenant'])
                 ->latest()
                 ->limit(50)
                 ->get();
         });
+    }
+
+    protected function getUpdatesCacheKey($lastId): string
+    {
+        $user = Auth::user();
+
+        if (! $user) {
+            return "updates.after.{$lastId}.guest";
+        }
+
+        if (method_exists($user, 'hasRole') && $user->hasRole('admin')) {
+            return "updates.after.{$lastId}.unscoped";
+        }
+
+        if (isset($user->tenant_id) && $user->tenant_id !== null) {
+            return "updates.after.{$lastId}.tenant.{$user->tenant_id}";
+        }
+
+        return "updates.after.{$lastId}.deny";
     }
 }

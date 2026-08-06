@@ -56,7 +56,12 @@ class TransactionLogsExport
                 $query->where($dateColumn, '<=', $this->dateFilterValue($dateColumn, $dateTo, true));
             })
             ->when($this->filters['tenant_id'] ?? null, function ($query, $tenantId) {
-                $query->where('tenant_id', $tenantId);
+                $query->where(function ($tenantQuery) use ($tenantId) {
+                    $tenantQuery->where('tenant_id', $tenantId)
+                        ->orWhereHas('terminal', function ($terminalQuery) use ($tenantId) {
+                            $terminalQuery->where('tenant_id', $tenantId);
+                        });
+                });
             })
             ->when($this->filters['terminal_id'] ?? null, function ($query, $terminalId) {
                 $query->where('terminal_id', $terminalId);

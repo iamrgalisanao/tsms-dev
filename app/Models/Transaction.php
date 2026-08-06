@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use App\Models\Tenant;
+use App\Traits\BelongsToTenant;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
@@ -94,10 +95,8 @@ class Transaction extends Model
     public const VALIDATION_STATUS_PENDING = 'PENDING';
     public const VALIDATION_STATUS_FAILED  = 'FAILED';
     // Add more as needed
-    use HasFactory;
+    use HasFactory, BelongsToTenant;
 
-    use HasFactory;
-    
     /**
      * The table associated with the model.
      *

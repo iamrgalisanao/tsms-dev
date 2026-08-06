@@ -3,28 +3,9 @@
 namespace App\Services;
 
 use App\Models\Transaction;
-use Illuminate\Support\Facades\Cache;
 
 class TransactionDetailService
 {
-    public function getTransactionDetails($id)
-    {
-        return Cache::remember("transaction.{$id}.details", 300, function() use ($id) {
-            try {
-                return Transaction::with([
-                    'terminal.provider', 
-                    'tenant',
-                    // 'processingHistory', // optional
-                ])->findOrFail($id);
-            } catch (\Throwable $e) {
-                return Transaction::with([
-                    'terminal.provider',
-                    'tenant',
-                ])->findOrFail($id);
-            }
-        });
-    }
-
     public function getProcessingTimeline($transaction)
     {
         try {

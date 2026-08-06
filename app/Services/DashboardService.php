@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Transaction;
 use App\Models\PosTerminal;
 use App\Models\TerminalStatus;
+use App\Models\Tenant;
 use App\Models\TransactionIntake;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -15,7 +16,7 @@ class DashboardService
     /**
      * Build dashboard metrics payload used by /api/dashboard/metrics.
      */
-    public function getAdvancedMetrics(array $filters = []): array
+    public function getAdvancedMetrics(array $filters = [], ?int $tenantId = null): array
     {
         $now = Carbon::now();
         $todayStart = $this->resolveStart($filters['start_date'] ?? null, Carbon::today());
@@ -31,30 +32,30 @@ class DashboardService
         $hasValidationStatus = Schema::hasColumn('transactions', 'validation_status');
         $hasJobStatus = Schema::hasColumn('transactions', 'job_status');
 
-        $currentGrossSales = (float) Transaction::whereBetween($dateColumn, [$todayStart, $todayEnd])
+        $currentGrossSales = (float) $this->transactionQuery($tenantId)->whereBetween($dateColumn, [$todayStart, $todayEnd])
             ->selectRaw("COALESCE(SUM(gross_sales), 0) as value")
             ->value('value');
 
-        $previousGrossSales = (float) Transaction::whereBetween($dateColumn, [$previousStart, $previousEnd])
+        $previousGrossSales = (float) $this->transactionQuery($tenantId)->whereBetween($dateColumn, [$previousStart, $previousEnd])
             ->selectRaw("COALESCE(SUM(gross_sales), 0) as value")
             ->value('value');
 
-        $currentNetSales = (float) Transaction::whereBetween($dateColumn, [$todayStart, $todayEnd])
+        $currentNetSales = (float) $this->transactionQuery($tenantId)->whereBetween($dateColumn, [$todayStart, $todayEnd])
             ->selectRaw("COALESCE(SUM(net_sales), 0) as value")
             ->value('value');
 
-        $previousNetSales = (float) Transaction::whereBetween($dateColumn, [$previousStart, $previousEnd])
+        $previousNetSales = (float) $this->transactionQuery($tenantId)->whereBetween($dateColumn, [$previousStart, $previousEnd])
             ->selectRaw("COALESCE(SUM(net_sales), 0) as value")
             ->value('value');
 
-        $currentTransactions = (int) Transaction::whereBetween($dateColumn, [$todayStart, $todayEnd])->count();
-        $previousTransactions = (int) Transaction::whereBetween($dateColumn, [$previousStart, $previousEnd])->count();
+        $currentTransactions = (int) $this->transactionQuery($tenantId)->whereBetween($dateColumn, [$todayStart, $todayEnd])->count();
+        $previousTransactions = (int) $this->transactionQuery($tenantId)->whereBetween($dateColumn, [$previousStart, $previousEnd])->count();
 
         $currentVoids = 0;
         $previousVoids = 0;
         if (Schema::hasColumn('transactions', 'voided_at')) {
-            $currentVoids = (int) Transaction::whereBetween('voided_at', [$todayStart, $todayEnd])->count();
-            $previousVoids = (int) Transaction::whereBetween('voided_at', [$previousStart, $previousEnd])->count();
+            $currentVoids = (int) $this->transactionQuery($tenantId)->whereBetween('voided_at', [$todayStart, $todayEnd])->count();
+            $previousVoids = (int) $this->transactionQuery($tenantId)->whereBetween('voided_at', [$previousStart, $previousEnd])->count();
         }
 
         $currentVoidRate = $currentTransactions > 0 ? round(($currentVoids / $currentTransactions) * 100, 1) : 0.0;
@@ -62,23 +63,26 @@ class DashboardService
 
         $activeStatusId = TerminalStatus::where('name', 'active')->value('id');
         $activeTerminals = $activeStatusId
-            ? (int) PosTerminal::where('status_id', $activeStatusId)->count()
+            ? (int) $this->terminalQuery($tenantId)->where('status_id', $activeStatusId)->count()
             : 0;
-        $totalTerminals = (int) PosTerminal::count();
+        $totalTerminals = (int) $this->terminalQuery($tenantId)->count();
 
         $activeTenants = 0;
         $totalTenants = 0;
         try {
             $activeTenants = DB::table('transactions')
+                ->when($tenantId !== null, fn ($query) => $query->where('tenant_id', $tenantId))
                 ->whereBetween($dateColumn, [$todayStart, $todayEnd])
                 ->distinct('tenant_id')
                 ->count('tenant_id');
-            $totalTenants = DB::table('tenants')->count();
+            $totalTenants = $tenantId !== null
+                ? (int) Tenant::withoutGlobalScopes()->whereKey($tenantId)->count()
+                : (int) Tenant::withoutGlobalScopes()->count();
         } catch (\Throwable $e) {
             \Log::warning('DashboardService: failed to compute active tenants', ['error' => $e->getMessage()]);
         }
 
-        $reconciledQuery = Transaction::whereBetween($dateColumn, [$todayStart, $todayEnd]);
+        $reconciledQuery = $this->transactionQuery($tenantId)->whereBetween($dateColumn, [$todayStart, $todayEnd]);
         if ($hasValidationStatus) {
             $reconciledQuery->where('validation_status', Transaction::VALIDATION_STATUS_VALID);
         }
@@ -87,7 +91,7 @@ class DashboardService
         }
         $reconciled = (int) $reconciledQuery->count();
 
-        $pendingQuery = Transaction::whereBetween($dateColumn, [$todayStart, $todayEnd]);
+        $pendingQuery = $this->transactionQuery($tenantId)->whereBetween($dateColumn, [$todayStart, $todayEnd]);
         if ($hasValidationStatus || $hasCompletedAt) {
             $pendingQuery->where(function ($q) use ($hasValidationStatus, $hasCompletedAt) {
                 if ($hasValidationStatus) {
@@ -100,7 +104,7 @@ class DashboardService
         }
         $pending = (int) $pendingQuery->count();
 
-        $failedQuery = Transaction::whereBetween($dateColumn, [$todayStart, $todayEnd]);
+        $failedQuery = $this->transactionQuery($tenantId)->whereBetween($dateColumn, [$todayStart, $todayEnd]);
         if ($hasValidationStatus || $hasJobStatus) {
             $failedQuery->where(function ($q) use ($hasValidationStatus, $hasJobStatus) {
                 if ($hasValidationStatus) {
@@ -120,7 +124,8 @@ class DashboardService
         // Missing terminal uploads
         $missingUploads = 0;
         try {
-            $missingUploads = (int) TransactionIntake::where('processing_status', TransactionIntake::PROCESSING_STATUS_PROCESSED)
+            $missingUploads = (int) $this->intakeQuery($tenantId)
+                ->where('processing_status', TransactionIntake::PROCESSING_STATUS_PROCESSED)
                 ->whereBetween('received_at', [$todayStart, $todayEnd])
                 ->whereNotExists(function ($query) {
                     $query->select(DB::raw(1))
@@ -135,7 +140,7 @@ class DashboardService
         // Invalid tax records
         $invalidTaxRecords = 0;
         try {
-            $invalidTaxRecords = (int) Transaction::whereBetween($dateColumn, [$todayStart, $todayEnd])
+            $invalidTaxRecords = (int) $this->transactionQuery($tenantId)->whereBetween($dateColumn, [$todayStart, $todayEnd])
                 ->where(function($query) {
                     $query->where(function($q) {
                         $q->whereIn('validation_status', ['FAILED', 'INVALID', 'ERROR'])
@@ -167,6 +172,7 @@ class DashboardService
         try {
             $topTenantsData = DB::table('transactions as tr')
                 ->join('tenants as t', 't.id', '=', 'tr.tenant_id')
+                ->when($tenantId !== null, fn ($query) => $query->where('tr.tenant_id', $tenantId))
                 ->whereBetween("tr.$dateColumn", [$todayStart, $todayEnd])
                 ->where('tr.validation_status', 'VALID')
                 ->selectRaw("t.trade_name, COALESCE(SUM(tr.gross_sales), 0) as total_revenue")
@@ -193,7 +199,7 @@ class DashboardService
             'discounts' => 0.0,
         ];
         try {
-            $compData = Transaction::whereBetween($dateColumn, [$todayStart, $todayEnd])
+            $compData = $this->transactionQuery($tenantId)->whereBetween($dateColumn, [$todayStart, $todayEnd])
                 ->where('validation_status', 'VALID')
                 ->selectRaw("
                     COALESCE(SUM(net_sales), 0) as net_sales,
@@ -220,7 +226,7 @@ class DashboardService
             'total_sales' => [
                 'current' => round($currentGrossSales, 2),
                 'trend' => $this->percentDelta($currentGrossSales, $previousGrossSales),
-                'sparkline' => $this->buildSparkline($rangeDays, 'sum', 'gross_sales', $todayEnd, $dateColumn),
+                'sparkline' => $this->buildSparkline($rangeDays, 'sum', 'gross_sales', $todayEnd, $dateColumn, $tenantId),
             ],
             'total_net_sales' => [
                 'current' => round($currentNetSales, 2),
@@ -229,7 +235,7 @@ class DashboardService
             'total_transactions' => [
                 'current' => $currentTransactions,
                 'trend' => $this->percentDelta($currentTransactions, $previousTransactions),
-                'sparkline' => $this->buildSparkline($rangeDays, 'count', '*', $todayEnd, $dateColumn),
+                'sparkline' => $this->buildSparkline($rangeDays, 'count', '*', $todayEnd, $dateColumn, $tenantId),
             ],
             'voided_transactions' => [
                 'current' => $currentVoids,
@@ -508,14 +514,14 @@ class DashboardService
         return round((((float) $current - (float) $previous) / (float) $previous) * 100, 1);
     }
 
-    private function buildSparkline(int $days, string $mode, string $column, Carbon $endDate, string $dateColumn): array
+    private function buildSparkline(int $days, string $mode, string $column, Carbon $endDate, string $dateColumn, ?int $tenantId): array
     {
         $column = $mode === 'sum' ? $this->transactionAmountColumn() : $column;
         $values = [];
 
         for ($i = $days - 1; $i >= 0; $i--) {
             $date = $endDate->copy()->subDays($i);
-            $query = Transaction::whereDate($dateColumn, $date->toDateString());
+            $query = $this->transactionQuery($tenantId)->whereDate($dateColumn, $date->toDateString());
 
             if ($mode === 'count') {
                 $values[] = (int) $query->count();
@@ -525,6 +531,24 @@ class DashboardService
         }
 
         return $values;
+    }
+
+    private function transactionQuery(?int $tenantId)
+    {
+        return Transaction::withoutGlobalScopes()
+            ->when($tenantId !== null, fn ($query) => $query->where('tenant_id', $tenantId));
+    }
+
+    private function terminalQuery(?int $tenantId)
+    {
+        return PosTerminal::withoutGlobalScopes()
+            ->when($tenantId !== null, fn ($query) => $query->where('tenant_id', $tenantId));
+    }
+
+    private function intakeQuery(?int $tenantId)
+    {
+        return TransactionIntake::query()
+            ->when($tenantId !== null, fn ($query) => $query->where('tenant_id', $tenantId));
     }
 
     private function transactionDateColumn(): string

@@ -35,15 +35,6 @@ class RouteServiceProvider extends ServiceProvider
             return Limit::perMinute((int) config('webapp_api.rate_limit_per_minute', 120))->by($request->user()?->id ?: $request->ip());
         });
 
-        $this->routes(function () {
-            Route::middleware('api')
-                ->prefix('api')
-                ->group(base_path('routes/api.php'));
-
-            Route::middleware('web')
-                ->group(base_path('routes/web.php'));
-        });
-
     // Register Sanctum abilities middleware aliases using Route facade
     Route::aliasMiddleware('abilities', \Laravel\Sanctum\Http\Middleware\CheckAbilities::class);
     Route::aliasMiddleware('ability', \Laravel\Sanctum\Http\Middleware\CheckForAnyAbility::class);

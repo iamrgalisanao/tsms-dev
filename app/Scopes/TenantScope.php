@@ -34,6 +34,10 @@ class TenantScope implements Scope
             if (Auth::check()) {
                 $user = Auth::user();
 
+                if ($user && method_exists($user, 'hasRole') && $user->hasRole('admin')) {
+                    return;
+                }
+
                 // If the authenticated entity (Terminal or User) has a tenant_id,
                 // restrict all queries to that tenant.
                 if ($user && isset($user->tenant_id) && $user->tenant_id !== null) {

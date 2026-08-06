@@ -62,7 +62,4 @@ return Application::configure(basePath: dirname(__DIR__))
             // Custom rendering logic 
         });
     })
-    ->withProviders([
-        App\Providers\HorizonServiceProvider::class,
-    ])
     ->create();

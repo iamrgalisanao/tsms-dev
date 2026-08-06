@@ -9,9 +9,11 @@ use App\Models\Tenant;
 use App\Models\User;
 use App\Exports\TransactionLogsExport;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Laravel\Sanctum\Sanctum;
+use App\Services\TransactionLogService;
 
 class TransactionLogTest extends TestCase
 {
@@ -106,6 +108,149 @@ class TransactionLogTest extends TestCase
         $response->assertJsonFragment([
             'receipt_no' => 'REC-JSON-123456',
         ]);
+    }
+
+    public function test_tenant_bound_users_cannot_read_other_tenants_transaction_logs()
+    {
+        \Spatie\Permission\Models\Role::firstOrCreate([
+            'name' => 'finance',
+            'guard_name' => 'web',
+        ]);
+
+        $otherTenant = Tenant::factory()->create(['trade_name' => 'Other Tenant']);
+        $otherTerminal = PosTerminal::factory()->create([
+            'tenant_id' => $otherTenant->id,
+            'status_id' => 1,
+        ]);
+
+        $ownTransaction = Transaction::factory()->create([
+            'tenant_id' => $this->tenant->id,
+            'terminal_id' => $this->terminal->id,
+            'transaction_id' => 'TXN-OWN-TENANT',
+        ]);
+        $otherTransaction = Transaction::factory()->create([
+            'tenant_id' => $otherTenant->id,
+            'terminal_id' => $otherTerminal->id,
+            'transaction_id' => 'TXN-OTHER-TENANT',
+        ]);
+
+        $financeUser = User::factory()->create(['tenant_id' => $this->tenant->id]);
+        $financeUser->assignRole('finance');
+
+        Sanctum::actingAs($financeUser);
+
+        $response = $this->getJson('/api/transactions/logs?tenant_id=' . $otherTenant->id);
+
+        $response->assertOk();
+        $transactionIds = collect($response->json('data'))->pluck('transaction_id');
+        $this->assertTrue($transactionIds->contains($ownTransaction->transaction_id));
+        $this->assertFalse($transactionIds->contains($otherTransaction->transaction_id));
+
+        $this->getJson('/api/transactions/logs/' . $otherTransaction->id)
+            ->assertNotFound();
+    }
+
+    public function test_transaction_log_updates_cache_is_namespaced_by_tenant(): void
+    {
+        \Spatie\Permission\Models\Role::firstOrCreate([
+            'name' => 'finance',
+            'guard_name' => 'web',
+        ]);
+
+        $tenantA = $this->tenant;
+        $tenantB = Tenant::factory()->create(['trade_name' => 'Tenant B']);
+        $terminalB = PosTerminal::factory()->create([
+            'tenant_id' => $tenantB->id,
+            'status_id' => 1,
+        ]);
+
+        $tenantATransaction = Transaction::factory()->create([
+            'tenant_id' => $tenantA->id,
+            'terminal_id' => $this->terminal->id,
+            'transaction_id' => 'TXN-UPDATES-TENANT-A',
+        ]);
+        $tenantBTransaction = Transaction::factory()->create([
+            'tenant_id' => $tenantB->id,
+            'terminal_id' => $terminalB->id,
+            'transaction_id' => 'TXN-UPDATES-TENANT-B',
+        ]);
+
+        $userA = User::factory()->create(['tenant_id' => $tenantA->id]);
+        $userA->assignRole('finance');
+        $userB = User::factory()->create(['tenant_id' => $tenantB->id]);
+        $userB->assignRole('finance');
+
+        Cache::flush();
+        $this->withTenantScopeEnabledForTest(function () use ($userA, $userB, $tenantATransaction, $tenantBTransaction) {
+            $service = app(TransactionLogService::class);
+
+            $this->actingAs($userA);
+            $tenantAFirst = $service->getUpdatesAfter(0)->pluck('transaction_id');
+            $this->assertTrue($tenantAFirst->contains($tenantATransaction->transaction_id));
+            $this->assertFalse($tenantAFirst->contains($tenantBTransaction->transaction_id));
+
+            $this->actingAs($userB);
+            $tenantBSecond = $service->getUpdatesAfter(0)->pluck('transaction_id');
+            $this->assertTrue($tenantBSecond->contains($tenantBTransaction->transaction_id));
+            $this->assertFalse($tenantBSecond->contains($tenantATransaction->transaction_id));
+        });
+
+        Cache::flush();
+        $this->withTenantScopeEnabledForTest(function () use ($userA, $userB, $tenantATransaction, $tenantBTransaction) {
+            $service = app(TransactionLogService::class);
+
+            $this->actingAs($userB);
+            $tenantBFirst = $service->getUpdatesAfter(0)->pluck('transaction_id');
+            $this->assertTrue($tenantBFirst->contains($tenantBTransaction->transaction_id));
+            $this->assertFalse($tenantBFirst->contains($tenantATransaction->transaction_id));
+
+            $this->actingAs($userA);
+            $tenantASecond = $service->getUpdatesAfter(0)->pluck('transaction_id');
+            $this->assertTrue($tenantASecond->contains($tenantATransaction->transaction_id));
+            $this->assertFalse($tenantASecond->contains($tenantBTransaction->transaction_id));
+        });
+    }
+
+    public function test_transaction_log_updates_fail_closed_for_null_or_tenantless_users(): void
+    {
+        \Spatie\Permission\Models\Role::firstOrCreate([
+            'name' => 'finance',
+            'guard_name' => 'web',
+        ]);
+
+        Transaction::factory()->create([
+            'tenant_id' => $this->tenant->id,
+            'terminal_id' => $this->terminal->id,
+        ]);
+
+        Cache::flush();
+        $service = app(TransactionLogService::class);
+
+        $this->assertNull(auth()->user());
+        $this->assertCount(0, $service->getUpdatesAfter(0));
+        $this->assertFalse(Cache::has('updates.after.0.guest'));
+
+        $tenantlessUser = User::factory()->create(['tenant_id' => null]);
+        $tenantlessUser->assignRole('finance');
+
+        $this->actingAs($tenantlessUser);
+        $this->assertCount(0, $service->getUpdatesAfter(0));
+        $this->assertFalse(Cache::has('updates.after.0.deny'));
+    }
+
+    private function withTenantScopeEnabledForTest(callable $callback): void
+    {
+        $app = app();
+        $property = new \ReflectionProperty($app, 'isRunningInConsole');
+        $property->setAccessible(true);
+        $original = $property->getValue($app);
+        $property->setValue($app, false);
+
+        try {
+            $callback();
+        } finally {
+            $property->setValue($app, $original);
+        }
     }
 
     /** @test */
