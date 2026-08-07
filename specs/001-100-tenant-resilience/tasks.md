@@ -110,10 +110,10 @@
 
 ### Implementation
 
-- [ ] T032 [US3] Replace or extend local circuit breaker service with Redis-backed state in `app/Services/CircuitBreaker.php`
-- [ ] T033 [US3] Record breaker success/failure around ingestion dependencies in `app/Http/Middleware/CircuitBreakerMiddleware.php` and ingestion services/jobs; no ingestion code path currently records outcomes against this breaker
-- [ ] T034 [US3] Update `IngestionBackpressureService` to return fail-closed/degraded decisions in enforce mode in `app/Services/IngestionBackpressureService.php`
-- [ ] T034a [US3] Define and implement the official ingestion backpressure aggregation policy for intake and processing queues in `rejectWhenProcessingBackpressureEnforced()` or its Phase 1 replacement: after T034, when backpressure is enabled and in enforce mode, reject if either queue is overloaded, return degraded if either required health check cannot be evaluated, exclude disabled-mode decisions from degraded aggregation, and include both `backpressure.intake` and `backpressure.processing` sub-decisions in response/log context
+- [x] T032 [US3] Replace or extend local circuit breaker service with Redis-backed state in `app/Services/CircuitBreaker.php`
+- [x] T033 [US3] Record breaker success/failure around ingestion dependencies in `app/Http/Middleware/CircuitBreakerMiddleware.php` and ingestion services/jobs; no ingestion code path currently records outcomes against this breaker
+- [x] T034 [US3] Update `IngestionBackpressureService` to return fail-closed/degraded decisions in enforce mode in `app/Services/IngestionBackpressureService.php`
+- [x] T034a [US3] Define and implement the official ingestion backpressure aggregation policy for intake and processing queues in `rejectWhenProcessingBackpressureEnforced()` or its Phase 1 replacement: after T034, when backpressure is enabled and in enforce mode, reject if either queue is overloaded, return degraded if either required health check cannot be evaluated, exclude disabled-mode decisions from degraded aggregation, and include both `backpressure.intake` and `backpressure.processing` sub-decisions in response/log context
 - [ ] T035 [US3] Expose one clamped retry value for both JSON body and `Retry-After` header in backpressure response code
 - [ ] T036 [US3] Add breaker/backpressure runbook in `docs/`
 

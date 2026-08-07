@@ -24,11 +24,23 @@ class IngestionBackpressureMiddleware
             ? $this->backpressureService->checkIntake($tenantId)
             : $this->backpressureService->checkProcessing($tenantId);
 
+        $request->attributes->set('backpressure.' . $backpressure['queue_type'], $backpressure);
+
         if (!$backpressure['enforced']) {
             return $next($request);
         }
 
-        $payload = $this->backpressureService->rejectionPayload($backpressure);
+        $correlationId = $request->attributes->get('correlation_id') ?: $request->header('X-Request-Id');
+
+        if ($backpressure['degraded']) {
+            $payload = $this->backpressureService->degradedPayload($backpressure, $correlationId);
+
+            return response()
+                ->json($payload, $this->backpressureService->degradedStatus())
+                ->header('Retry-After', (string) $payload['retry_after_seconds']);
+        }
+
+        $payload = $this->backpressureService->rejectionPayload($backpressure, $correlationId);
 
         return response()
             ->json($payload, $this->backpressureService->rejectionStatus())

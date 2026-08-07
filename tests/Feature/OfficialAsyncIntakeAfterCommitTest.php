@@ -37,7 +37,8 @@ class OfficialAsyncIntakeAfterCommitTest extends TestCase
             'status_id' => $status->id,
         ]);
         $queue = app(IngestionQueueRouter::class)->intakeQueueForTenant($tenant->id);
-        $this->mockRedisDepth($queue, 0);
+        $processingQueue = app(IngestionQueueRouter::class)->processingQueueForTenant($tenant->id);
+        $this->mockRedisDepths([$queue => 0, $processingQueue => 0]);
 
         $payload = $this->officialPayload($tenant->id, $terminal->id, (string) Str::uuid(), $terminal->serial_number);
         $request = Request::create(
@@ -77,12 +78,17 @@ class OfficialAsyncIntakeAfterCommitTest extends TestCase
         ]);
     }
 
-    private function mockRedisDepth(string $queue, int $depth): void
+    private function mockRedisDepths(array $depths): void
     {
+        // handleOfficialIntake() is invoked directly below (bypassing
+        // IngestionBackpressureMiddleware), so checkAggregate() evaluates
+        // both the intake and processing queues fresh — both need mocking.
         $redis = Mockery::mock();
-        $redis->shouldReceive('llen')->once()->with('queues:' . $queue)->andReturn($depth);
+        foreach ($depths as $queue => $depth) {
+            $redis->shouldReceive('llen')->once()->with('queues:' . $queue)->andReturn($depth);
+        }
 
-        Redis::shouldReceive('connection')->once()->with('default')->andReturn($redis);
+        Redis::shouldReceive('connection')->times(count($depths))->with('default')->andReturn($redis);
     }
 
     private function officialPayload(int $tenantId, int $terminalId, string $submissionUuid, string $hardwareId): array

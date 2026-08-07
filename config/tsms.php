@@ -96,6 +96,15 @@ return [
         'shard_count' => (int) env('TSMS_PROCESSING_SHARD_COUNT', env('TSMS_INTAKE_SHARD_COUNT', 8)),
     ],
 
+    'circuit_breaker' => [
+        'enabled' => (bool) env('TSMS_CIRCUIT_BREAKER_ENABLED', true),
+        'redis_connection' => env('TSMS_CIRCUIT_BREAKER_REDIS_CONNECTION', 'default'),
+        'key_prefix' => env('TSMS_CIRCUIT_BREAKER_KEY_PREFIX', 'tsms:circuit-breaker:'),
+        'failure_threshold' => (int) env('TSMS_CIRCUIT_BREAKER_FAILURE_THRESHOLD', 5),
+        'reset_timeout_seconds' => (int) env('TSMS_CIRCUIT_BREAKER_RESET_TIMEOUT_SECONDS', 60),
+        'state_ttl_seconds' => (int) env('TSMS_CIRCUIT_BREAKER_STATE_TTL_SECONDS', 3600),
+    ],
+
     /*
     |--------------------------------------------------------------------------
     | Terminals: Idle Monitor

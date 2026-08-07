@@ -24,6 +24,21 @@ class OfficialAsyncIntakeIdempotencyTest extends TestCase
 {
     use RefreshDatabase;
 
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        // This route also carries 'circuit.breaker:transaction-intake'
+        // (pre-existing, unchanged middleware). Since the circuit breaker
+        // is now Redis-backed, any request completing with a non-5xx
+        // status transitively touches Redis via
+        // CircuitBreakerMiddleware's isAvailable()/recordSuccess() —
+        // orthogonal to this file's exact Redis-call-count assertions.
+        // Disabled here to keep those counts scoped to
+        // IngestionBackpressureService alone.
+        config()->set('tsms.circuit_breaker.enabled', false);
+    }
+
     public function test_different_terminal_submission_uuid_conflict_uses_unified_idempotency_shape(): void
     {
         Queue::fake();
@@ -120,7 +135,11 @@ class OfficialAsyncIntakeIdempotencyTest extends TestCase
         [$tenant, $terminal] = $this->seedTenantAndTerminal();
         $payload = $this->officialPayload($tenant->id, $terminal->id, (string) Str::uuid(), $terminal->serial_number);
         $queue = app(IngestionQueueRouter::class)->intakeQueueForTenant($tenant->id);
-        $this->mockQueueDepth($queue, 0);
+        $processingQueue = app(IngestionQueueRouter::class)->processingQueueForTenant($tenant->id);
+        // handleOfficialIntake() is invoked directly below (bypassing
+        // IngestionBackpressureMiddleware), so checkAggregate() evaluates
+        // both queues fresh — both need mocking, not just intake.
+        $this->mockQueueDepths([$queue => 0, $processingQueue => 0]);
 
         $request = Request::create(
             '/api/v1/transactions/official',
@@ -206,10 +225,17 @@ class OfficialAsyncIntakeIdempotencyTest extends TestCase
 
     private function mockQueueDepth(string $queue, int $depth): void
     {
-        $redis = Mockery::mock();
-        $redis->shouldReceive('llen')->once()->with('queues:' . $queue)->andReturn($depth);
+        $this->mockQueueDepths([$queue => $depth]);
+    }
 
-        Redis::shouldReceive('connection')->once()->with('default')->andReturn($redis);
+    private function mockQueueDepths(array $depths): void
+    {
+        $redis = Mockery::mock();
+        foreach ($depths as $queue => $depth) {
+            $redis->shouldReceive('llen')->once()->with('queues:' . $queue)->andReturn($depth);
+        }
+
+        Redis::shouldReceive('connection')->times(count($depths))->with('default')->andReturn($redis);
     }
 
     private function officialPayload(int $tenantId, int $terminalId, string $submissionUuid, string $hardwareId): array

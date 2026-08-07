@@ -12,6 +12,24 @@ Use this guide to validate the remediation plan in development/staging before a 
 - Backpressure thresholds and modes are configurable per environment.
 - Dashboards or log queries exist for required operational signals.
 
+## Environment Variables
+
+Backpressure and circuit-breaker behavior are controlled entirely through env vars (`config/tsms.php`):
+
+- `TSMS_INTAKE_BACKPRESSURE_ENABLED` (default `true`)
+- `TSMS_INTAKE_BACKPRESSURE_MODE` (default `observe`; `observe` or `enforce`)
+- `TSMS_INTAKE_MAX_QUEUE_DEPTH` (default `5000`)
+- `TSMS_INTAKE_BACKPRESSURE_RETRY_AFTER_SECONDS` (default `60`)
+- `TSMS_INTAKE_BACKPRESSURE_REJECT_STATUS` (default `429`)
+- `TSMS_CIRCUIT_BREAKER_ENABLED` (default `true`)
+- `TSMS_CIRCUIT_BREAKER_REDIS_CONNECTION` (default `default`)
+- `TSMS_CIRCUIT_BREAKER_KEY_PREFIX` (default `tsms:circuit-breaker:`)
+- `TSMS_CIRCUIT_BREAKER_FAILURE_THRESHOLD` (default `5`)
+- `TSMS_CIRCUIT_BREAKER_RESET_TIMEOUT_SECONDS` (default `60`)
+- `TSMS_CIRCUIT_BREAKER_STATE_TTL_SECONDS` (default `3600`)
+
+**Test environment note**: `.env.testing` sets `TSMS_CIRCUIT_BREAKER_ENABLED=false`, overriding the app default of `true`. The breaker's state now lives in Redis (`App\Services\CircuitBreaker`), not per-test in-memory/filesystem state, so without this override a failure recorded by one test would persist in the same Redis key across other tests in the same suite run and could open the breaker for unrelated tests. Do not flip this back to `true` in `.env.testing` without also giving the breaker key isolation (e.g. a per-test/per-run key prefix or an explicit reset in test setup/teardown) — otherwise this regression comes back.
+
 ## Local/CI Validation
 
 1. Run focused tests for existing foundation:

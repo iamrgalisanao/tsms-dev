@@ -21,6 +21,21 @@ class OfficialAsyncIntakeTest extends TestCase
 {
     use RefreshDatabase;
 
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        // This route also carries 'circuit.breaker:transaction-intake'
+        // (pre-existing, unchanged middleware). Since the circuit breaker
+        // is now Redis-backed, any request completing with a non-5xx
+        // status transitively touches Redis via
+        // CircuitBreakerMiddleware's isAvailable()/recordSuccess() —
+        // orthogonal to this file's exact Redis-call-count assertions for
+        // backpressure. Disabled here to keep those counts scoped to
+        // IngestionBackpressureService alone.
+        config()->set('tsms.circuit_breaker.enabled', false);
+    }
+
     public function test_official_endpoint_accepts_durably_and_dispatches_intake_after_commit(): void
     {
         Queue::fake();

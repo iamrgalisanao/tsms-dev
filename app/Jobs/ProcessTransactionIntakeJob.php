@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Models\TransactionIntake;
+use App\Services\CircuitBreaker;
 use App\Services\IngestionQueueRouter;
 use App\Services\TransactionIngestService;
 use App\Support\Metrics;
@@ -12,6 +13,7 @@ use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Str;
 use Illuminate\Queue\Middleware\WithoutOverlapping;
 
 class ProcessTransactionIntakeJob implements ShouldQueue
@@ -187,16 +189,38 @@ class ProcessTransactionIntakeJob implements ShouldQueue
                 Metrics::incr('intake.failed_count');
             }
         } catch (\Throwable $e) {
+            $reference = (string) Str::uuid();
+
             Log::error('ProcessTransactionIntakeJob: Exception', [
                 'intake_id' => $this->intakeId,
+                'reference' => $reference,
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
             ]);
 
+            // Only a genuine infrastructure-level failure should trip the
+            // shared ingestion circuit breaker — a data/constraint-level
+            // exception is a validation gap, not a downstream outage, and
+            // must not falsely open the breaker for every tenant. Reuses
+            // TransactionIngestService's classification so the two call
+            // sites can't drift.
+            if (TransactionIngestService::isInfrastructureFailure($e)) {
+                (new CircuitBreaker(CircuitBreaker::INGESTION_SERVICE_KEY))->recordFailure();
+            } else {
+                Log::error('ProcessTransactionIntakeJob: data/constraint-level exception reached the DB despite passing validation — check for a validation gap', [
+                    'intake_id' => $this->intakeId,
+                    'reference' => $reference,
+                ]);
+            }
+
             $intake->update([
                 'processing_status' => TransactionIntake::PROCESSING_STATUS_FAILED_RETRYABLE,
                 'last_error_code' => 'EXCEPTION',
-                'last_error_message' => $e->getMessage(),
+                // Never leak raw exception text into a terminal-facing field
+                // (last_error_message ultimately reaches
+                // SubmissionStatusController::show()). Full text is already
+                // logged above under the same reference.
+                'last_error_message' => 'An internal error occurred while processing this transaction. Reference: ' . $reference,
             ]);
 
             // Rethrow to trigger queue retry if within limits

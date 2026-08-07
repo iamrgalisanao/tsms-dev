@@ -39,6 +39,15 @@ class TransactionIntakeService
 
     public function handleOfficialIntake(Request $request): array
     {
+        // Nothing has attempted the protected downstream (the durable
+        // persist / DB write) yet. Every early-return branch below
+        // (batch-count guard, structural validation, hardware mismatch,
+        // idempotency short-circuit, checksum failure, backpressure
+        // rejection/degradation) leaves this false, so CircuitBreakerMiddleware
+        // correctly excludes them from breaker recording. Flipped to true
+        // immediately before the real persist attempt below.
+        $request->attributes->set('circuit_breaker.downstream_attempted', false);
+
         $payload = $request->all();
         $sourceIp = $request->ip();
         $traceId = $request->header('X-Correlation-ID') ?? Str::uuid()->toString();
@@ -167,19 +176,33 @@ class TransactionIntakeService
 
         Metrics::incr('intake.received_count');
 
-        // 4. Proactive Backpressure Check (Shard-Aware Fail-Fast)
-        $backpressure = $this->backpressureService->checkQueue($shardQueue, 'intake');
+        // 4. Proactive Backpressure Check (Shard-Aware Fail-Fast, intake + processing aggregate)
+        $reusedProcessing = $request->attributes->get('backpressure.processing');
+        $backpressure = $this->backpressureService->checkAggregate($tenantId, $reusedProcessing);
+
         if ($backpressure['enforced']) {
+            if ($backpressure['degraded']) {
+                return [
+                    'success' => false,
+                    'http_status' => $this->backpressureService->degradedStatus(),
+                ] + $this->backpressureService->degradedPayload($backpressure, $traceId);
+            }
+
             return [
                 'success' => false,
                 'http_status' => $this->backpressureService->rejectionStatus(),
-            ] + $this->backpressureService->rejectionPayload($backpressure);
+            ] + $this->backpressureService->rejectionPayload($backpressure, $traceId);
         }
 
         $this->observeTransactionBoundary('after_backpressure_check');
 
         // 5. Persist raw intake
         try {
+            // About to genuinely attempt the durable persist — from here on,
+            // an outcome (success or failure) is meaningful for the circuit
+            // breaker.
+            $request->attributes->set('circuit_breaker.downstream_attempted', true);
+
             $intake = $this->persistQueuedIntake($payload, $terminal, $request, $sourceIp, $traceId, $receivedAt, $shardQueue);
 
             $pilotTenants = config('tsms.rollout.pilot_tenants', []);
@@ -252,19 +275,19 @@ class TransactionIntakeService
             'transaction_count' => 'required|integer|min:1',
             'payload_checksum' => 'required|string|min:64|max:64|regex:/^[0-9a-f]{64}$/i',
             $transactionPrefix . '.transaction_id' => ['required', 'string', new UuidV4()],
-            $transactionPrefix . '.hardware_id' => 'required|string',
-            $transactionPrefix . '.transaction_timestamp' => 'required|string',
+            $transactionPrefix . '.hardware_id' => 'required|string|max:255',
+            $transactionPrefix . '.transaction_timestamp' => ['required', 'string', 'regex:/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z?$/'],
             $transactionPrefix . '.gross_sales' => 'required|numeric|min:0',
             $transactionPrefix . '.net_sales' => 'required|numeric',
-            $transactionPrefix . '.promo_status' => 'required|string',
-            $transactionPrefix . '.customer_code' => 'required|string',
+            $transactionPrefix . '.promo_status' => 'required|string|max:255',
+            $transactionPrefix . '.customer_code' => 'required|string|max:255',
             $transactionPrefix . '.receipt_no' => ['required', new ReceiptNumber()],
             $transactionPrefix . '.payload_checksum' => 'required|string|min:64|max:64',
             $transactionPrefix . '.adjustments' => 'required|array|min:7',
-            $transactionPrefix . '.adjustments.*.adjustment_type' => 'required|string',
+            $transactionPrefix . '.adjustments.*.adjustment_type' => 'required|string|max:50',
             $transactionPrefix . '.adjustments.*.amount' => 'required|numeric',
             $transactionPrefix . '.taxes' => 'required|array|min:4',
-            $transactionPrefix . '.taxes.*.tax_type' => 'required|string',
+            $transactionPrefix . '.taxes.*.tax_type' => 'required|string|max:20',
             $transactionPrefix . '.taxes.*.amount' => 'required|numeric',
         ];
 

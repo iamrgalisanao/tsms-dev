@@ -39,7 +39,8 @@ class OfficialIngestionTransactionBoundaryTest extends TestCase
             'status_id' => $status->id,
         ]);
         $queue = app(IngestionQueueRouter::class)->intakeQueueForTenant($tenant->id);
-        $this->mockRedisDepth($queue, 5, 0);
+        $processingQueue = app(IngestionQueueRouter::class)->processingQueueForTenant($tenant->id);
+        $this->mockRedisDepth($queue, $processingQueue, 5, 0);
 
         $observations = [];
         $durableDurationsMs = [];
@@ -139,7 +140,8 @@ class OfficialIngestionTransactionBoundaryTest extends TestCase
             'status_id' => $status->id,
         ]);
         $queue = app(IngestionQueueRouter::class)->intakeQueueForTenant($tenant->id);
-        $this->mockRedisDepth($queue, 1, 0);
+        $processingQueue = app(IngestionQueueRouter::class)->processingQueueForTenant($tenant->id);
+        $this->mockRedisDepth($queue, $processingQueue, 1, 0);
 
         $statusBeforeDispatch = null;
         $service = new class(
@@ -242,12 +244,17 @@ class OfficialIngestionTransactionBoundaryTest extends TestCase
         Queue::assertPushed(ProcessTransactionJob::class, 2);
     }
 
-    private function mockRedisDepth(string $queue, int $times, int $depth): void
+    private function mockRedisDepth(string $intakeQueue, string $processingQueue, int $times, int $depth): void
     {
+        // handleOfficialIntake() is invoked directly below (bypassing
+        // IngestionBackpressureMiddleware), so checkAggregate() evaluates
+        // both the intake queue and the processing queue fresh on every
+        // call — both need mocking, not just intake.
         $redis = Mockery::mock();
-        $redis->shouldReceive('llen')->times($times)->with('queues:' . $queue)->andReturn($depth);
+        $redis->shouldReceive('llen')->times($times)->with('queues:' . $intakeQueue)->andReturn($depth);
+        $redis->shouldReceive('llen')->times($times)->with('queues:' . $processingQueue)->andReturn($depth);
 
-        Redis::shouldReceive('connection')->times($times)->with('default')->andReturn($redis);
+        Redis::shouldReceive('connection')->times($times * 2)->with('default')->andReturn($redis);
     }
 
     private function requestFor(array $payload, PosTerminal $terminal): Request

@@ -24,7 +24,7 @@
 
 ## Official Ingestion Backpressure Rejection
 
-**Status**: `429 Too Many Requests` or configured rejection status.
+**Status**: `429 Too Many Requests` or configured rejection status (`tsms.intake.backpressure.reject_status`).
 
 **Headers**:
 
@@ -38,31 +38,76 @@
 - `retry_after_seconds`
 - `retry_after`
 - `correlation_id`
-- `backpressure.queue`
-- `backpressure.queue_type`
+- `backpressure.*`: either the **single-queue shape** or the **aggregate shape** below, depending on which check produced the rejection. Source: `IngestionBackpressureService::rejectionPayload()`.
+
+**Single-queue shape** (`checkQueue()`/`checkIntake()`/`checkProcessing()` called directly, e.g. legacy single-queue call sites):
+
+- `backpressure.queue` — resolved queue name
+- `backpressure.queue_type` — `intake` or `processing`
 - `backpressure.queue_depth`
 - `backpressure.threshold`
 - `backpressure.mode`
-- `backpressure.reason`
+- `backpressure.reason` — `{queue_type}_queue_depth_exceeded` (e.g. `intake_queue_depth_exceeded`)
+
+**Aggregate shape** (`checkAggregate()`, which is what the official ingestion path actually calls — it evaluates intake and processing queue pressure together in one decision). This is a **nested** shape, not the flat one above:
+
+- `backpressure.intake.queue`
+- `backpressure.intake.queue_type`
+- `backpressure.intake.queue_depth`
+- `backpressure.intake.threshold`
+- `backpressure.intake.mode`
+- `backpressure.intake.overloaded`
+- `backpressure.intake.degraded`
+- `backpressure.processing.queue`
+- `backpressure.processing.queue_type`
+- `backpressure.processing.queue_depth`
+- `backpressure.processing.threshold`
+- `backpressure.processing.mode`
+- `backpressure.processing.overloaded`
+- `backpressure.processing.degraded`
+- `backpressure.reason` — one of `intake_queue_depth_exceeded`, `processing_queue_depth_exceeded`, or `intake_and_processing_queue_depth_exceeded`, computed from whichever sub-decision(s) are both `enforced` and `overloaded`. Source: `aggregateBackpressureContext()`/`aggregateReason()`.
 
 ## Official Ingestion Dependency Degraded
 
-**Status**: `503 Service Unavailable`
+**Status**: `503 Service Unavailable` (`IngestionBackpressureService::degradedStatus()` pins this to `503`; it does not use the configurable `reject_status`).
 
 **When**:
 
-- Backpressure health cannot be evaluated in enforce mode.
-- Redis/circuit breaker dependency is unavailable and no bounded safe fallback exists.
+- Backpressure health cannot be evaluated (Redis error) while `tsms.intake.backpressure.mode` is `enforce`. In `observe` mode the same failure does not degrade the request — see `checkQueue()`'s catch branch.
 
-**Response fields**:
+**Response fields** (`IngestionBackpressureService::degradedPayload()`):
 
 - `success`: false
 - `error_code`: `INGESTION_DEGRADED`
-- `message`
+- `message`: `"Ingestion health could not be evaluated. Retry later."`
 - `retry_after_seconds`
 - `retry_after`
 - `correlation_id`
-- `reason`
+- `reason` — a flat string (not nested under `backpressure`), computed by `degradedReason()`:
+  - Single-queue check: `{queue_type}_health_check_failed` (e.g. `intake_health_check_failed`, `processing_health_check_failed`)
+  - Aggregate check (`checkAggregate()`, the path the official ingestion endpoint uses): `intake_health_check_failed`, `processing_health_check_failed`, or `intake_and_processing_health_check_failed`, using the same `degraded`-flag combination logic as the backpressure `reason` above.
+
+Note: unlike the backpressure rejection body, the degraded body does **not** nest a `backpressure` object with the per-queue `intake`/`processing` breakdown — only the single `reason` string is included.
+
+## Circuit Breaker Open (`503`)
+
+**Status**: `503 Service Unavailable`, returned directly by `App\Http\Middleware\CircuitBreakerMiddleware` when `CircuitBreaker::isAvailable()` returns `false` for the route's service key (e.g. `transaction-intake`).
+
+**Response fields** — this is a **separate, inconsistent** response shape from the two above. It was not updated to match the `success`/`error_code`/`correlation_id` contract used elsewhere in this document:
+
+```json
+{
+    "error": "Service unavailable",
+    "service": "transaction-intake",
+    "message": "Circuit is open due to multiple failures"
+}
+```
+
+- `error` (not `error_code`, not `success: false`)
+- `service` — the circuit breaker's service key
+- `message`
+
+**Known inconsistency**: this response has no `success`, `error_code`, `correlation_id`, `retry_after_seconds`, or `retry_after` fields, so a client that only knows how to parse `INGESTION_BACKPRESSURE`/`INGESTION_DEGRADED` bodies cannot uniformly detect or handle a circuit-breaker rejection. This is documented as-is rather than normalized in the docs; if it needs to match the other contracts, that is a follow-up code change to `CircuitBreakerMiddleware`, not a docs fix.
 
 ## Payload Too Large
 
