@@ -17,7 +17,7 @@
 - [ ] T003 [P] Confirm rollback/fallback branch reference in deployment notes or runbook under `docs/`
 - [x] T003a [P] Add fallback-branch integrity guard script that records the expected `origin/remove-webapp-forwarding` commit SHA in `specs/001-100-tenant-resilience/rollback-baseline.txt`, fails if the current remote fallback tip differs from that SHA unless the baseline is intentionally updated, and verifies the recorded baseline is an ancestor of the release branch, in `scripts/verify-rollback-branch.sh`
 - [x] T003b [P] Register the fallback-branch integrity guard as a blocking pull-request job in `.github/workflows/ci.yml` with `fetch-depth: 0` and document usage plus baseline-update procedure in `specs/001-100-tenant-resilience/quickstart.md`
-- [ ] T004 [P] Add focused test plan references for current backpressure and routing foundation in `specs/001-100-tenant-resilience/quickstart.md`
+- [x] T004 [P] Add focused test plan references for current backpressure and routing foundation in `specs/001-100-tenant-resilience/quickstart.md`
 
 ---
 
@@ -28,9 +28,9 @@
 - [ ] T005 Add config entries for ingestion payload limit, batch limit, enforce/degraded mode, fairness limits, and circuit breaker Redis backend in `config/tsms.php`
 - [ ] T006 [P] Add/adjust queue router architecture test to prevent hardcoded `% 8` dispatch paths in `tests/Unit/`
 - [ ] T007 [P] Add shared ingestion response/rejection contract tests in `tests/Feature/`
-- [ ] T008 Add migration for durable ingestion request state in `database/migrations/`
-- [ ] T009 Adapt the existing `TransactionIntake` model in `app/Models/TransactionIntake.php` and its `transaction_intake` schema migrations; do not create a parallel ingestion request model/table unless a later architecture decision explicitly replaces `transaction_intake`
-- [ ] T009a [P] Correct `specs/001-100-tenant-resilience/data-model.md` so the current persisted Ingestion Request entity matches the real `transaction_intake` schema (`payload_checksum`, `trace_id`, split `intake_status`/`processing_status`, `attempt_count`, `duplicate_of_intake_id`, `source_ip`); move router-computed `queue`/`shard` to `contracts/operational-signals.md`, keep `source`/`accepted_at` only as future-schema candidates, and flag the `X-Request-Id` versus `X-Correlation-ID` header divergence as an open design question
+- [x] T008 Add migration for durable ingestion request state in `database/migrations/`
+- [x] T009 Adapt the existing `TransactionIntake` model in `app/Models/TransactionIntake.php` and its `transaction_intake` schema migrations; do not create a parallel ingestion request model/table unless a later architecture decision explicitly replaces `transaction_intake`
+- [x] T009a [P] Correct `specs/001-100-tenant-resilience/data-model.md` so the current persisted Ingestion Request entity matches the real `transaction_intake` schema (`payload_checksum`, `trace_id`, split `intake_status`/`processing_status`, `attempt_count`, `duplicate_of_intake_id`, `source_ip`); move router-computed `queue`/`shard` to `contracts/operational-signals.md`, keep `source`/`accepted_at` only as future-schema candidates, and flag the `X-Request-Id` versus `X-Correlation-ID` header divergence as an open design question
 - [ ] T010 Add shared DTO/result object for backpressure decisions in `app/Services/`
 - [ ] T011 Add correlation ID propagation for ingestion requests in `app/Http/Middleware/` or existing request handling path
 
@@ -80,16 +80,16 @@
 
 ### Tests
 
-- [ ] T021 [P] [US2] Add payload byte limit tests in `tests/Feature/IngestionPayloadLimitTest.php`
-- [ ] T022 [P] [US2] Add batch transaction count limit tests in `tests/Feature/IngestionBatchLimitTest.php`
-- [ ] T023 [P] [US2] Add boundary tests for exactly max payload and max batch count in `tests/Feature/IngestionLimitBoundaryTest.php`
+- [x] T021 [P] [US2] Add payload byte limit tests in `tests/Feature/IngestionPayloadLimitTest.php`
+- [x] T022 [P] [US2] Add batch transaction count limit tests in `tests/Feature/IngestionBatchLimitTest.php`
+- [x] T023 [P] [US2] Add boundary tests for exactly max payload and max batch count in `tests/Feature/IngestionLimitBoundaryTest.php`
 
 ### Implementation
 
-- [ ] T024 [US2] Add early payload-size middleware in `app/Http/Middleware/`
-- [ ] T025 [US2] Register payload-size middleware on ingestion routes in `routes/api.php` or route middleware configuration
-- [ ] T026 [US2] Add batch count validation before per-item loops in `app/Http/Controllers/API/V1/TransactionController.php` or async intake validator
-- [ ] T027 [US2] Add stable error codes for `PAYLOAD_TOO_LARGE` and `BATCH_LIMIT_EXCEEDED` in ingestion response helpers
+- [x] T024 [US2] Add early payload-size middleware in `app/Http/Middleware/`
+- [x] T025 [US2] Register payload-size middleware on ingestion routes in `routes/api.php` or route middleware configuration
+- [x] T026 [US2] Add batch count validation before per-item loops in `app/Http/Controllers/API/V1/TransactionController.php` or async intake validator
+- [x] T027 [US2] Add stable error codes for `PAYLOAD_TOO_LARGE` and `BATCH_LIMIT_EXCEEDED` in ingestion response helpers
 
 **Checkpoint**: A single oversized request cannot monopolize request/DB resources.
 

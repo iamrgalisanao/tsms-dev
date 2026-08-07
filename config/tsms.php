@@ -82,6 +82,12 @@ return [
             'retry_after_seconds' => (int) env('TSMS_INTAKE_BACKPRESSURE_RETRY_AFTER_SECONDS', 60),
             'reject_status' => (int) env('TSMS_INTAKE_BACKPRESSURE_REJECT_STATUS', 429),
         ],
+        // Cheap, pre-validation guards applied before expensive structural
+        // validation, checksum verification, or DB writes. See
+        // IngestionPayloadSizeMiddleware (payload bytes) and
+        // TransactionIntakeService/TransactionController (batch count).
+        'max_payload_bytes' => (int) env('TSMS_INTAKE_MAX_PAYLOAD_BYTES', 2097152), // 2 MB
+        'max_batch_count' => (int) env('TSMS_INTAKE_MAX_BATCH_COUNT', 500),
         'shard_count' => (int) env('TSMS_INTAKE_SHARD_COUNT', 8),
         'vip_shard' => env('TSMS_INTAKE_VIP_SHARD', 'vip'),
     ],

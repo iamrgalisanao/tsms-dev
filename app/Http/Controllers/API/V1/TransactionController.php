@@ -317,14 +317,45 @@ class TransactionController extends Controller
 
     public function batchStore(Request $request)
     {
+        // Cheap batch-count guard, ahead of DB::beginTransaction(), ahead of
+        // $request->validate() (which runs a DB-backed `exists` check on
+        // terminal_id), and ahead of the per-item loop below. Runs first so an
+        // oversized batch cannot pay for any DB work at all. There is nothing
+        // to roll back here since no transaction has been opened yet.
+        //
+        // Defensive: count() on a non-array throws TypeError on PHP 8+, so a
+        // missing or malformed `transactions` field must never reach count()
+        // here. If it's missing/malformed, skip this guard and let
+        // $request->validate() below report the correct structural error
+        // ('transactions' => 'required|array|min:1').
+        $rawTransactions = $request->input('transactions');
+        $transactionCount = is_array($rawTransactions) ? count($rawTransactions) : 0;
+
+        Log::info('Batch transaction API request received', [
+            'payload_size' => strlen(json_encode($request->all())),
+            'batch_id' => $request->batch_id ?? 'missing',
+            'transaction_count' => $transactionCount,
+        ]);
+
+        $maxBatchCount = (int) config('tsms.intake.max_batch_count');
+        if ($maxBatchCount > 0 && is_array($rawTransactions) && $transactionCount > $maxBatchCount) {
+            Log::warning('batchStore: Batch transaction count exceeds maximum allowed', [
+                'batch_id' => $request->batch_id ?? 'missing',
+                'transaction_count' => $transactionCount,
+                'max_batch_count' => $maxBatchCount,
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'error_code' => 'BATCH_LIMIT_EXCEEDED',
+                'message' => 'Batch transaction count exceeds the maximum allowed.',
+                'max_batch_count' => $maxBatchCount,
+                'correlation_id' => $request->attributes->get('correlation_id') ?: $request->header('X-Request-Id'),
+            ], 422);
+        }
+
         try {
             DB::beginTransaction();
-
-            Log::info('Batch transaction API request received', [
-                'payload_size' => strlen(json_encode($request->all())),
-                'batch_id' => $request->batch_id ?? 'missing',
-                'transaction_count' => count($request->transactions ?? [])
-            ]);
 
             // Validate batch request structure
             $request->validate([

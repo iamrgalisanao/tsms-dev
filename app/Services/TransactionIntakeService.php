@@ -48,6 +48,25 @@ class TransactionIntakeService
         $shardQueue = $this->queueRouter->intakeQueueForTenant($tenantId);
         $hardwareMismatch = null;
 
+        // 0. Cheap batch-count guard, before structural validation builds
+        // per-item wildcard rules and before any DB work. Deliberately runs
+        // ahead of Stage 1 so an oversized batch cannot pay for validating
+        // every item first.
+        $maxBatchCount = (int) config('tsms.intake.max_batch_count');
+        if ($maxBatchCount > 0) {
+            $submittedForLimitCheck = $this->submittedTransactions($payload)[0];
+            if (count($submittedForLimitCheck) > $maxBatchCount) {
+                return [
+                    'success' => false,
+                    'http_status' => 422,
+                    'message' => 'Batch transaction count exceeds the maximum allowed.',
+                    'error_code' => 'BATCH_LIMIT_EXCEEDED',
+                    'max_batch_count' => $maxBatchCount,
+                    'correlation_id' => $request->attributes->get('correlation_id') ?: $request->header('X-Request-Id'),
+                ];
+            }
+        }
+
         // 1. Stage 1: Structural & Format Validation (Gatekeeping)
         $validator = Validator::make($payload, $this->officialStructuralRules($payload));
 
