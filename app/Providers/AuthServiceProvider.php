@@ -71,15 +71,6 @@ class AuthServiceProvider extends ServiceProvider
             return in_array($user->role ?? null, ['admin', 'manager'], true);
         });
 
-        // Horizon dashboard access gate
-        Gate::define('viewHorizon', function ($user) {
-            // Support either role column or spatie/permission roles
-            if (method_exists($user, 'hasRole')) {
-                return $user->hasRole('admin') || $user->hasRole('ops');
-            }
-            return in_array($user->role ?? null, ['admin','ops']);
-        });
-
         // Legacy bearer token auth (DISABLED by default).
         // We have standardized on Laravel Sanctum for terminal authentication.
         // If absolutely necessary for a controlled migration window, you can enable

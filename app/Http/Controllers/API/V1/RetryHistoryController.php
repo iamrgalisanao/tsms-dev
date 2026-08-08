@@ -10,6 +10,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Http\Request;
 use App\Jobs\ProcessTransactionJob;
+use App\Services\IngestionQueueRouter;
 
 class RetryHistoryController extends Controller
 {
@@ -121,7 +122,7 @@ class RetryHistoryController extends Controller
         ]);
     }
 
-    public function retrigger($id)
+    public function retrigger($id, IngestionQueueRouter $queueRouter)
     {
         try {
             DB::beginTransaction();
@@ -158,10 +159,9 @@ class RetryHistoryController extends Controller
 
             // Queue for processing on tenant-sharded queue
             $tenantId = $transaction->tenant_id ?? optional($transaction->terminal)->tenant_id ?? 0;
-            $shard = $tenantId % 8;
             ProcessTransactionJob::dispatch($transaction->id)
                 ->afterCommit()
-                ->onQueue('transaction-processing:s' . $shard);
+                ->onQueue($queueRouter->processingQueueForTenant($tenantId));
 
             DB::commit();
 
@@ -187,7 +187,7 @@ class RetryHistoryController extends Controller
         }
     }
 
-    public function retry($id)
+    public function retry($id, IngestionQueueRouter $queueRouter)
     {
         try {
             $transaction = Transaction::findOrFail($id);
@@ -203,10 +203,9 @@ class RetryHistoryController extends Controller
 
             // Dispatch new job on tenant-sharded queue
             $tenantId = $transaction->tenant_id ?? optional($transaction->terminal)->tenant_id ?? 0;
-            $shard = $tenantId % 8;
             ProcessTransactionJob::dispatch($transaction->id)
                 ->afterCommit()
-                ->onQueue('transaction-processing:s' . $shard);
+                ->onQueue($queueRouter->processingQueueForTenant($tenantId));
 
             return response()->json([
                 'status' => 'success',

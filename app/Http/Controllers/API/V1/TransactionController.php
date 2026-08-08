@@ -15,7 +15,9 @@ use Illuminate\Support\Carbon;
 use App\Jobs\ProcessTransactionJob;
 use App\Jobs\CheckTransactionFailureThresholdsJob;
 use App\Services\PayloadChecksumService; // Add this import
+use App\Services\IngestionQueueRouter;
 use App\Services\NotificationService;
+use App\Services\TransactionIntakeService;
 use App\Http\Requests\TSMSTransactionRequest;
 use App\Rules\ReceiptNumber;
 use Laravel\Sanctum\PersonalAccessToken;
@@ -69,10 +71,13 @@ class TransactionController extends Controller
      */
     private NotificationService $notificationService;
 
-    public function __construct(NotificationService $notificationService)
-    {
+    public function __construct(
+        NotificationService $notificationService,
+        private readonly IngestionQueueRouter $queueRouter,
+        private readonly TransactionIntakeService $transactionIntakeService
+    ) {
         // Extend NotificationService to handle terminal callback notifications
-        $this->notificationService = app(NotificationService::class);
+        $this->notificationService = $notificationService;
     }
 
     /**
@@ -312,14 +317,45 @@ class TransactionController extends Controller
 
     public function batchStore(Request $request)
     {
+        // Cheap batch-count guard, ahead of DB::beginTransaction(), ahead of
+        // $request->validate() (which runs a DB-backed `exists` check on
+        // terminal_id), and ahead of the per-item loop below. Runs first so an
+        // oversized batch cannot pay for any DB work at all. There is nothing
+        // to roll back here since no transaction has been opened yet.
+        //
+        // Defensive: count() on a non-array throws TypeError on PHP 8+, so a
+        // missing or malformed `transactions` field must never reach count()
+        // here. If it's missing/malformed, skip this guard and let
+        // $request->validate() below report the correct structural error
+        // ('transactions' => 'required|array|min:1').
+        $rawTransactions = $request->input('transactions');
+        $transactionCount = is_array($rawTransactions) ? count($rawTransactions) : 0;
+
+        Log::info('Batch transaction API request received', [
+            'payload_size' => strlen(json_encode($request->all())),
+            'batch_id' => $request->batch_id ?? 'missing',
+            'transaction_count' => $transactionCount,
+        ]);
+
+        $maxBatchCount = (int) config('tsms.intake.max_batch_count');
+        if ($maxBatchCount > 0 && is_array($rawTransactions) && $transactionCount > $maxBatchCount) {
+            Log::warning('batchStore: Batch transaction count exceeds maximum allowed', [
+                'batch_id' => $request->batch_id ?? 'missing',
+                'transaction_count' => $transactionCount,
+                'max_batch_count' => $maxBatchCount,
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'error_code' => 'BATCH_LIMIT_EXCEEDED',
+                'message' => 'Batch transaction count exceeds the maximum allowed.',
+                'max_batch_count' => $maxBatchCount,
+                'correlation_id' => $request->attributes->get('correlation_id') ?: $request->header('X-Request-Id'),
+            ], 422);
+        }
+
         try {
             DB::beginTransaction();
-
-            Log::info('Batch transaction API request received', [
-                'payload_size' => strlen(json_encode($request->all())),
-                'batch_id' => $request->batch_id ?? 'missing',
-                'transaction_count' => count($request->transactions ?? [])
-            ]);
 
             // Validate batch request structure
             $request->validate([
@@ -415,7 +451,9 @@ class TransactionController extends Controller
                     $transaction = Transaction::create($txPayload);
 
                     // Queue the transaction for processing
-                    ProcessTransactionJob::dispatch($transaction->id)->afterCommit();
+                    ProcessTransactionJob::dispatch($transaction->id)
+                        ->onQueue($this->queueRouter->processingQueueForTenant($terminal->tenant_id))
+                        ->afterCommit();
 
                     // Log system activity
                     \App\Models\SystemLog::create([
@@ -799,7 +837,22 @@ class TransactionController extends Controller
      * @param Request $request
      * @return \Illuminate\Http\JsonResponse
      */
-    public function storeOfficial(TSMSTransactionRequest $request)
+    public function storeOfficial(Request $request)
+    {
+        $result = $this->transactionIntakeService->handleOfficialIntake($request);
+        $httpStatus = $result['http_status'] ?? 202;
+        unset($result['http_status']);
+
+        $response = response()->json($result, $httpStatus);
+
+        if (isset($result['retry_after_seconds'])) {
+            $response->header('Retry-After', (string) $result['retry_after_seconds']);
+        }
+
+        return $response;
+    }
+
+    public function storeOfficialLegacy(TSMSTransactionRequest $request)
     {
         try {
             DB::beginTransaction();
@@ -1466,7 +1519,9 @@ class TransactionController extends Controller
 
                         // Queue the transaction for processing (deferred until the outermost
                         // DB transaction actually commits, regardless of this savepoint)
-                        ProcessTransactionJob::dispatch($transaction->id)->afterCommit();
+                        ProcessTransactionJob::dispatch($transaction->id)
+                            ->onQueue($this->queueRouter->processingQueueForTenant($terminal->tenant_id))
+                            ->afterCommit();
 
                         // Add system log entry
                         \App\Models\SystemLog::create([

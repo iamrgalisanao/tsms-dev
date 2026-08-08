@@ -56,6 +56,21 @@ class TransactionResultNotification extends Notification implements ShouldQueue
     }
 
     /**
+     * Route this notification's channels to their dedicated queues:
+     * the lightweight `database` record goes to `notifications`, while the
+     * blocking outbound HTTP `webhook` callback (up to ~93s per call with
+     * retries) is isolated on the dedicated `webhook-callbacks` queue so it
+     * cannot starve the shared notifications worker pool.
+     */
+    public function viaQueues(): array
+    {
+        return [
+            'database' => 'notifications',
+            'webhook' => 'webhook-callbacks',
+        ];
+    }
+
+    /**
      * Send webhook notification to POS terminal
      */
     public function toWebhook(object $notifiable): array

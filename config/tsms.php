@@ -77,10 +77,60 @@ return [
         'timestamp_mode' => env('TSMS_INTAKE_TIMESTAMP_MODE', 'true_utc'),
         'backpressure' => [
             'enabled' => (bool) env('TSMS_INTAKE_BACKPRESSURE_ENABLED', true),
+            'mode' => env('TSMS_INTAKE_BACKPRESSURE_MODE', 'observe'), // observe|enforce
             'max_queue_depth' => (int) env('TSMS_INTAKE_MAX_QUEUE_DEPTH', 5000),
+            'retry_after_seconds' => (int) env('TSMS_INTAKE_BACKPRESSURE_RETRY_AFTER_SECONDS', 60),
+            'reject_status' => (int) env('TSMS_INTAKE_BACKPRESSURE_REJECT_STATUS', 429),
         ],
+        // Cheap, pre-validation guards applied before expensive structural
+        // validation, checksum verification, or DB writes. See
+        // IngestionPayloadSizeMiddleware (payload bytes) and
+        // TransactionIntakeService/TransactionController (batch count).
+        'max_payload_bytes' => (int) env('TSMS_INTAKE_MAX_PAYLOAD_BYTES', 2097152), // 2 MB
+        'max_batch_count' => (int) env('TSMS_INTAKE_MAX_BATCH_COUNT', 500),
         'shard_count' => (int) env('TSMS_INTAKE_SHARD_COUNT', 8),
         'vip_shard' => env('TSMS_INTAKE_VIP_SHARD', 'vip'),
+    ],
+
+    'processing' => [
+        'shard_count' => (int) env('TSMS_PROCESSING_SHARD_COUNT', env('TSMS_INTAKE_SHARD_COUNT', 8)),
+    ],
+
+    'circuit_breaker' => [
+        'enabled' => (bool) env('TSMS_CIRCUIT_BREAKER_ENABLED', true),
+        'redis_connection' => env('TSMS_CIRCUIT_BREAKER_REDIS_CONNECTION', 'default'),
+        'key_prefix' => env('TSMS_CIRCUIT_BREAKER_KEY_PREFIX', 'tsms:circuit-breaker:'),
+        'failure_threshold' => (int) env('TSMS_CIRCUIT_BREAKER_FAILURE_THRESHOLD', 5),
+        'reset_timeout_seconds' => (int) env('TSMS_CIRCUIT_BREAKER_RESET_TIMEOUT_SECONDS', 60),
+        'state_ttl_seconds' => (int) env('TSMS_CIRCUIT_BREAKER_STATE_TTL_SECONDS', 3600),
+    ],
+
+    // Fairness (T044): Redis fixed-window INCR+EXPIRE admission limits, per
+    // scope (global/tenant/terminal), consumed by App\Services\IngestionFairnessService.
+    // A single limit set applies uniformly to every tenant/terminal —
+    // per-tenant tier overrides are explicitly deferred/out of scope for
+    // this feature (see specs/001-100-tenant-resilience/plan.md's
+    // "Fairness Architecture" subsection, point 7). Defaults below are
+    // sized for the feature's ~100-tenant target at window_seconds=60:
+    // tenant=200/min (~3.3 req/s per tenant), terminal=50/min (a single
+    // terminal is not expected to sustain much more than ~1 req/s), and
+    // global=10000/min as a generous system-wide ceiling that is well
+    // above 100 tenants each bursting to their own limit simultaneously
+    // (100 * 200 = 20000 theoretical max, so the global limit is intended
+    // to smooth bursts rather than be a hard sum-of-tenants cap).
+    'fairness' => [
+        'redis_connection' => env('TSMS_FAIRNESS_REDIS_CONNECTION', 'default'),
+        'key_prefix' => env('TSMS_FAIRNESS_KEY_PREFIX', 'fairness:'),
+        'window_seconds' => (int) env('TSMS_FAIRNESS_WINDOW_SECONDS', 60),
+        'global' => [
+            'limit' => (int) env('TSMS_FAIRNESS_GLOBAL_LIMIT', 10000),
+        ],
+        'tenant' => [
+            'limit' => (int) env('TSMS_FAIRNESS_TENANT_LIMIT', 200),
+        ],
+        'terminal' => [
+            'limit' => (int) env('TSMS_FAIRNESS_TERMINAL_LIMIT', 50),
+        ],
     ],
 
     /*

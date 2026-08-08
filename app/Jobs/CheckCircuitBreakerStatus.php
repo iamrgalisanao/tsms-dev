@@ -19,6 +19,19 @@ class CheckCircuitBreakerStatus implements ShouldQueue, Silenced
     public $timeout = 60;
     public $maxExceptions = 3;
 
+    public function __construct()
+    {
+        // NOTE: cannot use `public $queue = 'low';` here — Queueable already
+        // declares an untyped `public $queue;` (default null), and PHP 8.4
+        // treats a class re-declaring a trait property with a different
+        // default value as an incompatible composition (hard fatal error at
+        // class-load time), not merely a silent override as in older PHP
+        // versions. `onQueue()` in the constructor is an equally explicit,
+        // approved assignment mechanism (see T046a in
+        // specs/001-100-tenant-resilience/tasks.md) that avoids this clash.
+        $this->onQueue('low');
+    }
+
     public function handle(): void
     {
         $updated = CircuitBreaker::query()

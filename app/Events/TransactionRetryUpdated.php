@@ -24,6 +24,11 @@ class TransactionRetryUpdated implements ShouldBroadcast
         return new Channel('transaction-updates');
     }
 
+    public function broadcastQueue(): string
+    {
+        return 'notifications';
+    }
+
     public function broadcastWith()
     {
         return [

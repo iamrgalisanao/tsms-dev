@@ -11,6 +11,7 @@ use Carbon\Carbon;
 use Illuminate\Http\Request;
 use App\Models\TransactionJob;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Cache;
 use App\Services\NotificationService;
 
 class DashboardController extends Controller
@@ -132,11 +133,36 @@ class DashboardController extends Controller
     public function apiMetrics(Request $request)
     {
         try {
-            $dateKey = Carbon::today()->toDateString();
-            $cacheKey = "dashboard.api_metrics.{$dateKey}";
+            $scope = $this->resolveDashboardTenantScope($request);
 
-            $metrics = \Illuminate\Support\Facades\Cache::remember($cacheKey, 300, function () use ($request) {
-                return $this->dashboardService->getAdvancedMetrics($request->all());
+            if ($scope['denied']) {
+                return response()->json(['message' => 'Tenant context is required.'], 403);
+            }
+
+            $timezone = $this->normalizeDashboardTimezone($request->input('timezone'));
+            $startDate = $this->normalizeDashboardDate($request->input('start_date') ?? $request->input('date_from'), $timezone, false);
+            $endDate = $this->normalizeDashboardDate($request->input('end_date') ?? $request->input('date_to'), $timezone, true);
+
+            if ($endDate->lt($startDate)) {
+                [$startDate, $endDate] = [$endDate->copy()->startOfDay(), $startDate->copy()->endOfDay()];
+            }
+
+            $filters = array_merge($request->all(), [
+                'start_date' => $startDate->toDateString(),
+                'end_date' => $endDate->toDateString(),
+                'timezone' => $timezone,
+            ]);
+
+            $cacheKey = sprintf(
+                'dashboard.api_metrics.%s.%s.%s.%s',
+                $scope['cache'],
+                $startDate->toDateString(),
+                $endDate->toDateString(),
+                $timezone
+            );
+
+            $metrics = Cache::remember($cacheKey, 300, function () use ($filters, $scope) {
+                return $this->dashboardService->getAdvancedMetrics($filters, $scope['tenant_id']);
             });
 
             return response()->json($metrics);
@@ -157,6 +183,70 @@ class DashboardController extends Controller
                 'generated_at' => now()->toIso8601String(),
             ], 200);
         }
+    }
+
+    private function resolveDashboardTenantScope(Request $request): array
+    {
+        $user = $request->user();
+
+        if (! $user) {
+            return ['denied' => true, 'tenant_id' => null, 'cache' => 'deny'];
+        }
+
+        if ($this->dashboardUserHasRole($user, 'admin')) {
+            $tenantId = $request->input('tenant_id');
+
+            if ($tenantId === null || $tenantId === '' || $tenantId === 'all') {
+                return ['denied' => false, 'tenant_id' => null, 'cache' => 'admin.all'];
+            }
+
+            $tenantId = (int) $tenantId;
+
+            return ['denied' => false, 'tenant_id' => $tenantId, 'cache' => "tenant.{$tenantId}"];
+        }
+
+        if ($user->tenant_id === null) {
+            return ['denied' => true, 'tenant_id' => null, 'cache' => 'deny'];
+        }
+
+        $tenantId = (int) $user->tenant_id;
+
+        return ['denied' => false, 'tenant_id' => $tenantId, 'cache' => "tenant.{$tenantId}"];
+    }
+
+    private function dashboardUserHasRole($user, string $role): bool
+    {
+        try {
+            if (method_exists($user, 'hasRole')) {
+                return $user->hasRole($role);
+            }
+        } catch (\Throwable $e) {
+            return false;
+        }
+
+        return ($user->role ?? null) === $role;
+    }
+
+    private function normalizeDashboardTimezone(?string $timezone): string
+    {
+        if (! $timezone) {
+            return config('app.timezone', 'UTC');
+        }
+
+        return in_array($timezone, timezone_identifiers_list(), true)
+            ? $timezone
+            : config('app.timezone', 'UTC');
+    }
+
+    private function normalizeDashboardDate(?string $date, string $timezone, bool $endOfDay): Carbon
+    {
+        try {
+            $value = $date ? Carbon::parse($date, $timezone) : Carbon::now($timezone);
+        } catch (\Throwable $e) {
+            $value = Carbon::now($timezone);
+        }
+
+        return $endOfDay ? $value->endOfDay() : $value->startOfDay();
     }
 
     // API: GET /api/dashboard/charts

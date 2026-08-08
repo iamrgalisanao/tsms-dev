@@ -25,6 +25,26 @@ class Metrics
         }
     }
 
+    public static function decr(string $name, int $by = 1): void
+    {
+        $key = self::key($name);
+        try {
+            Cache::decrement($key, $by);
+        } catch (\Throwable $e) {
+            // Swallow – metrics must never break business flow
+        }
+    }
+
+    public static function timing(string $name, float|int $value): void
+    {
+        self::setGauge($name, $value);
+    }
+
+    public static function bucket(string $name, float|int $value): void
+    {
+        self::setGauge($name.'.last_bucket', $value);
+    }
+
     public static function get(string $name, $default = 0)
     {
         return Cache::get(self::key($name), $default);
@@ -37,5 +57,14 @@ class Metrics
             $out[$n] = self::get($n, 0);
         }
         return $out;
+    }
+
+    private static function setGauge(string $name, float|int $value): void
+    {
+        try {
+            Cache::put(self::key($name), $value);
+        } catch (\Throwable $e) {
+            // Swallow – metrics must never break business flow
+        }
     }
 }

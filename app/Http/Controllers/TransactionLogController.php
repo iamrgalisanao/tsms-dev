@@ -57,6 +57,7 @@ class TransactionLogController extends Controller
         if ($request->filled('transaction_id')) {
             $filters['transaction_id'] = trim($request->transaction_id);
         }
+        $filters = $this->scopeFiltersForUser($request, $filters);
 
         $hasDateWindow = $request->filled('date_from') || $request->filled('date_to');
         $needsExactPaginationTotal = $request->filled('transaction_id');
@@ -91,7 +92,8 @@ class TransactionLogController extends Controller
             'voided_at',
             'void_reason',
             'created_at',
-            'completed_at'
+            'completed_at',
+            'tenant_id'
             ])
             ->with(['terminal:id,serial_number,tenant_id,machine_number', 'terminal.tenant:id,trade_name'])
             ->when(isset($filters['transaction_id']), function ($query) use ($filters) {
@@ -165,7 +167,7 @@ class TransactionLogController extends Controller
     public function show(Request $request, $id)
     {
         try {
-            $transaction = Transaction::with([
+            $transactionQuery = Transaction::with([
                 'terminal.tenant',
                 'terminal.provider',
                 'tenant',
@@ -174,7 +176,10 @@ class TransactionLogController extends Controller
                 'jobs',
                 'validations',
                 'submission'
-            ])->findOrFail($id);
+            ]);
+            $this->scopeTransactionQueryForUser($request, $transactionQuery);
+
+            $transaction = $transactionQuery->findOrFail($id);
 
             if ($request->wantsJson()) {
                 return response()->json([
@@ -253,6 +258,7 @@ class TransactionLogController extends Controller
     public function export(Request $request)
     {
         Gate::authorize('export-transaction-logs');
+        $filters = $this->scopeFiltersForUser($request, $request->all());
 
         $validator = $this->dateWindowValidator($request, 'Export');
         if ($validator->fails()) {
@@ -270,7 +276,7 @@ class TransactionLogController extends Controller
         }
         
         $filename = 'transaction-logs-' . now()->format('Y-m-d') . '.xlsx';
-        return (new TransactionLogsExport($request->all()))->download($filename);
+        return (new TransactionLogsExport($filters))->download($filename);
     }
 
     public function getUpdates(Request $request)
@@ -462,6 +468,7 @@ class TransactionLogController extends Controller
             'amount_min',
             'amount_max'
         ]);
+        $filters = $this->scopeFiltersForUser($request, $filters);
 
         $basis = in_array($request->input('date_basis'), ['created', 'completed', 'transaction'], true)
             ? $request->input('date_basis')
@@ -623,6 +630,7 @@ class TransactionLogController extends Controller
             'tenant_id',
             'terminal_id',
         ]);
+        $filters = $this->scopeFiltersForUser($request, $filters);
 
         $basis = in_array($request->input('date_basis'), ['created', 'completed', 'transaction'], true)
             ? $request->input('date_basis')
@@ -1110,6 +1118,42 @@ class TransactionLogController extends Controller
     private function transactionSummaryPayloadAdjustmentKey($date, $tenantId, $terminalId): string
     {
         return implode('|', [(string) $date, (string) $tenantId, (string) $terminalId]);
+    }
+
+    private function scopeFiltersForUser(Request $request, array $filters): array
+    {
+        $user = $request->user();
+
+        if ($user && method_exists($user, 'hasRole') && $user->hasRole('admin')) {
+            return $filters;
+        }
+
+        $filters['tenant_id'] = isset($user->tenant_id) && $user->tenant_id !== null
+            ? $user->tenant_id
+            : -1;
+
+        return $filters;
+    }
+
+    private function scopeTransactionQueryForUser(Request $request, $query): void
+    {
+        $user = $request->user();
+
+        if ($user && method_exists($user, 'hasRole') && $user->hasRole('admin')) {
+            return;
+        }
+
+        if (! isset($user->tenant_id) || $user->tenant_id === null) {
+            $query->whereRaw('1 = 0');
+            return;
+        }
+
+        $query->where(function ($subQuery) use ($user) {
+            $subQuery->where('tenant_id', $user->tenant_id)
+                ->orWhereHas('terminal', function ($terminalQuery) use ($user) {
+                    $terminalQuery->where('tenant_id', $user->tenant_id);
+                });
+        });
     }
 
     private function resolvePerPage(Request $request): int

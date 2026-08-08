@@ -10,10 +10,121 @@ use App\Models\ProviderStatistics;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Validation\ValidationException;
 use Carbon\Carbon;
 
 class TerminalAuthController extends Controller
 {
+    public function authenticate(Request $request): JsonResponse
+    {
+        try {
+            $validated = $request->validate([
+                'serial_number' => ['required', 'string', 'max:255'],
+                'api_key' => ['required', 'string'],
+            ]);
+
+            $terminal = PosTerminal::where('serial_number', $validated['serial_number'])
+                ->where('api_key', $validated['api_key'])
+                ->with('tenant:id,trade_name')
+                ->first();
+
+            if (! $terminal || ! $terminal->isActiveAndValid()) {
+                return response()->json([
+                    'error' => 'Authentication failed',
+                    'message' => 'Invalid serial number or API key, or terminal is inactive',
+                ], 401);
+            }
+
+            $accessToken = $terminal->generateAccessToken();
+            $terminal->forceFill(['last_seen_at' => now()])->save();
+
+            return response()->json([
+                'success' => true,
+                'data' => [
+                    'serial_number' => $terminal->serial_number,
+                    'tenant_id' => $terminal->tenant_id,
+                    'machine_number' => $terminal->machine_number,
+                    'access_token' => $accessToken,
+                    'token_type' => 'Bearer',
+                    'expires_in' => config('sanctum.expiration') ? (int) config('sanctum.expiration') * 60 : null,
+                    'abilities' => $terminal->getTokenAbilities(),
+                    'terminal_config' => $this->terminalConfigPayload($terminal),
+                ],
+            ]);
+        } catch (ValidationException $e) {
+            return response()->json([
+                'error' => 'Validation failed',
+                'message' => 'Invalid request data',
+                'errors' => $e->errors(),
+            ], 422);
+        } catch (\Throwable $e) {
+            Log::error('Terminal authentication failed', ['error' => $e->getMessage()]);
+
+            return response()->json([
+                'error' => 'Authentication error',
+                'message' => 'An unexpected error occurred during authentication',
+            ], 500);
+        }
+    }
+
+    public function refresh(Request $request): JsonResponse
+    {
+        $terminal = $request->user();
+
+        if (! $terminal instanceof PosTerminal) {
+            return response()->json([
+                'error' => 'Unauthenticated',
+                'message' => 'No valid terminal token provided',
+            ], 401);
+        }
+
+        if (! $terminal->isActiveAndValid()) {
+            return response()->json([
+                'error' => 'Terminal inactive',
+                'message' => 'Terminal is no longer active or has expired',
+            ], 403);
+        }
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'access_token' => $terminal->generateAccessToken(),
+                'token_type' => 'Bearer',
+                'expires_in' => config('sanctum.expiration') ? (int) config('sanctum.expiration') * 60 : null,
+            ],
+        ]);
+    }
+
+    public function me(Request $request): JsonResponse
+    {
+        $terminal = $request->user();
+
+        if (! $terminal instanceof PosTerminal) {
+            return response()->json([
+                'error' => 'Unauthenticated',
+                'message' => 'No valid terminal token provided',
+            ], 401);
+        }
+
+        $terminal->loadMissing('tenant:id,trade_name', 'status:id,name');
+
+        return response()->json([
+            'success' => true,
+            'data' => [
+                'serial_number' => $terminal->serial_number,
+                'machine_number' => $terminal->machine_number,
+                'tenant_id' => $terminal->tenant_id,
+                'tenant_name' => $terminal->tenant->trade_name ?? null,
+                'status' => $terminal->status->name ?? null,
+                'is_active' => (bool) $terminal->is_active,
+                'last_seen_at' => optional($terminal->last_seen_at)->toISOString(),
+                'expires_at' => optional($terminal->expires_at)->toISOString(),
+                'registered_at' => optional($terminal->registered_at)->toISOString(),
+                'terminal_config' => $this->terminalConfigPayload($terminal),
+            ],
+        ]);
+    }
+
     /**
      * POS heartbeat endpoint
      *
@@ -176,5 +287,14 @@ class TerminalAuthController extends Controller
                 'error' => $e->getMessage(),
             ]);
         }
+    }
+
+    private function terminalConfigPayload(PosTerminal $terminal): array
+    {
+        return [
+            'supports_guest_count' => (bool) $terminal->supports_guest_count,
+            'notifications_enabled' => (bool) $terminal->notifications_enabled,
+            'heartbeat_threshold' => (int) ($terminal->heartbeat_threshold ?? 300),
+        ];
     }
 }

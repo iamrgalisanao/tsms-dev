@@ -31,6 +31,20 @@ jobs:
             exit 1
           fi
 
+  rollback-branch-guard:
+    name: Rollback branch guard
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+
+    steps:
+      - name: Checkout full history
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Verify rollback branch baseline
+        run: scripts/verify-rollback-branch.sh
+
   laravel:
     name: Laravel tests
     runs-on: ubuntu-latest

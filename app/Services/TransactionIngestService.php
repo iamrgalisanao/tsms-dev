@@ -7,8 +7,9 @@ namespace App\Services;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
 
-final readonly class TransactionIngestService
+class TransactionIngestService
 {
     public function __construct(
         protected DeadlockRetryService $retryService
@@ -21,10 +22,42 @@ final readonly class TransactionIngestService
     public function ingest(array $payload): array
     {
         try {
-            return $this->retryService->withDeadlockRetry(function () use ($payload) {
-                return DB::transaction(function () use ($payload) {
-                    $parent = $this->normalizePayload($payload);
-                    $inserted = DB::table('transactions')->insertOrIgnore($parent);
+            $parent = $this->normalizePayload($payload);
+        } catch (\InvalidArgumentException $e) {
+            // Client data-quality issue, not an infrastructure failure — must
+            // not count against the ingestion circuit breaker.
+            Log::warning('TransactionIngestService: invalid payload', [
+                'error' => $e->getMessage(),
+                'payload' => $payload,
+            ]);
+
+            return [
+                'status' => 'failed',
+                'id' => null,
+                'transaction_id' => $payload['transaction_id'] ?? null,
+                'terminal_id' => $payload['terminal_id'] ?? null,
+                'message' => 'invalid_payload',
+                'details' => $e->getMessage(),
+            ];
+        }
+
+        $circuitBreaker = new CircuitBreaker(CircuitBreaker::INGESTION_SERVICE_KEY);
+
+        try {
+            $receiptConflict = $this->findReceiptConflict($parent);
+            if ($receiptConflict) {
+                $circuitBreaker->recordSuccess();
+                return $this->receiptConflictResult($receiptConflict, $parent);
+            }
+
+            $result = $this->retryService->withDeadlockRetry(function () use ($payload, $parent) {
+                return DB::transaction(function () use ($payload, $parent) {
+                    $receiptConflict = $this->findReceiptConflict($parent);
+                    if ($receiptConflict) {
+                        return $this->receiptConflictResult($receiptConflict, $parent);
+                    }
+
+                    $inserted = $this->insertTransactionParent($parent);
 
                     if ($inserted === 1) {
                         $transaction = DB::table('transactions')
@@ -71,19 +104,19 @@ final readonly class TransactionIngestService
                         ];
                     }
 
-                    $conflict = $this->findReceiptConflict($parent);
-                    if ($conflict) {
-                        Log::warning('TransactionIngestService: duplicate receipt conflict identified', [
+                    $receiptConflict = $this->findReceiptConflict($parent);
+                    if ($receiptConflict) {
+                        Log::warning('TransactionIngestService: duplicate receipt conflict identified after insert race', [
                             'receipt_no' => $parent['receipt_no'],
                             'incoming_tx_id' => $parent['transaction_id'],
-                            'existing_tx_id' => $conflict->transaction_id,
-                            'existing_tenant' => $conflict->tenant_id,
+                            'existing_tx_id' => $receiptConflict->transaction_id,
+                            'existing_tenant' => $receiptConflict->tenant_id,
                             'incoming_tenant' => $parent['tenant_id'],
                         ]);
 
                         return [
                             'status' => 'duplicate',
-                            'id' => $conflict->id,
+                            'id' => $receiptConflict->id,
                             'transaction_id' => $parent['transaction_id'],
                             'terminal_id' => $parent['terminal_id'],
                             'message' => 'duplicate_receipt_conflict',
@@ -100,12 +133,35 @@ final readonly class TransactionIngestService
                         'message' => 'insert ignored but no existing transaction found',
                     ];
                 }, 1);
-            });
+            }, wrapInTransaction: false);
+
+            $circuitBreaker->recordSuccess();
+
+            return $result;
         } catch (\Throwable $e) {
+            $reference = (string) Str::uuid();
+
             Log::error('TransactionIngestService: ingest failed', [
                 'error' => $e->getMessage(),
+                'reference' => $reference,
                 'payload' => $payload,
             ]);
+
+            // Only a genuine infrastructure-level failure (DB unreachable,
+            // timed out, or deadlock-exhausted after retry) should trip the
+            // shared ingestion circuit breaker. A data/constraint-level
+            // exception means a value slipped past validation and hit the
+            // DB directly — that's a validation gap, not a downstream
+            // outage, and must not falsely open the breaker for every
+            // tenant.
+            if (self::isInfrastructureFailure($e)) {
+                $circuitBreaker->recordFailure();
+            } else {
+                Log::error('TransactionIngestService: data/constraint-level exception reached the DB despite passing validation — check for a validation gap', [
+                    'error' => $e->getMessage(),
+                    'reference' => $reference,
+                ]);
+            }
 
             return [
                 'status' => 'failed',
@@ -113,9 +169,95 @@ final readonly class TransactionIngestService
                 'transaction_id' => $payload['transaction_id'] ?? null,
                 'terminal_id' => $payload['terminal_id'] ?? null,
                 'message' => 'ingest_failed',
-                'details' => $e->getMessage(),
+                // Never leak raw exception text to a terminal-facing field
+                // (this return value ultimately reaches
+                // TransactionIntake.last_error_message and, from there,
+                // SubmissionStatusController::show()). The full message is
+                // already logged above under the same reference.
+                'details' => 'An internal error occurred while processing this transaction. Reference: ' . $reference,
             ];
         }
+    }
+
+    /**
+     * True when $e represents a genuine infrastructure-level DB failure
+     * (connection refused/lost, timeout, deadlock-exhausted after retry)
+     * rather than a data/constraint-level failure (a value that slipped
+     * past validation and hit a DB constraint, encoding error, or
+     * truncation). Follows the same SQLSTATE/message-inspection idiom used
+     * by DeadlockRetryService::withDeadlockRetry() for classifying
+     * QueryExceptions.
+     *
+     * Public static so other call sites that need to decide whether an
+     * exception should trip the shared ingestion circuit breaker (e.g.
+     * ProcessTransactionIntakeJob's outer catch) can reuse this exact
+     * classification instead of duplicating the SQLSTATE-matching logic.
+     */
+    public static function isInfrastructureFailure(\Throwable $e): bool
+    {
+        if (! $e instanceof \Illuminate\Database\QueryException) {
+            return true;
+        }
+
+        // SQLSTATE class '23' = integrity constraint violation (duplicate
+        // key, FK, not-null), '22' = data exception (invalid value,
+        // string data right truncation). Both mean a value reached the DB
+        // despite passing validation — not that the DB itself is unhealthy.
+        $sqlState = (string) $e->getCode();
+        if (str_starts_with($sqlState, '23') || str_starts_with($sqlState, '22')) {
+            return false;
+        }
+
+        $message = $e->getMessage();
+        if (
+            str_contains($message, 'SQLSTATE[23') ||
+            str_contains($message, 'SQLSTATE[22') ||
+            str_contains($message, 'Data too long for column') ||
+            str_contains($message, 'Incorrect string value') ||
+            str_contains($message, 'Incorrect datetime value')
+        ) {
+            return false;
+        }
+
+        return true;
+    }
+
+    protected function receiptConflictResult(object $receiptConflict, array $parent): array
+    {
+        if (hash_equals(
+            (string) ($receiptConflict->payload_checksum ?? ''),
+            (string) ($parent['payload_checksum'] ?? '')
+        )) {
+            return [
+                'status' => 'already_processed',
+                'id' => $receiptConflict->id,
+                'transaction_id' => $receiptConflict->transaction_id,
+                'terminal_id' => $receiptConflict->terminal_id,
+                'message' => 'already_processed',
+            ];
+        }
+
+        Log::warning('TransactionIngestService: duplicate receipt conflict identified', [
+            'receipt_no' => $parent['receipt_no'],
+            'incoming_tx_id' => $parent['transaction_id'],
+            'existing_tx_id' => $receiptConflict->transaction_id,
+            'existing_tenant' => $receiptConflict->tenant_id,
+            'incoming_tenant' => $parent['tenant_id'],
+        ]);
+
+        return [
+            'status' => 'duplicate',
+            'id' => $receiptConflict->id,
+            'transaction_id' => $parent['transaction_id'],
+            'terminal_id' => $parent['terminal_id'],
+            'message' => 'duplicate_receipt_conflict',
+            'details' => 'Receipt already exists on this terminal within a 24-hour window',
+        ];
+    }
+
+    protected function insertTransactionParent(array $parent): int
+    {
+        return DB::table('transactions')->insertOrIgnore($parent);
     }
 
     /**

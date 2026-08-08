@@ -8,10 +8,14 @@ use Illuminate\Support\Carbon;
 use App\Models\Tenant;
 use App\Models\PosTerminal;
 use App\Models\Transaction;
+use App\Models\TransactionIntake;
 use App\Models\TransactionSubmission;
+use App\Jobs\ProcessTransactionIntakeJob;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use App\Services\PayloadChecksumService;
+use App\Services\TransactionIngestService;
 use Illuminate\Support\Facades\Queue;
+use Laravel\Sanctum\Sanctum;
 
 class SubmissionIdempotencyTest extends TestCase
 {
@@ -118,20 +122,21 @@ class SubmissionIdempotencyTest extends TestCase
             'Authorization' => 'Bearer ' . $token,
         ];
 
-        // First request should create the submission
+        // First request should durably accept the submission for async processing.
         $res1 = $this->postJson('/api/v1/transactions/official', $payload, $headers);
-        $res1->assertStatus(200);
-        $this->assertDatabaseHas('transaction_submissions', [
+        $res1->assertStatus(202);
+        $this->assertDatabaseHas('transaction_intake', [
             'submission_uuid' => $uuid,
             'terminal_id' => $terminal->id,
+            'intake_status' => TransactionIntake::INTAKE_STATUS_QUEUED,
         ]);
 
-        // Second request (same UUID + terminal) should return idempotent success instead of 500
+        // Second request (same UUID + terminal) should return idempotent success instead of 500.
         $res2 = $this->postJson('/api/v1/transactions/official', $payload, $headers);
-        $res2->assertStatus(200);
+        $res2->assertStatus(202);
         $res2->assertJson([
             'success' => true,
-            'message' => 'Submission already processed (idempotent)'
+            'message' => 'Submission already accepted',
         ]);
     }
 
@@ -156,22 +161,24 @@ class SubmissionIdempotencyTest extends TestCase
         ];
 
         $this->postJson('/api/v1/transactions/official', $firstPayload, $headers)
-            ->assertStatus(200);
+            ->assertStatus(202);
+
+        $firstIntake = TransactionIntake::where('submission_uuid', $firstPayload['submission_uuid'])->firstOrFail();
+        (new ProcessTransactionIntakeJob($firstIntake->id))->handle(app(TransactionIngestService::class));
 
         $this->postJson('/api/v1/transactions/official', $secondPayload, $headers)
-            ->assertStatus(409)
-            ->assertJson([
-                'success' => false,
-                'error_code' => 'DUPLICATE_RECEIPT_CONFLICT',
-            ]);
+            ->assertStatus(202);
+
+        $secondIntake = TransactionIntake::where('submission_uuid', $secondSubmissionUuid)->firstOrFail();
+        (new ProcessTransactionIntakeJob($secondIntake->id))->handle(app(TransactionIngestService::class));
+
+        $secondIntake->refresh();
+        $this->assertSame(TransactionIntake::PROCESSING_STATUS_DUPLICATE, $secondIntake->processing_status);
+        $this->assertSame('duplicate_receipt_conflict', $secondIntake->last_error_code);
 
         $this->assertSame(1, \App\Models\Transaction::where('terminal_id', $terminal->id)
             ->where('receipt_no', $firstPayload['transaction']['receipt_no'])
             ->count());
-        $this->assertDatabaseMissing('transaction_submissions', [
-            'submission_uuid' => $secondSubmissionUuid,
-            'terminal_id' => $terminal->id,
-        ]);
     }
 
     public function test_hardware_id_must_match_authenticated_terminal(): void
@@ -218,9 +225,9 @@ class SubmissionIdempotencyTest extends TestCase
             ->assertStatus(422)
             ->assertJson([
                 'success' => false,
-                'message' => 'Validation failed',
+                'message' => 'Structural validation failed',
                 'errors' => [
-                    'tenant_id' => ['Terminal does not belong to the specified tenant'],
+                    'tenant_id' => ['Terminal does not belong to the specified tenant.'],
                 ],
             ]);
 
@@ -247,35 +254,31 @@ class SubmissionIdempotencyTest extends TestCase
         $firstPayload = $this->makePayload($firstTenant->id, $firstTerminal->id, $submissionUuid, $firstTerminal->serial_number);
         $secondPayload = $this->makePayload($secondTenant->id, $secondTerminal->id, $submissionUuid, $secondTerminal->serial_number);
 
+        Sanctum::actingAs($firstTerminal, ['transaction:create']);
         $this->postJson('/api/v1/transactions/official', $firstPayload, [
             'Content-Type' => 'application/json',
-            'Authorization' => 'Bearer ' . $firstTerminal->generateAccessToken(),
-        ])->assertStatus(200);
+        ])->assertStatus(202);
 
+        Sanctum::actingAs($secondTerminal, ['transaction:create']);
         $this->postJson('/api/v1/transactions/official', $secondPayload, [
             'Content-Type' => 'application/json',
-            'Authorization' => 'Bearer ' . $secondTerminal->generateAccessToken(),
         ])
             ->assertStatus(409)
             ->assertJson([
                 'success' => false,
-                'message' => 'Submission UUID conflict',
+                'error_code' => 'IDEMPOTENCY_CONFLICT',
             ]);
 
-        $this->assertDatabaseHas('transaction_submissions', [
+        $this->assertDatabaseHas('transaction_intake', [
             'submission_uuid' => $submissionUuid,
             'tenant_id' => $firstTenant->id,
             'terminal_id' => $firstTerminal->id,
+            'intake_status' => TransactionIntake::INTAKE_STATUS_QUEUED,
         ]);
-        $this->assertDatabaseMissing('transaction_submissions', [
+        $this->assertDatabaseMissing('transaction_intake', [
             'submission_uuid' => $submissionUuid,
             'tenant_id' => $secondTenant->id,
             'terminal_id' => $secondTerminal->id,
-        ]);
-        $this->assertDatabaseHas('transactions', [
-            'transaction_id' => $firstPayload['transaction']['transaction_id'],
-            'tenant_id' => $firstTenant->id,
-            'terminal_id' => $firstTerminal->id,
         ]);
         $this->assertDatabaseMissing('transactions', [
             'transaction_id' => $secondPayload['transaction']['transaction_id'],
@@ -317,7 +320,7 @@ class SubmissionIdempotencyTest extends TestCase
         $secondTransaction = Transaction::factory()->create([
             'tenant_id' => $secondTenant->id,
             'terminal_id' => $secondTerminal->id,
-            'submission_uuid' => $submissionUuid,
+            'submission_uuid' => (string) Str::uuid(),
         ]);
 
         $relatedIds = $firstSubmission->transactions()->pluck('transaction_id')->all();
