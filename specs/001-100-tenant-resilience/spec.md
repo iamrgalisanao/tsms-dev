@@ -115,14 +115,15 @@ As an operations team, I need dashboards, alerts, runbooks, and load-test gates 
 - **FR-006**: System MUST enforce configurable maximum batch transaction count before per-item validation or persistence loops.
 - **FR-007**: System MUST avoid long DB transactions spanning full official batch processing.
 - **FR-008**: System MUST split writes into short transactional units with retry-safe job behavior and recoverable intermediate states.
-- **FR-009**: System MUST ensure backpressure rejection status, JSON body, and `Retry-After` header use the same clamped retry value.
+- **FR-009**: System MUST ensure backpressure rejection status, JSON body, and `Retry-After` header use the same clamped retry value, on every path that produces a backpressure rejection or degraded response — including official intake-queue overload (not only processing-queue overload).
 - **FR-010**: System MUST evaluate queue depth, Redis health, worker drain status, and DB health before accepting ingestion when enforcement is enabled.
 - **FR-011**: System MUST fail closed or return a bounded degraded response when backpressure health cannot be evaluated in enforce mode.
 - **FR-012**: System MUST store circuit breaker state in shared Redis.
 - **FR-013**: System MUST record circuit breaker success/failure outcomes around protected ingestion dependencies.
 - **FR-014**: System MUST distinguish infrastructure/system failures from client validation failures for breaker accounting.
-- **FR-015**: System MUST use `IngestionQueueRouter` for all intake and processing dispatch paths.
+- **FR-015**: System MUST use `IngestionQueueRouter` as the single, exclusive shard-selection mechanism for all intake and processing dispatch paths; no code path may compute a shard/queue independently via a second, divergent algorithm.
 - **FR-016**: System MUST remove hardcoded `% 8` shard calculations from ingestion dispatch paths.
+- **FR-016a**: System MUST NOT silently orphan already-queued jobs when configured shard count changes; a shard-count change MUST be preceded by drain/verification of the shard queues being removed, with a documented rollback path.
 - **FR-017**: Horizon staging MUST run workers for every configured intake and processing shard.
 - **FR-018**: Horizon staging MUST separate intake, processing, low-priority, notifications, and reporting worker pools.
 - **FR-019**: System MUST enforce per-tenant and per-terminal fairness controls before enqueue.
