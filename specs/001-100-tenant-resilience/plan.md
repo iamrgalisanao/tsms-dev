@@ -14,6 +14,8 @@ Build on the current backpressure/sharding foundation to make TSMS ready for a c
 
 **US5 (Operational Readiness for 100-Tenant Load Test, T048–T061) is explicitly DEFERRED to a separate follow-up phase.** Rationale: US5 is a distinct operational-readiness scope — observability, dashboards, alert definitions, staging load drills, and final release gating — and keeping it separate avoids mixing implementation hardening with operational rollout work. T048–T061 remain open in `tasks.md` and must not be described or treated as completed. This branch may be finalized/characterized as "US1–US4 complete; US5 deferred," not as "feature complete."
 
+A separate provider-aware VAT/report-correction gap was identified during delivery and is tracked outside this feature at `docs/specs/report-vat-correction-coverage.md`; financial calculation and reporting-rule changes remain outside the scope of US1–US5.
+
 ## Technical Context
 
 **Language/Version**: PHP 8.x, Laravel 11
