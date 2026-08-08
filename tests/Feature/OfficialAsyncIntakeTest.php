@@ -209,7 +209,23 @@ class OfficialAsyncIntakeTest extends TestCase
             $redis->shouldReceive('llen')->once()->with('queues:' . $queue)->andReturn($depth);
         }
 
-        Redis::shouldReceive('connection')->times(count($depths))->with('default')->andReturn($redis);
+        // T045 wired IngestionFairnessMiddleware onto this route, which
+        // also calls Redis::connection('default')->eval(...) (up to 3x per
+        // request: global/tenant/terminal checks) on every request that
+        // reaches it. That call volume is incidental to this file's
+        // backpressure-focused assertions, so it is deliberately left
+        // un-asserted here rather than folded into a hand-counted total —
+        // a fixed connection()->times(N) total would need re-calibrating
+        // every time another Redis-backed concern is layered onto this
+        // route (exactly what just broke). The llen expectations above
+        // already assert precisely what this file cares about
+        // (backpressure's own queue-depth reads); fairness itself still
+        // genuinely runs, and a fresh/unseeded window (eval always
+        // returning a count of 1, comfortably under any configured limit)
+        // naturally evaluates as allowed.
+        $redis->shouldReceive('eval')->zeroOrMoreTimes()->andReturn(1);
+
+        Redis::shouldReceive('connection')->with('default')->andReturn($redis);
     }
 
     private function officialPayload(int $tenantId, int $terminalId, string $submissionUuid, string $hardwareId): array
