@@ -5,13 +5,14 @@ namespace App\Console\Commands;
 use Illuminate\Console\Command;
 use App\Jobs\ProcessTransactionJob;
 use App\Models\Transaction;
+use App\Services\IngestionQueueRouter;
 
 class TestTransactionPipeline extends Command
 {
     protected $signature = 'test:transaction-pipeline';
     protected $description = 'Test the transaction processing pipeline with sample data';
 
-    public function handle()
+    public function handle(IngestionQueueRouter $queueRouter)
     {
         $this->info('Setting up test data...');
         
@@ -33,9 +34,8 @@ class TestTransactionPipeline extends Command
         
         foreach ($transactions as $transaction) {
             $this->info("Dispatching job for transaction: {$transaction->transaction_id}");
-            $shard = ($transaction->tenant_id ?? 0) % 8;
             ProcessTransactionJob::dispatch($transaction->id)
-                ->onQueue('transaction-processing:s'.$shard);
+                ->onQueue($queueRouter->processingQueueForTenant($transaction->tenant_id ?? 0));
         }
         
         $this->info('Jobs dispatched. Please check the dashboard for results in a few moments.');

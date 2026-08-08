@@ -3,6 +3,7 @@
 namespace App\Jobs;
 
 use App\Models\Transaction;
+use App\Services\IngestionQueueRouter;
 use Illuminate\Bus\Queueable;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Queue\SerializesModels;
@@ -27,7 +28,7 @@ class BulkGenerateTransactionsJob implements ShouldQueue
     $this->onQueue('low'); // housekeeping / non-critical
     }
 
-    public function handle()
+    public function handle(IngestionQueueRouter $queueRouter)
     {
         Log::info('Starting bulk transaction generation', [
             'count' => $this->count,
@@ -44,9 +45,8 @@ class BulkGenerateTransactionsJob implements ShouldQueue
                         'retry_count' => 0
                     ]));
 
-                    $shard = ($transaction->tenant_id ?? 0) % 8;
                     ProcessTransactionJob::dispatch($transaction->id)
-                        ->onQueue('transaction-processing:s'.$shard)
+                        ->onQueue($queueRouter->processingQueueForTenant($transaction->tenant_id ?? 0))
                         ->afterCommit();
                     $this->successCount++;
 

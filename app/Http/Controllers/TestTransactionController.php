@@ -8,6 +8,7 @@ use App\Models\Transaction;
 use App\Models\RetryHistory;
 use App\Models\SystemLog;
 use App\Jobs\ProcessTransactionJob;
+use App\Services\IngestionQueueRouter;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
@@ -33,7 +34,7 @@ class TestTransactionController extends Controller
     /**
      * Process a test transaction
      */
-    public function process(Request $request)
+    public function process(Request $request, IngestionQueueRouter $queueRouter)
     {
         try {
             DB::beginTransaction();
@@ -101,10 +102,9 @@ class TestTransactionController extends Controller
             
             // Dispatch job for processing on tenant-sharded queue
             $tenantId = $transaction->tenant_id ?? ($terminal->tenant_id ?? 0);
-            $shard = $tenantId % 8;
             ProcessTransactionJob::dispatch($transaction->id)
                 ->afterCommit()
-                ->onQueue('transaction-processing:s' . $shard);
+                ->onQueue($queueRouter->processingQueueForTenant($tenantId));
             
             DB::commit();
             
@@ -164,7 +164,7 @@ class TestTransactionController extends Controller
     /**
      * Retry a failed transaction
      */
-    public function retryTransaction(Request $request, $id)
+    public function retryTransaction(Request $request, $id, IngestionQueueRouter $queueRouter)
     {
         DB::beginTransaction();
         try {
@@ -203,10 +203,9 @@ class TestTransactionController extends Controller
 
             // Dispatch job on tenant-sharded queue with a small delay to prevent race conditions
             $tenantId = $transaction->tenant_id ?? optional($transaction->terminal)->tenant_id ?? 0;
-            $shard = $tenantId % 8;
             ProcessTransactionJob::dispatch($transaction->id)
                 ->afterCommit()
-                ->onQueue('transaction-processing:s' . $shard)
+                ->onQueue($queueRouter->processingQueueForTenant($tenantId))
                 ->delay(now()->addSeconds(5));
 
             DB::commit();
