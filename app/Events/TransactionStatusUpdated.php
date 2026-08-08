@@ -24,4 +24,9 @@ class TransactionStatusUpdated implements ShouldBroadcast
     {
         return new PrivateChannel('transactions');
     }
+
+    public function broadcastQueue(): string
+    {
+        return 'notifications';
+    }
 }

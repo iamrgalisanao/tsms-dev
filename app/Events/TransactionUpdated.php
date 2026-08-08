@@ -27,6 +27,11 @@ class TransactionUpdated implements ShouldBroadcast
         return new PrivateChannel('transactions');
     }
 
+    public function broadcastQueue(): string
+    {
+        return 'notifications';
+    }
+
     public function broadcastWith()
     {
         return [

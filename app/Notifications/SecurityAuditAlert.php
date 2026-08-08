@@ -29,6 +29,19 @@ class SecurityAuditAlert extends Notification implements ShouldQueue
     }
 
     /**
+     * Route this notification's channels to a consistent queue for observability.
+     */
+    public function viaQueues(): array
+    {
+        $queue = config('notifications.notification_queue', 'notifications');
+
+        return [
+            'mail' => $queue,
+            'database' => $queue,
+        ];
+    }
+
+    /**
      * Get the mail representation of the notification.
      */
     public function toMail(object $notifiable): MailMessage

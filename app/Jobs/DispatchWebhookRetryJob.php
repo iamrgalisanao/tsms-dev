@@ -23,6 +23,15 @@ class DispatchWebhookRetryJob implements ShouldQueue
     public function __construct(WebhookLog $log)
     {
         $this->log = $log;
+
+        // NOTE: cannot use `public $queue = 'webhook-callbacks';` — Queueable
+        // already declares an untyped `public $queue;` (default null), and
+        // PHP 8.4 treats a class re-declaring a trait property with a
+        // different default value as an incompatible composition (hard
+        // fatal error at class-load time). `onQueue()` here is an equally
+        // explicit, approved assignment mechanism (see T046a in
+        // specs/001-100-tenant-resilience/tasks.md).
+        $this->onQueue('webhook-callbacks');
     }
 
     /**
