@@ -128,6 +128,13 @@ class CircuitBreakerTest extends TestCase
 
     public function test_failure_in_half_open_reopens_circuit(): void
     {
+        // Updated for T028a's 2-of-3 half-open majority semantics (see
+        // specs/001-100-tenant-resilience/adr/T028a-half-open-circuit-breaker-semantics.md):
+        // transitionToHalfOpen() now resets failure_count to 0, and a
+        // single failure no longer reopens the breaker outright — it takes
+        // 2 of up to 3 generation-scoped probe failures, recorded via the
+        // recordFailure(?int $generation) parameter that real half-open
+        // probes (via CircuitBreakerMiddleware) thread through.
         Carbon::setTestNow(Carbon::parse('2026-01-01 00:00:00'));
 
         $breaker = new CircuitBreaker('svc-a');
@@ -136,10 +143,13 @@ class CircuitBreakerTest extends TestCase
         $breaker->recordFailure();
 
         Carbon::setTestNow(Carbon::parse('2026-01-01 00:00:00')->addSeconds(61));
-        $this->assertTrue($breaker->isAvailable()); // now half-open
+        $this->assertTrue($breaker->isAvailable()); // now half-open, admits probe 1
+        $generation = $breaker->currentHalfOpenGeneration();
 
-        $breaker->recordFailure(); // failure_count already >= threshold, re-trips immediately
+        $breaker->recordFailure($generation); // 1st of 2 required failures
+        $this->assertTrue($breaker->isAvailable()); // still half-open, admits probe 2
 
+        $breaker->recordFailure($generation); // 2nd of 2 required failures reopens
         $this->assertFalse($breaker->isAvailable());
     }
 

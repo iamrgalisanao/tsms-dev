@@ -195,6 +195,10 @@ class IngestionCircuitBreakerTest extends TestCase
 
     public function test_successful_requests_keep_the_breaker_closed_and_a_prior_partial_failure_count_resets(): void
     {
+        // Updated for T028a's 2-of-3 half-open majority semantics: a single
+        // success while half-open no longer closes the breaker outright —
+        // it now takes 2 of up to 3 probes to close (or reopen). See
+        // specs/001-100-tenant-resilience/adr/T028a-half-open-circuit-breaker-semantics.md.
         Queue::fake();
         Carbon::setTestNow(Carbon::parse('2026-01-01 00:00:00'));
         [$tenant, $terminal] = $this->seedTenantAndTerminal();
@@ -221,20 +225,28 @@ class IngestionCircuitBreakerTest extends TestCase
             ->assertJson(['message' => 'Circuit is open due to multiple failures']);
 
         // Advance past reset_timeout_seconds (60) so the breaker becomes
-        // half-open, then let a request succeed — a success while half-open
-        // resets the failure count back to zero (unlike a success while
-        // still closed, which is deliberately a no-op — see
-        // tests/Unit/Services/CircuitBreakerTest::test_success_in_closed_state_is_a_noop).
+        // half-open and admits its first probe.
         Carbon::setTestNow(Carbon::now()->addSeconds(61));
         $shouldFail = false;
-        $successPayload = $this->officialPayload($tenant->id, $terminal->id, (string) Str::uuid(), $terminal->serial_number);
-        $this->postJson('/api/v1/transactions/official', $successPayload, $this->headersFor($terminal))
+
+        // First probe succeeds — under 2-of-3 semantics this alone must NOT
+        // close the breaker yet.
+        $firstSuccessPayload = $this->officialPayload($tenant->id, $terminal->id, (string) Str::uuid(), $terminal->serial_number);
+        $this->postJson('/api/v1/transactions/official', $firstSuccessPayload, $this->headersFor($terminal))
+            ->assertStatus(202);
+
+        // Second probe also succeeds — this is the 2nd of up to 3 probes,
+        // which closes the breaker and resets failure_count back to zero
+        // (unlike a success while still closed, which is deliberately a
+        // no-op — see tests/Unit/Services/CircuitBreakerTest::test_success_in_closed_state_is_a_noop).
+        $secondSuccessPayload = $this->officialPayload($tenant->id, $terminal->id, (string) Str::uuid(), $terminal->serial_number);
+        $this->postJson('/api/v1/transactions/official', $secondSuccessPayload, $this->headersFor($terminal))
             ->assertStatus(202);
 
         // Prove the failure count actually reset to zero: two more
-        // failures (below the threshold of 3) must NOT reopen the breaker.
-        // If the reset hadn't happened, the stale count (>= threshold from
-        // before) would reopen it after just one more failure.
+        // failures (below the closed-state threshold of 3) must NOT reopen
+        // the breaker. If the reset hadn't happened, the stale count (>=
+        // threshold from before) would reopen it after just one more failure.
         $shouldFail = true;
         for ($i = 0; $i < 2; $i++) {
             $payload = $this->officialPayload($tenant->id, $terminal->id, (string) Str::uuid(), $terminal->serial_number);
@@ -242,6 +254,147 @@ class IngestionCircuitBreakerTest extends TestCase
                 ->assertStatus(503)
                 ->assertJsonPath('error_code', 'INTAKE_PERSISTENCE_FAILED'); // still the service's own 503, not "circuit open"
         }
+    }
+
+    /**
+     * T028b: the circuit-OPEN 503 rejection must carry a Retry-After header,
+     * and its value must be identical to the JSON body's retry_after_seconds
+     * field — the same single-computation-used-twice pattern
+     * IngestionBackpressureMiddleware already established for the unrelated
+     * queue-backpressure rejection path.
+     */
+    public function test_open_circuit_rejection_includes_retry_after_header_matching_body(): void
+    {
+        Queue::fake();
+        [$tenant, $terminal] = $this->seedTenantAndTerminal();
+
+        $shouldFail = true;
+        TransactionIntake::creating(function () use (&$shouldFail) {
+            if ($shouldFail) {
+                throw new \RuntimeException('Simulated DB outage');
+            }
+        });
+
+        // Drive exactly failure_threshold (3) infrastructure failures to open the breaker.
+        for ($i = 0; $i < 3; $i++) {
+            $payload = $this->officialPayload($tenant->id, $terminal->id, (string) Str::uuid(), $terminal->serial_number);
+            $this->postJson('/api/v1/transactions/official', $payload, $this->headersFor($terminal))
+                ->assertStatus(503);
+        }
+
+        $payload = $this->officialPayload($tenant->id, $terminal->id, (string) Str::uuid(), $terminal->serial_number);
+        $response = $this->postJson('/api/v1/transactions/official', $payload, $this->headersFor($terminal))
+            ->assertStatus(503)
+            ->assertJson([
+                'error' => 'Service unavailable',
+                'service' => 'transaction-intake',
+                'message' => 'Circuit is open due to multiple failures',
+            ])
+            ->assertJsonStructure(['retry_after_seconds']);
+
+        $this->assertTrue($response->headers->has('Retry-After'), 'expected a Retry-After header on the circuit-open rejection');
+
+        $bodyRetryAfter = $response->json('retry_after_seconds');
+        $headerRetryAfter = $response->headers->get('Retry-After');
+
+        $this->assertIsInt($bodyRetryAfter, 'retry_after_seconds must be an integer, not a float or string');
+        $this->assertGreaterThanOrEqual(1, $bodyRetryAfter, 'retry_after_seconds must never be negative or zero');
+        $this->assertSame((string) $bodyRetryAfter, $headerRetryAfter, 'the Retry-After header must carry the exact same value as the JSON body field');
+        // reset_timeout_seconds is configured to 60 in setUp(); the breaker
+        // just opened, so the hint should be at (or just under) the full
+        // window, never exceeding it.
+        $this->assertLessThanOrEqual(60, $bodyRetryAfter);
+    }
+
+    /**
+     * T028b: a half-open request rejected for being over the N=3 concurrent
+     * probe cap (ADR T028a) must also carry a Retry-After header identical
+     * to its JSON body field. Reaching this over-cap rejection requires 3
+     * probes to already be admitted-and-unresolved simultaneously, which is
+     * a genuinely concurrent condition that sequential HTTP requests cannot
+     * reproduce (each request's outcome is recorded before the next request
+     * starts, and 3 sequential outcomes always resolve the episode via
+     * 2-of-3 by the 3rd — see tests/Unit/RedisCircuitBreakerTest.php's
+     * identical seeding approach for admission-cap coverage). Seeding the
+     * fake Redis store directly to "3 probes already admitted, unresolved"
+     * simulates that concurrent condition for this 4th request.
+     */
+    public function test_half_open_probe_capacity_exhausted_rejection_includes_retry_after_header_matching_body(): void
+    {
+        Queue::fake();
+        [$tenant, $terminal] = $this->seedTenantAndTerminal();
+
+        $this->fakeCircuitBreakerRedisStore['tsms:circuit-breaker:transaction-intake'] = [
+            'state' => \App\Services\CircuitBreaker::STATE_HALF_OPEN,
+            'failure_count' => '0',
+            'opened_at' => '0',
+            'half_open_generation' => '1',
+            'half_open_started_at' => (string) now()->timestamp,
+            'half_open_probe_count' => '3', // cap already reached, unresolved
+            'half_open_successes' => '0',
+            'half_open_failures' => '0',
+        ];
+
+        $payload = $this->officialPayload($tenant->id, $terminal->id, (string) Str::uuid(), $terminal->serial_number);
+        $response = $this->postJson('/api/v1/transactions/official', $payload, $this->headersFor($terminal))
+            ->assertStatus(503)
+            ->assertJson([
+                'error' => 'Service unavailable',
+                'service' => 'transaction-intake',
+                'message' => 'Circuit is open due to multiple failures',
+            ])
+            ->assertJsonStructure(['retry_after_seconds']);
+
+        $this->assertTrue($response->headers->has('Retry-After'), 'expected a Retry-After header on the over-cap half-open rejection');
+
+        $bodyRetryAfter = $response->json('retry_after_seconds');
+        $headerRetryAfter = $response->headers->get('Retry-After');
+
+        $this->assertIsInt($bodyRetryAfter);
+        $this->assertGreaterThanOrEqual(1, $bodyRetryAfter);
+        $this->assertSame((string) $bodyRetryAfter, $headerRetryAfter, 'the Retry-After header must carry the exact same value as the JSON body field');
+
+        // The 4th probe attempt itself must not have been admitted — the
+        // cap self-correction must leave the counter at exactly 3.
+        $this->assertSame('3', $this->fakeCircuitBreakerRedisStore['tsms:circuit-breaker:transaction-intake']['half_open_probe_count']);
+    }
+
+    /**
+     * T028b: the naive "resetTimeoutSeconds - elapsed" computation can go
+     * negative when opened_at is degenerate (e.g. 0 — a state the real
+     * breaker should never persist, but this proves the clamp holds
+     * defensively regardless). Seeds the OPEN state directly with
+     * opened_at = 0 so "now - opened_at" is astronomically larger than
+     * resetTimeoutSeconds, and asserts the response still carries a valid
+     * (non-negative, integer, floored at 1) Retry-After value rather than a
+     * negative number.
+     */
+    public function test_open_circuit_retry_after_is_clamped_to_a_positive_integer_when_opened_at_is_degenerate(): void
+    {
+        Queue::fake();
+        [$tenant, $terminal] = $this->seedTenantAndTerminal();
+
+        $this->fakeCircuitBreakerRedisStore['tsms:circuit-breaker:transaction-intake'] = [
+            'state' => \App\Services\CircuitBreaker::STATE_OPEN,
+            'failure_count' => '3',
+            'opened_at' => '0', // degenerate: elapsed = now() - 0, naive computation would go deeply negative
+            'half_open_generation' => '0',
+            'half_open_started_at' => '0',
+            'half_open_probe_count' => '0',
+            'half_open_successes' => '0',
+            'half_open_failures' => '0',
+        ];
+
+        $payload = $this->officialPayload($tenant->id, $terminal->id, (string) Str::uuid(), $terminal->serial_number);
+        $response = $this->postJson('/api/v1/transactions/official', $payload, $this->headersFor($terminal))
+            ->assertStatus(503);
+
+        $bodyRetryAfter = $response->json('retry_after_seconds');
+        $headerRetryAfter = $response->headers->get('Retry-After');
+
+        $this->assertIsInt($bodyRetryAfter);
+        $this->assertSame(1, $bodyRetryAfter, 'must clamp to the minimum floor of 1, never negative or zero');
+        $this->assertSame('1', $headerRetryAfter);
     }
 
     private function seedTenantAndTerminal(): array

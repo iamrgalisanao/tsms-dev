@@ -195,7 +195,19 @@ class IngestionBackpressureTest extends TestCase
             ->assertJsonPath('backpressure.intake.degraded', false)
             ->assertJsonPath('backpressure.processing.queue', $processingQueue)
             ->assertJsonPath('backpressure.processing.queue_type', 'processing')
-            ->assertJsonPath('backpressure.processing.overloaded', false);
+            ->assertJsonPath('backpressure.processing.overloaded', false)
+            ->assertHeader('Retry-After');
+
+        // T035: storeOfficial() must attach the SAME retry_after_seconds
+        // value already present in the JSON body as the Retry-After header
+        // — previously this path (intake-aggregate overload, routed through
+        // TransactionIntakeService::handleOfficialIntake() rather than
+        // IngestionBackpressureMiddleware's own short-circuit) returned the
+        // value in the body only, with no header at all.
+        $this->assertSame(
+            $response->headers->get('Retry-After'),
+            (string) $response->json('retry_after_seconds')
+        );
 
         Queue::assertNothingPushed();
     }
@@ -309,7 +321,23 @@ class IngestionBackpressureTest extends TestCase
             $redis->shouldReceive('llen')->once()->with('queues:' . $queue)->andReturn($depth);
         }
 
-        Redis::shouldReceive('connection')->times(count($depths))->with('default')->andReturn($redis);
+        // T045 wired IngestionFairnessMiddleware onto these same routes,
+        // which also calls Redis::connection('default')->eval(...) (up to
+        // 3x per request: global/tenant/terminal checks) on every request
+        // that reaches it. That call volume is incidental to this file's
+        // backpressure-focused assertions, so it is deliberately left
+        // un-asserted here rather than folded into a hand-counted total —
+        // a fixed connection()->times(N) total would need re-calibrating
+        // every time another Redis-backed concern is layered onto this
+        // route (exactly what just broke). The llen expectations above
+        // already assert precisely what this file cares about
+        // (backpressure's own queue-depth reads); fairness itself still
+        // genuinely runs, and a fresh/unseeded window (eval always
+        // returning a count of 1, comfortably under any configured limit)
+        // naturally evaluates as allowed.
+        $redis->shouldReceive('eval')->zeroOrMoreTimes()->andReturn(1);
+
+        Redis::shouldReceive('connection')->with('default')->andReturn($redis);
     }
 
     private function officialPayload(int $tenantId, int $terminalId, string $submissionUuid, string $hardwareId): array

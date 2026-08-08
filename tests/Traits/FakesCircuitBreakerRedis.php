@@ -84,6 +84,38 @@ trait FakesCircuitBreakerRedis
                 return $callback($double);
             });
 
+        // App\Services\CircuitBreaker's half-open admission/outcome/
+        // transition paths (ADR T028a review findings F1/F2/F-NEW-1) run
+        // as single Redis Lua script (EVAL) executions rather than a
+        // sequence of separate commands, specifically so the whole
+        // check-then-mutate operation is atomic. There is no real
+        // Redis/Lua interpreter available under phpunit, so this fake
+        // emulates the three known scripts' observable behavior directly
+        // against the same in-memory store, matched by exact script text
+        // (not argument shape, since the argument counts differ across
+        // scripts anyway) so a reformulated or unrecognized script fails
+        // loudly instead of silently producing wrong results.
+        $double->shouldReceive('eval')
+            ->zeroOrMoreTimes()
+            ->andReturnUsing(function (string $script, int $numKeys, ...$rest) {
+                $key = $rest[0];
+                $argv = array_slice($rest, $numKeys);
+
+                if ($script === \App\Services\CircuitBreaker::HALF_OPEN_ADMISSION_SCRIPT) {
+                    return $this->fakeEvalHalfOpenAdmission($key, $argv);
+                }
+
+                if ($script === \App\Services\CircuitBreaker::HALF_OPEN_OUTCOME_SCRIPT) {
+                    return $this->fakeEvalHalfOpenOutcome($key, $argv);
+                }
+
+                if ($script === \App\Services\CircuitBreaker::HALF_OPEN_TRANSITION_SCRIPT) {
+                    return $this->fakeEvalHalfOpenTransition($key, $argv);
+                }
+
+                throw new \RuntimeException('FakesCircuitBreakerRedis: unrecognized eval() script; add a fake for it.');
+            });
+
         Redis::shouldReceive('connection')
             ->zeroOrMoreTimes()
             ->with($connection)
@@ -99,6 +131,141 @@ trait FakesCircuitBreakerRedis
             ->zeroOrMoreTimes()
             ->with($connection)
             ->andThrow(new \RuntimeException('Redis connection refused (simulated outage)'));
+    }
+
+    /**
+     * PHP re-implementation of App\Services\CircuitBreaker::HALF_OPEN_ADMISSION_SCRIPT,
+     * operating on the same in-memory $fakeCircuitBreakerRedisStore array
+     * the other fake commands above share, so it stays a true single-step
+     * "atomic" mutation from the perspective of these synchronous tests
+     * (no other fake command can interleave mid-array-write in PHP).
+     *
+     * ARGV: [now, resetTimeoutSeconds, maxProbes, closeThreshold, reopenThreshold, ttl]
+     */
+    protected function fakeEvalHalfOpenAdmission(string $key, array $argv): array
+    {
+        [$now, $resetTimeoutSeconds, $maxProbes, $closeThreshold, $reopenThreshold, $ttl] = array_map('intval', $argv);
+
+        $row = &$this->fakeCircuitBreakerRedisStore[$key];
+        $row ??= [];
+
+        if (($row['state'] ?? null) !== 'half-open') {
+            return ['not-half-open'];
+        }
+
+        $successes = (int) ($row['half_open_successes'] ?? 0);
+        $failures = (int) ($row['half_open_failures'] ?? 0);
+        $startedAt = (int) ($row['half_open_started_at'] ?? 0);
+        $resolved = $successes >= $closeThreshold || $failures >= $reopenThreshold;
+
+        if (!$resolved && $startedAt > 0 && ($now - $startedAt) >= $resetTimeoutSeconds) {
+            $row['state'] = 'open';
+            $row['opened_at'] = (string) $now;
+            unset($ttl); // fake store has no real TTL/EXPIRE semantics to apply
+            return ['expired'];
+        }
+
+        $admitted = (int) ($row['half_open_probe_count'] ?? 0) + 1;
+        $row['half_open_probe_count'] = (string) $admitted;
+        $generation = (int) ($row['half_open_generation'] ?? 0);
+
+        if ($admitted > $maxProbes) {
+            $row['half_open_probe_count'] = (string) ($admitted - 1);
+            return ['rejected', $generation];
+        }
+
+        return ['admitted', $generation];
+    }
+
+    /**
+     * PHP re-implementation of App\Services\CircuitBreaker::HALF_OPEN_OUTCOME_SCRIPT.
+     * See fakeEvalHalfOpenAdmission()'s doc-comment for why this mirrors
+     * the Lua script's logic directly against the shared in-memory store.
+     *
+     * ARGV: [generation, outcome, now, closeThreshold, reopenThreshold, ttl]
+     */
+    protected function fakeEvalHalfOpenOutcome(string $key, array $argv): array
+    {
+        [$generation, $outcome, $now, $closeThreshold, $reopenThreshold, $ttl] = $argv;
+        $generation = (int) $generation;
+        $now = (int) $now;
+        $closeThreshold = (int) $closeThreshold;
+        $reopenThreshold = (int) $reopenThreshold;
+        unset($ttl); // fake store has no real TTL/EXPIRE semantics to apply
+
+        $row = &$this->fakeCircuitBreakerRedisStore[$key];
+        $row ??= [];
+
+        $state = $row['state'] ?? '';
+        $currentGeneration = (int) ($row['half_open_generation'] ?? 0);
+
+        if ($state !== 'half-open' || $currentGeneration !== $generation) {
+            return [0, $state, $currentGeneration];
+        }
+
+        $field = $outcome === 'failure' ? 'half_open_failures' : 'half_open_successes';
+        $count = (int) ($row[$field] ?? 0) + 1;
+        $row[$field] = (string) $count;
+
+        $transitioned = 0;
+
+        if ($outcome === 'failure') {
+            $row['last_failure_at'] = (string) $now;
+        }
+
+        if ($outcome === 'success' && $count >= $closeThreshold) {
+            $row['state'] = 'closed';
+            $row['failure_count'] = '0';
+            $row['opened_at'] = '0';
+            $row['last_success_at'] = (string) $now;
+            $transitioned = 1;
+        } elseif ($outcome === 'failure' && $count >= $reopenThreshold) {
+            $row['state'] = 'open';
+            $row['opened_at'] = (string) $now;
+            $transitioned = 2;
+        }
+
+        return [1, $count, $transitioned];
+    }
+
+    /**
+     * PHP re-implementation of App\Services\CircuitBreaker::HALF_OPEN_TRANSITION_SCRIPT
+     * (review finding F-NEW-1): a compare-and-set guarded open→half-open
+     * transition. Only mutates the store when the observed `state` is
+     * still 'open' and `resetTimeoutSeconds` has elapsed since 'opened_at'
+     * — mirroring the Lua script's own guard read exactly, operating on
+     * the same in-memory store the other fake commands share so it stays
+     * a true single-step "atomic" mutation from the perspective of these
+     * synchronous tests.
+     *
+     * ARGV: [now, resetTimeoutSeconds, ttl]
+     */
+    protected function fakeEvalHalfOpenTransition(string $key, array $argv): array
+    {
+        [$now, $resetTimeoutSeconds, $ttl] = array_map('intval', $argv);
+        unset($ttl); // fake store has no real TTL/EXPIRE semantics to apply
+
+        $row = &$this->fakeCircuitBreakerRedisStore[$key];
+        $row ??= [];
+
+        $state = $row['state'] ?? '';
+        $openedAt = (int) ($row['opened_at'] ?? 0);
+
+        if ($state !== 'open' || $openedAt <= 0 || ($now - $openedAt) < $resetTimeoutSeconds) {
+            return ['not-open', $state];
+        }
+
+        $generation = (int) ($row['half_open_generation'] ?? 0) + 1;
+
+        $row['half_open_generation'] = (string) $generation;
+        $row['state'] = 'half-open';
+        $row['half_open_started_at'] = (string) $now;
+        $row['half_open_probe_count'] = '1';
+        $row['half_open_successes'] = '0';
+        $row['half_open_failures'] = '0';
+        $row['failure_count'] = '0';
+
+        return ['initialized', $generation];
     }
 
     /**

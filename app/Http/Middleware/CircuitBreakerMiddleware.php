@@ -22,11 +22,31 @@ class CircuitBreakerMiddleware
         $circuitBreaker = App::makeWith(CircuitBreaker::class, ['serviceKey' => $serviceKey]);
 
         if (!$circuitBreaker->isAvailable()) {
+            // T028b: attach an identical Retry-After value to both the JSON
+            // body and the HTTP header, computed once — mirroring the
+            // pattern IngestionBackpressureService already established for
+            // the unrelated queue-backpressure rejection path. Covers both
+            // rejection cases isAvailable() can return false for: circuit
+            // OPEN, and HALF_OPEN with probe capacity exhausted.
+            $retryAfterSeconds = $circuitBreaker->retryAfterSeconds();
+
             return response()->json([
                 'error' => 'Service unavailable',
                 'service' => $serviceKey,
-                'message' => 'Circuit is open due to multiple failures'
-            ], 503);
+                'message' => 'Circuit is open due to multiple failures',
+                'retry_after_seconds' => $retryAfterSeconds,
+            ], 503)->header('Retry-After', (string) $retryAfterSeconds);
+        }
+
+        // If this request was admitted as a half-open probe, stash the
+        // admitted generation so it can be threaded through to
+        // recordSuccess()/recordFailure() after the handler runs —
+        // mirroring how circuit_breaker.downstream_attempted is already
+        // propagated below. Null (unset) when the circuit was simply
+        // closed, i.e. no half-open admission occurred.
+        $halfOpenGeneration = $circuitBreaker->currentHalfOpenGeneration();
+        if ($halfOpenGeneration !== null) {
+            $request->attributes->set('circuit_breaker.half_open_generation', $halfOpenGeneration);
         }
 
         try {
@@ -40,7 +60,7 @@ class CircuitBreakerMiddleware
             // attempted the downstream resource and must not falsely
             // contribute to opening the breaker.
             if ($request->attributes->get('circuit_breaker.downstream_attempted', true)) {
-                $circuitBreaker->recordFailure();
+                $circuitBreaker->recordFailure($request->attributes->get('circuit_breaker.half_open_generation'));
             } else {
                 Log::error('CircuitBreakerMiddleware: exception before downstream attempt, not recorded against breaker', [
                     'service' => $serviceKey,
@@ -59,10 +79,11 @@ class CircuitBreakerMiddleware
         // is true so any code path that doesn't set this attribute (e.g.
         // batchStore()) preserves today's behavior.
         if ($request->attributes->get('circuit_breaker.downstream_attempted', true)) {
+            $generation = $request->attributes->get('circuit_breaker.half_open_generation');
             if ($response->getStatusCode() >= 500) {
-                $circuitBreaker->recordFailure();
+                $circuitBreaker->recordFailure($generation);
             } else {
-                $circuitBreaker->recordSuccess();
+                $circuitBreaker->recordSuccess($generation);
             }
         }
 

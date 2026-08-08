@@ -843,7 +843,13 @@ class TransactionController extends Controller
         $httpStatus = $result['http_status'] ?? 202;
         unset($result['http_status']);
 
-        return response()->json($result, $httpStatus);
+        $response = response()->json($result, $httpStatus);
+
+        if (isset($result['retry_after_seconds'])) {
+            $response->header('Retry-After', (string) $result['retry_after_seconds']);
+        }
+
+        return $response;
     }
 
     public function storeOfficialLegacy(TSMSTransactionRequest $request)
