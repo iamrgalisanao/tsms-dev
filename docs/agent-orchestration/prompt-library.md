@@ -92,7 +92,7 @@ Read-only enforcement:
 
 Return only:
 ## Decision
-APPROVED | APPROVED_WITH_CHANGES | NOT_APPROVED
+ARCHITECTURE_APPROVED | ARCHITECTURE_APPROVED_WITH_CHANGES | ARCHITECTURE_NOT_APPROVED
 ## Findings
 ## Implementation Order
 ## Required Tests
@@ -161,7 +161,7 @@ Return only:
 ## Results
 ## Accepted Baseline
 ## Decision
-BASELINE_RECORDED | BLOCKED
+BASELINE_RECORDED | BASELINE_BLOCKED
 
 Do not modify files.
 ```
@@ -265,7 +265,7 @@ Read-only enforcement:
 
 Return only:
 ## Decision
-PASS | PASS_WITH_FINDINGS | FAIL
+REVIEW_PASS | REVIEW_FINDINGS
 ## Findings
 For each:
 - severity
@@ -275,6 +275,8 @@ For each:
 - action
 ## Test Gaps
 ```
+
+`REVIEW_FINDINGS` covers any review result requiring correction, regardless of severity. Do not introduce a third terminal reviewer status for repeated failure — if `REVIEW_FINDINGS` recurs after correction, the orchestrator escalates (new agent, architecture re-review, or a stop-and-ask), rather than the reviewer encoding that as a distinct verdict.
 
 Recommended invocation:
 

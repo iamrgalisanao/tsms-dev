@@ -69,21 +69,12 @@ Spawn a new agent only when:
 - the prior agent has become unreliable;
 - independent review requires separation.
 
-## 5. Model Policy
+## 5. Model Selection
 
-Recommended model routing:
-
-| Gate | Model |
-|---|---|
-| Mechanical formatting or metadata check | Haiku or inherited low-cost model |
-| Scoped implementation | Sonnet |
-| Routine code review | Sonnet |
-| High-risk architecture review | Opus |
-| Redis/Lua, auth, tenancy, migrations, queue topology review | Opus |
-| Final pre-push audit for high-risk feature | Opus |
-| Git execution after an approved plan | Sonnet |
-
-Do not use the largest model for every step. Do not use a low-cost model for high-risk correctness gates.
+Model selection is defined authoritatively in `model-routing.md`. This harness
+contract only governs invocation continuity, foreground execution, SendMessage
+reuse, and verification of the selected agent/model pairing — it does not restate
+or maintain a second copy of the routing table.
 
 ## 6. Capability Variance
 

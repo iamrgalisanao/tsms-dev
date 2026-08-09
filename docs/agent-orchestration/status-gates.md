@@ -11,6 +11,9 @@ Use these exact machine-readable statuses in agent outputs.
 - `ARCHITECTURE_NOT_APPROVED`
 - `IMPACT_ANALYZED`
 - `BASELINE_RECORDED`
+- `BASELINE_BLOCKED` — the accepted baseline could not be recorded because required
+  tests, environment, dependencies, or repository state prevented a trustworthy
+  baseline run. Implementation must not begin.
 
 ## Implementation
 
