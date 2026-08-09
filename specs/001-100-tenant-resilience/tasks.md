@@ -177,7 +177,7 @@
 
 ## Phase 7: User Story 5 - Operational Readiness for 100-Tenant Load Test (Priority: P2)
 
-**Status: DEFERRED to a separate follow-up phase.** US1-US4 (through T047) are complete and validated. US5 (T048-T061 below) is a distinct operational-readiness scope — observability, dashboards, alerting, staging load drills, and final release gating — deliberately kept separate from the implementation-hardening work above. T048-T061 remain unimplemented and must not be described as complete. See `plan.md`'s "Feature Status" section for the recorded decision.
+**Status: T048 and T052-T056 implemented and validated (WU1-WU9 of `plan.md`'s "Phase 8 Detailed Implementation Plan"); staging drills T049-T051 remain pending.** US1-US4 (through T047) were complete and validated first. The code-producible portion of US5 — observability instrumentation, correlation-ID normalization, metrics/percentile infrastructure, DB-pressure instrumentation, the tenant fairness override, read-only observability endpoints, alert-definition documentation, and runbooks — is now implemented and tested (see `plan.md`'s "Phase 8 Detailed Implementation Plan" for the full work-unit breakdown and commit history). T049-T051 require a live staging environment and human execution and are **not** implementable by this work; they remain open. This feature must not be described as fully complete until T049-T051, T059, and T061 are also done. See `plan.md`'s "Feature Status" section for the full recorded decision.
 
 **Goal**: Make staging failures diagnosable, alertable, and reversible.
 
@@ -185,32 +185,32 @@
 
 ### Tests and Drills
 
-- [ ] T048 [P] [US5] Add synthetic metric/log emission tests where practical in `tests/Feature/`
-- [ ] T049 [US5] Run manual staging alert drill for queue age, DB pressure, breaker open, Redis unavailable, and tenant skew
-- [ ] T050 [US5] Run failed-job replay drill using reconciliation command and documented runbook
-- [ ] T051 [US5] Run hot-tenant plus 99 normal tenants staging load test and capture results in `docs/`
+- [x] T048 [P] [US5] Add synthetic metric/log emission tests where practical in `tests/Feature/` — delivered incrementally alongside each work unit (WU1's `CorrelationIdNormalizationTest`/`LogContextTest`, WU2's `MetricsDistributionTest`/`ObservabilityLatencyMetricsTest`, WU3's `DeadlockRetryServiceTest`, WU4's `SkewRankingServiceTest` and extensions to the ingestion middleware tests, WU5's `TenantFairnessOverrideServiceTest`/`IngestionFairnessOverrideIntegrationTest`/`TenantThrottleOverrideMiddlewareTest`/`TenantThrottleArtisanCommandsTest`, WU7's `ObservabilityIngestionEndpointsTest`), per the plan's own commit-grouping rule (WU6 is not a standalone commit). 96 new tests added across WU1-WU9, all passing; confirmed zero regressions against the Gate 0 baseline (see `docs/US5_WU10_REGRESSION_REPORT.md`).
+- [ ] T049 [US5] Run manual staging alert drill for queue age, DB pressure, breaker open, Redis unavailable, and tenant skew — **not started; requires a live staging environment and human execution, out of scope for this implementation.**
+- [ ] T050 [US5] Run failed-job replay drill using reconciliation command and documented runbook — **not started; requires a live staging environment and human execution.** The runbook itself (`docs/FAILED_JOB_REPLAY_RUNBOOK.md`) is written and ready to be followed once a drill is scheduled.
+- [ ] T051 [US5] Run hot-tenant plus 99 normal tenants staging load test and capture results in `docs/` — **not started; requires a live staging environment and human execution.**
 
 ### Implementation
 
-- [ ] T052 [US5] Emit required operational log context from ingestion services/jobs in `app/Services/`, `app/Jobs/`, and controllers
-- [ ] T053 [US5] Add metrics for request rate, latency, rejection reason, queue depth/age, worker drain, DB pressure, breaker state, and tenant skew in `app/Support/` or configured metrics sink
-- [ ] T054 [US5] Create dashboards or dashboard definitions for required signals under `docs/` or observability configuration
-- [ ] T055 [US5] Create alert definitions or alert documentation for required thresholds under `docs/`
-- [ ] T056 [US5] Create operational runbooks for overload, breaker, Horizon scaling, failed-job replay, tenant throttling, Redis degradation, and rollback under `docs/`
+- [x] T052 [US5] Emit required operational log context from ingestion services/jobs in `app/Services/`, `app/Jobs/`, and controllers — commit `3959814c` (WU1): correlation-ID normalization (`AttachCorrelationId`'s 4-tier precedence), `App\Support\LogContext::ingestion()` shared helper, applied to `TransactionIntakeService`, `CircuitBreakerMiddleware`, `ProcessTransactionIntakeJob`.
+- [x] T053 [US5] Add metrics for request rate, latency, rejection reason, queue depth/age, worker drain, DB pressure, breaker state, and tenant skew in `app/Support/` or configured metrics sink — commits `faed4985` (WU2: `MetricStoreInterface`/`MetricDistributionStoreInterface`, bounded Redis percentile sampling), `87a38d7a` (WU3: `db.deadlock_retry.*` counters/samples), `53c4eb13` (WU4: `ingestion.rejected.*` rejection-reason counters, queue depth/age, circuit-breaker state mirroring, `SkewRankingService` bounded tenant/terminal ranking). Worker-drain rate has no real signal source in this codebase today and is not implemented (honestly undocumented rather than fabricated).
+- [x] T054 [US5] Create dashboards or dashboard definitions for required signals under `docs/` or observability configuration — commit `4f86b9fe` (WU7): 8 new read-only `GET /api/v1/observability/ingestion/*` endpoints plus `docs/OBSERVABILITY_DASHBOARD.md`.
+- [x] T055 [US5] Create alert definitions or alert documentation for required thresholds under `docs/` — commit `b031e54f` (WU8): `docs/OBSERVABILITY_ALERT_DEFINITIONS.md`, named honestly as "alert definitions and operational checks" (no live evaluator/notification/paging system exists), plus the one new `tsms.db_pressure.*` config threshold.
+- [x] T056 [US5] Create operational runbooks for overload, breaker, Horizon scaling, failed-job replay, tenant throttling, Redis degradation, and rollback under `docs/` — commit `52f7c320` (WU9): new `docs/FAILED_JOB_REPLAY_RUNBOOK.md` and `docs/TENANT_THROTTLING_RUNBOOK.md`, plus extensions to `docs/CIRCUIT_BREAKER_BACKPRESSURE_RUNBOOK.md` (general rollback) and `docs/SHARD_COUNT_CHANGE_RUNBOOK.md` (Horizon scaling under DB connection limits). Overload/breaker/Redis-degradation runbook content was already covered by the existing `docs/CIRCUIT_BREAKER_BACKPRESSURE_RUNBOOK.md` from earlier US3 work (T036).
 
-**Checkpoint**: Staging load test is observable, actionable, and reversible.
+**Checkpoint**: Staging load test observability/alerting/runbook infrastructure is in place; the staging load test itself (T049-T051) has not been run.
 
 ---
 
 ## Final Phase: Release Gate and Cleanup
 
-**Status: Blocked on the deferred US5 phase above (T048-T061), not yet started.** This release gate presumes US5's observability/drill work is complete; it is intentionally deferred alongside US5 per `plan.md`'s "Feature Status" section, not silently skipped.
+**Status: T057, T058, and T060 complete; T059 (partial) and T061 remain blocked on T049-T051.** T057/T058/T060 have no dependency on the staging drills and were completed as part of WU10. T059's FR-by-FR portion has been re-checked against the current implementation with no new P0/P1 findings, but full completion depends on T049-T051 actually running (spec.md's US5 acceptance scenarios are themselves part of what "no P0/P1 findings" must cover). T061 is a human sign-off gate that cannot be performed by this work.
 
-- [ ] T057 Run full focused resilience test suite and document results in `docs/`
-- [ ] T058 Run route/provider/license regression tests to protect unrelated behavior
-- [ ] T059 Validate no P0/P1 resilience findings remain against `specs/001-100-tenant-resilience/spec.md`
-- [ ] T060 Confirm `remove-webapp-forwarding` fallback branch remains untouched and rollback path remains usable
-- [ ] T061 Prepare final architecture readiness review before production-like release
+- [x] T057 Run full focused resilience test suite and document results in `docs/` — commit `127d9436` (WU10): full `Unit`+`Feature` suites re-run, diffed byte-for-byte against the Gate 0 baseline, zero new failures. See `docs/US5_WU10_REGRESSION_REPORT.md`.
+- [x] T058 Run route/provider/license regression tests to protect unrelated behavior — covered by the same full `Feature` suite run in `docs/US5_WU10_REGRESSION_REPORT.md` (e.g. `PosIngestionLicenseEnforcementTest`, `RouteProviderCharacterizationTest`); no regression introduced.
+- [ ] T059 Validate no P0/P1 resilience findings remain against `specs/001-100-tenant-resilience/spec.md` — **partially validated.** No P0/P1 findings identified against the implemented FRs (US1-US4, plus US5's T048/T052-T056). Full validation is blocked on T049-T051, since spec.md's US5 acceptance scenarios (dashboard/alert drills, the 100-tenant load test) are themselves part of what this validation must cover.
+- [x] T060 Confirm `remove-webapp-forwarding` fallback branch remains untouched and rollback path remains usable — `docs/US5_WU10_REGRESSION_REPORT.md`: `scripts/verify-rollback-branch.sh` passed with the identical `remove-webapp-forwarding` SHA as at Gate 0, throughout WU1-WU9.
+- [ ] T061 Prepare final architecture readiness review before production-like release — **not started; a human sign-off gate, not an implementation task, and blocked on T049-T051's real drill results.**
 
 ---
 
