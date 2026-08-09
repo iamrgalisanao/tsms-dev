@@ -4,6 +4,7 @@ namespace App\Http\Middleware;
 
 use App\Models\PosTerminal;
 use App\Services\IngestionFairnessService;
+use App\Services\TenantFairnessOverrideService;
 use App\Support\Metrics;
 use Closure;
 use Illuminate\Http\Request;
@@ -39,6 +40,20 @@ use Symfony\Component\HttpFoundation\Response;
  * Must never call or reference IngestionQueueRouter — routing ("which
  * queue") and fairness ("allow now") are separate abstractions (plan.md's
  * "Fairness Architecture" subsection, point 2).
+ *
+ * WU5 addition: before the global/tenant/terminal composition below, this
+ * middleware first consults IngestionFairnessService::checkTenantOverride()
+ * for the resolved tenant — a TTL-bounded, incident-response override for
+ * ONE specific tenant (inherit/reduced_limit/blocked). A `blocked` override
+ * short-circuits here and never reaches checkGlobal()/checkTenant()/
+ * checkTerminal() at all. A `reduced_limit` override's limit is threaded
+ * into the checkTenant() call that follows, replacing that tenant's
+ * configured limit for this request only; every other tenant is completely
+ * unaffected. checkTenantOverride() returns a result shaped identically to
+ * checkGlobal()/checkTenant()/checkTerminal() (allowed/scope/limit/count/
+ * retry_after_seconds/reset_at), so the single rejectionResponse() helper
+ * below serves both the base fairness rejection and the new override
+ * rejection with no per-mode special-casing of the HTTP response itself.
  */
 class IngestionFairnessMiddleware
 {
@@ -55,12 +70,41 @@ class IngestionFairnessMiddleware
             $terminal instanceof PosTerminal ? $terminal->id : $request->input('terminal_id')
         );
 
+        // WU5: resolve the tenant's incident-response override, if any,
+        // BEFORE the existing global-limit decision below. Unresolved
+        // identity (tenantId === null) skips the override check exactly
+        // like it already skips the tenant fairness check — fairness (and
+        // its override) never invents a rejection for an identity problem.
+        $tenantLimitOverride = null;
+
+        if ($tenantId !== null) {
+            $override = $this->fairnessService->checkTenantOverride($tenantId);
+
+            if (! $override['allowed']) {
+                // 'blocked': reject immediately. checkGlobal()/checkTenant()/
+                // checkTerminal() are never called for this request — a
+                // blocked tenant's traffic must not even consume the
+                // global/terminal fixed-window budget it would otherwise
+                // share with every other tenant.
+                return $this->rejectionResponse(
+                    $request,
+                    $override,
+                    'TENANT_THROTTLE_BLOCKED',
+                    'Ingestion blocked for this tenant by an active incident-response override. Retry later.'
+                );
+            }
+
+            if ($override['mode'] === TenantFairnessOverrideService::MODE_REDUCED_LIMIT) {
+                $tenantLimitOverride = $override['limit'];
+            }
+        }
+
         // Global -> tenant -> terminal: cheapest/most-aggregate check first,
         // reject on the first exceeded scope.
         $result = $this->fairnessService->checkGlobal();
 
         if ($result['allowed'] && $tenantId !== null) {
-            $result = $this->fairnessService->checkTenant($tenantId);
+            $result = $this->fairnessService->checkTenant($tenantId, $tenantLimitOverride);
         }
 
         if ($result['allowed'] && $terminalId !== null) {
@@ -71,21 +115,41 @@ class IngestionFairnessMiddleware
             return $next($request);
         }
 
+        return $this->rejectionResponse(
+            $request,
+            $result,
+            'FAIRNESS_LIMIT_EXCEEDED',
+            'Ingestion temporarily throttled due to fairness limits. Retry later.'
+        );
+    }
+
+    /**
+     * Shared 429 response builder for both the base fairness rejection
+     * (global/tenant/terminal, $result['scope'] one of those three) and the
+     * WU5 tenant-override rejection ($result['scope'] === 'tenant_override').
+     * Both shapes carry the same six fields (allowed/scope/limit/count/
+     * retry_after_seconds/reset_at), which is exactly what lets this one
+     * method serve both without special-casing the new override outcome.
+     *
+     * The rejection-reason counter is split by scope so the pre-existing
+     * `ingestion.rejected.fairness` counter's semantics (and the assertion
+     * in tests/Feature/IngestionFairnessMiddlewareTest.php that reads it)
+     * are undisturbed by this addition — a tenant-override rejection is a
+     * deliberate operator action, not an organic fairness-limit rejection,
+     * so it is counted separately under `ingestion.rejected.tenant_override`.
+     */
+    private function rejectionResponse(Request $request, array $result, string $errorCode, string $message): Response
+    {
         $correlationId = $request->attributes->get('correlation_id') ?: $request->header('X-Request-Id');
 
-        // WU4 (T053 remainder): rejection-reason counter. A single counter
-        // across all three scopes (global/tenant/terminal), matching the
-        // one-counter-per-middleware-reason convention used by the other
-        // three ingestion rejection paths; $result['scope'] is still
-        // available in the JSON body below for per-scope diagnosis without
-        // needing a higher-cardinality metric key. Metrics::incr() swallows
-        // its own failures, so this can never affect the 429 response below.
-        Metrics::incr('ingestion.rejected.fairness');
+        Metrics::incr($result['scope'] === 'tenant_override'
+            ? 'ingestion.rejected.tenant_override'
+            : 'ingestion.rejected.fairness');
 
         return response()->json([
             'success' => false,
-            'error_code' => 'FAIRNESS_LIMIT_EXCEEDED',
-            'message' => 'Ingestion temporarily throttled due to fairness limits. Retry later.',
+            'error_code' => $errorCode,
+            'message' => $message,
             'scope' => $result['scope'],
             'limit' => $result['limit'],
             'count' => $result['count'],

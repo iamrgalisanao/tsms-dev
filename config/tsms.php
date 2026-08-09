@@ -213,6 +213,34 @@ return [
         ],
     ],
 
+    // Tenant fairness override (WU5): TTL-bounded, incident-response
+    // control for throttling ONE specific tenant during a live drill/
+    // incident, backed by App\Services\TenantFairnessOverrideService and
+    // consumed by IngestionFairnessService::checkTenantOverride() before
+    // its own global-limit decision. Deliberately NOT the same thing as
+    // the fairness config above's deferred, persistent tenant-tier policy
+    // system (see specs/001-100-tenant-resilience/plan.md's "Fairness
+    // Architecture" subsection, point 7, and WU5's "Reconciliation with
+    // Fairness Architecture point 7" note): this mechanism has no tier
+    // concept, no persistent policy schema, and every override expires by
+    // design (Architecture Invariant 7 — this max-TTL value is owned and
+    // enforced by WU5 in this same commit, not introduced later by WU8's
+    // alert/config work).
+    //
+    // max_ttl_seconds: hard ceiling on any single override's TTL (4 hours).
+    // Long enough to cover one incident-response shift or a full staging
+    // drill without requiring the operator to re-issue the command
+    // mid-incident, while still guaranteeing an override can never be
+    // forgotten and left throttling/blocking a tenant indefinitely — a
+    // request for a longer TTL is rejected outright (not silently
+    // clamped), so the operator always knows the real expiry they are
+    // getting rather than assuming a longer one that was quietly shortened.
+    'tenant_throttle' => [
+        'redis_connection' => env('TSMS_TENANT_THROTTLE_REDIS_CONNECTION', 'default'),
+        'key_prefix' => env('TSMS_TENANT_THROTTLE_KEY_PREFIX', 'fairness:override:'),
+        'max_ttl_seconds' => (int) env('TSMS_TENANT_THROTTLE_MAX_TTL_SECONDS', 14400),
+    ],
+
     /*
     |--------------------------------------------------------------------------
     | Terminals: Idle Monitor
