@@ -105,6 +105,54 @@ return [
         'state_ttl_seconds' => (int) env('TSMS_CIRCUIT_BREAKER_STATE_TTL_SECONDS', 3600),
     ],
 
+    // DB lock-wait/deadlock-retry alert thresholds (WU8, T055, "alert
+    // definitions and operational checks" — see
+    // docs/OBSERVABILITY_ALERT_DEFINITIONS.md). These values are read ONLY
+    // by that documentation's manual/operator checks against WU7's
+    // `GET /api/v1/observability/ingestion/db-pressure` endpoint; nothing in
+    // this codebase evaluates them automatically or pages/notifies anyone —
+    // no live alert evaluator exists (Architecture Invariant/plan.md WU8
+    // naming-honesty requirement). Informed by WU3's
+    // App\Services\DeadlockRetryService instrumentation:
+    // db.deadlock_retry.{attempted,succeeded,exhausted,non_retryable}
+    // counters and delay_ms/operation_ms/total_recovery_ms percentile
+    // samples.
+    //
+    // exhausted_count_threshold: treat a single new `exhausted` occurrence
+    // within evaluation_window_seconds as alert-worthy (default 1, i.e.
+    // "any"). `exhausted` only increments when all of
+    // withDeadlockRetry()'s attempts (default 5) were consumed and the
+    // exception was rethrown to the caller — a real, already-materialized
+    // failure, unlike the routine/expected `attempted` counter. At this
+    // feature's ~100-tenant scale, one exhausted recovery is already worth
+    // a human look rather than waiting for a batch to accumulate.
+    //
+    // p95_total_recovery_ms_threshold: alert if the p95 of
+    // db.deadlock_retry.total_recovery_ms (wall-clock from the first
+    // retryable failure to eventual success or exhaustion, per
+    // DeadlockRetryService::recordRecovered()'s doc-comment) exceeds this
+    // many milliseconds (default 2000). Derived from the service's own
+    // backoff formula (`random_int(50000, 150000) * $attempt` microseconds,
+    // i.e. ~50-150ms times the attempt number): a p95 above 2000ms implies
+    // recoveries are routinely running deep into the retry ceiling (the
+    // 4th/5th attempt's backoff alone is 200-750ms, before the retried
+    // operation's own duration is added), consistent with sustained
+    // contention rather than an isolated blip.
+    //
+    // evaluation_window_seconds: how often an operator/manual check should
+    // sample this data (default 300s / 5 minutes, matching
+    // tsms.metrics.skew.window_seconds above for consistency). Because
+    // `exhausted`/`attempted`/etc. are cumulative counters (never reset,
+    // per WU7's `cumulative_since_last_reset` envelope window label), an
+    // operator must sample the endpoint twice, evaluation_window_seconds
+    // apart, and compare the delta — there is no windowed counter to read
+    // directly.
+    'db_pressure' => [
+        'exhausted_count_threshold' => (int) env('TSMS_DB_PRESSURE_EXHAUSTED_THRESHOLD', 1),
+        'p95_total_recovery_ms_threshold' => (int) env('TSMS_DB_PRESSURE_P95_RECOVERY_MS_THRESHOLD', 2000),
+        'evaluation_window_seconds' => (int) env('TSMS_DB_PRESSURE_EVALUATION_WINDOW_SECONDS', 300),
+    ],
+
     // Metrics distribution store (WU2, T053 foundation): bounded Redis
     // structures backing App\Support\Metrics::sample()/percentile(), kept
     // separate from the Cache-backed counter/gauge store used by
