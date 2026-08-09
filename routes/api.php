@@ -227,6 +227,21 @@ Route::prefix('v1')->middleware(['auth:sanctum', 'capture.terminal.ip', AttachCo
             Route::get('/intake/recent',   [\App\Http\Controllers\API\V1\ObservabilityController::class, 'recent']);
             Route::get('/intake/tenant-audit', [\App\Http\Controllers\API\V1\ObservabilityController::class, 'tenantIngestionAudit']);
             Route::get('/intake/duplicate-receipts', [\App\Http\Controllers\API\V1\ObservabilityController::class, 'duplicateReceipts']);
+
+            // WU7 (T054): read-only ingestion observability endpoints.
+            // GET-only per Architecture Invariant 6 (no endpoint may mutate
+            // any state) — do not add POST/PUT/DELETE routes here. Gated by
+            // the same 'abilities:admin:manage' group as every route above,
+            // per this file's authorization matrix documented at the top of
+            // ObservabilityController.
+            Route::get('/ingestion/queue-depth', [\App\Http\Controllers\API\V1\ObservabilityController::class, 'ingestionQueueDepth']);
+            Route::get('/ingestion/queue-age', [\App\Http\Controllers\API\V1\ObservabilityController::class, 'ingestionQueueAge']);
+            Route::get('/ingestion/circuit-breaker', [\App\Http\Controllers\API\V1\ObservabilityController::class, 'circuitBreakerState']);
+            Route::get('/ingestion/backpressure', [\App\Http\Controllers\API\V1\ObservabilityController::class, 'backpressureState']);
+            Route::get('/ingestion/db-pressure', [\App\Http\Controllers\API\V1\ObservabilityController::class, 'dbPressure']);
+            Route::get('/ingestion/skew', [\App\Http\Controllers\API\V1\ObservabilityController::class, 'tenantTerminalSkew']);
+            Route::get('/ingestion/rejections', [\App\Http\Controllers\API\V1\ObservabilityController::class, 'rejectionReasons']);
+            Route::get('/ingestion/percentiles', [\App\Http\Controllers\API\V1\ObservabilityController::class, 'percentileMetrics']);
         });
     });
 

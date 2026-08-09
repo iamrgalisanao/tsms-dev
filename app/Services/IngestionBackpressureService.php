@@ -211,6 +211,37 @@ class IngestionBackpressureService
     }
 
     /**
+     * WU7 (T054) read-only exposure of a queue's current depth, for the
+     * observability endpoints. Deliberately NOT a call into checkQueue():
+     * that method's job is an admission *decision* — it also writes a
+     * Metrics::timing() gauge, logs a warning when overloaded, and
+     * increments the `ingestion.rejected.backpressure` counter when
+     * enforced — none of which belong on a pure status-inspection read
+     * (Architecture Invariant 6, read-only observability). This method
+     * reuses queueDepth()'s exact same Redis LLEN call (no duplicated Redis
+     * logic) and adds nothing beyond a fail-safe wrapper: on any Redis
+     * failure it reports `available: false` rather than throwing, exactly
+     * like oldestReadyJobAge()'s existing fail-safe shape, so a caller
+     * (ObservabilityController) never has to catch a Redis exception from
+     * this call itself.
+     *
+     * @return array{available: bool, depth: int|null}
+     */
+    public function currentDepth(string $queueName): array
+    {
+        try {
+            return ['available' => true, 'depth' => $this->queueDepth($queueName)];
+        } catch (\Throwable $e) {
+            Log::warning('IngestionBackpressureService: failed to read current queue depth', [
+                'queue' => $queueName,
+                'error' => $e->getMessage(),
+            ]);
+
+            return ['available' => false, 'depth' => null];
+        }
+    }
+
+    /**
      * WU4 (T053 remainder) queue-age feasibility outcome — a real,
      * Horizon-sourced "oldest ready-queue job age", not a proxy or an
      * `available: false` stub. Deliberately NOT called from checkQueue()

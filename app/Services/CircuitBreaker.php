@@ -718,6 +718,23 @@ LUA;
         Metrics::timing("circuit_breaker.state.{$this->serviceKey}", $stateValue);
     }
 
+    /**
+     * WU7 (T054) read-only exposure of readState() for the observability
+     * endpoint. Pure passthrough — does not alter the state machine in any
+     * way, and carries none of isAvailable()'s side effects (no half-open
+     * admission, no probe consumption, no transition). Safe to call at any
+     * time purely for inspection; unlike isAvailable(), this method does
+     * NOT fail open on a Redis error — it lets the exception propagate so
+     * the caller (ObservabilityController) can report an honest
+     * `unavailable` status instead of a fabricated closed/open state.
+     *
+     * @return array{state: string, failure_count: int, opened_at: int, half_open_generation: int, half_open_started_at: int, half_open_probe_count: int, half_open_successes: int, half_open_failures: int}
+     */
+    public function currentState(): array
+    {
+        return $this->readState();
+    }
+
     protected function readState(): array
     {
         $data = Redis::connection($this->redisConnection)->hgetall($this->key);
