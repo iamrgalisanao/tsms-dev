@@ -153,6 +153,115 @@ redis-cli HGETALL tsms:circuit-breaker:transaction-intake
 - **T035**: `Retry-After` header on the official-intake-overload rejection path (`TransactionController::storeOfficial()`), closing the last header/body inconsistency gap.
 - This runbook documents the **final, shipped state** of all of the above — it was deliberately written last (after T028/T028a/T028b/T035 landed) specifically so it would not need a rewrite mid-implementation.
 
+## 12. Rolling Back This Feature (General Procedure)
+
+Sections 8/9 above cover recovering from a live breaker/backpressure
+*incident* while staying on this feature's code. This section covers a
+different, larger action: rolling back the **entire**
+`specs/001-100-tenant-resilience` feature branch itself — circuit breaker,
+backpressure, fairness, tenant-override, Horizon supervisor splits, metrics,
+skew ranking, and the WU7 observability endpoints — because something about
+the feature as a whole needs to be undone, not because one incident needs
+recovering from. (For rolling back only a shard-count *change* while
+remaining on this feature's code, see `docs/SHARD_COUNT_CHANGE_RUNBOOK.md`'s
+own "Rollback procedure" section — that is a narrower, different action
+from what is described here.)
+
+### 12.1 The known-good fallback point
+
+`remove-webapp-forwarding` is the established pre-resilience-work fallback
+branch — the last known-good state before this feature's work began.
+`scripts/verify-rollback-branch.sh` is a **verification guard, not a
+rollback executor**: it does not revert anything itself. It checks that:
+
+1. A recorded baseline commit SHA
+   (`specs/001-100-tenant-resilience/rollback-baseline.txt`, one 40-character
+   SHA) still matches the current tip of `origin/remove-webapp-forwarding`
+   — i.e., the fallback branch has not silently moved, been rebased, or
+   diverged since that baseline was recorded.
+2. That baseline SHA is a genuine ancestor of the release ref being checked
+   (`HEAD` by default) — i.e., the fallback point is still real history
+   underneath the current feature work, not something that has been
+   rewritten out of the tree.
+
+Run it before trusting `remove-webapp-forwarding` as a rollback target, and
+again after a rollback to confirm the deployed state's ancestry is what you
+expect:
+
+```bash
+scripts/verify-rollback-branch.sh
+# exit 0: remove-webapp-forwarding is unchanged and still an ancestor — safe to treat as the fallback.
+# non-zero: investigate before relying on this branch as a rollback target.
+```
+
+### 12.2 What actually needs to happen, by category of change
+
+**Code (git):** either `git revert` the feature's commits forward (preferred
+— preserves history and is itself auditable) or redeploy from
+`remove-webapp-forwarding`'s tip directly. Which is appropriate depends on
+how the feature was merged and how much has landed on top of it since;
+neither choice is prescribed here.
+
+**Config (env vars):** a plain revert. Every config key this feature
+introduced or changed (`TSMS_INTAKE_BACKPRESSURE_MODE`,
+`TSMS_PROCESSING_SHARD_COUNT`/`TSMS_INTAKE_SHARD_COUNT`,
+`TSMS_TENANT_THROTTLE_*`, `TSMS_DB_PRESSURE_*`, the `HZ_*_PROCESSES`
+supervisor-sizing vars) is read by code this feature added — once that code
+is reverted, these env vars are simply inert. There is no data migration
+tied to any of them; unset them or leave them in place, either is safe once
+the reading code is gone.
+
+**New Redis-backed structures — circuit breaker, backpressure's queue
+reads, fairness counters, tenant-override keys, metrics/percentile samples,
+skew ranking — need NO active cleanup.** Every one of these is an additive
+Redis key with its own TTL (`tsms:circuit-breaker:transaction-intake`'s
+`state_ttl_seconds`, fairness's per-window fixed keys, `fairness:override:*`'s
+per-override TTL, the metrics/skew sample sets' own `sample_ttl_seconds`/
+window expiries). None of them are read by the pre-feature code on
+`remove-webapp-forwarding`. Once the reverted code stops writing to and
+reading from them, they simply age out on their own schedule — there is
+nothing to `DEL`, no migration to run, and no cleanup script to write. This
+is the least risky category of this rollback by a wide margin.
+
+**New Artisan commands and endpoints** (`ingestion:tenant-throttle:set`/
+`status`/`clear`, `tsms:shard-topology-verify`, the WU7
+`ObservabilityController` routes) **need no active cleanup either** — once
+the code defining them is gone, they simply don't exist: the command is
+"command not defined," the route 404s. Nothing needs to be explicitly
+disabled or unregistered beyond the code revert itself.
+
+**Horizon DOES need an explicit restart.** Unlike the Redis structures
+above, Horizon's supervisor topology (`config/horizon.php`'s
+intake/high/processing/low/notifications/reporting/webhook supervisor
+split) is process configuration, not a self-expiring Redis key — reverting
+the file does nothing until Horizon is restarted to pick up the reverted
+supervisor definitions:
+
+```bash
+php artisan horizon:terminate --wait
+```
+
+(Your process supervisor must be configured to relaunch `php artisan
+horizon` automatically after this, exactly as in
+`docs/SHARD_COUNT_CHANGE_RUNBOOK.md`'s increase/decrease procedures.)
+
+### 12.3 Rollback checklist
+
+- [ ] Ran `scripts/verify-rollback-branch.sh` and confirmed exit code `0`
+      (`remove-webapp-forwarding` unchanged and still an ancestor).
+- [ ] Reverted the feature's code (git revert, or redeploy from
+      `remove-webapp-forwarding`'s tip).
+- [ ] Reverted or removed this feature's env vars (§12.2 — optional in
+      practice, since reverted code no longer reads them, but recommended
+      for a clean environment).
+- [ ] Restarted Horizon (`horizon:terminate --wait`) and confirmed the
+      process supervisor relaunched it with the reverted `config/horizon.php`.
+- [ ] Re-ran `scripts/verify-rollback-branch.sh` post-rollback as a sanity
+      check on the deployed state's ancestry.
+- [ ] Did **not** spend any effort manually deleting circuit-breaker,
+      backpressure, fairness, tenant-override, metrics, or skew-ranking
+      Redis keys — confirmed (per §12.2) that none of this is required.
+
 ## Unknown / Not Verifiable From This Repository
 
 - Actual production alerting thresholds/dashboards (Grafana, PagerDuty, etc.) tied to these logs/metrics are not present in this repository and cannot be documented here — **unknown**.
