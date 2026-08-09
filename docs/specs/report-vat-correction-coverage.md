@@ -4,6 +4,8 @@
 
 **Draft — not yet approved for implementation.** Written to document a confirmed, currently-open reporting-correctness gap identified during the delivery of `specs/001-100-tenant-resilience/`, but explicitly out of that feature's scope (see "Relationship to Other Work" below). This document does not authorize any code change on its own.
 
+This spec now explicitly covers **two related but distinct problem tracks** under one reporting-correctness umbrella — see "Problem Tracks" below. They share one architectural root cause and one target architecture, but have separate scope and separate acceptance criteria so neither is accidentally solved as a single vague "fix VAT" task.
+
 ## Background
 
 Different POS terminal setups report the `vatable_sales` figure two different ways: some send it already net of VAT (matching the printed Z-reading), others send it VAT-inclusive (the VAT amount baked into the figure). `App\Services\Reports\FinanceCalculationService::deriveMetrics()` (`app/Services/Reports/FinanceCalculationService.php:187`) already detects and corrects for this — verified working correctly against real Z-reading numbers for at least one tenant (Kyukyu) — via a heuristic comparison at line 226:
@@ -32,9 +34,53 @@ $rawLooksVatInclusive = abs($vatableForGross - round($candidateExVat + $rawVat, 
   This confirms the discrepancy is already observable in this exact code path today — the detection exists, the correction does not.
 - `app/Presenters/TransactionSummaryPresenter.php:43-71` — reads raw `tax_type` rows (`VAT`, `VATABLE_SALES`, `SC_VAT_EXEMPT_SALES`) and returns them as-is (lines 43-49, 63-71), with no VAT-inclusive/exclusive normalization. This backs transaction-detail display.
 
+## Related Gap: Tax-Type Alias Consistency
+
+During verification of this spec, an additional cross-surface inconsistency was identified — related to, but distinct from, the VAT-inclusive/exclusive basis correction above.
+
+Several newer reporting services recognize a broad set of `tax_type` aliases for VAT-exempt classification:
+- `app/Services/Reports/FinanceCalculationService.php:12-15,54-57`
+- `app/Services/Reports/SalesReportDataService.php:222-223`
+- `app/Console/Commands/RefreshDailyTransactionSummaries.php:120`
+- `app/Exports/TransactionLogsExport.php:192-195,207-210`
+
+These recognize `SC_VAT_EXEMPT_SALES`, `VAT_EXEMPT_SALES`, `VATEXEMPT_SALES`, `VAT-EXEMPT`, `EXEMPT`, `VATEXEMPT` (and, in some of these files, `ZERO_RATED`/`NON-VAT`/`NON_VAT`/`ZERO-RATED`).
+
+Other surfaces recognize only a narrower subset:
+- `app/Http/Controllers/API/V1/TransactionController.php` (ingestion paths, `batchStore()`/`storeOfficial()`) — `SC_VAT_EXEMPT_SALES` only
+- `app/Models/Transaction.php::otherTaxSum()` — `SC_VAT_EXEMPT_SALES` only
+- `app/Presenters/TransactionSummaryPresenter.php` — `SC_VAT_EXEMPT_SALES` only
+- `app/Services/TransactionValidationService.php::getTaxBuckets()` — a third, partially-overlapping set (`SC_VAT_EXEMPT_SALES`, `VAT_EXEMPT_SALES`, `VAT_EXEMPT`), missing `VATEXEMPT`/`EXEMPT`/`VAT-EXEMPT`
+
+**Risk**: the same source transaction, carrying one of the narrower-set-only alias strings (e.g. `VATEXEMPT` with no underscore), can be classified differently depending on whether it is read at ingestion time, in `Transaction::otherTaxSum()`, in the transaction-detail presenter, or in a downstream report — independent of, and in addition to, the VAT-inclusive/exclusive basis question.
+
+**Required outcome**: one canonical normalizer as the single source of truth for the alias list; no duplicated alias lists across report-facing or ingestion-facing code; unknown/unrecognized alias values are observable (not silently misclassified as "other tax"); canonical classification is tested identically across every affected surface.
+
+This gap is tracked as **Track B** below — see "Problem Tracks" and "Recommended Architecture."
+
+## Problem Tracks
+
+Both gaps above share the same architectural root cause:
+
+> Different reporting and presentation surfaces are interpreting financial semantics independently, instead of going through one canonical normalization and calculation boundary.
+
+They are related enough to belong under this one spec document, but are kept as **separate subproblems with separate acceptance criteria** so they are not accidentally solved as one vague "fix VAT" task.
+
+### Track A — VAT Reporting-Basis Consistency
+
+The original gap described in "Background" above: `DashboardService` and `TransactionSummaryPresenter` read raw, uncorrected VAT/exempt figures instead of going through `FinanceCalculationService::deriveMetrics()`'s existing VAT-inclusive/exclusive correction. Full scope in "Scope — Track A" below.
+
+### Track B — Tax-Type Alias Normalization
+
+The newly-identified gap described in "Related Gap: Tax-Type Alias Consistency" above: inconsistent `tax_type` alias recognition across ingestion, model, presenter, and reporting surfaces. Full scope in "Scope — Track B" below.
+
+Both tracks converge on the same target architecture (see "Recommended Architecture" below) rather than being patched surface-by-surface.
+
 ## Scope
 
-### In scope
+### Scope — Track A: VAT Reporting-Basis Consistency
+
+In scope:
 - Deciding and implementing how `DashboardService` and `TransactionSummaryPresenter` should receive the same VAT-inclusive/exclusive correction `deriveMetrics()` already applies elsewhere — either by routing them through `deriveMetrics()` directly, or via a lighter-weight shared correction helper if the raw-SQL-aggregate performance profile of `DashboardService` can't tolerate per-row `deriveMetrics()` calls.
 - Provider/tenant-aware detection and correction policy: is the VAT-inclusive/exclusive convention a property of the POS provider (like `timestamp_mode` already is, per `config/tsms.php`'s per-provider config), or does it need to be inferred per-transaction regardless of provider?
 - Historical-vs-new-data behavior and mixed-rollout periods: if a provider's reporting convention changed over time, or multiple conventions coexist mid-migration, detection must not assume a clean date boundary.
@@ -42,11 +88,70 @@ $rawLooksVatInclusive = abs($vatableForGross - round($candidateExVat + $rawVat, 
 - Regression and reconciliation tests proving dashboard/detail/export totals agree with the already-correct CMSR/daily/weekly/hourly totals for the same data.
 - Observability for detected mismatches (the existing `DashboardService:154-155` anomaly query is a candidate starting point — decide whether it becomes a monitoring signal on top of corrected data, or is retired once correction is applied everywhere).
 
-### Explicitly out of scope
+### Scope — Track B: Tax-Type Alias Normalization
+
+In scope:
+- `app/Http/Controllers/API/V1/TransactionController.php` ingestion paths
+- `app/Models/Transaction.php::otherTaxSum()`
+- `app/Presenters/TransactionSummaryPresenter.php`
+- `app/Services/TransactionValidationService.php::getTaxBuckets()` and its other-tax-sum logic
+- All report/export consumers of tax-type classification (auditing the already-broad `FinanceCalculationService`/`SalesReportDataService`/`RefreshDailyTransactionSummaries`/`TransactionLogsExport` alias lists as the reference set, not reinventing it)
+- Provider/tenant basis detection is **not** part of Track B — Track B is purely about tax-type string classification, not VAT-inclusive/exclusive basis
+
+Explicitly not a Track B fix:
+- patching `TransactionController`, `Transaction::otherTaxSum()`, and `TransactionSummaryPresenter` separately with their own copy of the broader alias list;
+- adding more local `CASE`/`elseif` expressions;
+- duplicating the alias list into yet another class.
+See "Recommended Architecture" for the required approach instead.
+
+### Explicitly out of scope (both tracks)
 - **The Goldilocks POS terminal's VAT-subtraction defect.** This is a separate, unrelated problem: Goldilocks' POS terminal fails to subtract VAT at all on approximately 95% of its own transactions — a genuine defect in the data as submitted at the source, not a reporting-basis/display question. No correction on TSMS's reporting side can fix data that is already wrong on arrival. This needs a fix on the provider's end and is not an engineering task for TSMS. (Note: Goldilocks is also the tenant named in the *timezone* bucketing fix below — that was a different, already-resolved issue; the VAT defect is unrelated and remains open on the provider's side.)
 - Any change to `specs/001-100-tenant-resilience/` or its US5 (Operational Readiness) scope — that feature's own spec explicitly states "Financial calculation/business-rule changes are out of scope except where required for retry-safe ingestion," and US5's observability scope is about ingestion/queue/circuit-breaker signals, not report correctness. This gap was identified during that feature's delivery but is intentionally tracked separately here.
 - Any change to the 7-Eleven business-day-cutoff logic (`docs/specs/7-eleven-business-day-cutoff.md`) — a related but distinct business-date concern.
 - Any change to the already-merged timezone/UTC bucketing fix (see below) beyond noting its relationship to this work.
+
+## Recommended Architecture (Canonical Financial-Normalization Pipeline)
+
+The long-term architectural target for both tracks:
+
+```text
+Raw transaction/tax rows
+        ↓
+Tax type normalization
+        ↓
+Provider/tenant reporting-basis resolution
+        ↓
+VAT-inclusive/exclusive correction
+        ↓
+Canonical financial metrics
+        ↓
+Dashboard / reports / summaries / exports
+```
+
+Today's inconsistency exists because different surfaces enter this pipeline at different points — or bypass it entirely. The fix should **not** be surface-by-surface patches (patch `DashboardService` separately, patch `TransactionSummaryPresenter` separately, add more local `CASE` expressions, duplicate the alias list into more classes). The fix should be: move all report-facing financial interpretation behind one reusable domain-service/value-object boundary.
+
+### Component boundaries
+
+**A. `TaxTypeNormalizer`** — normalizes raw tax-type strings (handling aliases such as `VAT-EXEMPT`, `VATEXEMPT`, `EXEMPT`, `SC_VAT_EXEMPT_SALES`, etc.) and returns a canonical enum/internal constant, e.g.:
+
+```php
+enum CanonicalTaxType: string
+{
+    case VatSale = 'vat_sale';
+    case VatExempt = 'vat_exempt';
+    case ZeroRated = 'zero_rated';
+    case NonVat = 'non_vat';
+    case Unknown = 'unknown';
+}
+
+TaxTypeNormalizer::normalize(?string $raw): CanonicalTaxType
+```
+
+The alias list exists in exactly one place. This is the Track B deliverable.
+
+**B. `ReportingBasisResolver`** — determines whether the transaction/provider/tenant data is VAT-inclusive, VAT-exclusive, or mixed/unknown, and resolves tenant/provider-specific policy. `ReportingBasisResolver` owns the *runtime basis decision*; the broader historical, reconciliation, and rollout decisions (backfill scope, tolerance, anomaly-query fate — see "Required Decisions") remain feature-level governance decisions, not something the resolver class itself contains. This is the Track A deliverable, and is where the historical/rollout-aware policy from "Required Decisions" items 2–3 gets implemented.
+
+**C. `FinanceCalculationService`** — calculates canonical financial metrics after normalization and basis resolution, and remains the *one* supported calculation path for CMSR, dashboard, detailed transaction summaries, hourly/daily/weekly reporting, exports, and grand totals. `deriveMetrics()` may remain the entry point, but likely needs a clearer input contract than raw, loosely-interpreted rows once `TaxTypeNormalizer`/`ReportingBasisResolver` exist upstream of it.
 
 ## Relationship to the Timezone/UTC Bucketing Fix
 
@@ -57,7 +162,9 @@ Two commits, already merged to `origin/main` (not yet present on this repository
 
 **These commits touch only *when* a transaction is bucketed into a business day/hour — they do not touch `vat_amount`, `vatable_sales`, `net_sales`, or `deriveMetrics()` in any way.** The two issues are independent: a transaction can be correctly bucketed on the right business day and still show the wrong VAT-corrected total on an uncorrected report surface, or vice versa. However, the *pattern* used to resolve the timezone issue — a provider-convention-aware fallback rather than a date-based cutover, informed by real reconciliation against Z-readings — is a directly reusable precedent for how this VAT-correction gap should likely be approached (see "Required Decisions" below).
 
-**Local branch note**: as of this document's authoring, local `main` in this repository is 7 commits behind `origin/main`, and is missing exactly the `b3dab702`/`1e82a5db` lineage — `app/Traits/ResolvesReportBusinessDate.php` does not yet exist in this working tree. This is a local git-hygiene gap, not evidence the fix is broken or reverted upstream. Anyone picking up this VAT-correction work should first sync local `main` with `origin/main` before starting, since the timezone fix's `ResolvesReportBusinessDate` trait establishes a provider-config-driven pattern worth following, not duplicating.
+**Local branch note (historical, resolved)**: at this document's original authoring, local `main` was 7 commits behind `origin/main` and missing the `b3dab702`/`1e82a5db` lineage. This has since been synced — see the closure note immediately below.
+
+**Status: resolved dependency — closed.** `app/Traits/ResolvesReportBusinessDate.php` and both commits (`b3dab702`, `1e82a5db`) are confirmed present in local `main`. UTC/business-date bucketing is fully merged and stable. **No further implementation work on timezone/UTC bucketing is required in either track of this feature.** Neither Track A nor Track B should touch `ResolvesReportBusinessDate` or reopen bucketing logic — this prevents future agents from mixing already-stable bucketing changes into financial-calculation work.
 
 ## Provider/Tenant-Aware Detection and Correction Policy
 
@@ -71,12 +178,34 @@ Per the timezone fix's own finding, do not assume a clean date boundary exists f
 
 For any given tenant and date range, `DashboardService` and `TransactionSummaryPresenter` outputs must agree with `CommercialReportsController`/`SalesReportDataService`/`HourlyReportService`/`TransactionLogController` outputs for the same underlying transactions, once this work lands. This is the acceptance bar referenced in "Acceptance Criteria."
 
+## Recommended Ingestion Strategy
+
+Do not overwrite raw provider values indiscriminately. Preserve them alongside the normalized classification:
+
+```text
+raw_tax_type          = original provider value
+canonical_tax_type    = normalized internal classification
+normalization_version = rule-set version
+```
+
+This matters architecturally for: auditability, reconciliation, future rule corrections, provider disputes, and historical reprocessing. If adding columns is too disruptive to land immediately, normalize at the domain boundary first — but the design should still preserve the raw input somewhere, not discard it at ingestion.
+
+## Recommended Rollout
+
+1. **Discovery and reconciliation** — inventory all tax-type aliases actually present in production data; identify every direct raw VAT aggregation; identify every `deriveMetrics()` caller and bypass; build reconciliation queries comparing current result, corrected result, and delta by tenant/provider/date. No behavior change yet.
+2. **Canonical normalization** — implement `TaxTypeNormalizer`; replace duplicated alias lists; add unknown-alias telemetry; keep financial outputs unchanged initially where possible.
+3. **Calculation coverage** — route `DashboardService` through the canonical calculation path; route `TransactionSummaryPresenter` through the same path; remove or deprecate raw aggregate duplication; add cross-surface consistency tests.
+4. **Historical policy** — decide backfill versus read-time correction (per "Required Decisions" item 4); run tenant/provider reconciliation; deploy behind a tenant/provider feature flag if the historical impact is material.
+5. **Operational rollout** — compare old and new outputs; record deltas; require finance sign-off; progressively enable by provider or tenant.
+
 ## Regression and Reconciliation Tests
 
 - Unit tests proving `DashboardService`'s (or its replacement/wrapped) VAT-related aggregates match `deriveMetrics()`'s corrected output for known VAT-inclusive and VAT-exclusive fixture transactions.
 - Unit tests proving `TransactionSummaryPresenter`'s per-transaction VAT fields match `deriveMetrics()`'s per-transaction correction for the same fixtures.
 - A cross-surface reconciliation test: given the same seeded transaction set, assert `DashboardService`'s aggregate total equals the sum of `SalesReportDataService`'s corrected per-day totals for the same range.
 - Regression coverage confirming the existing `DashboardService:154-155` anomaly-detection query's behavior is preserved or deliberately superseded (decide which, per "Required Decisions").
+- **Cross-surface consistency matrix (both tracks)**: for the same seeded transaction set, assert identical VAT totals, exempt totals, net sales, and discount values across CMSR, Dashboard, Hourly report, Daily report, Weekly report, Transaction summary, Export, and Grand totals.
+- **Track B alias tests**: all known aliases map to the same `CanonicalTaxType` regardless of which surface reads them; unknown aliases are surfaced/observable, not silently misclassified as "other tax"; no double correction when both normalization and basis correction apply; raw provider values remain auditable after normalization; VAT-inclusive-provider, VAT-exclusive-provider, mixed-rollout-month, and historical-null/missing-metadata fixtures are all covered; corrected totals stay within the approved tolerance.
 
 ## Observability for Detected Mismatches
 
@@ -93,10 +222,19 @@ Either way, a monitoring signal for "VAT-inclusive-vs-exclusive mismatch detecte
 
 ## Acceptance Criteria
 
+**Track A:**
 - [ ] `DashboardService`'s VAT-related aggregates and `TransactionSummaryPresenter`'s per-transaction VAT fields apply the same correction logic `deriveMetrics()` already applies to CMSR/daily/weekly/hourly/export/transaction-log surfaces.
 - [ ] For any tenant and date range, dashboard totals reconcile with CMSR/report totals for the same transactions, within the agreed tolerance.
 - [ ] Regression tests cover both VAT-inclusive and VAT-exclusive source conventions, plus at least one mixed/ambiguous-provider fixture case.
 - [ ] The Goldilocks provider-side VAT-subtraction defect remains explicitly untouched by this work and is separately communicated/tracked as a provider issue, not folded into this fix's scope.
+
+**Track B:**
+- [ ] One canonical `TaxTypeNormalizer` (or equivalent) is the sole source of truth for tax-type alias classification; no duplicated alias lists remain in ingestion, model, presenter, or reporting code.
+- [ ] `TransactionController` ingestion paths, `Transaction::otherTaxSum()`, `TransactionSummaryPresenter`, and `TransactionValidationService::getTaxBuckets()` all classify the full alias set identically to `FinanceCalculationService`/`SalesReportDataService`/`RefreshDailyTransactionSummaries`.
+- [ ] Unknown/unrecognized tax-type values are observable (logged/metered), not silently bucketed into "other tax."
+- [ ] Raw provider tax-type values remain auditable after normalization (per "Recommended Ingestion Strategy").
+
+**Both tracks:**
 - [ ] No change is made to `specs/001-100-tenant-resilience/` scope, US5, or the timezone/UTC bucketing fix.
 
 ## Required Decisions (unresolved, blocking implementation)
@@ -107,9 +245,11 @@ Either way, a monitoring signal for "VAT-inclusive-vs-exclusive mismatch detecte
 4. **Backfill scope** — recompute existing cached/materialized aggregates, or forward-only?
 5. **Consistency tolerance** — what variance between dashboard and detailed-report totals counts as a regression, and is the existing `>0.02`-peso per-row tolerance the right basis for an aggregate-level check?
 6. **Anomaly-query fate** — keep `DashboardService:154-155` as a live monitoring signal post-fix, or retire it?
+7. **Alias handling policy** (Track B) — the canonical alias set; unknown-value behavior; whether normalization occurs at ingestion time, read time, or both; whether historical raw values remain unchanged.
 
 ## Cross-References
 
-- `specs/001-100-tenant-resilience/plan.md` — "Feature Status" section notes this gap was identified during that feature's delivery and is tracked here, outside that feature's scope.
+- `specs/001-100-tenant-resilience/plan.md` — "Feature Status" section notes this gap (Track A) was identified during that feature's delivery and is tracked here, outside that feature's scope.
 - `docs/specs/7-eleven-business-day-cutoff.md` — sibling lightweight spec doc, same `docs/specs/*.md` convention, a related but distinct business-date concern.
-- Timezone/UTC bucketing fix: commits `b3dab702`, `1e82a5db` (merged to `origin/main`).
+- Timezone/UTC bucketing fix: commits `b3dab702`, `1e82a5db` (merged to `origin/main` and confirmed present in local `main` — resolved, closed dependency, see "Relationship to the Timezone/UTC Bucketing Fix").
+- Track B (tax-type alias normalization) was identified during verification of this same spec, not during a separate feature's delivery — see "Related Gap: Tax-Type Alias Consistency."
