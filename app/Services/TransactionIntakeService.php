@@ -20,12 +20,23 @@ class TransactionIntakeService
 {
     protected PayloadChecksumService $checksumService;
 
+    protected SkewRankingService $skewRanking;
+
     public function __construct(
         PayloadChecksumService $checksumService,
         private readonly IngestionQueueRouter $queueRouter,
-        private readonly IngestionBackpressureService $backpressureService
+        private readonly IngestionBackpressureService $backpressureService,
+        ?SkewRankingService $skewRanking = null
     ) {
         $this->checksumService = $checksumService;
+        // Optional with a container-resolved fallback (rather than a plain
+        // constructor-promoted required param) so this new WU4 dependency
+        // does not force every existing 3-arg `new TransactionIntakeService(...)`
+        // call site and anonymous-subclass `parent::__construct(...)` call in
+        // the test suite (several, across ingestion feature tests) to be
+        // rewritten just to add a 4th argument they have no reason to care
+        // about.
+        $this->skewRanking = $skewRanking ?? app(SkewRankingService::class);
     }
 
     /**
@@ -71,6 +82,13 @@ class TransactionIntakeService
         if ($maxBatchCount > 0) {
             $submittedForLimitCheck = $this->submittedTransactions($payload)[0];
             if (count($submittedForLimitCheck) > $maxBatchCount) {
+                // WU4 (T053 remainder): rejection-reason counter, closing
+                // the "batch-size" reason plan.md's WU4 prose names
+                // alongside payload-size/fairness/backpressure/circuit
+                // breaker. Metrics::incr() swallows its own failures, so
+                // this can never affect the 422 response below.
+                Metrics::incr('ingestion.rejected.batch_size');
+
                 return [
                     'success' => false,
                     'http_status' => 422,
@@ -235,6 +253,18 @@ class TransactionIntakeService
             Metrics::bucket('intake.dispatch_latency', $latency);
             Metrics::incr('intake.accepted_count');
             Metrics::incr("tenant.{$intake->tenant_id}.intake_count");
+
+            // WU4 (T053 remainder): bounded "top-N talkers" ranking,
+            // recorded at the same call site as the unbounded per-tenant
+            // counter above. Unlike that counter (one new Cache key per
+            // distinct tenant ID, forever), this is a capped Redis sorted
+            // set (see SkewRankingService/tsms.metrics.skew config) that
+            // never grows past its configured member cap, added here
+            // specifically to support a future "who are the top N
+            // tenants/terminals right now" read without unbounded per
+            // -tenant/terminal cardinality.
+            $this->skewRanking->recordTenant($intake->tenant_id);
+            $this->skewRanking->recordTerminal($intake->terminal_id);
 
             return [
                 'success' => true,

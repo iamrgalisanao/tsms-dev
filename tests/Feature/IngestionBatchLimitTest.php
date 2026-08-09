@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Models\PosTerminal;
 use App\Models\Tenant;
+use App\Support\Metrics;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
@@ -39,6 +40,9 @@ class IngestionBatchLimitTest extends TestCase
             'submission_uuid' => $submissionUuid,
         ]);
         Queue::assertNothingPushed();
+
+        // WU4 (T053 remainder): batch-size rejection-reason counter.
+        $this->assertSame(1, Metrics::get('ingestion.rejected.batch_size'));
     }
 
     public function test_official_endpoint_accepts_batch_within_max_count(): void
@@ -79,6 +83,9 @@ class IngestionBatchLimitTest extends TestCase
             ]);
         }
         Queue::assertNothingPushed();
+
+        // WU4 (T053 remainder): batch-size rejection-reason counter.
+        $this->assertSame(1, Metrics::get('ingestion.rejected.batch_size'));
     }
 
     public function test_batch_endpoint_batch_limit_guard_precedes_terminal_id_db_lookup(): void

@@ -4,6 +4,7 @@ namespace App\Http\Middleware;
 
 use App\Models\PosTerminal;
 use App\Services\IngestionFairnessService;
+use App\Support\Metrics;
 use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -71,6 +72,15 @@ class IngestionFairnessMiddleware
         }
 
         $correlationId = $request->attributes->get('correlation_id') ?: $request->header('X-Request-Id');
+
+        // WU4 (T053 remainder): rejection-reason counter. A single counter
+        // across all three scopes (global/tenant/terminal), matching the
+        // one-counter-per-middleware-reason convention used by the other
+        // three ingestion rejection paths; $result['scope'] is still
+        // available in the JSON body below for per-scope diagnosis without
+        // needing a higher-cardinality metric key. Metrics::incr() swallows
+        // its own failures, so this can never affect the 429 response below.
+        Metrics::incr('ingestion.rejected.fairness');
 
         return response()->json([
             'success' => false,

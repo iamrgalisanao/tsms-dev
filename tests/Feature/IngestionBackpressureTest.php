@@ -156,7 +156,8 @@ class IngestionBackpressureTest extends TestCase
         $service = new TransactionIntakeService(
             $checksum,
             app(IngestionQueueRouter::class),
-            app(\App\Services\IngestionBackpressureService::class)
+            app(\App\Services\IngestionBackpressureService::class),
+            app(\App\Services\SkewRankingService::class)
         );
 
         $result = $service->handleIntake($request);
@@ -245,7 +246,8 @@ class IngestionBackpressureTest extends TestCase
         $service = new TransactionIntakeService(
             $checksum,
             app(IngestionQueueRouter::class),
-            app(\App\Services\IngestionBackpressureService::class)
+            app(\App\Services\IngestionBackpressureService::class),
+            app(\App\Services\SkewRankingService::class)
         );
 
         $result = $service->handleIntake($request);
@@ -291,6 +293,176 @@ class IngestionBackpressureTest extends TestCase
             ->assertJsonPath('backpressure.processing.overloaded', false);
 
         Queue::assertNothingPushed();
+    }
+
+    /** WU4 (T053 remainder): rejection-reason counter for the backpressure path. */
+    public function test_backpressure_rejection_increments_rejection_metric(): void
+    {
+        Queue::fake();
+        config()->set('tsms.intake.backpressure.enabled', true);
+        config()->set('tsms.intake.backpressure.mode', 'enforce');
+        config()->set('tsms.intake.backpressure.max_queue_depth', 10);
+
+        [$tenant, $terminal] = $this->seedTenantAndTerminal();
+        $queue = app(IngestionQueueRouter::class)->processingQueueForTenant($tenant->id);
+        $this->mockRedisDepth($queue, 10);
+
+        $this->assertSame(0, \App\Support\Metrics::get('ingestion.rejected.backpressure', 0));
+
+        $payload = $this->officialPayload($tenant->id, $terminal->id, (string) Str::uuid(), $terminal->serial_number);
+        $this->postJson('/api/v1/transactions/official', $payload, $this->headersFor($terminal))
+            ->assertStatus(429);
+
+        $this->assertSame(1, \App\Support\Metrics::get('ingestion.rejected.backpressure', 0));
+    }
+
+    /**
+     * WU4 (T053 remainder): queue depth is persisted as a metric using the
+     * exact depth value checkQueue() already computed for its admission
+     * decision — no additional Redis call.
+     */
+    public function test_queue_depth_is_recorded_as_a_metric(): void
+    {
+        Queue::fake();
+        config()->set('tsms.intake.backpressure.enabled', true);
+        config()->set('tsms.intake.backpressure.mode', 'observe');
+        config()->set('tsms.intake.backpressure.max_queue_depth', 100);
+
+        [$tenant, $terminal] = $this->seedTenantAndTerminal();
+        $processingQueue = app(IngestionQueueRouter::class)->processingQueueForTenant($tenant->id);
+        $intakeQueue = app(IngestionQueueRouter::class)->intakeQueueForTenant($tenant->id);
+        $this->mockRedisDepths([
+            $processingQueue => 7,
+            $intakeQueue => 3,
+        ]);
+
+        $payload = $this->officialPayload($tenant->id, $terminal->id, (string) Str::uuid(), $terminal->serial_number);
+        $this->postJson('/api/v1/transactions/official', $payload, $this->headersFor($terminal))
+            ->assertStatus(202);
+
+        $this->assertSame(7, \App\Support\Metrics::get("ingestion.queue_depth.processing.{$processingQueue}", 0));
+        $this->assertSame(3, \App\Support\Metrics::get("ingestion.queue_depth.intake.{$intakeQueue}", 0));
+    }
+
+    /**
+     * WU4 (T053 remainder) queue-age feasibility outcome, tested directly
+     * against IngestionBackpressureService::oldestReadyJobAge() — see that
+     * method's doc-comment for the full investigation. Uses its own Redis
+     * double (stubbing only lindex()) rather than mockRedisDepths(), since
+     * this method never calls llen() and is not part of checkQueue()'s
+     * request-time call chain.
+     */
+    public function test_oldest_ready_job_age_reports_a_real_age_from_horizons_pushed_at(): void
+    {
+        Carbon::setTestNow(Carbon::createFromTimestamp(2_000_000_100));
+        $pushedAt = 2_000_000_000; // 100 seconds before "now" above
+
+        $redis = Mockery::mock();
+        $redis->shouldReceive('lindex')
+            ->once()
+            ->with('queues:test-queue', 0)
+            ->andReturn(json_encode(['pushedAt' => (string) $pushedAt, 'displayName' => 'SomeJob']));
+        Redis::shouldReceive('connection')->with('default')->andReturn($redis);
+
+        $result = app(\App\Services\IngestionBackpressureService::class)
+            ->oldestReadyJobAge('test-queue', 'processing');
+
+        $this->assertTrue($result['available']);
+        $this->assertEqualsWithDelta(100.0, $result['age_seconds'], 0.01);
+        $this->assertSame('ready_queue_head_pushed_at', $result['source']);
+        $this->assertNull($result['reason']);
+
+        Carbon::setTestNow(null);
+    }
+
+    public function test_oldest_ready_job_age_reports_zero_for_an_empty_queue(): void
+    {
+        $redis = Mockery::mock();
+        $redis->shouldReceive('lindex')->once()->with('queues:empty-queue', 0)->andReturn(null);
+        Redis::shouldReceive('connection')->with('default')->andReturn($redis);
+
+        $result = app(\App\Services\IngestionBackpressureService::class)
+            ->oldestReadyJobAge('empty-queue', 'processing');
+
+        $this->assertTrue($result['available']);
+        $this->assertSame(0.0, $result['age_seconds']);
+    }
+
+    /** A non-Horizon-decorated payload (no numeric pushedAt) is reported honestly as unavailable, never guessed. */
+    public function test_oldest_ready_job_age_is_unavailable_when_pushed_at_is_missing(): void
+    {
+        $redis = Mockery::mock();
+        $redis->shouldReceive('lindex')
+            ->once()
+            ->with('queues:legacy-queue', 0)
+            ->andReturn(json_encode(['displayName' => 'SomeJob']));
+        Redis::shouldReceive('connection')->with('default')->andReturn($redis);
+
+        $result = app(\App\Services\IngestionBackpressureService::class)
+            ->oldestReadyJobAge('legacy-queue', 'processing');
+
+        $this->assertFalse($result['available']);
+        $this->assertNull($result['age_seconds']);
+        $this->assertSame('pushed_at_unavailable', $result['reason']);
+    }
+
+    /** Fail-safe: a Redis failure while sampling age must never throw, only report unavailable. */
+    public function test_oldest_ready_job_age_is_unavailable_and_does_not_throw_when_redis_fails(): void
+    {
+        $redis = Mockery::mock();
+        $redis->shouldReceive('lindex')->once()->andThrow(new \RuntimeException('Redis down'));
+        Redis::shouldReceive('connection')->with('default')->andReturn($redis);
+
+        $result = app(\App\Services\IngestionBackpressureService::class)
+            ->oldestReadyJobAge('broken-queue', 'processing');
+
+        $this->assertFalse($result['available']);
+        $this->assertNull($result['age_seconds']);
+        $this->assertSame('redis_unavailable', $result['reason']);
+    }
+
+    /**
+     * WU4 (T053 remainder): confirms TransactionIntakeService wires the
+     * bounded skew-ranking increment in at the same call site as the
+     * existing unbounded `tenant.{id}.intake_count` counter, for both the
+     * tenant and terminal dimensions.
+     */
+    public function test_accepted_official_intake_records_tenant_and_terminal_skew_ranking(): void
+    {
+        Queue::fake();
+        config()->set('tsms.intake.backpressure.enabled', false);
+        config()->set('tsms.circuit_breaker.enabled', false);
+
+        [$tenant, $terminal] = $this->seedTenantAndTerminal();
+
+        $evalCalls = [];
+        $redis = Mockery::mock();
+        // Also fields any fairness-check eval() calls (T045 wires
+        // IngestionFairnessMiddleware onto this same route) — returning 1
+        // for every call keeps every scope comfortably under its
+        // configured limit, so this test only needs to isolate and assert
+        // on the RANK_INCREMENT_SCRIPT calls below.
+        $redis->shouldReceive('eval')
+            ->zeroOrMoreTimes()
+            ->andReturnUsing(function (string $script, int $numKeys, ...$rest) use (&$evalCalls) {
+                $evalCalls[] = ['script' => $script, 'key' => $rest[0], 'argv' => array_slice($rest, $numKeys)];
+
+                return 1;
+            });
+        Redis::shouldReceive('connection')->with('default')->andReturn($redis);
+
+        $payload = $this->officialPayload($tenant->id, $terminal->id, (string) Str::uuid(), $terminal->serial_number);
+        $this->postJson('/api/v1/transactions/official', $payload, $this->headersFor($terminal))
+            ->assertStatus(202);
+
+        $rankCalls = array_filter(
+            $evalCalls,
+            fn (array $call) => $call['script'] === \App\Services\SkewRankingService::RANK_INCREMENT_SCRIPT
+        );
+        $members = array_column(array_map(fn (array $call) => $call['argv'], $rankCalls), 0);
+
+        $this->assertContains((string) $tenant->id, $members, 'tenant skew ranking must be recorded on accepted intake');
+        $this->assertContains((string) $terminal->id, $members, 'terminal skew ranking must be recorded on accepted intake');
     }
 
     private function seedTenantAndTerminal(): array

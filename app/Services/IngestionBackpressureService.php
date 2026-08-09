@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Support\Metrics;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Redis;
 
@@ -51,6 +52,14 @@ class IngestionBackpressureService
             $overloaded = $depth >= $this->threshold();
             $enforced = $overloaded && $this->enforced();
 
+            // WU4 (T053 remainder): persist the queue depth this decision
+            // already computed above — no new Redis call, just a gauge
+            // write of the value already in hand. Keyed by queue_type+name
+            // rather than tenant/terminal (bounded cardinality: queue names
+            // are per-shard, capped by tsms.intake.shard_count /
+            // tsms.processing.shard_count, not per-tenant).
+            Metrics::timing("ingestion.queue_depth.{$queueType}.{$queueName}", $depth);
+
             if ($overloaded) {
                 Log::warning('Ingestion backpressure threshold reached', [
                     'queue' => $queueName,
@@ -60,6 +69,15 @@ class IngestionBackpressureService
                     'mode' => $this->mode(),
                     'enforced' => $enforced,
                 ]);
+            }
+
+            if ($enforced) {
+                // WU4 (T053 remainder): rejection-reason counter. Covers
+                // both the middleware's single-queue rejection and
+                // TransactionIntakeService's aggregate (intake+processing)
+                // rejection, since both ultimately go through this method
+                // with no duplicated Redis/queue-depth work.
+                Metrics::incr('ingestion.rejected.backpressure');
             }
 
             return $this->result($overloaded, false, $enforced, $queueName, $queueType, $depth, $this->threshold(), $this->mode());
@@ -73,6 +91,15 @@ class IngestionBackpressureService
                 'fail_closed' => $failClosed,
                 'error' => $e->getMessage(),
             ]);
+
+            if ($failClosed) {
+                // Same rejection reason as the overloaded branch above: from
+                // the caller's perspective this is still a backpressure
+                // rejection, just triggered by an inability to evaluate the
+                // queue (Redis failure) rather than a confirmed depth
+                // breach.
+                Metrics::incr('ingestion.rejected.backpressure');
+            }
 
             return $this->result(false, true, $failClosed, $queueName, $queueType, null, $this->threshold(), $this->mode());
         }
@@ -181,6 +208,114 @@ class IngestionBackpressureService
         $redisConnection = config('queue.connections.redis.connection', 'default');
 
         return (int) Redis::connection($redisConnection)->llen('queues:' . $queueName);
+    }
+
+    /**
+     * WU4 (T053 remainder) queue-age feasibility outcome — a real,
+     * Horizon-sourced "oldest ready-queue job age", not a proxy or an
+     * `available: false` stub. Deliberately NOT called from checkQueue()
+     * above: it issues its own extra Redis round trip (LINDEX), and
+     * checkQueue() is on the hot ingestion request path with test coverage
+     * (IngestionBackpressureTest, IngestionBackpressureFailureModeTest,
+     * OfficialAsyncIntake*Test, OfficialIngestionTransactionBoundaryTest)
+     * that asserts exact llen() call counts against a strict Mockery
+     * double — adding a second Redis command there would either silently
+     * change per-request Redis load for every ingestion request or force
+     * unrelated call-count assertions to be rewritten across seven test
+     * files for an observability nicety that does not need per-request
+     * freshness. This method is a pull-based capability instead (the same
+     * shape WU2 already established for Metrics::sample()/percentile(): a
+     * real, tested capability with no live caller yet, ready for WU7 to
+     * wire into an observability endpoint on its own poll cadence).
+     *
+     * Feasibility investigation (per plan.md's "confirm a stable timestamp
+     * source exists ... before promising 'oldest pending job age'"):
+     *
+     * - This app runs Laravel Horizon (composer.json: laravel/horizon) on
+     *   the 'redis' queue connection. Horizon's own queue connector,
+     *   Laravel\Horizon\RedisQueue, overrides push()/createPayloadArray()
+     *   to run every job payload through Laravel\Horizon\JobPayload::
+     *   prepare(), which unconditionally stamps a 'pushedAt' => microtime()
+     *   field onto the JSON payload before it is RPUSH'd onto
+     *   `queues:{name}` (vendor/laravel/horizon/src/JobPayload.php:104,
+     *   RedisQueue.php:69/108). This is a real, always-present timestamp on
+     *   every job this pipeline enqueues — not inferred, not a guess.
+     * - Laravel's queue Lua scripts (vendor/laravel/framework/src/
+     *   Illuminate/Queue/LuaScripts.php) push via RPUSH and pop via LPOP,
+     *   so the *ready* list is genuinely FIFO: index 0 (LINDEX ... 0) is
+     *   always the oldest not-yet-picked-up job, exactly the same list
+     *   checkQueue()'s own depth check already reads via LLEN.
+     * - Scope: READY jobs only, deliberately not "all pending" (ready +
+     *   delayed + reserved), because:
+     *     - `queues:{name}:reserved` is a ZSET scored by lease-expiry time,
+     *       not enqueue time, and holds jobs already claimed by an active
+     *       worker (in-flight, not backlog) — not a queue-pressure signal.
+     *     - `queues:{name}:delayed` is a ZSET scored by "available-at" time,
+     *       also not enqueue time; and this pipeline's own
+     *       ProcessTransactionIntakeJob never dispatches with a delay (no
+     *       ->delay()/backoff()/release() call sites — confirmed by
+     *       inspection), so the delayed set is empty for this pipeline in
+     *       practice.
+     *     - The ready list is exactly the structure checkQueue()'s own
+     *       admission decision already keys off, so pairing depth+age from
+     *       the same list keeps both signals internally consistent.
+     *   This is why this method's name and 'source' value say "ready" —
+     *   never "pending" — matching plan.md's instruction not to claim more
+     *   precision than the data actually supports.
+     *
+     * @return array{available: bool, age_seconds: float|null, source: string, reason: string|null}
+     */
+    public function oldestReadyJobAge(string $queueName, string $queueType = 'processing'): array
+    {
+        try {
+            $redisConnection = config('queue.connections.redis.connection', 'default');
+            $raw = Redis::connection($redisConnection)->lindex('queues:'.$queueName, 0);
+
+            if (! is_string($raw) || $raw === '') {
+                return $this->queueAgeResult(true, 0.0, null); // empty queue: age is trivially zero, not unavailable
+            }
+
+            $decoded = json_decode($raw, true);
+            $pushedAt = is_array($decoded) ? ($decoded['pushedAt'] ?? null) : null;
+
+            if (! is_numeric($pushedAt)) {
+                // Horizon did not decorate this payload (non-Horizon queue
+                // driver, or a job enqueued before this instrumentation
+                // existed) — cannot honestly report an age for it.
+                return $this->queueAgeResult(false, null, 'pushed_at_unavailable');
+            }
+
+            // now()->getPreciseTimestamp(3) (Carbon, testable via
+            // Carbon::setTestNow()) rather than a raw microtime(true) call,
+            // so this is honestly testable without freezing real wall-clock
+            // time. In production (no test-now override) this resolves to
+            // the same real wall-clock instant microtime(true) would.
+            $nowSeconds = now()->getPreciseTimestamp(3) / 1000;
+            $ageSeconds = max(0.0, $nowSeconds - (float) $pushedAt);
+
+            Metrics::timing("ingestion.queue_oldest_ready_age_seconds.{$queueType}.{$queueName}", $ageSeconds);
+
+            return $this->queueAgeResult(true, $ageSeconds, null);
+        } catch (\Throwable $e) {
+            Log::warning('IngestionBackpressureService: failed to sample oldest ready-job age', [
+                'queue' => $queueName,
+                'queue_type' => $queueType,
+                'error' => $e->getMessage(),
+            ]);
+
+            return $this->queueAgeResult(false, null, 'redis_unavailable');
+        }
+    }
+
+    /** @return array{available: bool, age_seconds: float|null, source: string, reason: string|null} */
+    private function queueAgeResult(bool $available, ?float $ageSeconds, ?string $reason): array
+    {
+        return [
+            'available' => $available,
+            'age_seconds' => $ageSeconds,
+            'source' => 'ready_queue_head_pushed_at',
+            'reason' => $reason,
+        ];
     }
 
     private function enabled(): bool

@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\PosTerminal;
 use App\Models\Tenant;
 use App\Services\PayloadChecksumService;
+use App\Support\Metrics;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Queue;
@@ -41,6 +42,23 @@ class IngestionPayloadLimitTest extends TestCase
             'submission_uuid' => $payload['submission_uuid'],
         ]);
         Queue::assertNothingPushed();
+    }
+
+    /** WU4 (T053 remainder): rejection-reason counter for the payload-size middleware. */
+    public function test_official_endpoint_payload_rejection_increments_rejection_metric(): void
+    {
+        Queue::fake();
+        config()->set('tsms.intake.max_payload_bytes', 50);
+
+        [$tenant, $terminal] = $this->seedTenantAndTerminal();
+        $payload = $this->officialPayload($tenant->id, $terminal->id, (string) Str::uuid(), $terminal->serial_number);
+
+        $this->assertSame(0, Metrics::get('ingestion.rejected.payload_size', 0));
+
+        $this->postJson('/api/v1/transactions/official', $payload, $this->headersFor($terminal))
+            ->assertStatus(413);
+
+        $this->assertSame(1, Metrics::get('ingestion.rejected.payload_size', 0));
     }
 
     public function test_official_endpoint_accepts_payload_within_byte_limit(): void

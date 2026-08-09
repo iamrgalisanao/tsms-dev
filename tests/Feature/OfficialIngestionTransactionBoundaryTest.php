@@ -254,7 +254,15 @@ class OfficialIngestionTransactionBoundaryTest extends TestCase
         $redis->shouldReceive('llen')->times($times)->with('queues:' . $intakeQueue)->andReturn($depth);
         $redis->shouldReceive('llen')->times($times)->with('queues:' . $processingQueue)->andReturn($depth);
 
-        Redis::shouldReceive('connection')->times($times * 2)->with('default')->andReturn($redis);
+        // WU4 (T053 remainder): every accepted intake (all $times of them,
+        // since $depth=0 here never triggers a rejection) also records
+        // tenant+terminal skew ranking via SkewRankingService, which is
+        // its own Redis::connection('default')->eval(...) call per
+        // dimension. The eval() call itself isn't stubbed on this double
+        // (SkewRankingService swallows the resulting BadMethodCallException
+        // internally, per its fail-safe contract), but the connection()
+        // resolution call still counts here.
+        Redis::shouldReceive('connection')->times($times * 4)->with('default')->andReturn($redis);
     }
 
     private function requestFor(array $payload, PosTerminal $terminal): Request

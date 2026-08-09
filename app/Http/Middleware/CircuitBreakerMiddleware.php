@@ -4,6 +4,7 @@ namespace App\Http\Middleware;
 
 use App\Services\CircuitBreaker;
 use App\Support\LogContext;
+use App\Support\Metrics;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\App;
@@ -30,6 +31,13 @@ class CircuitBreakerMiddleware
             // rejection cases isAvailable() can return false for: circuit
             // OPEN, and HALF_OPEN with probe capacity exhausted.
             $retryAfterSeconds = $circuitBreaker->retryAfterSeconds();
+
+            // WU4 (T053 remainder): rejection-reason counter, added purely
+            // as instrumentation alongside T028b's Retry-After work above —
+            // does not touch the correlation-ID/log-context logic in this
+            // method. Metrics::incr() swallows its own failures, so this
+            // can never affect the 503 response below.
+            Metrics::incr('ingestion.rejected.circuit_breaker');
 
             return response()->json([
                 'error' => 'Service unavailable',

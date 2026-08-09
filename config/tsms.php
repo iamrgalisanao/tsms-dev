@@ -145,6 +145,44 @@ return [
             'cardinality_ttl_seconds' => (int) env('TSMS_METRICS_CARDINALITY_TTL_SECONDS', 3600),
             'allowed_dimensions' => ['route', 'shard'],
         ],
+
+        // Bounded tenant/terminal "top-N talkers" ranking (WU4, T053
+        // remainder, Architecture Invariant 5 — bounded cardinality).
+        // Backed by App\Services\SkewRankingService: one Redis sorted set
+        // per dimension (tenant/terminal) per fixed time window, member =
+        // tenant/terminal ID, score = request count within that window.
+        // Deliberately separate from the unbounded per-tenant
+        // `tenant.{id}.intake_count` Cache counter already written by
+        // TransactionIntakeService (WU2 finding) — that counter answers
+        // "what is tenant X's count", this structure answers "who are the
+        // top N tenants/terminals right now" without ever holding more than
+        // member_cap members at a time.
+        // window_seconds: ranking window width (5 minutes) — long enough to
+        // smooth single-request noise, short enough that "current top
+        // talkers" stays operationally meaningful.
+        // member_cap: max distinct tenant/terminal IDs tracked per window
+        // (500) before the lowest-ranked (least active) member is evicted
+        // on the next insert. Sized generously above this feature's
+        // ~100-tenant target (and a plausible multiple of that many active
+        // terminals) so eviction only engages under genuine, unexpected
+        // fan-out — while still bounding worst-case ZSET size to a few
+        // hundred small entries, never unbounded per-terminal growth.
+        // ttl_seconds: on the whole per-window key (10 minutes — 2x
+        // window_seconds), so a finished window's key expires on its own
+        // shortly after it stops being "current" instead of persisting
+        // forever at its last-known size.
+        // max_top_n: hard ceiling on any single top-N read (100), so a
+        // caller (WU7's future observability endpoint) cannot request an
+        // unbounded read even though member_cap already bounds the
+        // underlying structure.
+        'skew' => [
+            'redis_connection' => env('TSMS_SKEW_REDIS_CONNECTION', 'default'),
+            'key_prefix' => env('TSMS_SKEW_KEY_PREFIX', 'metrics:skew:'),
+            'window_seconds' => (int) env('TSMS_SKEW_WINDOW_SECONDS', 300),
+            'member_cap' => (int) env('TSMS_SKEW_MEMBER_CAP', 500),
+            'ttl_seconds' => (int) env('TSMS_SKEW_TTL_SECONDS', 600),
+            'max_top_n' => (int) env('TSMS_SKEW_MAX_TOP_N', 100),
+        ],
     ],
 
     // Fairness (T044): Redis fixed-window INCR+EXPIRE admission limits, per
