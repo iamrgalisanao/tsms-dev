@@ -181,6 +181,13 @@ class IngestionCircuitBreakerTest extends TestCase
         $shouldFail = false;
         $countBefore = TransactionIntake::count();
 
+        // WU4 (T053 remainder): the 3 infrastructure-failure requests above
+        // never touched CircuitBreakerMiddleware's own open-circuit
+        // rejection branch (they reached the DB and failed there instead),
+        // so the middleware's own rejection-reason counter must still be 0
+        // right up until the breaker itself actually rejects a request.
+        $this->assertSame(0, \App\Support\Metrics::get('ingestion.rejected.circuit_breaker', 0));
+
         $payload = $this->officialPayload($tenant->id, $terminal->id, (string) Str::uuid(), $terminal->serial_number);
         $this->postJson('/api/v1/transactions/official', $payload, $this->headersFor($terminal))
             ->assertStatus(503)
@@ -191,6 +198,7 @@ class IngestionCircuitBreakerTest extends TestCase
             ]);
 
         $this->assertSame($countBefore, TransactionIntake::count());
+        $this->assertSame(1, \App\Support\Metrics::get('ingestion.rejected.circuit_breaker', 0));
     }
 
     public function test_successful_requests_keep_the_breaker_closed_and_a_prior_partial_failure_count_resets(): void

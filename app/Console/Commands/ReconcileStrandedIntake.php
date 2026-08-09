@@ -50,6 +50,7 @@ class ReconcileStrandedIntake extends Command
 
         if ($stranded->isEmpty()) {
             $this->info('No stranded accepted or stale queued intake records found.');
+
             return self::SUCCESS;
         }
 
@@ -57,7 +58,7 @@ class ReconcileStrandedIntake extends Command
 
         foreach ($stranded as $intake) {
             try {
-                ProcessTransactionIntakeJob::dispatch($intake->id)
+                ProcessTransactionIntakeJob::dispatch($intake->id, $intake->trace_id)
                     ->onQueue($queueRouter->intakeQueueForTenant($intake->tenant_id))
                     ->afterCommit();
 
@@ -131,8 +132,7 @@ class ReconcileStrandedIntake extends Command
     private function reconcileProcessedMissingTransactions(
         TransactionIngestService $ingestService,
         IngestionQueueRouter $queueRouter
-    ): int
-    {
+    ): int {
         $repair = (bool) $this->option('repair-missing');
         $limit = max(1, (int) $this->option('limit'));
 
@@ -150,14 +150,16 @@ class ReconcileStrandedIntake extends Command
 
                 if ($transactionPayloads === []) {
                     $skipped++;
+
                     return;
                 }
 
                 foreach ($transactionPayloads as $transactionPayload) {
                     $transactionId = $transactionPayload['transaction_id'] ?? null;
 
-                    if (!$transactionId) {
+                    if (! $transactionId) {
                         $skipped++;
+
                         continue;
                     }
 
@@ -176,7 +178,7 @@ class ReconcileStrandedIntake extends Command
                         'processed_at' => optional($intake->processed_at)->toDateTimeString(),
                     ];
 
-                    if (!$repair) {
+                    if (! $repair) {
                         continue;
                     }
 
@@ -193,6 +195,7 @@ class ReconcileStrandedIntake extends Command
 
         if ($missing === []) {
             $this->info('No processed intake records with missing transaction rows were found.');
+
             return self::SUCCESS;
         }
 
@@ -210,7 +213,7 @@ class ReconcileStrandedIntake extends Command
             ], $missing)
         );
 
-        $this->info('Missing processed intake records found: ' . count($missing));
+        $this->info('Missing processed intake records found: '.count($missing));
 
         if ($repair) {
             $this->info("Repair complete. Repaired: {$repaired}. Skipped: {$skipped}. Failed: {$failed}.");

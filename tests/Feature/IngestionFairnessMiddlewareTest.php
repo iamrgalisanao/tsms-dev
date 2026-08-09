@@ -91,6 +91,9 @@ class IngestionFairnessMiddlewareTest extends TestCase
         $this->assertDatabaseMissing('transaction_intake', [
             'tenant_id' => $tenant->id,
         ]);
+
+        // WU4 (T053 remainder): rejection-reason counter for the fairness path.
+        $this->assertSame(1, \App\Support\Metrics::get('ingestion.rejected.fairness', 0));
     }
 
     public function test_batch_endpoint_enforces_fairness(): void

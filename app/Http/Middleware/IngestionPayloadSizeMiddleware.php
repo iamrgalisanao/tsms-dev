@@ -2,6 +2,7 @@
 
 namespace App\Http\Middleware;
 
+use App\Support\Metrics;
 use Closure;
 use Illuminate\Http\Request;
 use Symfony\Component\HttpFoundation\Response;
@@ -27,6 +28,11 @@ class IngestionPayloadSizeMiddleware
 
         if ($maxBytes > 0 && $contentLength > $maxBytes) {
             $correlationId = $request->attributes->get('correlation_id') ?: $request->header('X-Request-Id');
+
+            // WU4 (T053 remainder): rejection-reason counter. Metrics::incr()
+            // swallows its own failures (App\Support\MetricStores\CacheMetricStore),
+            // so this can never throw or affect the 413 response below.
+            Metrics::incr('ingestion.rejected.payload_size');
 
             return response()->json([
                 'success' => false,

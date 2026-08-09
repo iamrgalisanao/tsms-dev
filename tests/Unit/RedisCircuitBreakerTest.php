@@ -3,6 +3,7 @@
 namespace Tests\Unit;
 
 use App\Services\CircuitBreaker;
+use App\Support\Metrics;
 use Illuminate\Support\Carbon;
 use Tests\TestCase;
 use Tests\Traits\FakesCircuitBreakerRedis;
@@ -121,6 +122,12 @@ class RedisCircuitBreakerTest extends TestCase
         $this->assertSame(CircuitBreaker::STATE_CLOSED, $state['state']);
         $this->assertSame(0, $state['failure_count']);
         $this->assertSame(0, $state['opened_at']);
+
+        // WU4 (T053 remainder): the closed transition is mirrored into Metrics.
+        $this->assertSame(
+            CircuitBreaker::STATE_METRIC_CLOSED,
+            Metrics::get('circuit_breaker.state.'.self::SERVICE_KEY, CircuitBreaker::STATE_METRIC_CLOSED)
+        );
     }
 
     public function test_breaker_reopens_exactly_on_the_second_of_three_failures(): void
@@ -137,6 +144,55 @@ class RedisCircuitBreakerTest extends TestCase
         $state = $this->state();
         $this->assertSame(CircuitBreaker::STATE_OPEN, $state['state']);
         $this->assertGreaterThan(0, $state['opened_at']);
+
+        // WU4 (T053 remainder): the reopen transition is mirrored into Metrics.
+        $this->assertSame(
+            CircuitBreaker::STATE_METRIC_OPEN,
+            Metrics::get('circuit_breaker.state.'.self::SERVICE_KEY, CircuitBreaker::STATE_METRIC_CLOSED)
+        );
+    }
+
+    /**
+     * WU4 (T053 remainder): current breaker state must be readable via
+     * Metrics::get() without parsing logs, at every real transition —
+     * closed-by-threshold-open, and open-to-half-open. (closed-via-2-of-3
+     * and reopen-via-2-of-3 are covered by the two tests immediately
+     * above.)
+     */
+    public function test_breaker_state_gauge_reflects_open_and_half_open_transitions(): void
+    {
+        Carbon::setTestNow(Carbon::parse('2026-01-01 00:00:00'));
+
+        $cb = $this->breaker();
+
+        // Fresh breaker, never transitioned: absence of a written gauge
+        // value must read as closed (this class's own default state).
+        $this->assertSame(
+            CircuitBreaker::STATE_METRIC_CLOSED,
+            Metrics::get('circuit_breaker.state.'.self::SERVICE_KEY, CircuitBreaker::STATE_METRIC_CLOSED)
+        );
+
+        // failure_threshold is configured to 3 in setUp().
+        $cb->recordFailure();
+        $cb->recordFailure();
+        $cb->recordFailure();
+
+        $this->assertSame(CircuitBreaker::STATE_OPEN, $this->state()['state']);
+        $this->assertSame(
+            CircuitBreaker::STATE_METRIC_OPEN,
+            Metrics::get('circuit_breaker.state.'.self::SERVICE_KEY, CircuitBreaker::STATE_METRIC_CLOSED)
+        );
+
+        // Advance past reset_timeout_seconds (60) so the next isAvailable()
+        // call performs the real open->half-open transition.
+        Carbon::setTestNow(Carbon::now()->addSeconds(61));
+        $this->assertTrue($cb->isAvailable());
+
+        $this->assertSame(CircuitBreaker::STATE_HALF_OPEN, $this->state()['state']);
+        $this->assertSame(
+            CircuitBreaker::STATE_METRIC_HALF_OPEN,
+            Metrics::get('circuit_breaker.state.'.self::SERVICE_KEY, CircuitBreaker::STATE_METRIC_CLOSED)
+        );
     }
 
     public function test_late_failure_after_close_is_ignored(): void

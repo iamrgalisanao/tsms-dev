@@ -5,11 +5,12 @@ namespace App\Services;
 use App\Models\PosTerminal;
 use App\Models\TransactionIntake;
 use App\Models\TransactionSubmission;
-use App\Rules\UuidV4;
 use App\Rules\ReceiptNumber;
+use App\Rules\UuidV4;
+use App\Support\LogContext;
 use App\Support\Metrics;
-use Illuminate\Http\Request;
 use Illuminate\Database\UniqueConstraintViolationException;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Validator;
@@ -19,18 +20,27 @@ class TransactionIntakeService
 {
     protected PayloadChecksumService $checksumService;
 
+    protected SkewRankingService $skewRanking;
+
     public function __construct(
         PayloadChecksumService $checksumService,
         private readonly IngestionQueueRouter $queueRouter,
-        private readonly IngestionBackpressureService $backpressureService
+        private readonly IngestionBackpressureService $backpressureService,
+        ?SkewRankingService $skewRanking = null
     ) {
         $this->checksumService = $checksumService;
+        // Optional with a container-resolved fallback (rather than a plain
+        // constructor-promoted required param) so this new WU4 dependency
+        // does not force every existing 3-arg `new TransactionIntakeService(...)`
+        // call site and anonymous-subclass `parent::__construct(...)` call in
+        // the test suite (several, across ingestion feature tests) to be
+        // rewritten just to add a 4th argument they have no reason to care
+        // about.
+        $this->skewRanking = $skewRanking ?? app(SkewRankingService::class);
     }
+
     /**
      * Handle the intake of a TSMS transaction submission.
-     *
-     * @param Request $request
-     * @return array
      */
     public function handleIntake(Request $request): array
     {
@@ -50,7 +60,14 @@ class TransactionIntakeService
 
         $payload = $request->all();
         $sourceIp = $request->ip();
-        $traceId = $request->header('X-Correlation-ID') ?? Str::uuid()->toString();
+        // Read only the normalized request attribute set by
+        // AttachCorrelationId (canonical 4-tier precedence: existing
+        // attribute > X-Request-Id > X-Correlation-ID compatibility
+        // fallback > generated UUID). The UUID fallback here is defensive
+        // only, for direct-service-call test/CLI contexts that bypass the
+        // middleware pipeline entirely — it never re-derives from raw
+        // headers.
+        $traceId = $request->attributes->get('correlation_id') ?: (string) Str::uuid();
         $receivedAt = now();
         $terminal = $request->user();
         $tenantId = $terminal instanceof PosTerminal ? $terminal->tenant_id : ($payload['tenant_id'] ?? 0);
@@ -65,13 +82,20 @@ class TransactionIntakeService
         if ($maxBatchCount > 0) {
             $submittedForLimitCheck = $this->submittedTransactions($payload)[0];
             if (count($submittedForLimitCheck) > $maxBatchCount) {
+                // WU4 (T053 remainder): rejection-reason counter, closing
+                // the "batch-size" reason plan.md's WU4 prose names
+                // alongside payload-size/fairness/backpressure/circuit
+                // breaker. Metrics::incr() swallows its own failures, so
+                // this can never affect the 422 response below.
+                Metrics::incr('ingestion.rejected.batch_size');
+
                 return [
                     'success' => false,
                     'http_status' => 422,
                     'message' => 'Batch transaction count exceeds the maximum allowed.',
                     'error_code' => 'BATCH_LIMIT_EXCEEDED',
                     'max_batch_count' => $maxBatchCount,
-                    'correlation_id' => $request->attributes->get('correlation_id') ?: $request->header('X-Request-Id'),
+                    'correlation_id' => $traceId,
                 ];
             }
         }
@@ -80,8 +104,9 @@ class TransactionIntakeService
         $validator = Validator::make($payload, $this->officialStructuralRules($payload));
 
         $validator->after(function ($validator) use ($payload, $terminal, &$hardwareMismatch) {
-            if (!$terminal instanceof PosTerminal) {
+            if (! $terminal instanceof PosTerminal) {
                 $validator->errors()->add('authorization', 'Authenticated terminal context is required.');
+
                 return;
             }
 
@@ -130,7 +155,7 @@ class TransactionIntakeService
             }
 
             $this->persistRejection($payload, $validator->errors()->toArray(), $sourceIp, $traceId, $receivedAt, 'STRUCTURAL_VALIDATION_FAILURE');
-            
+
             return [
                 'success' => false,
                 'http_status' => 422,
@@ -158,7 +183,7 @@ class TransactionIntakeService
 
         // 3. Stage 2: Cryptographic Integrity (Synchronous Checksum)
         $checksumResult = $this->checksumService->validateSubmissionChecksums($payload);
-        if (!$checksumResult['valid']) {
+        if (! $checksumResult['valid']) {
             $this->persistRejection($payload, $checksumResult['errors'], $sourceIp, $traceId, $receivedAt, 'CRYPTOGRAPHIC_INTEGRITY_FAILURE');
 
             return [
@@ -208,13 +233,19 @@ class TransactionIntakeService
             $pilotTenants = config('tsms.rollout.pilot_tenants', []);
             $isPilot = in_array($intake->tenant_id, $pilotTenants);
 
-            Log::info('TransactionIntakeService: Intake queued asychronously', [
+            Log::info('TransactionIntakeService: Intake queued asychronously', LogContext::ingestion([
                 'tenant_id' => $intake->tenant_id,
+                'terminal_id' => $intake->terminal_id,
+                'route' => 'transactions.official',
+                'shard' => $this->queueRouter->intakeShardIndexForTenant($intake->tenant_id),
+                'correlation_id' => $traceId,
+                'decision' => 'queued',
+            ], [
                 'is_pilot' => $isPilot,
                 'submission_uuid' => $intake->submission_uuid,
                 'queue' => $shardQueue,
                 'queued' => true,
-            ]);
+            ]));
 
             // Performance: Intake Dispatch Latency (Sync path)
             $latency = now()->diffInMilliseconds($receivedAt);
@@ -222,6 +253,18 @@ class TransactionIntakeService
             Metrics::bucket('intake.dispatch_latency', $latency);
             Metrics::incr('intake.accepted_count');
             Metrics::incr("tenant.{$intake->tenant_id}.intake_count");
+
+            // WU4 (T053 remainder): bounded "top-N talkers" ranking,
+            // recorded at the same call site as the unbounded per-tenant
+            // counter above. Unlike that counter (one new Cache key per
+            // distinct tenant ID, forever), this is a capped Redis sorted
+            // set (see SkewRankingService/tsms.metrics.skew config) that
+            // never grows past its configured member cap, added here
+            // specifically to support a future "who are the top N
+            // tenants/terminals right now" read without unbounded per
+            // -tenant/terminal cardinality.
+            $this->skewRanking->recordTenant($intake->tenant_id);
+            $this->skewRanking->recordTerminal($intake->terminal_id);
 
             return [
                 'success' => true,
@@ -247,10 +290,15 @@ class TransactionIntakeService
                 'correlation_id' => $traceId,
             ];
         } catch (\Exception $e) {
-            Log::error('TransactionIntakeService: Persistence failed', [
+            Log::error('TransactionIntakeService: Persistence failed', LogContext::ingestion([
+                'tenant_id' => $tenantId,
+                'route' => 'transactions.official',
+                'correlation_id' => $traceId,
+                'decision' => 'persistence_failed',
+            ], [
                 'error' => $e->getMessage(),
                 'submission_uuid' => $payload['submission_uuid'] ?? 'unknown',
-            ]);
+            ]));
 
             return [
                 'success' => false,
@@ -268,27 +316,27 @@ class TransactionIntakeService
         $transactionPrefix = $transactionCount === 1 ? 'transaction' : 'transactions.*';
 
         $rules = [
-            'submission_uuid' => ['required', 'string', new UuidV4()],
+            'submission_uuid' => ['required', 'string', new UuidV4],
             'tenant_id' => 'required|integer',
             'terminal_id' => 'required|integer',
             'submission_timestamp' => ['required', 'string', 'regex:/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z?$/'],
             'transaction_count' => 'required|integer|min:1',
             'payload_checksum' => 'required|string|min:64|max:64|regex:/^[0-9a-f]{64}$/i',
-            $transactionPrefix . '.transaction_id' => ['required', 'string', new UuidV4()],
-            $transactionPrefix . '.hardware_id' => 'required|string|max:255',
-            $transactionPrefix . '.transaction_timestamp' => ['required', 'string', 'regex:/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z?$/'],
-            $transactionPrefix . '.gross_sales' => 'required|numeric|min:0',
-            $transactionPrefix . '.net_sales' => 'required|numeric',
-            $transactionPrefix . '.promo_status' => 'required|string|max:255',
-            $transactionPrefix . '.customer_code' => 'required|string|max:255',
-            $transactionPrefix . '.receipt_no' => ['required', new ReceiptNumber()],
-            $transactionPrefix . '.payload_checksum' => 'required|string|min:64|max:64',
-            $transactionPrefix . '.adjustments' => 'required|array|min:7',
-            $transactionPrefix . '.adjustments.*.adjustment_type' => 'required|string|max:50',
-            $transactionPrefix . '.adjustments.*.amount' => 'required|numeric',
-            $transactionPrefix . '.taxes' => 'required|array|min:4',
-            $transactionPrefix . '.taxes.*.tax_type' => 'required|string|max:20',
-            $transactionPrefix . '.taxes.*.amount' => 'required|numeric',
+            $transactionPrefix.'.transaction_id' => ['required', 'string', new UuidV4],
+            $transactionPrefix.'.hardware_id' => 'required|string|max:255',
+            $transactionPrefix.'.transaction_timestamp' => ['required', 'string', 'regex:/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z?$/'],
+            $transactionPrefix.'.gross_sales' => 'required|numeric|min:0',
+            $transactionPrefix.'.net_sales' => 'required|numeric',
+            $transactionPrefix.'.promo_status' => 'required|string|max:255',
+            $transactionPrefix.'.customer_code' => 'required|string|max:255',
+            $transactionPrefix.'.receipt_no' => ['required', new ReceiptNumber],
+            $transactionPrefix.'.payload_checksum' => 'required|string|min:64|max:64',
+            $transactionPrefix.'.adjustments' => 'required|array|min:7',
+            $transactionPrefix.'.adjustments.*.adjustment_type' => 'required|string|max:50',
+            $transactionPrefix.'.adjustments.*.amount' => 'required|numeric',
+            $transactionPrefix.'.taxes' => 'required|array|min:4',
+            $transactionPrefix.'.taxes.*.tax_type' => 'required|string|max:20',
+            $transactionPrefix.'.taxes.*.amount' => 'required|numeric',
         ];
 
         if ($transactionCount === 1) {
@@ -343,16 +391,14 @@ class TransactionIntakeService
     {
         $this->observeTransactionBoundary('before_intake_dispatch');
 
-        \App\Jobs\ProcessTransactionIntakeJob::dispatch($intake->id)
+        \App\Jobs\ProcessTransactionIntakeJob::dispatch($intake->id, $intake->trace_id)
             ->onQueue($shardQueue)
             ->afterCommit();
 
         $this->observeTransactionBoundary('after_intake_dispatch');
     }
 
-    protected function observeTransactionBoundary(string $stage): void
-    {
-    }
+    protected function observeTransactionBoundary(string $stage): void {}
 
     protected function submittedTransactions(array $payload): array
     {
@@ -395,7 +441,7 @@ class TransactionIntakeService
         if ($missingAdjustmentTypes !== []) {
             $validator->errors()->add(
                 "{$prefix}.adjustments",
-                'Missing required adjustment types: ' . implode(', ', $missingAdjustmentTypes)
+                'Missing required adjustment types: '.implode(', ', $missingAdjustmentTypes)
             );
         }
 
@@ -411,10 +457,10 @@ class TransactionIntakeService
         $scVatExemptAmount = $this->taxAmount($taxes, 'SC_VAT_EXEMPT_SALES');
         $isNonVat = $vatAmount == 0 && $vatableSalesAmount == 0 && $scVatExemptAmount > 0;
 
-        if ($missingTaxTypes !== [] && !$isNonVat) {
+        if ($missingTaxTypes !== [] && ! $isNonVat) {
             $validator->errors()->add(
                 "{$prefix}.taxes",
-                'Missing required tax types: ' . implode(', ', $missingTaxTypes)
+                'Missing required tax types: '.implode(', ', $missingTaxTypes)
             );
         }
     }
@@ -482,7 +528,13 @@ class TransactionIntakeService
                 Metrics::incr('intake.rejected_count');
             }
         } catch (\Exception $e) {
-            Log::warning('TransactionIntakeService: Failed to persist rejection audit', ['error' => $e->getMessage()]);
+            Log::warning('TransactionIntakeService: Failed to persist rejection audit', LogContext::ingestion([
+                'correlation_id' => $traceId,
+                'decision' => 'rejection_persist_failed',
+                'reason' => $errorCode,
+            ], [
+                'error' => $e->getMessage(),
+            ]));
         }
     }
 
@@ -539,7 +591,7 @@ class TransactionIntakeService
         $samePayload = hash_equals((string) $existing->payload_checksum, (string) ($payload['payload_checksum'] ?? ''))
             && (int) $existing->transaction_count === (int) ($payload['transaction_count'] ?? 0);
 
-        if (!$sameTerminal || !$samePayload) {
+        if (! $sameTerminal || ! $samePayload) {
             return $this->idempotencyConflictResponse(
                 (string) $existing->submission_uuid,
                 $traceId,
@@ -594,5 +646,4 @@ class TransactionIntakeService
 
         return json_last_error() === JSON_ERROR_NONE ? $decoded : [$storedErrors];
     }
-
 }

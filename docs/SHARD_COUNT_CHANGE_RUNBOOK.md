@@ -210,3 +210,114 @@ duplicate execution of a job is possible today and remains possible after
 following this runbook. This runbook does not change that. Idempotency at
 the application/business-logic layer — not this runbook, and not the verify
 command — is what protects against duplicate-processing effects.
+
+## Horizon Worker Scaling Safety Under DB Connection Limits
+
+This section is about a related but different lever than shard **count**:
+increasing how many Horizon **worker processes** run against the existing
+shard topology (`config/horizon.php`'s per-supervisor `processes` value,
+e.g. `HZ_HIGH_PROCESSES`/`HZ_INTAKE_PROCESSES` in production,
+`processing-supervisor`'s `processes` in staging). It exists because
+`specs/001-100-tenant-resilience/plan.md`'s Phase 6 plan states this
+binding constraint: *"Increase processing worker capacity only after DB
+transaction shortening and DB connection limits are reviewed."* This
+section operationalizes that sentence — what to actually check, and what
+breaks if you skip the check.
+
+### Why this matters: workers, not shards, are what consume DB connections
+
+Changing `shard_count` (the rest of this runbook) changes how many
+**queues** exist and which tenants route to which queue — it does not by
+itself change how many **worker processes** are running. Increasing a
+supervisor's `processes` count, by contrast, directly increases how many
+concurrent PHP processes are running jobs against the database at once.
+Each running Horizon worker process is a long-lived PHP process that opens
+(and typically holds open) its own connection to the application's database
+via `config/database.php`'s `mysql` connection — there is no shared
+connection pool across worker processes in this codebase. Adding N more
+worker processes to any supervisor adds, at peak, roughly N more concurrent
+database connections — on top of whatever every **other** supervisor's
+workers, PHP-FPM/web request handlers, and any other service already hold
+open against the same database.
+
+This is a different failure mode from the lock/deadlock pressure documented
+in `docs/OBSERVABILITY_ALERT_DEFINITIONS.md` §3 (DB Lock/Deadlock Spikes).
+That signal indicates contention **between** transactions already holding
+connections; the risk this section addresses is running out of connections
+to hold in the first place. **Scaling worker count to relieve a lock/deadlock
+pressure alert without checking connection headroom risks trading one DB
+problem for a worse one** — you may reduce per-worker wait time while
+simultaneously pushing total connection count over the database's ceiling.
+
+### What to check before increasing any supervisor's `processes` count
+
+1. **The database's actual connection ceiling:**
+   ```sql
+   SHOW VARIABLES LIKE 'max_connections';
+   ```
+2. **Current connection usage under real load — not idle usage:**
+   ```sql
+   SHOW STATUS LIKE 'Threads_connected';
+   SELECT user, host, COUNT(*) AS connections
+     FROM information_schema.processlist
+     GROUP BY user, host
+     ORDER BY connections DESC;
+   ```
+   Run this during peak traffic, not right after a deploy when workers may
+   not have opened their steady-state connections yet. The `GROUP BY user,
+   host` breakdown matters: it tells you how much of the current connection
+   count is already Horizon workers (all supervisors, not just the one
+   you're about to scale) versus PHP-FPM/web requests versus any other
+   consumer (reporting connection, replication, monitoring tools, other
+   applications sharing the same database instance).
+3. **Compute real headroom, not assumed headroom.** Headroom is
+   `max_connections` minus **every** existing consumer's peak usage — not
+   just the supervisor you intend to scale. Remember that increasing one
+   supervisor's `processes` does not reduce any other supervisor's
+   connection usage; all of production's supervisors
+   (`intake-supervisor`, `high-supervisor`, `reporting-supervisor`,
+   `low-supervisor`, `notifications-supervisor`, `webhook-supervisor`) and
+   staging's equivalents run concurrently against the same database.
+4. **Check for already-long-running transactions**, since a longer average
+   transaction duration means each connection is held longer, compounding
+   the effect of adding more workers:
+   ```sql
+   SHOW PROCESSLIST;
+   ```
+   Look for `Time` values that are unexpectedly large on `Query`/`Execute`
+   state rows — this is also the "DB transaction shortening" half of
+   Phase 6's constraint: shortening long-held transactions reduces how long
+   each connection is occupied, independent of how many workers exist.
+
+### What the failure mode looks like if you skip this
+
+If you increase a supervisor's `processes` count (or add a new supervisor)
+without confirming headroom, and the resulting peak connection count
+exceeds `max_connections`, **new connection attempts fail outright** —
+typically surfacing as `SQLSTATE[HY000] [1040] Too many connections` (or
+equivalent) — and this is **not scoped to the supervisor you scaled**. Every
+consumer of that database (every other Horizon supervisor, every web
+request, any scheduled command) competes for the same finite connection
+ceiling. The result is a database-wide capacity outage caused directly by
+the "resilience" change, not a resilience improvement — the exact opposite
+of Phase 6's intent. This is why the plan's constraint is phrased as a
+precondition ("only after... reviewed"), not a suggestion: worker count is
+not free capacity until the connection budget underneath it has been
+confirmed to support it.
+
+### Checklist
+
+- [ ] Ran `SHOW VARIABLES LIKE 'max_connections';` and recorded the ceiling.
+- [ ] Ran the `information_schema.processlist` breakdown **during peak
+      load** and recorded current usage by consumer (all Horizon
+      supervisors, web/PHP-FPM, other services).
+- [ ] Computed headroom = ceiling − current peak usage, and confirmed the
+      proposed new worker count fits within it with margin (not exactly at
+      the ceiling).
+- [ ] Checked `SHOW PROCESSLIST` for abnormally long-running transactions
+      and addressed/shortened them where feasible, per Phase 6's "DB
+      transaction shortening" half of the same constraint.
+- [ ] Only then changed the supervisor's `processes` value (env var, e.g.
+      `HZ_HIGH_PROCESSES`) and deployed.
+- [ ] Re-checked connection usage post-deploy under real load to confirm
+      the new worker count did not push usage close to the ceiling.

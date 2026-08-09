@@ -88,7 +88,11 @@ class OfficialAsyncIntakeAfterCommitTest extends TestCase
             $redis->shouldReceive('llen')->once()->with('queues:' . $queue)->andReturn($depth);
         }
 
-        Redis::shouldReceive('connection')->times(count($depths))->with('default')->andReturn($redis);
+        // WU4 (T053 remainder): the accepted intake below also records
+        // tenant+terminal skew ranking (SkewRankingService), each its own
+        // Redis::connection('default')->eval(...) call — +2 connection()
+        // resolutions beyond the count($depths) llen-driven ones above.
+        Redis::shouldReceive('connection')->times(count($depths) + 2)->with('default')->andReturn($redis);
     }
 
     private function officialPayload(int $tenantId, int $terminalId, string $submissionUuid, string $hardwareId): array

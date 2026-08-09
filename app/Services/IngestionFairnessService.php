@@ -44,6 +44,20 @@ use Illuminate\Support\Facades\Redis;
  * backstop for the ingestion path; fairness is a peer/refinement above it,
  * not a second backstop (plan.md's "Fairness Architecture" subsection,
  * point 4).
+ *
+ * WU5 addition: checkTenantOverride() answers a fourth, independent
+ * question — "does this ONE tenant have an active, TTL-bounded,
+ * incident-response override right now" — backed by
+ * TenantFairnessOverrideService, and is intended to be consulted by the
+ * caller (IngestionFairnessMiddleware) BEFORE checkGlobal()/checkTenant()/
+ * checkTerminal() below. This does not change this service's documented
+ * "does not compose the three checks into one verdict" contract — the
+ * override check is a fourth check the middleware composes, exactly like
+ * the existing three; checkTenant() gained one new optional parameter
+ * (`$limitOverride`) purely so a caller can substitute a tenant's own
+ * limit for the fixed-window check that follows a `reduced_limit`
+ * override, with zero change to the base fixed-window mechanics, fail-open
+ * behavior, or Retry-After derivation documented above.
  */
 class IngestionFairnessService
 {
@@ -60,6 +74,19 @@ class IngestionFairnessService
      * integer, keeping the key format uniform across scopes.
      */
     private const GLOBAL_SCOPE_ID = 0;
+
+    /**
+     * $overrideService defaults to null (rather than being required) so
+     * every existing `new IngestionFairnessService()` call site — this
+     * class predates WU5 and several tests construct it directly, bypassing
+     * the container — keeps working unchanged. Real HTTP requests resolve
+     * this service through the container (see IngestionFairnessMiddleware's
+     * constructor injection), which supplies a real
+     * TenantFairnessOverrideService automatically; overrideService() below
+     * lazily falls back to the container only if checkTenantOverride() is
+     * actually called on a bare `new` instance.
+     */
+    public function __construct(private ?TenantFairnessOverrideService $overrideService = null) {}
 
     /**
      * Atomically increments the active window's counter and, only on the
@@ -97,14 +124,102 @@ LUA;
         return $this->check(self::SCOPE_GLOBAL, self::GLOBAL_SCOPE_ID);
     }
 
-    public function checkTenant(int $tenantId): array
+    /**
+     * WU5: $limitOverride, when supplied (a `reduced_limit` override's
+     * tenant-specific limit), replaces the configured
+     * `tsms.fairness.tenant.limit` for THIS call only — the fixed-window
+     * counter mechanics, key format, fail-open behavior, and Retry-After
+     * derivation below are completely unchanged. Only the tenant scope
+     * ever receives this parameter; global/terminal scopes are never
+     * affected by a tenant's override (plan.md's WU5 section: "reduced_limit
+     * replaces ONLY that tenant's limit").
+     */
+    public function checkTenant(int $tenantId, ?int $limitOverride = null): array
     {
-        return $this->check(self::SCOPE_TENANT, $tenantId);
+        return $this->check(self::SCOPE_TENANT, $tenantId, $limitOverride);
     }
 
     public function checkTerminal(int $terminalId): array
     {
         return $this->check(self::SCOPE_TERMINAL, $terminalId);
+    }
+
+    /**
+     * WU5: resolves tenant $tenantId's current incident-response override
+     * (inherit/reduced_limit/blocked) via TenantFairnessOverrideService,
+     * intended to be consulted by the caller BEFORE checkGlobal() below —
+     * this method performs no fixed-window bookkeeping of its own and does
+     * not increment any counter.
+     *
+     * Returns a result shaped identically to checkGlobal()/checkTenant()/
+     * checkTerminal() (allowed/scope/limit/count/retry_after_seconds/
+     * reset_at) plus one extra 'mode' key, so a caller's existing
+     * rejection-response-building code (keyed off that same six-field
+     * shape) needs no special-casing to also handle a 'blocked' outcome;
+     * 'mode' exists purely so the caller can decide, before calling
+     * checkTenant(), whether to pass a reduced limit into it.
+     *
+     * - mode 'blocked': allowed=false — the caller must short-circuit here
+     *   and never call checkGlobal()/checkTenant()/checkTerminal() for this
+     *   request. 'retry_after_seconds' is the override's REMAINING TTL
+     *   (read live from Redis by TenantFairnessOverrideService::resolve()),
+     *   not a fixed constant.
+     * - mode 'reduced_limit': allowed=true; 'limit' carries the tenant-
+     *   specific limit the caller must pass into its own checkTenant() call
+     *   next.
+     * - mode 'inherit' (including ANY Redis failure, a missing/expired
+     *   override, or an unreadable stored value — Architecture Invariant 1):
+     *   allowed=true, 'limit' is null — proceed exactly as if no override
+     *   existed. This can never resolve to 'blocked' as a side effect of a
+     *   failure; the underlying store's own fail-open contract guarantees
+     *   that (see TenantFairnessOverrideService::resolve()).
+     */
+    public function checkTenantOverride(int $tenantId): array
+    {
+        try {
+            $override = $this->overrideService()->resolve($tenantId);
+        } catch (\Throwable $e) {
+            // Defense in depth only: TenantFairnessOverrideService::resolve()
+            // already fails open internally on every Redis error it can
+            // reach. This catch exists purely so that even a container-
+            // resolution failure cannot turn into a 'blocked' outcome
+            // (Architecture Invariant 1 is absolute, not "usually true").
+            Log::error('IngestionFairnessService: failed to resolve tenant override, failing open to inherit', [
+                'tenant_id' => $tenantId,
+                'error' => $e->getMessage(),
+            ]);
+
+            return $this->overrideResult(TenantFairnessOverrideService::MODE_INHERIT, true, null, null, null);
+        }
+
+        $mode = $override['mode'];
+        $allowed = $mode !== TenantFairnessOverrideService::MODE_BLOCKED;
+
+        return $this->overrideResult(
+            $mode,
+            $allowed,
+            $override['limit'] ?? null,
+            $override['retry_after_seconds'] ?? null,
+            $override['expires_at'] ?? null
+        );
+    }
+
+    private function overrideResult(string $mode, bool $allowed, ?int $limit, ?int $retryAfterSeconds, ?string $expiresAt): array
+    {
+        return [
+            'mode' => $mode,
+            'allowed' => $allowed,
+            'scope' => 'tenant_override',
+            'limit' => $limit,
+            'count' => null,
+            'retry_after_seconds' => $retryAfterSeconds,
+            'reset_at' => $expiresAt,
+        ];
+    }
+
+    private function overrideService(): TenantFairnessOverrideService
+    {
+        return $this->overrideService ??= app(TenantFairnessOverrideService::class);
     }
 
     /**
@@ -140,9 +255,14 @@ LUA;
      * can produce a "count was really incremented but we reported
      * count=0" inconsistency.
      */
-    private function check(string $scope, int $scopeId): array
+    private function check(string $scope, int $scopeId, ?int $limitOverride = null): array
     {
-        $limit = $this->limitFor($scope);
+        // `??` (not `?:`) so a WU5 reduced_limit override of exactly 0 is
+        // honored literally (a caller-supplied 0 means "block via a zero
+        // limit", not "no override supplied") — only an actual null
+        // (checkGlobal()/checkTerminal(), or checkTenant() called without
+        // an override) falls back to the configured default.
+        $limit = $limitOverride ?? $this->limitFor($scope);
         $windowSeconds = $this->windowSeconds();
         $nowTimestamp = now()->timestamp;
         $windowBucket = intdiv($nowTimestamp, $windowSeconds);

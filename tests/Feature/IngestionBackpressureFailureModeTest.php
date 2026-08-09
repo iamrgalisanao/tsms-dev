@@ -134,7 +134,8 @@ class IngestionBackpressureFailureModeTest extends TestCase
         $service = new TransactionIntakeService(
             $checksum,
             app(IngestionQueueRouter::class),
-            app(IngestionBackpressureService::class)
+            app(IngestionBackpressureService::class),
+            app(\App\Services\SkewRankingService::class)
         );
 
         $result = $service->handleIntake($request);

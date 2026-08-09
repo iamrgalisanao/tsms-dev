@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Support\Metrics;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Redis;
 
@@ -10,6 +11,22 @@ class CircuitBreaker
     public const STATE_CLOSED = 'closed';
     public const STATE_OPEN = 'open';
     public const STATE_HALF_OPEN = 'half-open';
+
+    /**
+     * WU4 (T053 remainder) numeric encoding mirrored into Metrics at every
+     * real state transition below, so current breaker state is readable
+     * via Metrics::get("circuit_breaker.state.{$serviceKey}") without
+     * parsing logs. Instrumentation only — does not feed back into any
+     * state-machine decision. Absence of a written value (a breaker that
+     * has never transitioned) is read as STATE_METRIC_CLOSED by
+     * Metrics::get()'s own default-value convention, matching this class's
+     * own readState() default of STATE_CLOSED for a fresh/never-seen key.
+     */
+    public const STATE_METRIC_CLOSED = 0;
+
+    public const STATE_METRIC_HALF_OPEN = 1;
+
+    public const STATE_METRIC_OPEN = 2;
 
     /** Shared key used by the official/batch ingestion breaker (route param 'transaction-intake'). */
     public const INGESTION_SERVICE_KEY = 'transaction-intake';
@@ -478,6 +495,7 @@ LUA;
                         'failure_count' => $failureCount,
                         'failure_threshold' => $this->failureThreshold,
                     ]);
+                    $this->mirrorStateMetric(self::STATE_METRIC_OPEN);
                 }
                 return;
             }
@@ -506,6 +524,8 @@ LUA;
                 $tx->hset($this->key, 'last_success_at', $now);
                 $tx->expire($this->key, $this->stateTtlSeconds);
             });
+
+            $this->mirrorStateMetric(self::STATE_METRIC_CLOSED);
         } catch (\Throwable $e) {
             Log::error('CircuitBreaker: failed to reset', [
                 'service' => $this->serviceKey,
@@ -555,6 +575,7 @@ LUA;
             'service' => $this->serviceKey,
             'generation' => $generation,
         ]);
+        $this->mirrorStateMetric(self::STATE_METRIC_HALF_OPEN);
 
         return $generation;
     }
@@ -674,12 +695,44 @@ LUA;
                 'service' => $this->serviceKey,
                 'generation' => $generation,
             ]);
+            $this->mirrorStateMetric(self::STATE_METRIC_CLOSED);
         } elseif ($transitioned === 2) {
             Log::warning('CircuitBreaker: reopened after half-open probe failures', [
                 'service' => $this->serviceKey,
                 'generation' => $generation,
             ]);
+            $this->mirrorStateMetric(self::STATE_METRIC_OPEN);
         }
+    }
+
+    /**
+     * WU4 (T053 remainder): mirror a real state transition into
+     * Metrics::timing() so it is readable via
+     * Metrics::get("circuit_breaker.state.{$serviceKey}") without parsing
+     * logs. Metrics::timing() already swallows its own failures
+     * (App\Support\MetricStores\CacheMetricStore), so this can never throw
+     * back into the state-machine methods above.
+     */
+    private function mirrorStateMetric(int $stateValue): void
+    {
+        Metrics::timing("circuit_breaker.state.{$this->serviceKey}", $stateValue);
+    }
+
+    /**
+     * WU7 (T054) read-only exposure of readState() for the observability
+     * endpoint. Pure passthrough — does not alter the state machine in any
+     * way, and carries none of isAvailable()'s side effects (no half-open
+     * admission, no probe consumption, no transition). Safe to call at any
+     * time purely for inspection; unlike isAvailable(), this method does
+     * NOT fail open on a Redis error — it lets the exception propagate so
+     * the caller (ObservabilityController) can report an honest
+     * `unavailable` status instead of a fabricated closed/open state.
+     *
+     * @return array{state: string, failure_count: int, opened_at: int, half_open_generation: int, half_open_started_at: int, half_open_probe_count: int, half_open_successes: int, half_open_failures: int}
+     */
+    public function currentState(): array
+    {
+        return $this->readState();
     }
 
     protected function readState(): array

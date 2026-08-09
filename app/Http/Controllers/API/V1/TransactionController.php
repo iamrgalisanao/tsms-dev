@@ -7,6 +7,7 @@ use App\Models\IngestionQuarantine;
 use App\Models\Transaction;
 use App\Models\PosTerminal;
 use Illuminate\Http\Request;
+use App\Support\Metrics;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
@@ -344,6 +345,13 @@ class TransactionController extends Controller
                 'transaction_count' => $transactionCount,
                 'max_batch_count' => $maxBatchCount,
             ]);
+
+            // WU4 (T053 remainder): rejection-reason counter, closing the
+            // "batch-size" reason plan.md's WU4 prose names alongside
+            // payload-size/fairness/backpressure/circuit breaker.
+            // Metrics::incr() swallows its own failures, so this can never
+            // affect the 422 response below.
+            Metrics::incr('ingestion.rejected.batch_size');
 
             return response()->json([
                 'success' => false,

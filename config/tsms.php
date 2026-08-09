@@ -105,6 +105,134 @@ return [
         'state_ttl_seconds' => (int) env('TSMS_CIRCUIT_BREAKER_STATE_TTL_SECONDS', 3600),
     ],
 
+    // DB lock-wait/deadlock-retry alert thresholds (WU8, T055, "alert
+    // definitions and operational checks" — see
+    // docs/OBSERVABILITY_ALERT_DEFINITIONS.md). These values are read ONLY
+    // by that documentation's manual/operator checks against WU7's
+    // `GET /api/v1/observability/ingestion/db-pressure` endpoint; nothing in
+    // this codebase evaluates them automatically or pages/notifies anyone —
+    // no live alert evaluator exists (Architecture Invariant/plan.md WU8
+    // naming-honesty requirement). Informed by WU3's
+    // App\Services\DeadlockRetryService instrumentation:
+    // db.deadlock_retry.{attempted,succeeded,exhausted,non_retryable}
+    // counters and delay_ms/operation_ms/total_recovery_ms percentile
+    // samples.
+    //
+    // exhausted_count_threshold: treat a single new `exhausted` occurrence
+    // within evaluation_window_seconds as alert-worthy (default 1, i.e.
+    // "any"). `exhausted` only increments when all of
+    // withDeadlockRetry()'s attempts (default 5) were consumed and the
+    // exception was rethrown to the caller — a real, already-materialized
+    // failure, unlike the routine/expected `attempted` counter. At this
+    // feature's ~100-tenant scale, one exhausted recovery is already worth
+    // a human look rather than waiting for a batch to accumulate.
+    //
+    // p95_total_recovery_ms_threshold: alert if the p95 of
+    // db.deadlock_retry.total_recovery_ms (wall-clock from the first
+    // retryable failure to eventual success or exhaustion, per
+    // DeadlockRetryService::recordRecovered()'s doc-comment) exceeds this
+    // many milliseconds (default 2000). Derived from the service's own
+    // backoff formula (`random_int(50000, 150000) * $attempt` microseconds,
+    // i.e. ~50-150ms times the attempt number): a p95 above 2000ms implies
+    // recoveries are routinely running deep into the retry ceiling (the
+    // 4th/5th attempt's backoff alone is 200-750ms, before the retried
+    // operation's own duration is added), consistent with sustained
+    // contention rather than an isolated blip.
+    //
+    // evaluation_window_seconds: how often an operator/manual check should
+    // sample this data (default 300s / 5 minutes, matching
+    // tsms.metrics.skew.window_seconds above for consistency). Because
+    // `exhausted`/`attempted`/etc. are cumulative counters (never reset,
+    // per WU7's `cumulative_since_last_reset` envelope window label), an
+    // operator must sample the endpoint twice, evaluation_window_seconds
+    // apart, and compare the delta — there is no windowed counter to read
+    // directly.
+    'db_pressure' => [
+        'exhausted_count_threshold' => (int) env('TSMS_DB_PRESSURE_EXHAUSTED_THRESHOLD', 1),
+        'p95_total_recovery_ms_threshold' => (int) env('TSMS_DB_PRESSURE_P95_RECOVERY_MS_THRESHOLD', 2000),
+        'evaluation_window_seconds' => (int) env('TSMS_DB_PRESSURE_EVALUATION_WINDOW_SECONDS', 300),
+    ],
+
+    // Metrics distribution store (WU2, T053 foundation): bounded Redis
+    // structures backing App\Support\Metrics::sample()/percentile(), kept
+    // separate from the Cache-backed counter/gauge store used by
+    // incr/decr/timing/bucket/get/snapshot (see
+    // App\Support\MetricStores\RedisMetricDistributionStore).
+    //
+    // sample_cap: max most-recent samples retained per metric+dimension
+    // key (1000). Percentile reads are approximate by design (nearest-rank
+    // over whatever recent window is retained); 1000 is large enough for a
+    // stable p99 on typical request-rate metrics while keeping a ZRANGE(0,-1)
+    // read (used to compute percentiles) cheap for an operator-facing
+    // endpoint that is polled infrequently, not per-request.
+    // sample_ttl_seconds: secondary bound — an abandoned per-combination
+    // key (e.g. a route that stops receiving traffic) expires on its own
+    // instead of persisting forever at its last-known cap size.
+    // cardinality_budget: max distinct dimension-combination keys tracked
+    // per metric name (200). WU2 defines this budget and its enforcement;
+    // WU2 itself has no call sites (only the allowlisted dimensions below
+    // exist for future WU4/WU7 use), so 200 is a generous ceiling sized for
+    // route/shard combinations at ~100-tenant scale, not tenant-cardinality
+    // (tenant_id is deliberately not an allowed dimension here).
+    // cardinality_ttl_seconds: TTL on the per-metric combination-tracking
+    // set itself; refreshed on every admitted combination, so it only
+    // clears once a metric name receives no new-or-repeat traffic for the
+    // whole window (documented, deliberate: this can under-expire relative
+    // to any single idle combination, but the failure direction is always
+    // toward rejecting new combinations, never toward unbounded growth).
+    // allowed_dimensions: fixed allowlist — no arbitrary caller-supplied
+    // dimension keys. tenant_id is explicitly excluded (WU4/WU7 cardinality
+    // budget concern); callers must use only these names.
+    'metrics' => [
+        'distribution' => [
+            'redis_connection' => env('TSMS_METRICS_REDIS_CONNECTION', 'default'),
+            'key_prefix' => env('TSMS_METRICS_KEY_PREFIX', 'metrics:dist:'),
+            'sample_cap' => (int) env('TSMS_METRICS_SAMPLE_CAP', 1000),
+            'sample_ttl_seconds' => (int) env('TSMS_METRICS_SAMPLE_TTL_SECONDS', 3600),
+            'cardinality_budget' => (int) env('TSMS_METRICS_CARDINALITY_BUDGET', 200),
+            'cardinality_ttl_seconds' => (int) env('TSMS_METRICS_CARDINALITY_TTL_SECONDS', 3600),
+            'allowed_dimensions' => ['route', 'shard'],
+        ],
+
+        // Bounded tenant/terminal "top-N talkers" ranking (WU4, T053
+        // remainder, Architecture Invariant 5 — bounded cardinality).
+        // Backed by App\Services\SkewRankingService: one Redis sorted set
+        // per dimension (tenant/terminal) per fixed time window, member =
+        // tenant/terminal ID, score = request count within that window.
+        // Deliberately separate from the unbounded per-tenant
+        // `tenant.{id}.intake_count` Cache counter already written by
+        // TransactionIntakeService (WU2 finding) — that counter answers
+        // "what is tenant X's count", this structure answers "who are the
+        // top N tenants/terminals right now" without ever holding more than
+        // member_cap members at a time.
+        // window_seconds: ranking window width (5 minutes) — long enough to
+        // smooth single-request noise, short enough that "current top
+        // talkers" stays operationally meaningful.
+        // member_cap: max distinct tenant/terminal IDs tracked per window
+        // (500) before the lowest-ranked (least active) member is evicted
+        // on the next insert. Sized generously above this feature's
+        // ~100-tenant target (and a plausible multiple of that many active
+        // terminals) so eviction only engages under genuine, unexpected
+        // fan-out — while still bounding worst-case ZSET size to a few
+        // hundred small entries, never unbounded per-terminal growth.
+        // ttl_seconds: on the whole per-window key (10 minutes — 2x
+        // window_seconds), so a finished window's key expires on its own
+        // shortly after it stops being "current" instead of persisting
+        // forever at its last-known size.
+        // max_top_n: hard ceiling on any single top-N read (100), so a
+        // caller (WU7's future observability endpoint) cannot request an
+        // unbounded read even though member_cap already bounds the
+        // underlying structure.
+        'skew' => [
+            'redis_connection' => env('TSMS_SKEW_REDIS_CONNECTION', 'default'),
+            'key_prefix' => env('TSMS_SKEW_KEY_PREFIX', 'metrics:skew:'),
+            'window_seconds' => (int) env('TSMS_SKEW_WINDOW_SECONDS', 300),
+            'member_cap' => (int) env('TSMS_SKEW_MEMBER_CAP', 500),
+            'ttl_seconds' => (int) env('TSMS_SKEW_TTL_SECONDS', 600),
+            'max_top_n' => (int) env('TSMS_SKEW_MAX_TOP_N', 100),
+        ],
+    ],
+
     // Fairness (T044): Redis fixed-window INCR+EXPIRE admission limits, per
     // scope (global/tenant/terminal), consumed by App\Services\IngestionFairnessService.
     // A single limit set applies uniformly to every tenant/terminal —
@@ -131,6 +259,34 @@ return [
         'terminal' => [
             'limit' => (int) env('TSMS_FAIRNESS_TERMINAL_LIMIT', 50),
         ],
+    ],
+
+    // Tenant fairness override (WU5): TTL-bounded, incident-response
+    // control for throttling ONE specific tenant during a live drill/
+    // incident, backed by App\Services\TenantFairnessOverrideService and
+    // consumed by IngestionFairnessService::checkTenantOverride() before
+    // its own global-limit decision. Deliberately NOT the same thing as
+    // the fairness config above's deferred, persistent tenant-tier policy
+    // system (see specs/001-100-tenant-resilience/plan.md's "Fairness
+    // Architecture" subsection, point 7, and WU5's "Reconciliation with
+    // Fairness Architecture point 7" note): this mechanism has no tier
+    // concept, no persistent policy schema, and every override expires by
+    // design (Architecture Invariant 7 — this max-TTL value is owned and
+    // enforced by WU5 in this same commit, not introduced later by WU8's
+    // alert/config work).
+    //
+    // max_ttl_seconds: hard ceiling on any single override's TTL (4 hours).
+    // Long enough to cover one incident-response shift or a full staging
+    // drill without requiring the operator to re-issue the command
+    // mid-incident, while still guaranteeing an override can never be
+    // forgotten and left throttling/blocking a tenant indefinitely — a
+    // request for a longer TTL is rejected outright (not silently
+    // clamped), so the operator always knows the real expiry they are
+    // getting rather than assuming a longer one that was quietly shortened.
+    'tenant_throttle' => [
+        'redis_connection' => env('TSMS_TENANT_THROTTLE_REDIS_CONNECTION', 'default'),
+        'key_prefix' => env('TSMS_TENANT_THROTTLE_KEY_PREFIX', 'fairness:override:'),
+        'max_ttl_seconds' => (int) env('TSMS_TENANT_THROTTLE_MAX_TTL_SECONDS', 14400),
     ],
 
     /*

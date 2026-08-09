@@ -9,17 +9,46 @@ class IngestionQueueRouter
         $tenantId = (int) $tenantId;
 
         if ($this->isPilotTenant($tenantId)) {
-            return 'transaction-intake:s-' . config('tsms.intake.vip_shard', 'vip');
+            return 'transaction-intake:s-'.config('tsms.intake.vip_shard', 'vip');
         }
 
-        return 'transaction-intake:s' . $this->shardIndex($tenantId, $this->intakeShardCount());
+        return 'transaction-intake:s'.$this->shardIndex($tenantId, $this->intakeShardCount());
     }
 
     public function processingQueueForTenant(int|string|null $tenantId): string
     {
         $tenantId = (int) $tenantId;
 
-        return 'transaction-processing:s' . $this->shardIndex($tenantId, $this->processingShardCount());
+        return 'transaction-processing:s'.$this->shardIndex($tenantId, $this->processingShardCount());
+    }
+
+    /**
+     * Bare intake shard identifier for a tenant, for log-context use
+     * (e.g. a `shard` field) where callers need the shard value on its own
+     * rather than embedded in a full queue name string. Mirrors
+     * intakeQueueForTenant()'s pilot-tenant routing so the reported shard
+     * matches the queue the tenant is actually routed to.
+     */
+    public function intakeShardIndexForTenant(int|string|null $tenantId): int|string
+    {
+        $tenantId = (int) $tenantId;
+
+        if ($this->isPilotTenant($tenantId)) {
+            return config('tsms.intake.vip_shard', 'vip');
+        }
+
+        return $this->shardIndex($tenantId, $this->intakeShardCount());
+    }
+
+    /**
+     * Bare processing shard index for a tenant, for log-context use.
+     * Mirrors processingQueueForTenant() without the queue-name prefix.
+     */
+    public function processingShardIndexForTenant(int|string|null $tenantId): int
+    {
+        $tenantId = (int) $tenantId;
+
+        return $this->shardIndex($tenantId, $this->processingShardCount());
     }
 
     private function isPilotTenant(int $tenantId): bool
