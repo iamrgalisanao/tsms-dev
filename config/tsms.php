@@ -105,6 +105,48 @@ return [
         'state_ttl_seconds' => (int) env('TSMS_CIRCUIT_BREAKER_STATE_TTL_SECONDS', 3600),
     ],
 
+    // Metrics distribution store (WU2, T053 foundation): bounded Redis
+    // structures backing App\Support\Metrics::sample()/percentile(), kept
+    // separate from the Cache-backed counter/gauge store used by
+    // incr/decr/timing/bucket/get/snapshot (see
+    // App\Support\MetricStores\RedisMetricDistributionStore).
+    //
+    // sample_cap: max most-recent samples retained per metric+dimension
+    // key (1000). Percentile reads are approximate by design (nearest-rank
+    // over whatever recent window is retained); 1000 is large enough for a
+    // stable p99 on typical request-rate metrics while keeping a ZRANGE(0,-1)
+    // read (used to compute percentiles) cheap for an operator-facing
+    // endpoint that is polled infrequently, not per-request.
+    // sample_ttl_seconds: secondary bound — an abandoned per-combination
+    // key (e.g. a route that stops receiving traffic) expires on its own
+    // instead of persisting forever at its last-known cap size.
+    // cardinality_budget: max distinct dimension-combination keys tracked
+    // per metric name (200). WU2 defines this budget and its enforcement;
+    // WU2 itself has no call sites (only the allowlisted dimensions below
+    // exist for future WU4/WU7 use), so 200 is a generous ceiling sized for
+    // route/shard combinations at ~100-tenant scale, not tenant-cardinality
+    // (tenant_id is deliberately not an allowed dimension here).
+    // cardinality_ttl_seconds: TTL on the per-metric combination-tracking
+    // set itself; refreshed on every admitted combination, so it only
+    // clears once a metric name receives no new-or-repeat traffic for the
+    // whole window (documented, deliberate: this can under-expire relative
+    // to any single idle combination, but the failure direction is always
+    // toward rejecting new combinations, never toward unbounded growth).
+    // allowed_dimensions: fixed allowlist — no arbitrary caller-supplied
+    // dimension keys. tenant_id is explicitly excluded (WU4/WU7 cardinality
+    // budget concern); callers must use only these names.
+    'metrics' => [
+        'distribution' => [
+            'redis_connection' => env('TSMS_METRICS_REDIS_CONNECTION', 'default'),
+            'key_prefix' => env('TSMS_METRICS_KEY_PREFIX', 'metrics:dist:'),
+            'sample_cap' => (int) env('TSMS_METRICS_SAMPLE_CAP', 1000),
+            'sample_ttl_seconds' => (int) env('TSMS_METRICS_SAMPLE_TTL_SECONDS', 3600),
+            'cardinality_budget' => (int) env('TSMS_METRICS_CARDINALITY_BUDGET', 200),
+            'cardinality_ttl_seconds' => (int) env('TSMS_METRICS_CARDINALITY_TTL_SECONDS', 3600),
+            'allowed_dimensions' => ['route', 'shard'],
+        ],
+    ],
+
     // Fairness (T044): Redis fixed-window INCR+EXPIRE admission limits, per
     // scope (global/tenant/terminal), consumed by App\Services\IngestionFairnessService.
     // A single limit set applies uniformly to every tenant/terminal —

@@ -25,10 +25,29 @@ class ObservabilityController extends Controller
             'intake.failed_count',
         ]);
 
+        // Confirmed-dead-key fix (WU2, T053 foundation): this block used to
+        // read Metrics::get('intake.dispatch_latency:avg', ...) and two
+        // similarly-suffixed ':avg' keys, but nothing ever wrote a key with
+        // that suffix — Metrics::timing() writes the bare 'metrics:{name}'
+        // key and Metrics::bucket() writes 'metrics:{name}.last_bucket' —
+        // so this always silently returned the 0 default. These now read
+        // the keys that are actually written. Field names and the 0
+        // default are kept exactly as before (not renamed to *_last_ms/
+        // *_last_s, despite these being last-observed gauges rather than
+        // true averages) because resources/js/Components/IntakeHealth/
+        // PipelineHealthPanel.jsx and resources/js/Pages/Observability/
+        // IntakeHealthPage.jsx (including its CRITICAL/DEGRADED/OPERATIONAL
+        // health banner) are live consumers keyed on these exact field
+        // names — a rename would silently break that dashboard. WU7 owns
+        // wiring real percentile-backed fields into the observability
+        // endpoints via Metrics::percentile() (introduced in this same
+        // work unit) once WU4 adds the corresponding Metrics::sample()
+        // call sites; any consumer-facing rename belongs there, coordinated
+        // with a frontend change, not here.
         $latencies = [
-            'dispatch_avg_ms' => Metrics::get('intake.dispatch_latency:avg', 0),
-            'processing_lag_avg_s' => Metrics::get('intake.processing_lag:avg', 0),
-            'worker_time_avg_ms' => Metrics::get('intake.worker_time:avg', 0),
+            'dispatch_avg_ms' => Metrics::get('intake.dispatch_latency', 0),
+            'processing_lag_avg_s' => Metrics::get('intake.processing_lag', 0),
+            'worker_time_avg_ms' => Metrics::get('intake.worker_time', 0),
         ];
 
         return response()->json([
