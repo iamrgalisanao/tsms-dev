@@ -6,15 +6,16 @@ use App\Models\TransactionIntake;
 use App\Services\CircuitBreaker;
 use App\Services\IngestionQueueRouter;
 use App\Services\TransactionIngestService;
+use App\Support\LogContext;
 use App\Support\Metrics;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
+use Illuminate\Queue\Middleware\WithoutOverlapping;
 use Illuminate\Queue\SerializesModels;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Str;
-use Illuminate\Queue\Middleware\WithoutOverlapping;
 
 class ProcessTransactionIntakeJob implements ShouldQueue
 {
@@ -23,11 +24,19 @@ class ProcessTransactionIntakeJob implements ShouldQueue
     public int $intakeId;
 
     /**
+     * The intake's own trace_id, passed in at dispatch time so the
+     * "record not found" path below can still log with a correlation ID
+     * even though it has no TransactionIntake row to load one from.
+     */
+    public ?string $traceId = null;
+
+    /**
      * Create a new job instance.
      */
-    public function __construct(int $intakeId)
+    public function __construct(int $intakeId, ?string $traceId = null)
     {
         $this->intakeId = $intakeId;
+        $this->traceId = $traceId;
     }
 
     /**
@@ -37,7 +46,7 @@ class ProcessTransactionIntakeJob implements ShouldQueue
      */
     public function middleware(): array
     {
-        return [(new WithoutOverlapping((string)$this->intakeId))->releaseAfter(10)];
+        return [(new WithoutOverlapping((string) $this->intakeId))->releaseAfter(10)];
     }
 
     /**
@@ -47,19 +56,35 @@ class ProcessTransactionIntakeJob implements ShouldQueue
     {
         $intake = TransactionIntake::find($this->intakeId);
 
-        if (!$intake) {
-            Log::error('ProcessTransactionIntakeJob: Intake record not found', ['id' => $this->intakeId]);
+        if (! $intake) {
+            Log::error('ProcessTransactionIntakeJob: Intake record not found', LogContext::ingestion([
+                'correlation_id' => $this->traceId,
+            ], [
+                'id' => $this->intakeId,
+            ]));
+
             return;
         }
 
+        // Thread the intake's own trace_id (persisted at intake time from
+        // the normalized correlation_id) into every log line this job
+        // emits — the job otherwise carries no correlation ID at all,
+        // since it's constructed with only $this->intakeId.
+        $traceId = $intake->trace_id;
+
         if (in_array($intake->processing_status, [
             TransactionIntake::PROCESSING_STATUS_DUPLICATE,
-            TransactionIntake::PROCESSING_STATUS_PROCESSED
+            TransactionIntake::PROCESSING_STATUS_PROCESSED,
         ])) {
-            Log::info('ProcessTransactionIntakeJob: Already in terminal state', [
+            Log::info('ProcessTransactionIntakeJob: Already in terminal state', LogContext::ingestion([
+                'tenant_id' => $intake->tenant_id,
+                'terminal_id' => $intake->terminal_id,
+                'correlation_id' => $traceId,
+            ], [
                 'intake_id' => $this->intakeId,
-                'status' => $intake->processing_status
-            ]);
+                'status' => $intake->processing_status,
+            ]));
+
             return;
         }
 
@@ -99,7 +124,7 @@ class ProcessTransactionIntakeJob implements ShouldQueue
                     Log::channel('shadow_audit')->info('SHADOW_MODE_RESULT', [
                         'intake_id' => $this->intakeId,
                         'submission_uuid' => $intake->submission_uuid,
-                        'result' => $result
+                        'result' => $result,
                     ]);
 
                     \Illuminate\Support\Facades\DB::rollBack();
@@ -111,7 +136,7 @@ class ProcessTransactionIntakeJob implements ShouldQueue
                 $status = $result['status'] ?? 'failed';
                 $isDuplicate = $status === 'duplicate' || ($result['message'] ?? '') === 'duplicate_receipt_conflict';
 
-                if (!in_array($status, ['success', 'accepted', 'already_processed'], true) && !$isDuplicate) {
+                if (! in_array($status, ['success', 'accepted', 'already_processed'], true) && ! $isDuplicate) {
                     $failedItems[] = [
                         'index' => $index,
                         'transaction_id' => $payload['transaction_id'] ?? null,
@@ -122,7 +147,7 @@ class ProcessTransactionIntakeJob implements ShouldQueue
                     continue;
                 }
 
-                if (!$isShadowMode && isset($result['id']) && !$isDuplicate) {
+                if (! $isShadowMode && isset($result['id']) && ! $isDuplicate) {
                     $createdTransactionIds[] = $result['id'];
                     ProcessTransactionJob::dispatch($result['id'])
                         ->onQueue(app(IngestionQueueRouter::class)->processingQueueForTenant($intake->tenant_id))
@@ -153,12 +178,19 @@ class ProcessTransactionIntakeJob implements ShouldQueue
                         : ($allDuplicates ? 'Duplicate detected' : ($isShadowMode ? 'SHADOW_MODE_SUCCESS' : null)),
                 ]);
 
-                Log::info('ProcessTransactionIntakeJob: Success', [
+                Log::info('ProcessTransactionIntakeJob: Success', LogContext::ingestion([
+                    'tenant_id' => $intake->tenant_id,
+                    'terminal_id' => $intake->terminal_id,
+                    'shard' => app(IngestionQueueRouter::class)->processingShardIndexForTenant($intake->tenant_id),
+                    'correlation_id' => $traceId,
+                    'decision' => $finalStatus,
+                ], [
+                    'intake_id' => $this->intakeId,
                     'status' => $finalStatus,
                     'transaction_count' => count($results),
                     'transaction_pks' => $createdTransactionIds,
                     'failed_count' => count($failedItems),
-                ]);
+                ]));
 
                 // Performance: Processing Metrics
                 $workerMs = (microtime(true) - $startTime) * 1000;
@@ -181,22 +213,32 @@ class ProcessTransactionIntakeJob implements ShouldQueue
                     'last_error_message' => json_encode(['failed_items' => $failedItems], JSON_UNESCAPED_SLASHES),
                 ]);
 
-                Log::warning('ProcessTransactionIntakeJob: Permanent failure', [
-                    'message' => $failedItems[0]['message'] ?? 'none',
+                Log::warning('ProcessTransactionIntakeJob: Permanent failure', LogContext::ingestion([
+                    'tenant_id' => $intake->tenant_id,
+                    'terminal_id' => $intake->terminal_id,
+                    'correlation_id' => $traceId,
+                    'decision' => 'failed_permanent',
+                    'reason' => $failedItems[0]['message'] ?? 'none',
+                ], [
+                    'intake_id' => $this->intakeId,
                     'failed_count' => count($failedItems),
-                ]);
+                ]));
 
                 Metrics::incr('intake.failed_count');
             }
         } catch (\Throwable $e) {
             $reference = (string) Str::uuid();
 
-            Log::error('ProcessTransactionIntakeJob: Exception', [
+            Log::error('ProcessTransactionIntakeJob: Exception', LogContext::ingestion([
+                'tenant_id' => $intake->tenant_id,
+                'terminal_id' => $intake->terminal_id,
+                'correlation_id' => $traceId,
+            ], [
                 'intake_id' => $this->intakeId,
                 'reference' => $reference,
                 'error' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
-            ]);
+            ]));
 
             // Only a genuine infrastructure-level failure should trip the
             // shared ingestion circuit breaker — a data/constraint-level
@@ -207,10 +249,13 @@ class ProcessTransactionIntakeJob implements ShouldQueue
             if (TransactionIngestService::isInfrastructureFailure($e)) {
                 (new CircuitBreaker(CircuitBreaker::INGESTION_SERVICE_KEY))->recordFailure();
             } else {
-                Log::error('ProcessTransactionIntakeJob: data/constraint-level exception reached the DB despite passing validation — check for a validation gap', [
+                Log::error('ProcessTransactionIntakeJob: data/constraint-level exception reached the DB despite passing validation — check for a validation gap', LogContext::ingestion([
+                    'tenant_id' => $intake->tenant_id,
+                    'correlation_id' => $traceId,
+                ], [
                     'intake_id' => $this->intakeId,
                     'reference' => $reference,
-                ]);
+                ]));
             }
 
             $intake->update([
@@ -220,7 +265,7 @@ class ProcessTransactionIntakeJob implements ShouldQueue
                 // (last_error_message ultimately reaches
                 // SubmissionStatusController::show()). Full text is already
                 // logged above under the same reference.
-                'last_error_message' => 'An internal error occurred while processing this transaction. Reference: ' . $reference,
+                'last_error_message' => 'An internal error occurred while processing this transaction. Reference: '.$reference,
             ]);
 
             // Rethrow to trigger queue retry if within limits

@@ -2,11 +2,12 @@
 
 namespace App\Http\Middleware;
 
+use App\Services\CircuitBreaker;
+use App\Support\LogContext;
 use Closure;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\App;
 use Illuminate\Support\Facades\Log;
-use App\Services\CircuitBreaker;
 use Symfony\Component\HttpFoundation\Response;
 
 class CircuitBreakerMiddleware
@@ -21,7 +22,7 @@ class CircuitBreakerMiddleware
         // Create the CircuitBreaker with the service key explicitly
         $circuitBreaker = App::makeWith(CircuitBreaker::class, ['serviceKey' => $serviceKey]);
 
-        if (!$circuitBreaker->isAvailable()) {
+        if (! $circuitBreaker->isAvailable()) {
             // T028b: attach an identical Retry-After value to both the JSON
             // body and the HTTP header, computed once — mirroring the
             // pattern IngestionBackpressureService already established for
@@ -35,6 +36,7 @@ class CircuitBreakerMiddleware
                 'service' => $serviceKey,
                 'message' => 'Circuit is open due to multiple failures',
                 'retry_after_seconds' => $retryAfterSeconds,
+                'correlation_id' => $request->attributes->get('correlation_id'),
             ], 503)->header('Retry-After', (string) $retryAfterSeconds);
         }
 
@@ -62,10 +64,15 @@ class CircuitBreakerMiddleware
             if ($request->attributes->get('circuit_breaker.downstream_attempted', true)) {
                 $circuitBreaker->recordFailure($request->attributes->get('circuit_breaker.half_open_generation'));
             } else {
-                Log::error('CircuitBreakerMiddleware: exception before downstream attempt, not recorded against breaker', [
+                Log::error('CircuitBreakerMiddleware: exception before downstream attempt, not recorded against breaker', LogContext::ingestion([
+                    'route' => $request->path(),
+                    'correlation_id' => $request->attributes->get('correlation_id'),
+                    'decision' => 'not_recorded',
+                    'reason' => 'exception_before_downstream_attempt',
+                ], [
                     'service' => $serviceKey,
                     'error' => $e->getMessage(),
-                ]);
+                ]));
             }
 
             throw $e;
