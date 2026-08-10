@@ -94,7 +94,7 @@ Handles the 3,238,180 NULL-keyed rows (research.md V4). **Insert-first**: `archi
 | Ordering | `delete` MUST refuse to run unless `archive` completed, reconstructed rows are present **for that `--day`**, and `reconcile` passed **for that same day**. The interlock is per-day, not per-run |
 | 2026-06-13 | `delete` MUST refuse outright for `--day=2026-06-13` (FR-015b, retained wholesale) |
 | Archive fidelity | Archive MUST preserve `id`, `tax_type`, `amount`, timestamps; restoring MUST reproduce pre-run state (FR-013) |
-| Reconcile | Inserted rows MUST reproduce the orphans' per-(`created_at` second, `tax_type`, `amount`) multiset, evaluated **per day**; mismatch halts before any other day is touched (FR-014) |
+| Reconcile | Inserted rows MUST reproduce the orphans' per-(`created_at` second, `tax_type`, `amount`) multiset, evaluated **per day**; mismatch halts before any other day is touched (FR-014). Inserted `created_at` is **the parent transaction's `created_at`**, never `now()` (research.md V5) — using insertion time would fail this check by construction, since orphans are dated across the defect window, not today. |
 | Delete predicate | Strictly `transaction_pk IS NULL` **and** belonging to a reconstructed transaction. MUST NOT delete any linked row (FR-015), and MUST NOT delete 2026-06-13's unrecoverable orphans (FR-015b) |
 | Chunking | Bounded chunks only; never a single bulk `DELETE` (2026-08-10 lock-contention precedent) |
 | Authorization | `--phase=delete --apply` requires the derived token — the reconcile result hash, re-computed server-side (Architect Q4) |

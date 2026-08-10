@@ -279,6 +279,28 @@ Re-keying by correlating contiguous id blocks and `created_at` is technically co
 
 **Decisions taken (user, 2026-08-10)**: archive orphans to a durable table, verify, then chunked-delete. Proceed with the feature but **re-baseline the business case** — rewrite the justification and materiality model honestly and let finance re-confirm priority against the smaller real impact.
 
+## V5: `created_at` provenance for reconstructed rows — BLOCKER found in impact review, requires empirical measurement
+
+**Finding (Code Reviewer impact-analysis pass, 2026-08-10)**: `TransactionIngestService::insertTaxes()` stamps `transaction_taxes.created_at = now()` **per row, at insertion time** (`TransactionIngestService.php:435-437`) — it does not derive from the parent transaction's own timestamp. The parent transaction's `created_at` is separately `$payload['created_at'] ?? now()` (`:301`).
+
+**Why this is a blocker, not a nuance**: FR-014's reconciliation compares reconstructed rows against archived orphans on a **per-`created_at`-second** multiset. If the backfill mirrors `insertTaxes()` literally (as an earlier draft of this document instructed — "mirrors `insertTaxes()`'s `Schema::hasColumn` guard" was read too broadly), reconstructed rows get **today's** date, while the orphans they must reconcile against are dated across 2026-06 through 2026-08. The reconciliation would fail by construction, for every day, on the first run.
+
+**Decision**: reconstructed rows MUST set `created_at` to the **parent transaction's own `created_at`** (`transactions.created_at`), not `now()`. This is the closest available proxy for "when the original synchronous insert would have happened" — the original defect-era code processed the parent insert and its tax-row inserts within the same request, so the two values should coincide to within, at most, a few seconds.
+
+**Whether they coincide exactly is not yet known and must be measured, not assumed.** Both fields exist on **post-fix** transactions (2026-08-10 ~10:00 onward), where linkage is intact — the same population R4 already uses as its correctness oracle. This reuses that population rather than requiring a new sample.
+
+```sql
+SELECT TIMESTAMPDIFF(SECOND, t.created_at, tt.created_at) AS delta_seconds,
+       COUNT(*) AS row_count
+FROM transactions t
+JOIN transaction_taxes tt ON tt.transaction_pk = t.id
+WHERE t.created_at >= '2026-08-10 10:00:00'
+GROUP BY delta_seconds
+ORDER BY ABS(delta_seconds), delta_seconds;
+```
+
+**Required outcome**: if the distribution is `delta_seconds = 0` for effectively all rows, FR-014 keeps exact per-second reconciliation, sourced from `transactions.created_at` rather than `now()`. If a non-trivial spread exists, FR-014's tolerance must be widened to match the measured distribution (e.g. ±N seconds) rather than assumed at ±0. **This measurement gates T069's implementation** — do not code the reconciliation predicate before it returns.
+
 ## Resolved Unknowns Summary
 
 | Unknown | Resolution |
