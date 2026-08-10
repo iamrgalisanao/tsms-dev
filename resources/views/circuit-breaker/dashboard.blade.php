@@ -8,7 +8,9 @@
   <title>Transaction Monitoring Dashboard</title>
 
   {{-- Add this line to ensure Vite integration --}}
-  @viteReactRefresh
+  @env('local')
+    @viteReactRefresh
+  @endenv
 
   {{-- Load assets --}}
   @vite(['resources/css/app.css', 'resources/js/app.js'])
