@@ -68,7 +68,7 @@ Internally consistent: `58.04 × 12% = 6.9648 ≈ 6.96`. Gross **derived** from 
 
 **Resolved by D7**: the fallback mechanism is removed and the VAT-exempt deduction becomes an explicit accessor term sourced from the `sc_vat_exempt_sales` **column** (T088a-6) — exactly neutral for the backfill population, whose current `net_amount` already derives from that column. S7 is reduced to a principle confirmation for finance; the mechanism question is closed.
 
-**Revised blast radius**: not only out-of-window transactions with linked rows, but also any transaction with zero linked rows and a non-zero `sc_vat_exempt_sales` column — potentially much of the defect window itself.
+**Blast radius under D7** *(corrected — an earlier revision of this paragraph described variant (a) and was orphaned when D7 was adopted)*: **out-of-window transactions with linked rows only.** Transactions with zero linked rows and a non-zero `sc_vat_exempt_sales` column — i.e. essentially the whole defect window — are **unaffected**, because D7's explicit term reproduces exactly what the fallback yields today (`gross − 0 − column` = `gross − column`). That neutrality is the point of pinning the source to the column (T088a-6).
 
 ---
 

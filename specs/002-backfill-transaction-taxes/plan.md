@@ -10,7 +10,7 @@ Repair `transaction_taxes` for a 59-day defect window in which every tax row was
 
 ⚠️ **BLOCKED on FR-018.** Row-level `other_tax` semantics must be aligned with the PITX business formula before any reconstruction reaches the accessors. `Transaction::otherTaxSum()` counts every non-`VAT` row — including `VATABLE_SALES`, which the PITX formula treats as the *base* of gross, never a deduction. It is inert only because the window has no linked rows; the backfill activates it, collapsing `net_amount` by ~89% on the worked example across 809,107 transactions. See [other-tax-semantics.md](other-tax-semantics.md).
 
-**Revised after the 2026-08-10 Architect gate (ARCHITECTURE_NOT_APPROVED).** Two premise-level defects were found and empirically confirmed:
+**Revised across five Architect passes (2026-08-10); `ARCHITECTURE_APPROVED` at pass 5.** Two premise-level defects were found early and empirically confirmed:
 
 - **The data was never lost — only its linkage.** The defective inserts *succeeded*, writing `transaction_pk = NULL`. All three original gating verifications joined on `transaction_pk` and were structurally blind to those rows (research.md V4). The insert-only invariant this plan formerly rested on is **void**.
 - **Reports were largely correct already.** VAT/vatable/SC-VAT-exempt come from `transactions` columns that were never lost; only `other_tax` depends on this table. The business case is re-baselined in spec.md around source-of-truth integrity rather than "wrong reports".
@@ -57,7 +57,7 @@ Governance is instead taken from `CLAUDE.md` + `docs/agent-orchestration/`, whic
 
 **Gating Verifications**: V1/V1a/V1b confirmed the window and payload recoverability. **V4 (post-gate) overturned a core premise** — 3,238,180 orphan rows exist that all three earlier checks were blind to. V2 moot. Feasibility risk is closed; residual risk is execution-side (3.24M deletes + 3.24M inserts on a table with a proven lock-contention outage history).
 
-**Gate status: `ARCHITECTURE_NOT_APPROVED` (2026-08-10).** Re-review required after these amendments.
+**Gate status: `ARCHITECTURE_APPROVED` (pass 5, 2026-08-10).** Five review passes; the architecture leg of Gate 0 is closed. `IMPACT_ANALYZED`, `BASELINE_RECORDED`, `READY_TO_IMPLEMENT` and the Phase 0B stakeholder gates remain outstanding.
 
 ## Project Structure
 

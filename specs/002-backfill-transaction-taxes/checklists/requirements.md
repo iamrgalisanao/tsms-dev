@@ -4,7 +4,7 @@
 **Created**: 2026-08-10 · **Last revised**: 2026-08-10 (after Architect pass 3)
 **Feature**: [spec.md](../spec.md)
 
-> ⚠️ **NOT READY.** Three Architect passes have returned `ARCHITECTURE_NOT_APPROVED`. This checklist previously read fully green while FR-016 was undecided and FR-018/D3 was an unimplementable principle — that was stale and misleading. Current state below is accurate.
+> **Architecture approved (pass 5), implementation NOT yet cleared.** Passes 1-3 returned `ARCHITECTURE_NOT_APPROVED`, pass 4 `ARCHITECTURE_APPROVED_WITH_CHANGES`, pass 5 `ARCHITECTURE_APPROVED`. Gate 0 still requires `IMPACT_ANALYZED`, `BASELINE_RECORDED` and `READY_TO_IMPLEMENT`, and the Phase 0B stakeholder gates (S1-S6) remain open. This checklist previously read fully green while FR-016 was undecided — that was stale and misleading; the state below is accurate.
 
 ## Content Quality
 

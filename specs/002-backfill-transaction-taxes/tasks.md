@@ -32,7 +32,7 @@ description: "Task list for Backfill Transaction Taxes"
 
 ⚠️ **This feature is NOT insert-only.** V4 confirmed the defective inserts *succeeded* with a NULL key — the data was never lost, only its linkage. The run deletes 3.24M rows. See Phase 0A.
 
-⚠️ **Gate status: `ARCHITECTURE_APPROVED_WITH_CHANGES` (pass 4, 2026-08-10).** Architecture is sound; C1-C4 must land before the literal `ARCHITECTURE_APPROVED` that Gate 0 requires.
+✅ **Gate status: `ARCHITECTURE_APPROVED` (pass 5, 2026-08-10).** Gate 0's architecture leg is closed. `IMPACT_ANALYZED`, `BASELINE_RECORDED` and `READY_TO_IMPLEMENT` remain outstanding, as do the Phase 0B stakeholder gates.
 
 ⚠️ **Finance sign-off is WITHDRAWN.** It rested on a false claim that the payload fallback covered `other_tax`. Fresh sign-off required before any live run (spec.md).
 
@@ -226,12 +226,12 @@ description: "Task list for Backfill Transaction Taxes"
 - [ ] T081 [P] Regression test: assert `TransactionTax::$fillable` contains `transaction_pk`, and that no code path calls `TransactionTax::create()` with a `transaction_id` key — the cheapest permanent guard against the entire defect class (Architect F7)
 - [ ] T082 Correct research.md R8, data-model.md, and quickstart Step 7 to name only `reports:refresh-daily-transaction-summaries` as genuinely affected. `RefreshHourlyWindowJob` is a deprecated no-op and `transactions_hourly` derives tax from `transactions` columns (Architect F3) — **partially applied 2026-08-10; verify no residual references**
 
-### Gate-ordering fix
-
 
 ---
 
-## Phase 0B: BLOCKING — must clear before Gate 0 (re-review #2)
+## Phase 0B: BLOCKING — stakeholder gates before implementation and the live run
+
+**These block `READY_TO_IMPLEMENT` and the live `--apply` run — NOT `ARCHITECTURE_APPROVED`.** Architecture approval was granted on pass 5 without them; requiring finance sign-off as a precondition of architecture review would reproduce the circularity that retired T083.
 
 - [ ] T084 Re-obtain finance sign-off against the corrected impact statement (N1): `other_tax` was **not** covered by any fallback, so the real delta is larger than finance was told. Must explicitly cover the FR-016 boolean-as-currency caveat and whether corrected impact changes priority or required tenant comms. **Blocks any live run**
 - [ ] T085 Obtain the separate stakeholder decision on the 216 unrecoverable transactions' orphan rows. Default per user direction: **retained, not deleted** (T070a). This task records the decision; it does not authorize deletion
@@ -271,7 +271,7 @@ BLOCKING (outside engineering):  finance re-sign-off [T084] · 216-row decision 
   ↓
 PRE-GATE (not numbered tasks):   baseline recording · staging schema confirmation
   ↓
-GATE 0: ARCHITECTURE_APPROVED (re-review #3) · IMPACT_ANALYZED · BASELINE_RECORDED · READY_TO_IMPLEMENT
+GATE 0: ARCHITECTURE_APPROVED ✅ (pass 5) · IMPACT_ANALYZED · BASELINE_RECORDED · READY_TO_IMPLEMENT
   ↓
  1. Doc corrections, retractions, containment    T087, T096, T097, T099, T100-T102
  2. Reconstruction core + tests (defect-era)     T005-T009, T096
@@ -294,7 +294,7 @@ GATE 0: ARCHITECTURE_APPROVED (re-review #3) · IMPACT_ANALYZED · BASELINE_RECO
 13. US3 / US4 / polish / handoff                 T041-T051, T052-T057, T063-T065
 ```
 
-**Ordering rationale**: insert (9) precedes reconcile (10) precedes delete (11). Originals survive until their replacement is proven *in place*; a bad insert rolls back without touching the archive; and reconciliation compares what was actually written, not what a dry run predicted.
+**Ordering rationale**: within each day, insert (9a) precedes reconcile (9b) precedes delete (9c). Originals survive until their replacement is proven *in place*; a bad insert rolls back without touching the archive; reconciliation compares what was actually written, not what a dry run predicted; and per-day scoping means a systematic defect halts after one day rather than after 3.24M rows.
 
 ---
 
