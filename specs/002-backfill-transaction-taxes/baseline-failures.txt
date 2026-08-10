@@ -1,0 +1,148 @@
+   FAIL  Tests\Unit\JobProcessingServiceTest
+   FAIL  Tests\Unit\Services\Security\ReportAggregationServiceTest
+   FAIL  Tests\Unit\Services\Security\SecurityReportingServiceTest
+   FAIL  Tests\Unit\TransactionProcessingServiceTest
+   FAIL  Tests\Unit\TransactionValidationServiceTest
+   FAIL  Tests\Feature\API\SecurityReportControllerTest
+   FAIL  Tests\Feature\Auth\AuthenticationTest
+   FAIL  Tests\Feature\Auth\RateLimitingTest
+   FAIL  Tests\Feature\BatchIngestionTenantTerminalValidationTest
+   FAIL  Tests\Feature\ChecksumSubmissionEventTest
+   FAIL  Tests\Feature\DashboardMetricsTenantIsolationTest
+   FAIL  Tests\Feature\DashboardNotificationTest
+   FAIL  Tests\Feature\DashboardPerformanceTest
+   FAIL  Tests\Feature\ExampleTest
+   FAIL  Tests\Feature\IngestionQuarantineCommandsTest
+   FAIL  Tests\Feature\IngestionQuarantineTest
+   FAIL  Tests\Feature\Module2Test
+   FAIL  Tests\Feature\OfficialIdempotentReplayTest
+   FAIL  Tests\Feature\OfficialRateLimitTest
+   FAIL  Tests\Feature\OfficialTransactionTimestampNoMutationTest
+   FAIL  Tests\Feature\PosTerminalDirectNotificationTest
+   FAIL  Tests\Feature\PosTerminalNotificationTest
+   FAIL  Tests\Feature\RbacAuditTest
+   FAIL  Tests\Feature\RouteProviderCharacterizationTest
+   FAIL  Tests\Feature\StoreOfficialResilienceTest
+   FAIL  Tests\Feature\TextFormatParserTest
+   FAIL  Tests\Feature\TokenIntrospectionTest
+   FAIL  Tests\Feature\TransactionControllerTest
+   FAIL  Tests\Feature\TransactionLogTest
+   FAIL  Tests\Feature\TransactionPipeline\TransactionChildLinkingTest
+   FAIL  Tests\Feature\TransactionPipeline\TransactionValidationTest
+   FAIL  Tests\Feature\TransactionProcessingTest
+   FAIL  Tests\Feature\TransactionSummaryIntegrationTest
+   FAIL  Tests\Feature\TransactionValidationTest
+   FAIL  Tests\Feature\WebappApi\ReportsTest
+   FAIL  Tests\Feature\WebappApi\TransactionsTest
+   FAILED  Tests\Unit\JobProcessingServiceTest > handles max retry attempts     
+   FAILED  Tests\Unit\Services\Security\ReportAggregationSer…  QueryException   
+   FAILED  Tests\Unit\Services\Security\ReportAggregationSer…  QueryException   
+   FAILED  Tests\Unit\Services\Security\ReportAggregationSer…  QueryException   
+   FAILED  Tests\Unit\Services\Security…  UniqueConstraintViolationException   
+   FAILED  Tests\Unit\Services\Security\SecurityReportingSer…  QueryException   
+   FAILED  Tests\Unit\Services\Security\SecurityReportingSer…  QueryException   
+   FAILED  Tests\Unit\Services\Security…  UniqueConstraintViolationException   
+   FAILED  Tests\Unit\Services\Security\SecurityReportingSer…  QueryException   
+   FAILED  Tests\Unit\Services\Security\SecurityReportingSer…  QueryException   
+   FAILED  Tests\Unit\TransactionProcessingServiceTest > gen…  ErrorException   
+   FAILED  Tests\Unit\TransactionProcessingServiceTest > pro…  ErrorException   
+   FAILED  Tests\Unit\TransactionValidationServiceTest > validates valid tra…   
+   FAILED  Tests\Unit\TransactionValidationServiceTest > detects duplicate t…   
+   FAILED  Tests\Feature\API\SecurityReportControl…  InvalidArgumentException   
+   FAILED  Tests\Feature\API\SecurityReportControl…  InvalidArgumentException   
+   FAILED  Tests\Feature\API\SecurityReportControl…  InvalidArgumentException   
+   FAILED  Tests\Feature\API\SecurityReportControl…  InvalidArgumentException   
+   FAILED  Tests\Feature\API\SecurityReportControl…  InvalidArgumentException   
+   FAILED  Tests\Feature\API\SecurityReportControl…  InvalidArgumentException   
+   FAILED  Tests\Feature\API\SecurityReportControllerTest >…   QueryException   
+   FAILED  Tests\Feature\API\SecurityReportControllerTest >…   ErrorException   
+   FAILED  Tests\Feature\API\SecurityReportControl…  InvalidArgumentException   
+   FAILED  Tests\Feature\API\SecurityReportControl…  InvalidArgumentException   
+   FAILED  Tests\Feature\Auth\AuthenticationTest > user can login with valid…   
+   FAILED  Tests\Feature\Auth\Authentica…  UniqueConstraintViolationException   
+   FAILED  Tests\Feature\Auth\Authentica…  UniqueConstraintViolationException   
+   FAILED  Tests\Feature\Auth\Authentica…  UniqueConstraintViolationException   
+   FAILED  Tests\Feature\Auth\RateLimitingTest > login endpoint is rate limi…   
+   FAILED  Tests\Feature\Auth\RateLimiti…  UniqueConstraintViolationException   
+   FAILED  Tests\Feature\Auth\RateLimiti…  UniqueConstraintViolationException   
+   FAILED  Tests\Feature\BatchIngestionTenantTerminalValidationTest > happy…    
+   FAILED  Tests\Feature\BatchIngestionTenantTerminalValidationTest > reques…   
+   FAILED  Tests\Feature\BatchIngestionTenantTerminalValidationTest > item l…   
+   FAILED  Tests\Feature\ChecksumSubmissionEventTest > checksum failure crea…   
+   FAILED  Tests\Feature\ChecksumSubmissionEventTest > valid checksum does n…   
+   FAILED  Tests\Feature\DashboardMetricsTenantIsolationTest > tenant user c…   
+   FAILED  Tests\Feature\DashboardMetricsTenantIsolationTest > tenantless no…   
+   FAILED  Tests\Feature\DashboardMetricsTenantIsolationTest > dashboard met…   
+   FAILED  Tests\Feature\DashboardMetricsTenantIsolationTest > dashboard met…   
+   FAILED  Tests\Feature\DashboardNotificationTest > admin sees excessive fa…   
+   FAILED  Tests\Feature\DashboardPerformanceTest > performance page…   Error   
+   FAILED  Tests\Feature\DashboardPerformanceTest > existing routes s…  Error   
+   FAILED  Tests\Feature\ExampleTest > the application returns a successful…    
+   FAILED  Tests\Feature\IngestionQuarantineCommandsTest > replay command dr…   
+   FAILED  Tests\Feature\IngestionQuarantineTest > invalid official checksum…   
+   FAILED  Tests\Feature\Module2Test > transaction ingestion…  QueryException   
+   FAILED  Tests\Feature\Module2Test > pos text format parse…  QueryException   
+   FAILED  Tests\Feature\Module2Test > job queues and proces…  QueryException   
+   FAILED  Tests\Feature\Module2Test > error handling and re…  QueryException   
+   FAILED  Tests\Feature\OfficialIdempotentReplayTest > replay same transact…   
+   FAILED  Tests\Feature\OfficialRateLimitTest > official endpoint returns 4…   
+   FAILED  Tests\Feature\OfficialTransactionTimestampNoMutationTest > offici…   
+   FAILED  Tests\Feature\OfficialTransactionTimestampNoMutationTest > offici…   
+   FAILED  Tests\Feature\OfficialTransactionTimestampNoMutationTest > offici…   
+   FAILED  Tests\Feature\OfficialTransactionTimestampNoMutationTest > offici…   
+   FAILED  Tests\Feature\OfficialTransactionTimestampNoMutationTest > offici…   
+   FAILED  Tests\Feature\PosTerminalDire…  UniqueConstraintViolationException   
+   FAILED  Tests\Feature\PosTerminalDire…  UniqueConstraintViolationException   
+   FAILED  Tests\Feature\PosTerminalNoti…  UniqueConstraintViolationException   
+   FAILED  Tests\Feature\PosTerminalNoti…  UniqueConstraintViolationException   
+   FAILED  Tests\Feature\PosTerminalNoti…  UniqueConstraintViolationException   
+   FAILED  Tests\Feature\RbacAuditTest > role assignment generates audit rec…   
+   FAILED  Tests\Feature\RouteProviderCharacterizationTest > dashboard licen…   
+   FAILED  Tests\Feature\StoreOfficialResilienceTest > mid persist failure d…   
+   FAILED  Tests\Feature\StoreOfficialResilienceTest > resubmitting an incom…   
+   FAILED  Tests\Feature\StoreOfficialResilienceTest > completed submission…    
+   FAILED  Tests\Feature\TextFormatParserTest > parses key value form…  Error   
+   FAILED  Tests\Feature\TextFormatParserTest > parses equals format    Error   
+   FAILED  Tests\Feature\TextFormatParserTest > parses space format     Error   
+   FAILED  Tests\Feature\TextFormatParserTest > handles mixed formats   Error   
+   FAILED  Tests\Feature\TextFormatParserTest > handles empty input     Error   
+   FAILED  Tests\Feature\TextFormatParserTest > handles invalid input   Error   
+   FAILED  Tests\Feature\TextFormatParserTest > handles special chara…  Error   
+   FAILED  Tests\Feature\TextFormatParserTest > handles multiline val…  Error   
+   FAILED  Tests\Feature\TextFormatParserTest > api endpoint                    
+   FAILED  Tests\Feature\TokenIntrospectionTest > invalid format token          
+   FAILED  Tests\Feature\TokenIntrospectionTest > revoked token is invalid      
+   FAILED  Tests\Feature\TransactionControllerTest > store transaction succe…   
+   FAILED  Tests\Feature\TransactionLogTest > it displays receipt no on the…    
+   FAILED  Tests\Feature\TransactionPipeline\TransactionChildLinkingTest > a…   
+   FAILED  Tests\Feature\TransactionPipeline\TransactionValidatio…  TypeError   
+   FAILED  Tests\Feature\TransactionPipeline\TransactionValidatio…  TypeError   
+   FAILED  Tests\Feature\TransactionPipeline\TransactionValidatio…  TypeError   
+   FAILED  Tests\Feature\TransactionPipeline\TransactionValidatio…  TypeError   
+   FAILED  Tests\Feature\TransactionPipeline\TransactionValidatio…  TypeError   
+   FAILED  Tests\Feature\TransactionPipeline\TransactionValidatio…  TypeError   
+   FAILED  Tests\Feature\TransactionPipeline\TransactionValidatio…  TypeError   
+   FAILED  Tests\Feature\TransactionPipeline\TransactionValidatio…  TypeError   
+   FAILED  Tests\Feature\TransactionPipeline\TransactionValidatio…  TypeError   
+   FAILED  Tests\Feature\TransactionPipeline\TransactionValidatio…  TypeError   
+   FAILED  Tests\Feature\TransactionPipeline\TransactionValidatio…  TypeError   
+   FAILED  Tests\Feature\TransactionPipeline\TransactionValidatio…  TypeError   
+   FAILED  Tests\Feature\TransactionPipeline\TransactionValidatio…  TypeError   
+   FAILED  Tests\Feature\TransactionPipeline\TransactionValidatio…  TypeError   
+   FAILED  Tests\Feature\TransactionPipeline\TransactionValidatio…  TypeError   
+   FAILED  Tests\Feature\TransactionPipeline\TransactionValidatio…  TypeError   
+   FAILED  Tests\Feature\TransactionPipeline\TransactionValidatio…  TypeError   
+   FAILED  Tests\Feature\TransactionPipeline\TransactionValidatio…  TypeError   
+   FAILED  Tests\Feature\TransactionPipeline\TransactionValidatio…  TypeError   
+   FAILED  Tests\Feature\TransactionPipeline\TransactionValidatio…  TypeError   
+   FAILED  Tests\Feature\TransactionPipeline\TransactionValidatio…  TypeError   
+   FAILED  Tests\Feature\TransactionProcessingTest > transac…  QueryException   
+   FAILED  Tests\Feature\TransactionProcessingTest > status…   QueryException   
+   FAILED  Tests\Feature\TransactionProcessingTest > handles…  QueryException   
+   FAILED  Tests\Feature\TransactionProcessingTest > process…  QueryException   
+   FAILED  Tests\Feature\TransactionSummaryIntegrationTest > summary route r…   
+   FAILED  Tests\Feature\TransactionValidationTest > validates valid transac…   
+   FAILED  Tests\Feature\TransactionValidationTest > validates operating hou…   
+   FAILED  Tests\Feature\WebappApi\ReportsTest > sales endpoint returns aggr…   
+   FAILED  Tests\Feature\WebappApi\ReportsTest > summary endpoint returns to…   
+   FAILED  Tests\Feature\WebappApi\TransactionsTest > token with ability can…   
