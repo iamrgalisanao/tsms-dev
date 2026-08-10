@@ -1,13 +1,56 @@
 import axios from 'axios';
 
+const isTemporarilyDisabled = (error) => error?.response?.status === 404;
+
+const emptyMetrics = {
+    total_sales: { current: 0, trend: 0, sparkline: [] },
+    total_net_sales: { current: 0, trend: 0 },
+    total_transactions: { current: 0, trend: 0, sparkline: [] },
+    voided_transactions: { current: 0, trend: 0 },
+    void_rate: { current: 0, trend: 0 },
+    active_terminals: { current: 0, total: 0 },
+    active_tenants: { current: 0, total: 0 },
+    reconciliation: { reconciled: 0, total: 0, pending: 0, failed: 0, trend: 0 },
+    pending_uploads: { current: 0 },
+    exceptions: { failed_reconciliations: 0, missing_uploads: 0, invalid_tax_records: 0, total_exceptions: 0 },
+    compliance: { csmr_ready: false, bir_export_generated: false, tax_validation_passed: false },
+    top_tenants: [],
+    revenue_composition: { net_sales: 0, tax_exempt: 0, vat: 0, refunds: 0, discounts: 0 },
+    sync_status: { last_sync: null }
+};
+
+const emptyCharts = {
+    granularity: 'daily',
+    labels: [],
+    sales: [],
+    net_sales: [],
+    volume: [],
+    previous_sales: [],
+    reconciled: [],
+    exceptions: [],
+    terminal_counts: [],
+    tenant_counts: [],
+    top_tenants: []
+};
+
 const api = {
     getMetrics: async () => {
-        const response = await axios.get('/api/dashboard/metrics');
-        return response.data;
+        try {
+            const response = await axios.get('/api/dashboard/metrics');
+            return response.data;
+        } catch (error) {
+            if (isTemporarilyDisabled(error)) return emptyMetrics;
+            throw error;
+        }
     },
     getCharts: async (params = {}) => {
-        const response = await axios.get('/api/dashboard/charts', { params });
-        return response.data;
+        try {
+            const response = await axios.get('/api/dashboard/charts', { params });
+            return response.data;
+        } catch (error) {
+            if (isTemporarilyDisabled(error)) return emptyCharts;
+            throw error;
+        }
     },
     getTransactions: async (page = 1, filters = {}) => {
         const params = { page, ...filters };
@@ -24,12 +67,22 @@ const api = {
         return response.data;
     },
     getTerminalPerformance: async () => {
-        const response = await axios.get('/api/dashboard/terminal-performance');
-        return response.data;
+        try {
+            const response = await axios.get('/api/dashboard/terminal-performance');
+            return response.data;
+        } catch (error) {
+            if (isTemporarilyDisabled(error)) return [];
+            throw error;
+        }
     },
     getNotifications: async () => {
-        const response = await axios.get('/api/dashboard/notifications');
-        return response.data;
+        try {
+            const response = await axios.get('/api/dashboard/notifications');
+            return response.data;
+        } catch (error) {
+            if (isTemporarilyDisabled(error)) return { data: [] };
+            throw error;
+        }
     },
     dismissNotification: async (id) => {
         const response = await axios.post('/api/dashboard/notifications/dismiss', { id });

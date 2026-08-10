@@ -198,6 +198,10 @@ Route::middleware(['auth'])->group(function () {
         return view('app');
     })->name('monitoring.activity');
 
+    Route::get('/observability/intake', function () {
+        return view('app');
+    })->name('observability.intake');
+
     // Keep terminal test route at the bottom
     Route::get('/terminal-test', function () {
         return view('app');

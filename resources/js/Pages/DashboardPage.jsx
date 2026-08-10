@@ -255,7 +255,7 @@ const DashboardPage = () => {
         terminalPerformance: !hasInitialDashboardCache,
         notifications: !hasInitialDashboardCache
     }));
-    const [refreshInterval, setRefreshInterval] = useState(30000); // 30 seconds for command center
+    const [refreshInterval, setRefreshInterval] = useState(0); // Temporarily off during staging DB recovery.
     const [isRefreshing, setIsRefreshing] = useState(false);
     const [notification, setNotification] = useState(null);
     const [alerts, setAlerts] = useState(() => initialDashboardCache?.alerts ?? []);
