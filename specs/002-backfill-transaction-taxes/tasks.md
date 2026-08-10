@@ -32,13 +32,13 @@ description: "Task list for Backfill Transaction Taxes"
 
 ⚠️ **This feature is NOT insert-only.** V4 confirmed the defective inserts *succeeded* with a NULL key — the data was never lost, only its linkage. The run deletes 3.24M rows. See Phase 0A.
 
-✅ **Gate status (2026-08-10): `ARCHITECTURE_APPROVED` (pass 5) · `IMPACT_ANALYZED` (pass 7) · `BASELINE_RECORDED`, all done.** Only `READY_TO_IMPLEMENT` remains, blocked on the Phase 0B stakeholder gates (S1-S6) — a stakeholder-decision gap, not an engineering one.
+✅ **Gate status (2026-08-10): `ARCHITECTURE_APPROVED` (pass 5) · `IMPACT_ANALYZED` (pass 7) · `BASELINE_RECORDED`, all done.** Only `READY_TO_IMPLEMENT` remains, blocked on the Phase 0B stakeholder gates (S1, S2, S4, S5, S6 — S3 resolved 2026-08-11) — a stakeholder-decision gap, not an engineering one.
 
 ⚠️ **Finance sign-off is WITHDRAWN.** It rested on a false claim that the payload fallback covered `other_tax`. Fresh sign-off required before any live run (spec.md).
 
-⚠️ **Insert-first ordering.** Archive → insert → reconcile in situ → delete only the proven subset. 2026-06-13's unrecoverable orphans are archived but **never deleted** — they are the only surviving record of those 216 transactions' tax lines.
+⚠️ **Insert-first ordering.** Archive → insert → reconcile in situ → delete once verified. **Revised 2026-08-11**: 2026-06-13's unrecoverable orphans are archived (they are the only surviving record of those 216 transactions' tax lines) **and then deleted from the live table**, same as every other day, once the archive write and residual count are both independently verified. No day carries a permanent live exception anymore.
 
-⚠️ **Gate 0 blocker**: No numbered task may begin until `ARCHITECTURE_APPROVED` ✅, `IMPACT_ANALYZED` ✅, `BASELINE_RECORDED` ✅, and `READY_TO_IMPLEMENT` (pending — S1-S6) are all emitted. **Staging schema confirmation is NOT a numbered task** — it sits in the pre-gate sequence per `workflow.md` (Architecture Review → Baseline → Slice Loop), which is why the former T004 was removed from Phase 1. Baseline recording is done — see `baseline.md`.
+⚠️ **Gate 0 blocker**: No numbered task may begin until `ARCHITECTURE_APPROVED` ✅, `IMPACT_ANALYZED` ✅, `BASELINE_RECORDED` ✅, and `READY_TO_IMPLEMENT` (pending — S1, S2, S4, S5, S6; S3 resolved 2026-08-11) are all emitted. **Staging schema confirmation is NOT a numbered task** — it sits in the pre-gate sequence per `workflow.md` (Architecture Review → Baseline → Slice Loop), which is why the former T004 was removed from Phase 1. Baseline recording is done — see `baseline.md`.
 
 ---
 
@@ -70,7 +70,7 @@ description: "Task list for Backfill Transaction Taxes"
 - [ ] T010 Create migration in `database/migrations/` for the backfill run + row-level audit records per [data-model.md](data-model.md) — run id, window, mode, counters, timestamps; per-row transaction_pk, tenant_id, reconstructed rows, prior state, outcome. Must be idempotent (guard with `Schema::hasTable`), matching this repo's migration conventions
 - [ ] T011 Create `app/Models/TaxBackfillRecord.php` (and run model if separate) with `$fillable` explicitly listing every writable column — the original defect was a silently-discarded non-fillable attribute, so this is a correctness requirement, not boilerplate
 - [ ] T012 Implement outcome states `applied | skipped_existing | quarantined | failed` with a required reason string on `quarantined` and `failed`
-- [ ] T013 Represent the 216 unrecoverable rows as `quarantined` with a machine-readable reason (`missing_payload`); they must be recorded, never silently skipped (research V1a)
+- [ ] T013 Represent the 216 unrecoverable rows as `quarantined` with a machine-readable reason (`missing_payload`); they must be recorded, never silently skipped (research V1a). **Extended 2026-08-11**: `quarantined` needs a **second**, distinct reason code — `cross_check_mismatch` — for transactions whose payload exists and parses but fails T008's R3 cross-check (reconstructed values disagree with the transaction's own stored columns). This is a materially different failure mode from "no payload at all" and must be distinguishable in the audit trail: `missing_payload` = no-match (unrecoverable), `cross_check_mismatch` = ambiguous-match (recoverable-looking but suspect, needs human review before ever being trusted)
 - [ ] T014 [P] Add a `TaxBackfillRecord` factory in `database/factories/` for use by feature tests
 - [ ] T015 [P] Feature test in `tests/Feature/` asserting audit rows are written in dry-run mode with outcome projections and **zero** rows in `transaction_taxes`
 
@@ -202,14 +202,14 @@ description: "Task list for Backfill Transaction Taxes"
 
 ### Orphan archive and deletion (runs before any insert)
 
-- [ ] T066 Create migration for an orphan archive table preserving `id`, `tax_type`, `amount`, `created_at`, `updated_at`, plus archive run id and archived-at (FR-013). MUST guard with `Schema::hasTable` — this repo has already shipped one duplicate-migration collision (`create_ingestion_quarantine_table` exists twice: `2025_11_13_000000` and `2026_06_14_000001`). The archive table's `down()` MUST be a guarded no-op, not a drop — FR-015b's permanently-retained 2026-06-13 residue depends on this table as its only durable record
+- [ ] T066 Create migration for an orphan archive table preserving `id`, `tax_type`, `amount`, `created_at`, `updated_at`, plus archive run id and archived-at (FR-013). MUST guard with `Schema::hasTable` — this repo has already shipped one duplicate-migration collision (`create_ingestion_quarantine_table` exists twice: `2025_11_13_000000` and `2026_06_14_000001`). The archive table's `down()` MUST be a guarded no-op, not a drop — once orphans are deleted from the live table (all days, including 2026-06-13, per revised FR-015b), this archive is the **only** durable record of every archived row, not just the 216's
 - [ ] T067 Create `app/Services/Backfill/OrphanTaxArchiver.php` — chunked copy of `transaction_taxes WHERE transaction_pk IS NULL` into the archive, resumable, with per-chunk counts
 - [ ] T068 Create `app/Console/Commands/ArchiveOrphanTaxRows.php` — dry-run by default, `--apply`, `--chunk`, `--json`; subcommands/flags for archive, verify, and delete phases (extend [contracts/cli-contract.md](contracts/cli-contract.md))
 - [ ] T068a **BLOCKING, precedes T069.** Run research.md V5's measurement (`TIMESTAMPDIFF(SECOND, t.created_at, tt.created_at)`, filtered on `tt.created_at` — not `t.created_at`, which is provider-supplied and unvalidated — over post-fix linked rows). If the distribution is ~0 everywhere, FR-014's existing "exactly" wording stands, sourced from the parent's `created_at`. **If a non-trivial spread exists, FR-014 itself (spec.md) MUST be amended with the measured tolerance — this is a spec change, not a T069 implementation choice.** Do not implement T069 before this returns
 - [ ] T069 Implement the FR-014 **in-situ reconciliation** (insert-first): after reconstructed rows are inserted — with `created_at` set to **the parent transaction's `created_at`**, never `now()` (T068a) — compare them against the still-present orphans per **(`created_at` [second or measured tolerance], `tax_type`, `amount`) multiset**, evaluated **per day**. Mismatch halts before any other day is touched. Proves *content*, not attribution — attribution is carried by T023's post-fix oracle alone, and both must pass
-- [ ] T070 Implement chunked, **per-day** deletion (FR-015) with predicate strictly `transaction_pk IS NULL` **and** **per day, wholesale** — every orphan for a fully-reconstructed day is deleted; no per-transaction attribution is attempted (it is impossible, research.md V4). Bound each chunk by archived id range so it is replayable; assert affected-row counts per chunk; never a single bulk `DELETE`
-- [ ] T070a **Retain ALL of 2026-06-13's orphans wholesale** (FR-015b) — the entire day, not a subset, because orphans carry no linking column and attribution is impossible. Accepts ~36 over-retained rows for that day's 9 reconstructable transactions. Mark retained with reason `no_replacement_exists` and surface in the quarantine report
-- [ ] T071 [P] Feature test: deletion refuses to run when T069 reconciliation has not passed for that day, never touches a row with non-null `transaction_pk`, and never touches a 2026-06-13 unrecoverable orphan
+- [ ] T070 Implement chunked, **per-day** deletion (FR-015) with predicate strictly `transaction_pk IS NULL`, applied **uniformly to every day in the window, including 2026-06-13** (revised 2026-08-11 — no day-level exception). Every orphan for a day whose reconciliation has passed is deleted, whether it belonged to a reconstructed transaction (reconciled set) or had no replacement (residual set, T070a) — no per-transaction attribution is attempted for either (it is impossible, research.md V4). Bound each chunk by archived id range so it is replayable; assert affected-row counts per chunk; never a single bulk `DELETE`
+- [ ] T070a **Archive, verify, then delete ALL of 2026-06-13's orphans wholesale** (FR-015b, revised 2026-08-11 — reverses the original "retain, never delete" decision). Mark each archived row with reason `no_replacement_exists` and surface in the quarantine report **before** deletion, so the evidence trail exists independent of the live table. Deletion of this residual is gated on two conditions, same as the reconciled set: the residual count verifies exactly 216 transactions' worth of rows for that day (FR-014), and the archive write verifies successful (FR-013). A failure on either blocks deletion — archive-then-delete, never delete-without-verified-archive. No rows are over-retained for the 9 reconstructable transactions on this day; they follow the normal reconciled-set path
+- [ ] T071 [P] Feature test: deletion refuses to run when T069 reconciliation has not passed for that day, never touches a row with non-null `transaction_pk`, and — for 2026-06-13 specifically — refuses to delete the residual if archive-write verification has not independently succeeded (the uniform guardrail replacing the old "never touches 2026-06-13" exception)
 - [ ] T072 [P] Feature test: archive is complete and byte-faithful before any delete occurs; restoring from archive reproduces the pre-run table state
 
 ### Pre-backfill baselines (unrecoverable once the run starts)
@@ -220,7 +220,7 @@ description: "Task list for Backfill Transaction Taxes"
 
 ### Correctness and safety fixes from the gate
 
-- [ ] T076 Replace T062's duplicate check: verify run-scoped inserted row ids equal the sum of audit-record reconstructed counts, and that the count of `transaction_pk IS NULL` rows equals the **retained residual** (~900 rows from 2026-06-13 per FR-015b) — **not zero**. The `GROUP BY (transaction_pk, tax_type)` check is demoted to a secondary signal compared against T075's baseline — payloads may legitimately repeat a `tax_type` (Architect F8)
+- [ ] T076 Replace T062's duplicate check: verify run-scoped inserted row ids equal the sum of audit-record reconstructed counts, and that the count of `transaction_pk IS NULL` rows in `transaction_taxes` is **zero** after the full run completes (revised 2026-08-11 — FR-015b now deletes the 216's orphans too, so "zero" is the correct post-run assertion, not an exception). The `GROUP BY (transaction_pk, tax_type)` check is demoted to a secondary signal compared against T075's baseline — payloads may legitimately repeat a `tax_type` (Architect F8)
 - [ ] T077 **Record** the aggregating connection's resolved `@@server_id`/`DATABASE()` values in the run record (not merely assert equality against config) — `config/database.php:59-75`'s `reporting` connection falls back to the primary's env vars per-field, and `.env.example` ships those blank, so in an environment that hasn't set them an equality *assertion* passes vacuously without proving anything. Implement a `MASTER_POS_WAIT` gate **only if** the recorded values differ from the primary's. **Supersedes T038** — both refresh commands aggregate on the primary, so the original replica-lag blocker was aimed at a hazard that largely does not exist (Architect F4)
 - [ ] T078 Batch the insert path: resolve parent data from rows already loaded in the chunk and use multi-row inserts, **setting each row's `created_at` from its own parent transaction's `created_at`** (T068a) — batching must not collapse this to a single shared timestamp per batch. Reusing `insertTaxes()`/`attachTransactionReference()` verbatim would issue ~6.5M statements — including ~3.24M single-row SELECTs against the table with the 2026-08-10 outage history (Architect F5, Q8)
 - [ ] T079 Implement the Q4 authorization boundary as an **enforced** mechanism (explicit confirmation token / signed approval recorded in the run record), not documentation. T056 currently only says "obtain authorization" (Architect F10e)
@@ -236,7 +236,7 @@ description: "Task list for Backfill Transaction Taxes"
 **These block `READY_TO_IMPLEMENT` and the live `--apply` run — NOT `ARCHITECTURE_APPROVED`.** Architecture approval was granted on pass 5 without them; requiring finance sign-off as a precondition of architecture review would reproduce the circularity that retired T083.
 
 - [ ] T084 Re-obtain finance sign-off against the corrected impact statement (N1): `other_tax` was **not** covered by any fallback, so the real delta is larger than finance was told. Must explicitly cover the FR-016 boolean-as-currency caveat and whether corrected impact changes priority or required tenant comms. **Blocks any live run**
-- [ ] T085 Obtain the separate stakeholder decision on the 216 unrecoverable transactions' orphan rows. Default per user direction: **retained, not deleted** (T070a). This task records the decision; it does not authorize deletion
+- [ ] T085 **Decision recorded 2026-08-11 (this task's original purpose is fulfilled; remains as an implementation task).** The stakeholder decision on the 216 unrecoverable transactions' orphan rows is: archive (durable, verified, reason `no_replacement_exists`) and then **delete** from the live table, same as every other day — reversing the original "retained live forever" default. See FR-015b, T070a. Remaining work for this task: ensure the decision and its rationale are captured in the implementation's audit trail / migration comments, not just this spec, so a future reader of the code sees why 2026-06-13 has no special case
 - [ ] T086 Decide and document the FR-016 disposition of `SUM(tax_exempt)` (boolean summed as currency) and state it in SC-003 and FR-009a. Fixing the underlying defect is out of scope; deciding how this feature treats it is not
 - [ ] T087 Implement containment for `backfill:transaction-aggregates --allow-write` (FR-017): it is inert today only because the window has no linked rows, and this feature arms it. Add a guard or window-exclusion, plus a runbook prohibition alongside T057
 - [ ] T088a **DECIDED 2026-08-10 — Option 1, allow-list variant.** Implement per D1-D8 in [decision-t088a-other-tax-semantics.md](decision-t088a-other-tax-semantics.md). No longer an open branch
@@ -275,7 +275,7 @@ BLOCKING (outside engineering):  finance re-sign-off [T084] · 216-row decision 
   ↓
 PRE-GATE (not numbered tasks):   baseline recording · staging schema confirmation
   ↓
-GATE 0: ARCHITECTURE_APPROVED ✅ (pass 5) · IMPACT_ANALYZED ✅ (pass 7) · BASELINE_RECORDED ✅ · READY_TO_IMPLEMENT (pending S1-S6)
+GATE 0: ARCHITECTURE_APPROVED ✅ (pass 5) · IMPACT_ANALYZED ✅ (pass 7) · BASELINE_RECORDED ✅ · READY_TO_IMPLEMENT (pending S1,S2,S4,S5,S6 — S3 resolved)
   ↓
  1. Doc corrections, retractions, containment    T087, T096, T097, T099, T100-T102
  2. Reconstruction core + tests (defect-era)     T005-T009, T096
@@ -289,8 +289,8 @@ GATE 0: ARCHITECTURE_APPROVED ✅ (pass 5) · IMPACT_ANALYZED ✅ (pass 7) · BA
        for each day D:
          9a. INSERT reconstructed rows for D       T026-T029, T078, T034-T035
          9b. RECONCILE in situ vs D's orphans      T068a (once, before loop), T069, T071
-         9c. DELETE D's orphans                    T070, T079
-             └─ EXCEPT 2026-06-13, retained whole  T070a
+         9c. DELETE D's orphans (uniform, all days) T070, T079
+             └─ 2026-06-13 residual: archive+verify then delete, same gate  T070a
          halt immediately on mismatch — do NOT advance to D+1
 10. Throttle / resume / kill switch (spans loop)  T030-T033, T102
 11. Connection assertion → scoped agg refresh    T077, T094, T039-T040
@@ -305,6 +305,7 @@ GATE 0: ARCHITECTURE_APPROVED ✅ (pass 5) · IMPACT_ANALYZED ✅ (pass 7) · BA
 ### Backlog (NOT tasks in this feature)
 
 - `docs/specs/vat-reconciliation/*.sql` joins on `tt.transaction_id` (the dropped column) instead of `tt.transaction_pk`. A real pre-existing defect, but **out of scope here** — tracked separately so it is not silently absorbed into this feature.
+- **Schema hardening: enforce `transaction_taxes.transaction_pk NOT NULL` (+ FK where possible).** Added 2026-08-11. Migration `2025_08_13_000013_enforce_transaction_pk_children.php` already attempted this and fails silently today because NULLs exist (T097). This feature's revised FR-015b (archive-and-delete every orphan, including the 216's, rather than retaining any live) is what makes `NOT NULL` achievable for the first time — zero permanent orphans remain after this feature completes. Still out of scope here: this feature's job is to reach zero orphans, not to add the constraint. A follow-up ticket should re-attempt the migration once this feature has shipped and been verified stable.
 
 ---
 

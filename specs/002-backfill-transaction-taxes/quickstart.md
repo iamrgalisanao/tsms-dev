@@ -39,7 +39,7 @@ ONCE, up front:
 THEN PER DAY, 2026-06-13 → 2026-08-09:
   insert reconstructed rows for that day
     → reconcile in situ vs that day's orphans (FR-014, subset/residual)
-    → delete that day's orphans  ── EXCEPT 2026-06-13, retained wholesale (FR-015b)
+    → delete that day's orphans once reconciliation + archive-write verification both pass (FR-015b, revised 2026-08-11 — uniform for every day, including 2026-06-13)
   halt on any mismatch before touching the next day
 
 FINALLY:
@@ -49,7 +49,7 @@ FINALLY:
 
 **Do not skip the snapshot.** Once rows are inserted, the pre-backfill rendered aggregate cannot be reconstructed and materiality becomes indefensible.
 
-**2026-06-13 is never deleted.** Only 9 of its 225 transactions are reconstructable; the other 216 have no payload, so their orphan rows are the only surviving record of their tax lines. The whole day is retained (~36 rows over-retained for the 9 reconstructable transactions — accepted).
+**2026-06-13 is deleted too, once verified** (revised 2026-08-11). Only 9 of its 225 transactions are reconstructable; the other 216 have no payload, so their orphan rows are the only surviving record of their tax lines — but that evidence lives in the **archive**, not in a permanent live orphan. Deletion for this day requires both the residual count to verify exactly 216 transactions' worth of rows (FR-014) and the archive write to verify successful (FR-013); either failing blocks deletion. No rows are over-retained for the 9 reconstructable transactions — they follow the normal path.
 
 ## Step 1 — Prove reconstruction correctness (the real gate)
 
@@ -102,7 +102,7 @@ WHERE transaction_pk IN (<pilot PKs>)
 GROUP BY transaction_pk, tax_type HAVING COUNT(*) > 1;
 ```
 
-**Expected**: matches the pre-run baseline captured in T075 — **not** necessarily empty, and the NULL-keyed count must equal the *retained residual* (~900 rows from 2026-06-13), **not zero**. Payloads may legitimately repeat a `tax_type` (`taxes` is validated `min:4` with no uniqueness constraint), so a bare "must be zero" check false-positives on correct data (Architect F8). The authoritative check is T076: inserted row ids equal the sum of audit-record reconstructed counts, and the `transaction_pk IS NULL` count equals the **retained residual** (~900 rows from 2026-06-13, FR-015b) — never zero.
+**Expected**: matches the pre-run baseline captured in T075. A bare "must be zero" `GROUP BY (transaction_pk, tax_type)` check can still false-positive on legitimate data (payloads may repeat a `tax_type`; `taxes` is validated `min:4` with no uniqueness constraint — Architect F8), so it's a secondary signal only. The authoritative check is T076: inserted row ids equal the sum of audit-record reconstructed counts, and — **revised 2026-08-11** — the `transaction_pk IS NULL` count in `transaction_taxes` is **zero** once the full run (including 2026-06-13's residual deletion) completes. "Zero orphans" is now the correct end state, not an exception.
 
 ## Step 5 — Full backfill: PER-DAY LOOP (FR-014a)
 
@@ -112,8 +112,10 @@ GROUP BY transaction_pk, tax_type HAVING COUNT(*) > 1;
 for D in <each day in window>; do
   php artisan transactions:backfill-taxes        --day=$D --apply    # 9a insert
   php artisan transactions:archive-orphan-taxes  --day=$D --phase=reconcile   # 9b
-  # 9c delete — SKIP ENTIRELY for 2026-06-13 (retained wholesale, FR-015b)
-  [ "$D" = "2026-06-13" ] ||     php artisan transactions:archive-orphan-taxes --day=$D --phase=delete --apply
+  # 9c delete — uniform for every day, including 2026-06-13 (revised 2026-08-11, FR-015b).
+  # The command itself refuses if archive-write verification or the residual-count
+  # check failed for that day — no manual day-skipping needed or permitted.
+  php artisan transactions:archive-orphan-taxes --day=$D --phase=delete --apply
 done
 ```
 

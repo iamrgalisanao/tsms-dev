@@ -4,7 +4,7 @@
 
 **Engineering Gate 0 is complete**: `ARCHITECTURE_APPROVED` ✅ · `IMPACT_ANALYZED` ✅ · `BASELINE_RECORDED` ✅. No code has been written; no live data has been touched.
 
-**`READY_TO_IMPLEMENT` is blocked until all six items below are answered.** These are stakeholder decisions, not engineering work — nothing on this list can be resolved by more analysis. Full technical detail lives in `specs/002-backfill-transaction-taxes/`; this page exists so no one has to reconstruct that history to answer these six questions.
+**`READY_TO_IMPLEMENT` is blocked until the remaining items below are answered.** These are stakeholder decisions, not engineering work — nothing on this list can be resolved by more analysis. Full technical detail lives in `specs/002-backfill-transaction-taxes/`; this page exists so no one has to reconstruct that history to answer these questions. **Update 2026-08-11**: S3 has been resolved as an architecture decision (see below) and no longer blocks — five items remain: S1, S2, S4, S5, S6.
 
 ---
 
@@ -56,15 +56,13 @@
 
 ---
 
-## S3 — Disposition of the 216 unrecoverable transactions' orphan rows
+## S3 — DECIDED 2026-08-11: disposition of the 216 unrecoverable transactions' orphan rows
 
-| | |
-|---|---|
-| **Owner** | Whoever owns data-retention/compliance policy for this class of record |
-| **Question** | Formally confirm: the orphan tax rows for the 216 transactions on 2026-06-13 that have no recoverable payload — the **only surviving record** of their tax lines anywhere — should be archived and **retained permanently**, never deleted. |
-| **Why it matters** | This is a small population (0.03%) but a permanent, non-reversible decision. Deleting them destroys the only copy of those transactions' tax data forever. |
-| **Acceptable answer / evidence** | Confirmation of the default already directed (retain, don't delete), or an explicit override with reasoning. This task is a **formal record**, not a request to reconsider — it exists so the decision is documented, not implied. |
-| **Blocks** | FR-015b's implementation; low effort, mostly a rubber-stamp unless there's an objection. |
+**No longer blocking.** Originally asked whether these rows should be retained live in `transaction_taxes` forever. **Decision reached**: archive them (durable, queryable, with full reconciliation metadata and reason code `no_replacement_exists`) and then **delete them from the live table**, same treatment as every other day's orphans — preservation is satisfied by a verified archive, not by permanent live retention. This also removes a permanent NULL-keyed residue from the operational table and keeps `transaction_pk NOT NULL` achievable as a future hardening step.
+
+**Guardrail carried into the spec** (FR-015b): deletion of this residual is gated on the same two conditions as every reconciled day — archive-write verified successful, and residual count verified to equal exactly 216 transactions' worth of rows — before any live delete. Archive-before-delete remains mandatory; a failed verification blocks deletion, full stop.
+
+**Residual, non-blocking question** if anyone owns data-retention policy: how long should the *archive table itself* retain this data (and every other archived orphan)? Default assumption is indefinite retention unless told otherwise — this does not block implementation.
 
 ---
 
@@ -82,4 +80,4 @@
 
 ## Priority order (recommended)
 
-**S4 first** — it's the foundation everything else cites. **S1 next** (now a narrower ask than originally proposed, thanks to S5's mechanism fix). Then S2, S3, S5, S6 in any order — none blocks the others.
+**S4 first** — it's the foundation everything else cites. **S1 next** (now a narrower ask than originally proposed, thanks to S5's mechanism fix). Then S2, S5, S6 in any order — none blocks the others. **S3 is resolved**, no longer on this list.

@@ -91,8 +91,9 @@ Must be reproducible from the persisted row-level records alone (SC-006), so the
 | Archive | Durable, queryable copy of **all** orphans preserving `id`, `tax_type`, `amount`, timestamps (FR-013) |
 | Ordering | **Insert-first** — archive, insert, reconcile in situ, then delete (FR-015a) |
 | Reconciliation | Inserted rows must reproduce the orphans' per-(`created_at` second, `tax_type`, `amount`) multiset, per day (FR-014), where inserted `created_at` = **the parent transaction's `created_at`** (research.md V5) — never `now()`. Proves **content**, never **attribution** — attribution rests solely on the post-fix oracle (R4) |
-| Deletion scope | Only orphans of reconstructed transactions. **2026-06-13's unrecoverable orphans are retained permanently** (FR-015b) — they are the only surviving record of those 216 transactions' tax lines |
-| Rollback | A bad insert rolls back without touching the archive, since originals are still present |
+| Deletion scope | **Revised 2026-08-11 — all orphans, every day, uniformly.** 2026-06-13's 216 unrecoverable transactions' orphans are archived (their only surviving evidence, per research.md N5) and then **deleted from the live table**, same as every reconciled day. Deletion is gated on the residual count verifying exact (FR-014) and the archive write verifying successful (FR-013) — no day-level exception remains |
+| End state | `transaction_taxes` reaches **zero permanent NULL-keyed orphans**, a precondition for eventually enforcing `transaction_pk NOT NULL` (schema-hardening follow-on, out of this feature's scope but newly unblocked by it) |
+| Rollback | A bad insert rolls back without touching the archive, since originals are still present. Restoring a bad delete requires re-inserting from the archive (both the reconciled-day rows and, if ever needed, the 216's archived rows) |
 
 ## Accessor hazard (FR-018 — BLOCKING)
 

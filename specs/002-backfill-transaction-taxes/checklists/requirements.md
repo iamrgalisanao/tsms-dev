@@ -4,7 +4,7 @@
 **Created**: 2026-08-10 · **Last revised**: 2026-08-10 (after Architect pass 3)
 **Feature**: [spec.md](../spec.md)
 
-> **`ARCHITECTURE_APPROVED` (pass 5) · `IMPACT_ANALYZED` (pass 7) · `BASELINE_RECORDED`, all done. `READY_TO_IMPLEMENT` NOT yet cleared** — blocked on the Phase 0B stakeholder gates (S1-S6), not on engineering work. This checklist previously read fully green while FR-016 was undecided — that was stale and misleading; the state below is accurate.
+> **`ARCHITECTURE_APPROVED` (pass 5) · `IMPACT_ANALYZED` (pass 7) · `BASELINE_RECORDED`, all done. `READY_TO_IMPLEMENT` NOT yet cleared** — blocked on the Phase 0B stakeholder gates (S1, S2, S4, S5, S6 — S3 resolved 2026-08-11), not on engineering work. This checklist previously read fully green while FR-016 was undecided — that was stale and misleading; the state below is accurate.
 
 ## Content Quality
 
@@ -33,7 +33,7 @@
 
 ## Blocking items
 
-**Stakeholder decisions**: S1 finance re-sign-off (T084) · S2 FR-016 disposition (T086) · S3 216-row retention record (T085) · S4 PITX worksheet provenance (T088b) · S5 alias sub-question · S6 external `$appends` consumer check (T088a-1) · S7 **reduced to a principle confirmation** (quantified: PHP 13.8M / 69 tenants; mechanism closed by D7)
+**Stakeholder decisions**: S1 finance re-sign-off (T084) · S2 FR-016 disposition (T086) · ~~S3 216-row retention record~~ **RESOLVED 2026-08-11** (archive-and-delete, T085/FR-015b) · S4 PITX worksheet provenance (T088b) · S5 alias sub-question · S6 external `$appends` consumer check (T088a-1) · S7 **reduced to a principle confirmation** (quantified: PHP 13.8M / 69 tenants; mechanism closed by D7)
 
 **Engineering**: T088a-2/-2b/-3 (allow-list implementation), plus the pre-gate baseline and staging schema confirmation.
 
