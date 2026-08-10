@@ -131,7 +131,12 @@ Route::middleware(['auth:sanctum'])->group(function () {
         Route::get('dashboard/metrics', [DashboardController::class, 'apiMetrics']);
         Route::get('dashboard/charts', [DashboardController::class, 'apiCharts']);
         Route::get('dashboard/transactions', [DashboardController::class, 'apiTransactions']);
-        Route::get('dashboard/terminal-performance', [DashboardController::class, 'apiTerminalPerformance']);
+        // TEMP: disabled 2026-08-10 during the ingestion-index migration on staging — this
+        // endpoint's underlying per-terminal aggregate query in DashboardService was causing
+        // repeated MySQL metadata-lock contention against `transactions` while the
+        // 2026_08_07_000001_add_official_ingestion_short_path_indexes migration was running.
+        // Re-enable once that migration has fully completed.
+        // Route::get('dashboard/terminal-performance', [DashboardController::class, 'apiTerminalPerformance']);
         Route::get('monitoring/activity/daily-report', [ProviderActivityMonitoringController::class, 'dailyReport'])
             ->middleware('role:admin|manager');
         Route::put('monitoring/tenants/{tenant}/config', [ProviderActivityMonitoringController::class, 'updateTenantConfig'])
