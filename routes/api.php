@@ -85,7 +85,11 @@ Route::middleware(['auth:sanctum'])->group(function () {
 
     // Finance dashboards also consume notifications; include finance role.
     Route::middleware(['role:admin|manager|commercial|finance'])->group(function () {
-        Route::get('dashboard/notifications', [DashboardController::class, 'apiNotifications']);
+        // TEMP: disabled 2026-08-10 alongside dashboard/terminal-performance — this endpoint's
+        // unread-notifications query piled up in dozens of concurrent, 400-750+ second-long
+        // executions during the staging ingestion-index migration (likely loaded globally on
+        // every authenticated page). Re-enable once that migration has fully completed.
+        // Route::get('dashboard/notifications', [DashboardController::class, 'apiNotifications']);
         Route::post('dashboard/notifications/dismiss', [DashboardController::class, 'apiDismissNotification']);
     });
 
