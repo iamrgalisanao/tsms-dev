@@ -108,3 +108,7 @@ tmp_valid_tx_errors.json
 !docs/implementation-plans/epic-42/*.md
 !docs/implementation-plans/epic-42/stories/
 !docs/implementation-plans/epic-42/stories/*.md
+# Spec Kit feature specs are tracked (previously force-added per-file).
+!specs/
+!specs/*.md
+!specs/**/*.md

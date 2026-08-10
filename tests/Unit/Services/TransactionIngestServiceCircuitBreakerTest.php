@@ -6,6 +6,7 @@ use App\Models\PosTerminal;
 use App\Models\Tenant;
 use App\Services\CircuitBreaker;
 use App\Services\DeadlockRetryService;
+use App\Services\ProviderTimestampNormalizer;
 use App\Services\TransactionIngestService;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -88,7 +89,7 @@ class TransactionIngestServiceCircuitBreakerTest extends TestCase
         // real DB-write choke point (insertTransactionParent), leaving the
         // rest of ingest() — normalization, receipt-conflict lookup, the
         // deadlock-retry wrapper, the outer catch block — running for real.
-        $service = new class(app(DeadlockRetryService::class)) extends TransactionIngestService {
+        $service = new class(app(DeadlockRetryService::class), app(ProviderTimestampNormalizer::class)) extends TransactionIngestService {
             protected function insertTransactionParent(array $parent): int
             {
                 $previous = new \PDOException('SQLSTATE[HY000]: General error: 2006 MySQL server has gone away', 0);
@@ -119,7 +120,7 @@ class TransactionIngestServiceCircuitBreakerTest extends TestCase
         // Same choke point, but the underlying PDOException is
         // constraint-level (SQLSTATE 23000) — a value that slipped past
         // validation and hit the DB directly, not an infra outage.
-        $service = new class(app(DeadlockRetryService::class)) extends TransactionIngestService {
+        $service = new class(app(DeadlockRetryService::class), app(ProviderTimestampNormalizer::class)) extends TransactionIngestService {
             protected function insertTransactionParent(array $parent): int
             {
                 $previous = new \PDOException('SQLSTATE[23000]: Integrity constraint violation: 1062 Duplicate entry', 0);

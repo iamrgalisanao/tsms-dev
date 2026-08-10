@@ -2,11 +2,14 @@
 
 namespace Tests\Feature;
 
+use App\Jobs\ProcessTransactionIntakeJob;
 use App\Models\PosProvider;
 use App\Models\PosTerminal;
 use App\Models\Tenant;
 use App\Models\Transaction;
+use App\Models\TransactionIntake;
 use App\Services\PayloadChecksumService;
+use App\Services\TransactionIngestService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Queue;
@@ -26,14 +29,7 @@ class OfficialTransactionTimestampNoMutationTest extends TestCase
         $timestamp = Carbon::now('UTC')->subMinute()->format('Y-m-d\TH:i:s\Z');
         $payload = $this->makeOfficialPayload($tenant->id, $terminal->id, $timestamp, $terminal->serial_number);
 
-        $response = $this
-            ->withHeaders([
-                'Authorization' => 'Bearer '.$terminal->generateAccessToken(),
-                'Content-Type' => 'application/json',
-            ])
-            ->postJson('/api/v1/transactions/official', $payload);
-
-        $response->assertOk();
+        $this->postOfficialPayloadAndProcess($terminal, $payload);
 
         $transaction = Transaction::where('transaction_id', $payload['transaction']['transaction_id'])->firstOrFail();
         $originalPayload = json_decode((string) $transaction->getRawOriginal('original_payload'), true);
@@ -66,14 +62,7 @@ class OfficialTransactionTimestampNoMutationTest extends TestCase
             $submissionTimestamp
         );
 
-        $response = $this
-            ->withHeaders([
-                'Authorization' => 'Bearer '.$terminal->generateAccessToken(),
-                'Content-Type' => 'application/json',
-            ])
-            ->postJson('/api/v1/transactions/official', $payload);
-
-        $response->assertOk();
+        $this->postOfficialPayloadAndProcess($terminal, $payload);
 
         $transaction = Transaction::where('transaction_id', $payload['transaction']['transaction_id'])->firstOrFail();
         $originalPayload = json_decode((string) $transaction->getRawOriginal('original_payload'), true);
@@ -97,7 +86,7 @@ class OfficialTransactionTimestampNoMutationTest extends TestCase
             'provider_id' => $provider->id,
         ]);
         $timestamp = '2026-06-23T16:14:13.123Z';
-        $submissionTimestamp = '2026-06-23 16:14:22';
+        $submissionTimestamp = '2026-06-23T16:14:22.456Z';
         $payload = $this->makeOfficialPayload(
             $tenant->id,
             $terminal->id,
@@ -106,14 +95,7 @@ class OfficialTransactionTimestampNoMutationTest extends TestCase
             $submissionTimestamp
         );
 
-        $response = $this
-            ->withHeaders([
-                'Authorization' => 'Bearer '.$terminal->generateAccessToken(),
-                'Content-Type' => 'application/json',
-            ])
-            ->postJson('/api/v1/transactions/official', $payload);
-
-        $response->assertOk();
+        $this->postOfficialPayloadAndProcess($terminal, $payload);
 
         $transaction = Transaction::where('transaction_id', $payload['transaction']['transaction_id'])->firstOrFail();
         $originalPayload = json_decode((string) $transaction->getRawOriginal('original_payload'), true);
@@ -150,14 +132,7 @@ class OfficialTransactionTimestampNoMutationTest extends TestCase
         unset($submissionForChecksum['payload_checksum']);
         $payload['payload_checksum'] = $checksum->computeChecksum($submissionForChecksum);
 
-        $response = $this
-            ->withHeaders([
-                'Authorization' => 'Bearer '.$terminal->generateAccessToken(),
-                'Content-Type' => 'application/json',
-            ])
-            ->postJson('/api/v1/transactions/official', $payload);
-
-        $response->assertOk();
+        $this->postOfficialPayloadAndProcess($terminal, $payload);
 
         $transaction = Transaction::where('transaction_id', $payload['transaction']['transaction_id'])->firstOrFail();
 
@@ -184,6 +159,14 @@ class OfficialTransactionTimestampNoMutationTest extends TestCase
         unset($payload['payload_checksum']);
         $payload['payload_checksum'] = $payloadChecksum;
 
+        $this->postOfficialPayloadAndProcess($terminal, $payload);
+        $this->assertDatabaseHas('transactions', [
+            'transaction_id' => $payload['transaction']['transaction_id'],
+        ]);
+    }
+
+    private function postOfficialPayloadAndProcess(PosTerminal $terminal, array $payload): void
+    {
         $response = $this
             ->withHeaders([
                 'Authorization' => 'Bearer '.$terminal->generateAccessToken(),
@@ -191,10 +174,15 @@ class OfficialTransactionTimestampNoMutationTest extends TestCase
             ])
             ->postJson('/api/v1/transactions/official', $payload);
 
-        $response->assertOk();
-        $this->assertDatabaseHas('transactions', [
-            'transaction_id' => $payload['transaction']['transaction_id'],
-        ]);
+        $response
+            ->assertStatus(202)
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('status', 'queued');
+
+        $intake = TransactionIntake::where('submission_uuid', $payload['submission_uuid'])->firstOrFail();
+
+        (new ProcessTransactionIntakeJob($intake->id, $intake->trace_id))
+            ->handle(app(TransactionIngestService::class));
     }
 
     private function makeOfficialPayload(

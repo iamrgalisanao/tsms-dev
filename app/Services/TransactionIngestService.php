@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services;
 
+use App\Models\PosTerminal;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
@@ -12,7 +13,8 @@ use Illuminate\Support\Str;
 class TransactionIngestService
 {
     public function __construct(
-        protected DeadlockRetryService $retryService
+        protected DeadlockRetryService $retryService,
+        private readonly ProviderTimestampNormalizer $timestampNormalizer
     ) {
     }
 
@@ -284,19 +286,32 @@ class TransactionIngestService
             }
         }
 
+        $terminal = PosTerminal::with('provider')->find((int) $payload['terminal_id']);
+        if (! $terminal) {
+            throw new \InvalidArgumentException("terminal_id {$payload['terminal_id']} was not found");
+        }
+
+        $normalizedTransactionTimestamp = $this->timestampNormalizer->normalize(
+            (string) $payload['transaction_timestamp'],
+            $terminal
+        );
+        $normalizedSubmissionTimestamp = isset($payload['submission_timestamp']) && $payload['submission_timestamp'] !== null && $payload['submission_timestamp'] !== ''
+            ? $this->timestampNormalizer->normalize((string) $payload['submission_timestamp'], $terminal)
+            : null;
+
         $normalized = [
             'tenant_id' => $payload['tenant_id'],
             'terminal_id' => $payload['terminal_id'],
             'transaction_id' => $payload['transaction_id'],
             'hardware_id' => $payload['hardware_id'],
-            'transaction_timestamp' => $payload['transaction_timestamp'],
+            'transaction_timestamp' => $normalizedTransactionTimestamp,
             'gross_sales' => (float) $payload['gross_sales'],
             'net_sales' => (float) ($payload['net_sales'] ?? 0.0),
             'customer_code' => $payload['customer_code'],
             'promo_status' => $payload['promo_status'] ?? 'NONE',
             'payload_checksum' => $payload['payload_checksum'],
             'submission_uuid' => $payload['submission_uuid'] ?? null,
-            'submission_timestamp' => $payload['submission_timestamp'] ?? null,
+            'submission_timestamp' => $normalizedSubmissionTimestamp,
             'validation_status' => $payload['validation_status'] ?? 'PENDING',
             'created_at' => $payload['created_at'] ?? now(),
             'updated_at' => $payload['updated_at'] ?? now(),
