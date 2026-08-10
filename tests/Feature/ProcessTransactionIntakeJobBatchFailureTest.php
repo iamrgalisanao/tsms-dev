@@ -10,6 +10,7 @@ use App\Models\Transaction;
 use App\Models\TransactionIntake;
 use App\Services\IngestionQueueRouter;
 use App\Services\DeadlockRetryService;
+use App\Services\ProviderTimestampNormalizer;
 use App\Services\TransactionIngestService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Queue;
@@ -83,7 +84,7 @@ class ProcessTransactionIntakeJobBatchFailureTest extends TestCase
             'payload_checksum' => str_repeat('c', 64),
         ]);
 
-        $service = new class(app(DeadlockRetryService::class)) extends TransactionIngestService {
+        $service = new class(app(DeadlockRetryService::class), app(ProviderTimestampNormalizer::class)) extends TransactionIngestService {
             private bool $firstReceiptCheck = true;
 
             protected function findReceiptConflict(array $parent): ?object
