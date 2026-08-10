@@ -153,6 +153,36 @@ Decisively: **with the helper fixed, backfilling is a no-op for the accessors.**
 
 The feature's purpose is restoring row-level source of truth. Publishing rows that are unsafe to read through the model's own accessor would defeat that purpose.
 
+## S7 — quantification specification (input to T084)
+
+The fallback decision is finance's, not engineering's. They must receive population **and** peso exposure without a recommendation embedded in the numbers.
+
+**Required outputs**: affected transaction count · affected tenant count · affected tenant-days · total `sc_vat_exempt_sales` · max single-transaction amount · top 20 tenant-days by amount.
+
+**Scope**: reconstructable window transactions only (`original_payload IS NOT NULL`) — the population whose `net_amount` actually shifts when reconstruction inserts an `SC_VAT_EXEMPT_SALES` row and disables the column-fallback.
+
+```sql
+SELECT
+  COUNT(*)                                                AS affected_transactions,
+  COUNT(DISTINCT tenant_id)                               AS affected_tenants,
+  COUNT(DISTINCT CONCAT(tenant_id,'|',DATE(created_at)))  AS affected_tenant_days,
+  ROUND(SUM(sc_vat_exempt_sales), 2)                      AS total_sc_vat_exempt_sales,
+  ROUND(MAX(sc_vat_exempt_sales), 2)                      AS max_transaction_amount
+FROM transactions
+WHERE created_at >= '2026-06-13 00:00:00'
+  AND created_at <  '2026-08-10 10:00:00'
+  AND original_payload IS NOT NULL
+  AND COALESCE(sc_vat_exempt_sales, 0) > 0;
+```
+
+**Date-basis caveat — must be stated when these figures reach finance.** Every other figure in this feature (V1a window boundary, V4 orphan census, the 808,891 / 216 split) was computed on **`created_at`**. Scoping on `transaction_timestamp` instead selects a materially different population — late-submitted transactions fall on the other side of both boundaries — and this repository has a documented history of UTC/business-date bucketing divergence. Whichever basis is used, name it alongside the numbers; do not mix bases in one statement to finance.
+
+**Interpretation guide (not a recommendation)**:
+
+- `total_sc_vat_exempt_sales` is the aggregate `net_amount` movement if the fallback is **removed**, and equally the aggregate movement if it is **kept** and reconstruction disables it. The two options move the same total in opposite directions.
+- `affected_tenant_days` sizes the tenant-communication surface if the change is material.
+- Concentration matters more than the total: a few large tenant-days is a targeted conversation; broad dispersion is a policy question.
+
 ## Open items before this can be actioned
 
 1. **External `$appends` consumers** — establish whether any POS provider or webapp client reads `net_amount` / `calculated_net_sales`. This is Option 1's main residual risk.
