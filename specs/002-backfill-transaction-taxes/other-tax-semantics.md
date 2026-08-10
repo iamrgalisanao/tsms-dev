@@ -52,7 +52,7 @@ Noted in the same worksheet: PITX has **no** formula for discount, service charg
 
 | # | Path | Rule | Counts `OTHER_TAX`? | Counts `VATABLE_SALES`? | vs PITX |
 |---|------|------|:---:|:---:|---------|
-| 1 | `TSMSTransactionRequest` (ingestion gate) | excludes `VAT`, `VATABLE_SALES`, `SC_VAT_EXEMPT_SALES` | yes | no | **Near-correct** — slightly over-inclusive on alias types (`ZERO_RATED`, `NON-VAT`, …) |
+| 1 | `TSMSTransactionRequest:153` | excludes `VAT`, `VATABLE_SALES`, `SC_VAT_EXEMPT_SALES` | yes | no | **Near-correct logic, but DEAD** *(corrected 2026-08-10, impact review 6th pass — an earlier version of this row called it "ingestion gate" and treated it as live)*: the exclusion logic sits inside a `/* ... */` block comment (`:131-174`) under an explicit "not enforced during ingestion" policy, and the containing class is never instantiated in production — its only caller, `TransactionController::storeOfficialLegacy()`, has no route. Slightly over-inclusive on alias types (`ZERO_RATED`, `NON-VAT`, …) if it ever ran |
 | 2 | `RefreshDailyTransactionSummaries.php:120` (SQL) | excludes 13 VAT/vat-exempt aliases | yes | no | **Closest to correct** |
 | 3 | `FinanceCalculationService::NON_OTHER_TAX_TYPES` | excludes those 13 **+ `OTHER_TAX`, `OTHER-TAX`** | **no** | no | **Wrong** — excludes the one component `other_tax` denotes; payload-derived `other_tax` is therefore ~always `0.00` |
 | 4 | `Transaction::otherTaxSum()` | `where('tax_type','!=','VAT')->sum('amount')` | yes | **yes** | **Badly wrong** — subtracts the vatable base from gross |
