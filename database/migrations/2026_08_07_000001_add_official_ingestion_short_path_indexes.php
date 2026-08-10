@@ -1,7 +1,9 @@
 <?php
 
 use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\QueryException;
 use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 
 return new class extends Migration
@@ -44,9 +46,15 @@ return new class extends Migration
             }
         }
 
-        Schema::table($table, function (Blueprint $tableBlueprint) use ($columns, $name): void {
-            $tableBlueprint->index($columns, $name);
-        });
+        try {
+            Schema::table($table, function (Blueprint $tableBlueprint) use ($columns, $name): void {
+                $tableBlueprint->index($columns, $name);
+            });
+        } catch (QueryException $e) {
+            if (($e->errorInfo[1] ?? null) !== 1061) {
+                throw $e;
+            }
+        }
     }
 
     private function dropIndexIfExists(string $table, string $name): void
@@ -62,16 +70,18 @@ return new class extends Migration
 
     private function indexExists(string $table, string $name): bool
     {
-        $indexes = Schema::getConnection()
-            ->getSchemaBuilder()
-            ->getIndexes($table);
+        $connection = Schema::getConnection();
 
-        foreach ($indexes as $index) {
-            if (($index['name'] ?? null) === $name) {
-                return true;
-            }
+        if ($connection->getDriverName() === 'mysql') {
+            return DB::table('information_schema.statistics')
+                ->where('table_schema', $connection->getDatabaseName())
+                ->where('table_name', $table)
+                ->where('index_name', $name)
+                ->exists();
         }
 
-        return false;
+        $indexes = $connection->getSchemaBuilder()->getIndexes($table);
+
+        return collect($indexes)->contains(fn (array $index): bool => ($index['name'] ?? null) === $name);
     }
 };
