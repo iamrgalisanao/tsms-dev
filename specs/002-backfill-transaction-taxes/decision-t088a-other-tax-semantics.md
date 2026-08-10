@@ -39,7 +39,7 @@ Both correct implementations use the *same* exclusion set. `TransactionValidatio
 
 **A fifth net-sales definition exists**: `Transaction::calculateExpectedNetSales()` (`Transaction.php:419`) returns `gross_sales − vat_amount` — live in `JobProcessingService`'s computation-validation path, and different again from the other four. Pre-existing, not introduced here, but named so it is not discovered later.
 
-**Not affected** (verified): `validateAmountReconciliation()` uses correct inline logic; `RefreshDailyTransactionSummaries`, `SalesReportDataService`, and `FinanceCalculationService` all use their own SQL/list logic and never call the helper. No frontend code in `resources/js` or `resources/views` reads `net_amount` or `calculated_net_sales`.
+**Not affected** (verified): `RefreshDailyTransactionSummaries`, `SalesReportDataService`, and `FinanceCalculationService` all use their own SQL/list logic and never call `otherTaxSum()`. `validateAmountReconciliation()`'s inline logic is itself correct but irrelevant to any live behavior — see the consumer-inventory row above: it is unreachable dead code, not merely "unaffected." No frontend code in `resources/js` or `resources/views` reads `net_amount` or `calculated_net_sales`.
 
 **Unknown**: external consumers. `$appends` places both attributes in *every* `Transaction` serialization, so POS providers or webapp clients may consume them. Nothing in-repo tells us. **This is the main residual risk of Option 1 and should be checked before shipping.**
 
@@ -87,12 +87,11 @@ Internally consistent: `58.04 × 12% = 6.9648 ≈ 6.96`. Gross **derived** from 
 
 **Blast radius today** (before any backfill): transactions *outside* the defect window that already have linked tax rows. Under D7 they move from `gross − (VATABLE + SC_VAT_EXEMPT + OTHER + aliases)` to `gross − OTHER − sc_vat_exempt_column`, i.e. **increase** (dominated by `VATABLE_SALES` no longer being deducted), plus the T088a-7 alias residual. This is a correction, but it is a visible change to already-published values and must be acknowledged, not glossed.
 
-**Regression coverage required**:
+**Regression coverage required** *(superseded by D7/T088a-3 below — retained here only as the original brainstorm; the sub-question is resolved, not open)*:
 - The 65.00 / 58.04 / 6.96 / 0.00 case → `net_amount` stays 65.00
 - Same shape with **non-zero** `OTHER_TAX` (e.g. 10.00) → `net_amount` = 55.00
-- Non-zero `SC_VAT_EXEMPT_SALES` → confirm the intended treatment per the sub-question
-- A transaction with **no** linked rows and a non-zero `sc_vat_exempt_sales` column → confirm the column-fallback branch still behaves as intended
-- `validateAmounts()` and `validateAmountReconciliation()` agree on the same fixture
+- A transaction with **no** linked rows and a non-zero `sc_vat_exempt_sales` column → `net_amount` unchanged across the fix (D7 preserves the deduction's *effect*; only the fallback *mechanism* is removed)
+- **No runtime validator-agreement test** — `validateAmounts()`/`validateAmountReconciliation()` are unreachable dead code (see D4, narrowed); "agree on the same fixture" is unexecutable against two `private` methods with no production call path
 
 ## Option 2 — Isolate backfilled rows
 
@@ -139,7 +138,7 @@ Rationale as recorded by the decision owner: the blast radius is bounded and the
 | D1 | `OTHER_TAX` is **allow-listed**, never inferred by excluding VAT-ish types. |
 | D2 | `VATABLE_SALES`, `VAT`, `SC_VAT_EXEMPT_SALES`, VAT-exempt aliases, zero-rated / non-VAT aliases, and **any unknown future tax type** MUST NOT silently become `other_tax`. |
 | D3 | Unknown or unsupported tax types MUST be **observable** — logged, quarantined, or raised as a validation warning depending on context — but MUST NOT be counted as `other_tax`. Silent exclusion is as unacceptable as silent inclusion. |
-| D4 | `validateAmounts()` and `validateAmountReconciliation()` MUST share the same helper and the same allow-list. No second definition may survive. |
+| D4 | *(Narrowed 2026-08-10 — impact review: both methods are unreachable dead code, see below)* `validateAmounts()` and `validateAmountReconciliation()` MUST be **textually aligned** with the `otherTaxSum()` allow-list, for documentation/future-readiness only. `validateTransaction()` — the only method either could be reached through in production — is a passive no-op with zero call sites into either, so this is NOT a behavioral requirement and carries NO runtime test obligation. If this validation path is ever re-wired into ingestion, it should already agree with the model; until then, "no second definition may survive" describes intent, not enforced behavior. |
 | D5 | The live API-visible behaviour change MUST be acknowledged before deploy, because `$appends` exposes `net_amount` / `calculated_net_sales` externally. |
 | D7 | **`net_amount` / `calculated_net_sales` MUST deduct VAT-exempt sales as an EXPLICIT separate term**, not as a side effect inside `otherTaxSum()`. Formula: `gross − otherTaxSum() − scVatExemptSales`. This preserves the PITX principle that VAT-exempt sales are deducted, while avoiding the false +PHP 13.8M movement that (a) would produce by disabling the fallback. The `sc_vat_exempt_sales` column-fallback inside `otherTaxSum()` is **removed** — the deduction moves to the accessor, where it belongs. |
 | D8 | **Scope honesty — do not overstate the fix.** Even under D7 these accessors are **not** PITX NET SALES: that formula also deducts promos, senior discount, PWD discount, employee discount and service charge, none of which these accessors handle unless addressed elsewhere. The accurate claim is *"`other_tax` and VAT-exempt semantics are no longer conflated"*, **not** *"net sales is now fully PITX-correct"*. Any communication to finance or tenants MUST use the narrower claim. |

@@ -294,10 +294,12 @@ SELECT TIMESTAMPDIFF(SECOND, t.created_at, tt.created_at) AS delta_seconds,
        COUNT(*) AS row_count
 FROM transactions t
 JOIN transaction_taxes tt ON tt.transaction_pk = t.id
-WHERE t.created_at >= '2026-08-10 10:00:00'
+WHERE tt.created_at >= '2026-08-10 10:00:00'
 GROUP BY delta_seconds
 ORDER BY ABS(delta_seconds), delta_seconds;
 ```
+
+**Filter on `tt.created_at`, not `t.created_at` (corrected 2026-08-10 — impact-review re-check caught this).** `transactions.created_at` is `$payload['created_at'] ?? now()` — **provider-supplied and unvalidated** (`TSMSTransactionRequest` has no rule on it). Filtering the population on that field would exclude exactly the rows most likely to show a large delta — a provider that backdates `created_at` produces a transaction row dated before the cutoff even though its tax row is inserted `now()` at true insertion time. `transaction_taxes.created_at` is unconditionally `now()` and monotonic, so it is the only field that correctly bounds "rows inserted after the fix." Also capture `MIN`/`MAX`/`COUNT(*)` of `delta_seconds` unbounded by the grouped distribution, so an outlier tail isn't hidden by binning.
 
 **Required outcome**: if the distribution is `delta_seconds = 0` for effectively all rows, FR-014 keeps exact per-second reconciliation, sourced from `transactions.created_at` rather than `now()`. If a non-trivial spread exists, FR-014's tolerance must be widened to match the measured distribution (e.g. ±N seconds) rather than assumed at ±0. **This measurement gates T069's implementation** — do not code the reconciliation predicate before it returns.
 
