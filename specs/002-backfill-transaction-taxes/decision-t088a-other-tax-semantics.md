@@ -22,7 +22,7 @@ It is inert today **only because** defect-window transactions have no linked tax
 | `TransactionValidationService::validateAmountReconciliation():688` | `VAT`, `VATABLE_SALES`, `SC_VAT_EXEMPT_SALES` | Near-correct |
 | `Transaction::otherTaxSum():271` | `VAT` only | **Wrong** |
 
-Both correct implementations use the *same* exclusion set. `TransactionValidationService` therefore contains **two contradictory definitions in one class**: `validateAmounts()` (line 593) uses the wrong helper, while `validateAmountReconciliation()` (line 688) implements the right rule inline.
+Both correct implementations use the *same* exclusion set. `TransactionValidationService` therefore contains **two contradictory definitions in one class**: `validateAmounts()` (line 593) assigns `$otherTaxSum` from the wrong helper but never uses the result, while `validateAmountReconciliation()` (line 688) implements the right rule inline. *(Both are unreachable dead code — `validateTransaction()`, their only path into production, calls neither. See consumer-inventory row 3 below.)*
 
 *(Corrected 2026-08-10)* Lines 693-696 call `otherTaxSum()` then subtract back `sc_vat_exempt_sales` — but they sit in an `else` branch guarded by `method_exists($transaction, 'taxes')`, always true on the model. It is **dead code**, so the inference that a previous author deliberately patched around the over-inclusion is unsupported and is withdrawn.
 
@@ -74,9 +74,9 @@ Internally consistent: `58.04 × 12% = 6.9648 ≈ 6.96`. Gross **derived** from 
 
 ## Option 1 — Fix helper semantics first (RECOMMENDED)
 
-**Change**: `otherTaxSum()` counts only `OTHER_TAX` and its aliases. Consumers 1-4 inherit the fix. `validateAmounts()` and `validateAmountReconciliation()` converge on one definition.
+**Change**: `otherTaxSum()` counts only `OTHER_TAX` and its aliases. Consumers 1-4 inherit the fix. `validateAmounts()` and `validateAmountReconciliation()` are textually aligned with the same allow-list, for documentation purposes only — both are unreachable dead code, so there is no runtime behavior to converge (D4, narrowed).
 
-**Scope**: `app/Models/Transaction.php` (1 method) + regression tests. Optionally collapse `validateAmountReconciliation()`'s inline logic onto the shared helper to remove the duplicate rule; optionally remove the line 693-696 subtract-back workaround, which becomes unnecessary.
+**Scope**: `app/Models/Transaction.php` (1 method) + regression tests. Optionally align `validateAmountReconciliation()`'s inline logic with the shared allow-list as documentation (no behavior change — it is dead code); optionally remove the subtract-back workaround at `TransactionValidationService.php:693-697` (inside the `else` at `:692-698`), which becomes unnecessary regardless.
 
 | For | Against |
 |---|---|

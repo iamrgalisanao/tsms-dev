@@ -85,13 +85,13 @@ Internally consistent with the PITX formula: `58.04 × 12% = 6.9648 ≈ 6.96`. G
 | **Today** (no linked rows) | `0.00` (column fallback) | `65.00 − 0.00 = ` **65.00** |
 | **After backfill** | `58.04 + 0.00 + 0.00 = 58.04` | `65.00 − 58.04 = ` **6.96** |
 
-**≈ 89% collapse**, on `$appends` attributes (`net_amount`, `calculated_net_sales`) serialized into **every API response** for the affected transactions — 809,107 of them. *(Corrected 2026-08-10, further corrected on impact-review re-check)* `validateAmounts()` assigns `$otherTaxSum` at line 593 but **never uses it**. `validateAmountReconciliation()` (lines 684-701) does use its own inline logic correctly — but `validateTransaction()`, the only method either could be reached through in production, is a passive no-op that calls neither. **Both are entirely unreachable dead code.** There is no validation-behavior risk from this feature at all.
+**≈ 89% collapse**, on `$appends` attributes (`net_amount`, `calculated_net_sales`) serialized into **every API response** for the affected transactions — 809,107 of them. *(Corrected 2026-08-10, further corrected on impact-review re-check)* `TransactionValidationService::validateAmounts()` assigns `$otherTaxSum` at line 593 but **never uses it**. `::validateAmountReconciliation()` (lines 684-701) does use its own inline logic correctly — but `validateTransaction()`, the only method either could be reached through in production, is a passive no-op that calls neither. **Both are entirely unreachable dead code.** (A separate, live `JobProcessingService::validateAmounts()` does call `otherTaxSum()`, but only consumes the result inside a dead branch — see the decision memo's consumer inventory row 4.) There is no validation-behavior risk from this feature at all.
 
 The backfill does not merely *reveal* this inconsistency — it **detonates** it.
 
 ## Resolution — DECIDED 2026-08-10
 
-**Option 1, allow-list variant.** Fix `otherTaxSum()` to count only `OTHER_TAX`/`OTHER-TAX`; unknown types observable but never counted; `validateAmounts()`/`validateAmountReconciliation()` textually aligned with the same allow-list for documentation purposes only — both are unreachable dead code, so this carries no runtime behavior or test. Binding details D1-D8 in the [decision memo](decision-t088a-other-tax-semantics.md).
+**Option 1, allow-list variant.** Fix `otherTaxSum()` to count only `OTHER_TAX`/`OTHER-TAX`; unknown types observable but never counted; `TransactionValidationService::validateAmounts()`/`::validateAmountReconciliation()` textually aligned with the same allow-list for documentation purposes only — both are unreachable dead code, so this carries no runtime behavior or test. Binding details D1-D8 in the [decision memo](decision-t088a-other-tax-semantics.md).
 
 Option 2 (isolate backfilled rows) was rejected: all three candidate mechanisms are defective — a source marker needs an out-of-scope schema change, distinguishing by `created_at` destroys temporal fidelity and breaks FR-014 reconciliation, and joining the audit table puts an N+1 against 3.24M rows inside a per-serialization accessor.
 

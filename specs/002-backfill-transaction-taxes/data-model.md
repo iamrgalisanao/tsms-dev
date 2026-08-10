@@ -98,7 +98,7 @@ Must be reproducible from the persisted row-level records alone (SC-006), so the
 
 `Transaction::$appends` exposes `net_amount` and `calculated_net_sales`, both computed via `otherTaxSum()`, which sums **all non-`VAT`** linked rows — including `VATABLE_SALES`. Against the PITX formula that is incoherent: vatable sales is the base of GROSS, not a deduction.
 
-Currently inert (no linked rows in the window → falls through to the `sc_vat_exempt_sales` column). **Reconstruction activates it**, changing an API-visible value on 809,107 transactions. *(Corrected: both `validateAmounts()` and `validateAmountReconciliation()` are unreachable dead code — `validateTransaction()`, their only path into production, is a passive no-op that calls neither. There is no validator exposure at all.)* Must be fixed or isolated before backfill — see [other-tax-semantics.md](other-tax-semantics.md).
+Currently inert (no linked rows in the window → falls through to the `sc_vat_exempt_sales` column). **Reconstruction activates it**, changing an API-visible value on 809,107 transactions. *(Corrected: both `TransactionValidationService::validateAmounts()` and `::validateAmountReconciliation()` are unreachable dead code — `validateTransaction()`, their only path into production, is a passive no-op that calls neither. There is no validator exposure at all. Note this is a different, unrelated `validateAmounts()` from the live method of that name in `JobProcessingService`.)* Must be fixed or isolated before backfill — see [other-tax-semantics.md](other-tax-semantics.md).
 
 ## Explicitly out of scope
 
