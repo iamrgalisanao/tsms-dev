@@ -137,7 +137,10 @@ Route::middleware(['auth:sanctum'])->group(function () {
         // voided_at counts) piling up for 40-70+ seconds after the index migration.
         // Re-enable after metrics are backed by cached/pre-aggregated data or safer indexes.
         // Route::get('dashboard/metrics', [DashboardController::class, 'apiMetrics']);
-        Route::get('dashboard/charts', [DashboardController::class, 'apiCharts']);
+        // TEMP: disabled 2026-08-10 with dashboard/metrics during staging DB
+        // recovery; this endpoint groups large `transactions` ranges for dashboard
+        // charts and should be restored only after cached/pre-aggregated reads exist.
+        // Route::get('dashboard/charts', [DashboardController::class, 'apiCharts']);
         Route::get('dashboard/transactions', [DashboardController::class, 'apiTransactions']);
         // TEMP: disabled 2026-08-10 during the ingestion-index migration on staging — this
         // endpoint's underlying per-terminal aggregate query in DashboardService was causing
