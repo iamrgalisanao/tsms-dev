@@ -12,6 +12,7 @@ use App\Services\DeadlockRetryService;
 use App\Services\IngestionBackpressureService;
 use App\Services\IngestionQueueRouter;
 use App\Services\PayloadChecksumService;
+use App\Services\ProviderTimestampNormalizer;
 use App\Services\TransactionIngestService;
 use App\Services\TransactionIntakeService;
 use Illuminate\Http\Request;
@@ -214,12 +215,16 @@ class OfficialIngestionTransactionBoundaryTest extends TestCase
         ]);
 
         $levels = [];
-        $ingestService = new class(app(DeadlockRetryService::class), $levels) extends TransactionIngestService {
+        $ingestService = new class(app(DeadlockRetryService::class), app(ProviderTimestampNormalizer::class), $levels) extends TransactionIngestService {
             private int $nextId = 1000;
 
-            public function __construct(DeadlockRetryService $retryService, private array &$levels)
+            public function __construct(
+                DeadlockRetryService $retryService,
+                ProviderTimestampNormalizer $timestampNormalizer,
+                private array &$levels
+            )
             {
-                parent::__construct($retryService);
+                parent::__construct($retryService, $timestampNormalizer);
             }
 
             public function ingest(array $payload): array
