@@ -14,19 +14,21 @@ It is inert today **only because** defect-window transactions have no linked tax
 
 ## Finding that reframes the choice
 
-**Correct semantics already exist in this codebase — twice.** This is not a new rule to invent; it is an inconsistency to resolve.
+**There is exactly one live, defective rule to fix: `Transaction::otherTaxSum()`.** Two other pieces of code in this codebase already implement the correct exclusion set (`VAT`, `VATABLE_SALES`, `SC_VAT_EXEMPT_SALES`) — but only one of them runs in production.
 
-| Implementation | Exclusion set | Verdict |
-|---|---|---|
-| `TSMSTransactionRequest:152` (ingestion gate) | `VAT`, `VATABLE_SALES`, `SC_VAT_EXEMPT_SALES` | Near-correct |
-| `TransactionValidationService::validateAmountReconciliation():688` | `VAT`, `VATABLE_SALES`, `SC_VAT_EXEMPT_SALES` | Near-correct |
-| `Transaction::otherTaxSum():271` | `VAT` only | **Wrong** |
+| Implementation | Exclusion set | Reachable in production? | Verdict |
+|---|---|---|---|
+| `TSMSTransactionRequest:152` (ingestion gate) | `VAT`, `VATABLE_SALES`, `SC_VAT_EXEMPT_SALES` | **Yes** — validates every incoming payload | Correct, live |
+| `TransactionValidationService::validateAmountReconciliation():688` | `VAT`, `VATABLE_SALES`, `SC_VAT_EXEMPT_SALES` | **No** — see below | Correct logic, but dead |
+| `Transaction::otherTaxSum():271` | `VAT` only | **Yes** — via `$appends` on every serialization | **Wrong, and live** |
 
-Both correct implementations use the *same* exclusion set. `TransactionValidationService` therefore contains **two contradictory definitions in one class**: `validateAmounts()` (line 593) assigns `$otherTaxSum` from the wrong helper but never uses the result, while `validateAmountReconciliation()` (line 688) implements the right rule inline. *(Both are unreachable dead code — `validateTransaction()`, their only path into production, calls neither. See consumer-inventory row 3 below.)*
+`otherTaxSum()` is the only defect that matters operationally: it is the sole tax-exclusion rule that actually executes against real transactions, and it executes the wrong one.
 
-*(Corrected 2026-08-10)* Lines 693-696 call `otherTaxSum()` then subtract back `sc_vat_exempt_sales` — but they sit in an `else` branch guarded by `method_exists($transaction, 'taxes')`, always true on the model. It is **dead code**, so the inference that a previous author deliberately patched around the over-inclusion is unsupported and is withdrawn.
+`TransactionValidationService::validateAmountReconciliation()` implements the right rule, but it — and its sibling `validateAmounts()` (line 593, which computes `$otherTaxSum` and never uses it) — are both unreachable. `validateTransaction()` (`:518`), the only method either could be reached through from `ProcessTransactionJob`, is a passive no-op that logs and returns `valid => true` without calling either. Both methods sit under an explicit `LEGACY DIAGNOSTIC HELPERS … must not be wired back into ingestion processing` banner (`:528-537`), and neither has a single call site anywhere in `app/` or `tests/`. See consumer-inventory row 3 below.
 
-**Correction to my earlier framing**: I previously characterised Option 1 as "correct but widens scope onto the live API surface." Having traced it, that overstated the cost. The blast radius is **four call sites**, and the change aligns the helper with two existing implementations rather than introducing a new rule.
+The `else` branch at `:692-698` (body `:693-697`) that subtracts `sc_vat_exempt_sales` back out of `$otherTaxSum` is inside `validateAmounts()` and is therefore dead by the same finding — it never executes, so it cannot be evidence that a previous author deliberately patched around the over-inclusion.
+
+**Consequence for scope**: fixing `otherTaxSum()` is a one-method change to live behavior. The two `TransactionValidationService` methods need no behavioral change at all — they are already correct and already unreachable. The only reason to touch them is documentation: keeping their exclusion set textually identical to the fixed `otherTaxSum()` allow-list, so that if this validation path is ever re-wired into ingestion, it inherits the right rule instead of the wrong one that used to live in `otherTaxSum()`.
 
 ## Consumer inventory of the defective helper
 
@@ -74,9 +76,9 @@ Internally consistent: `58.04 × 12% = 6.9648 ≈ 6.96`. Gross **derived** from 
 
 ## Option 1 — Fix helper semantics first (RECOMMENDED)
 
-**Change**: `otherTaxSum()` counts only `OTHER_TAX` and its aliases. Consumers 1-4 inherit the fix. `validateAmounts()` and `validateAmountReconciliation()` are textually aligned with the same allow-list, for documentation purposes only — both are unreachable dead code, so there is no runtime behavior to converge (D4, narrowed).
+**Change**: fix the one live defect — `otherTaxSum()` becomes an allow-list counting only `OTHER_TAX` and its aliases. Consumers 1-4 inherit the fix automatically, since they all call `otherTaxSum()`. Nothing changes in `TransactionValidationService`, because its two related methods are already correct and already unreachable; they are optionally re-worded to match the new allow-list textually, purely so a future reader (or a future re-wiring into ingestion) doesn't find a stale rule sitting next to the fixed one.
 
-**Scope**: `app/Models/Transaction.php` (1 method) + regression tests. Optionally align `validateAmountReconciliation()`'s inline logic with the shared allow-list as documentation (no behavior change — it is dead code); optionally remove the subtract-back workaround at `TransactionValidationService.php:693-697` (inside the `else` at `:692-698`), which becomes unnecessary regardless.
+**Scope**: `app/Models/Transaction.php` (1 method, real behavior change) + regression tests. Optional, no-behavior-change housekeeping: reword `validateAmountReconciliation()`'s inline exclusion list to match the new allow-list textually, and delete the dead subtract-back branch at `TransactionValidationService.php:693-697` (inside the `else` at `:692-698`) since it can no longer be reached.
 
 | For | Against |
 |---|---|
@@ -87,11 +89,12 @@ Internally consistent: `58.04 × 12% = 6.9648 ≈ 6.96`. Gross **derived** from 
 
 **Blast radius today** (before any backfill): transactions *outside* the defect window that already have linked tax rows. Under D7 they move from `gross − (VATABLE + SC_VAT_EXEMPT + OTHER + aliases)` to `gross − OTHER − sc_vat_exempt_column`, i.e. **increase** (dominated by `VATABLE_SALES` no longer being deducted), plus the T088a-7 alias residual. This is a correction, but it is a visible change to already-published values and must be acknowledged, not glossed.
 
-**Regression coverage required** *(superseded by D7/T088a-3 below — retained here only as the original brainstorm; the sub-question is resolved, not open)*:
+**Regression coverage required** (final list — see T088a-3a for sequencing; this is the first test coverage `otherTaxSum()` has ever had):
 - The 65.00 / 58.04 / 6.96 / 0.00 case → `net_amount` stays 65.00
 - Same shape with **non-zero** `OTHER_TAX` (e.g. 10.00) → `net_amount` = 55.00
 - A transaction with **no** linked rows and a non-zero `sc_vat_exempt_sales` column → `net_amount` unchanged across the fix (D7 preserves the deduction's *effect*; only the fallback *mechanism* is removed)
-- **No runtime validator-agreement test** — `validateAmounts()`/`validateAmountReconciliation()` are unreachable dead code (see D4, narrowed); "agree on the same fixture" is unexecutable against two `private` methods with no production call path
+
+No test targets `TransactionValidationService::validateAmounts()` or `::validateAmountReconciliation()` — both are unreachable, `private`, and receive only the textual reword described in Scope above. A test asserting they "agree" would have no way to execute either method without `Reflection`, and there is no runtime behavior to protect.
 
 ## Option 2 — Isolate backfilled rows
 
@@ -129,7 +132,7 @@ Both existing correct implementations exclude `VAT`, `VATABLE_SALES`, `SC_VAT_EX
 
 **Option 1 — fix helper semantics first, allow-list variant. Confirmed.**
 
-Rationale as recorded by the decision owner: the blast radius is bounded and the correct rule already exists in nearby code; the goal is to **collapse the contradictory definitions into one shared semantic rule before any reconstructed rows become visible**.
+Rationale as recorded by the decision owner: the blast radius is bounded to one live method, and the correct rule already exists in nearby (but dead) code, so there is no design work to invent — the goal is simply to **fix `otherTaxSum()` to the rule that already exists elsewhere in the codebase, before any reconstructed rows become visible**, and to leave the two dead validator methods textually consistent with it for future readers rather than pretending a behavioral convergence is happening where none can occur.
 
 ### Binding decision details
 
@@ -138,7 +141,7 @@ Rationale as recorded by the decision owner: the blast radius is bounded and the
 | D1 | `OTHER_TAX` is **allow-listed**, never inferred by excluding VAT-ish types. |
 | D2 | `VATABLE_SALES`, `VAT`, `SC_VAT_EXEMPT_SALES`, VAT-exempt aliases, zero-rated / non-VAT aliases, and **any unknown future tax type** MUST NOT silently become `other_tax`. |
 | D3 | Unknown or unsupported tax types MUST be **observable** — logged, quarantined, or raised as a validation warning depending on context — but MUST NOT be counted as `other_tax`. Silent exclusion is as unacceptable as silent inclusion. |
-| D4 | *(Narrowed 2026-08-10 — impact review: both methods are unreachable dead code, see below)* `validateAmounts()` and `validateAmountReconciliation()` MUST be **textually aligned** with the `otherTaxSum()` allow-list, for documentation/future-readiness only. `validateTransaction()` — the only method either could be reached through in production — is a passive no-op with zero call sites into either, so this is NOT a behavioral requirement and carries NO runtime test obligation. If this validation path is ever re-wired into ingestion, it should already agree with the model; until then, "no second definition may survive" describes intent, not enforced behavior. |
+| D4 | `TransactionValidationService::validateAmounts()` and `::validateAmountReconciliation()` MUST be reworded to textually match the `otherTaxSum()` allow-list. This is documentation only — both methods are unreachable (`validateTransaction()`, their sole path into production, is a passive no-op that calls neither), so there is no behavior to converge and no runtime test to write. The point is that if this validation path is ever re-wired into ingestion, it inherits the correct rule rather than the one `otherTaxSum()` used to have. |
 | D5 | The live API-visible behaviour change MUST be acknowledged before deploy, because `$appends` exposes `net_amount` / `calculated_net_sales` externally. |
 | D7 | **`net_amount` / `calculated_net_sales` MUST deduct VAT-exempt sales as an EXPLICIT separate term**, not as a side effect inside `otherTaxSum()`. Formula: `gross − otherTaxSum() − scVatExemptSales`. This preserves the PITX principle that VAT-exempt sales are deducted, while avoiding the false +PHP 13.8M movement that (a) would produce by disabling the fallback. The `sc_vat_exempt_sales` column-fallback inside `otherTaxSum()` is **removed** — the deduction moves to the accessor, where it belongs. |
 | D8 | **Scope honesty — do not overstate the fix.** Even under D7 these accessors are **not** PITX NET SALES: that formula also deducts promos, senior discount, PWD discount, employee discount and service charge, none of which these accessors handle unless addressed elsewhere. The accurate claim is *"`other_tax` and VAT-exempt semantics are no longer conflated"*, **not** *"net sales is now fully PITX-correct"*. Any communication to finance or tenants MUST use the narrower claim. |
