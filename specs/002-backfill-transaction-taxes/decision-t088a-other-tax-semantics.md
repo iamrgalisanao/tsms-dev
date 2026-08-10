@@ -177,6 +177,42 @@ WHERE created_at >= '2026-06-13 00:00:00'
 
 **Date-basis caveat — must be stated when these figures reach finance.** Every other figure in this feature (V1a window boundary, V4 orphan census, the 808,891 / 216 split) was computed on **`created_at`**. Scoping on `transaction_timestamp` instead selects a materially different population — late-submitted transactions fall on the other side of both boundaries — and this repository has a documented history of UTC/business-date bucketing divergence. Whichever basis is used, name it alongside the numbers; do not mix bases in one statement to finance.
 
+### S7 RESULTS (measured 2026-08-10, `created_at` basis)
+
+| Metric | Value |
+|---|---|
+| Affected transactions | **82,797** (10.2% of the 808,891 reconstructable) |
+| Affected tenants | **69** of ~87 (**79%**) |
+| Affected tenant-days | **1,989** |
+| Total `sc_vat_exempt_sales` | **PHP 13,818,031.66** |
+| Max single transaction | PHP 19,000.00 |
+| Mean per affected transaction | PHP 166.89 |
+| Mean per tenant-day | PHP 6,947.23 |
+| Mean per tenant-month (~2-month window) | **PHP 100,131** |
+| Top-20 tenant-days as share of total | **16.4%** — broadly dispersed, not concentrated |
+
+**This is not immaterial.** Mean tenant-month exposure exceeds the PHP 500 materiality threshold by ~200×, across 79% of tenants. If this movement reaches rendered figures, essentially **every affected tenant crosses materiality** and would require notification under FR-009b.
+
+### The result reframes the question
+
+Direction matters. Today, window transactions have zero linked rows, so the fallback is **live**: `net_amount = gross − sc_vat_exempt_sales`. Reconstruction inserts an `SC_VAT_EXEMPT_SALES` row, which **disables** the fallback, so `net_amount` **increases** by that amount — PHP 13.8M in aggregate.
+
+But PITX NET SALES **does** deduct VAT Exempt Sales. So that movement is not a correction; it is a **regression away from the business formula**, and it is an artifact of the fallback mechanism rather than of the backfill itself.
+
+So S7 is not really "keep or remove the fallback". The real question is: **should `net_amount` deduct VAT-exempt sales at all?** Per PITX, yes. The defect is that this deduction is currently smuggled through a helper named `otherTaxSum()`, conflating two distinct quantities.
+
+**Third option, not previously on the table — separate the concerns:**
+
+| | Formula | Aggregate movement |
+|---|---|---|
+| Today | `gross − sc_vat_exempt` (via fallback) | — |
+| (a) Allow-list only, fallback disabled by reconstruction | `gross − OTHER_TAX` | **+PHP 13.8M** — away from PITX |
+| (b) Allow-list **+ explicit VAT-exempt deduction** | `gross − OTHER_TAX − sc_vat_exempt` | **≈ −OTHER_TAX only** — the genuine backfill effect |
+
+Option (b) satisfies D1/D2 (`otherTaxSum()` denotes `OTHER_TAX` alone), preserves the PITX-consistent VAT-exempt deduction as an *explicit* term rather than a fallback side-effect, and isolates the real correction (`OTHER_TAX` now deducted, previously absent because no rows existed) from the spurious PHP 13.8M swing.
+
+**Scope honesty**: even under (b), `net_amount` is still not PITX NET SALES — that formula also deducts promos, senior, PWD, employee discount and service charge. (b) makes it *less wrong*, not correct.
+
 **Interpretation guide (not a recommendation)**:
 
 - `total_sc_vat_exempt_sales` is the aggregate `net_amount` movement if the fallback is **removed**, and equally the aggregate movement if it is **kept** and reconstruction disables it. The two options move the same total in opposite directions.
