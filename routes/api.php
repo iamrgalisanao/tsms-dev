@@ -132,7 +132,11 @@ Route::middleware(['auth:sanctum'])->group(function () {
                 ->get(['id', 'serial_number', 'tenant_id', 'machine_number']);
         });
 
-        Route::get('dashboard/metrics', [DashboardController::class, 'apiMetrics']);
+        // TEMP: disabled 2026-08-10 after staging showed dozens of concurrent
+        // dashboard aggregate queries against `transactions` (gross_sales sums and
+        // voided_at counts) piling up for 40-70+ seconds after the index migration.
+        // Re-enable after metrics are backed by cached/pre-aggregated data or safer indexes.
+        // Route::get('dashboard/metrics', [DashboardController::class, 'apiMetrics']);
         Route::get('dashboard/charts', [DashboardController::class, 'apiCharts']);
         Route::get('dashboard/transactions', [DashboardController::class, 'apiTransactions']);
         // TEMP: disabled 2026-08-10 during the ingestion-index migration on staging — this
