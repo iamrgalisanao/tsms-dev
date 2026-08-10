@@ -1,6 +1,8 @@
 # Baseline Verification — `002-backfill-transaction-taxes`
 
-**Date**: 2026-08-10 · **Branch**: `002-backfill-transaction-taxes` (HEAD `07b29425`) · **Runs on the main thread per `prompt-library.md` item 4**
+**Date**: 2026-08-10 · **Branch**: `002-backfill-transaction-taxes` · **Runs on the main thread per `prompt-library.md` item 4**
+
+**Verification state at the time this run was performed**: `HEAD 07b29425` (docs-only, spec/tasks/decision-memo commits; zero `app/` files). This document and `baseline-failures.txt` were then committed on top as `a3e7629e` — the run itself predates that commit, as it must, since a baseline can't cite the hash of the commit still being written.
 
 ## Commands
 

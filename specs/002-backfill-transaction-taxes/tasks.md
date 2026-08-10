@@ -32,13 +32,13 @@ description: "Task list for Backfill Transaction Taxes"
 
 ⚠️ **This feature is NOT insert-only.** V4 confirmed the defective inserts *succeeded* with a NULL key — the data was never lost, only its linkage. The run deletes 3.24M rows. See Phase 0A.
 
-✅ **Gate status: `ARCHITECTURE_APPROVED` (pass 5, 2026-08-10).** Gate 0's architecture leg is closed. `IMPACT_ANALYZED`, `BASELINE_RECORDED` and `READY_TO_IMPLEMENT` remain outstanding, as do the Phase 0B stakeholder gates.
+✅ **Gate status (2026-08-10): `ARCHITECTURE_APPROVED` (pass 5) · `IMPACT_ANALYZED` (pass 7) · `BASELINE_RECORDED`, all done.** Only `READY_TO_IMPLEMENT` remains, blocked on the Phase 0B stakeholder gates (S1-S6) — a stakeholder-decision gap, not an engineering one.
 
 ⚠️ **Finance sign-off is WITHDRAWN.** It rested on a false claim that the payload fallback covered `other_tax`. Fresh sign-off required before any live run (spec.md).
 
 ⚠️ **Insert-first ordering.** Archive → insert → reconcile in situ → delete only the proven subset. 2026-06-13's unrecoverable orphans are archived but **never deleted** — they are the only surviving record of those 216 transactions' tax lines.
 
-⚠️ **Gate 0 blocker**: No numbered task may begin until `ARCHITECTURE_APPROVED`, `IMPACT_ANALYZED`, `BASELINE_RECORDED`, and `READY_TO_IMPLEMENT` are all emitted. **Baseline recording and staging schema confirmation are NOT numbered tasks** — they sit in the pre-gate sequence per `workflow.md` (Architecture Review → Baseline → Slice Loop), which is why the former T002/T004 were removed from Phase 1.
+⚠️ **Gate 0 blocker**: No numbered task may begin until `ARCHITECTURE_APPROVED` ✅, `IMPACT_ANALYZED` ✅, `BASELINE_RECORDED` ✅, and `READY_TO_IMPLEMENT` (pending — S1-S6) are all emitted. **Staging schema confirmation is NOT a numbered task** — it sits in the pre-gate sequence per `workflow.md` (Architecture Review → Baseline → Slice Loop), which is why the former T004 was removed from Phase 1. Baseline recording is done — see `baseline.md`.
 
 ---
 
@@ -275,7 +275,7 @@ BLOCKING (outside engineering):  finance re-sign-off [T084] · 216-row decision 
   ↓
 PRE-GATE (not numbered tasks):   baseline recording · staging schema confirmation
   ↓
-GATE 0: ARCHITECTURE_APPROVED ✅ (pass 5) · IMPACT_ANALYZED · BASELINE_RECORDED · READY_TO_IMPLEMENT
+GATE 0: ARCHITECTURE_APPROVED ✅ (pass 5) · IMPACT_ANALYZED ✅ (pass 7) · BASELINE_RECORDED ✅ · READY_TO_IMPLEMENT (pending S1-S6)
   ↓
  1. Doc corrections, retractions, containment    T087, T096, T097, T099, T100-T102
  2. Reconstruction core + tests (defect-era)     T005-T009, T096

@@ -57,7 +57,7 @@ Governance is instead taken from `CLAUDE.md` + `docs/agent-orchestration/`, whic
 
 **Gating Verifications**: V1/V1a/V1b confirmed the window and payload recoverability. **V4 (post-gate) overturned a core premise** — 3,238,180 orphan rows exist that all three earlier checks were blind to. V2 moot. Feasibility risk is closed; residual risk is execution-side (3.24M deletes + 3.24M inserts on a table with a proven lock-contention outage history).
 
-**Gate status: `ARCHITECTURE_APPROVED` (pass 5, 2026-08-10).** Five review passes; the architecture leg of Gate 0 is closed. `IMPACT_ANALYZED`, `BASELINE_RECORDED`, `READY_TO_IMPLEMENT` and the Phase 0B stakeholder gates remain outstanding.
+**Gate status (2026-08-10): `ARCHITECTURE_APPROVED` (pass 5) · `IMPACT_ANALYZED` (pass 7, 7 review rounds) · `BASELINE_RECORDED` (461 passed / 112 pre-existing failures, none in this feature's scope — see `baseline.md`), all done.** Only `READY_TO_IMPLEMENT` and the Phase 0B stakeholder gates (S1-S6) remain outstanding — all six are stakeholder decisions, not engineering work.
 
 ## Project Structure
 

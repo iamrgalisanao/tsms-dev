@@ -166,7 +166,7 @@ The deployment that caused the defect also started retaining exactly the data ne
 **Consequences for the plan:**
 
 1. **FR-011 per-line-item fidelity is achievable for 99.97% of the affected population.** No need to re-open the fidelity decision.
-2. The 216 unrecoverable rows (all on the 2026-06-13 transition day, which saw only 225 transactions total — a deployment-day traffic collapse) go to `quarantined`, not guessed at. At 0.03% they are a reporting footnote, but they must be surfaced, not silently dropped.
+2. The 216 unrecoverable rows (all on the 2026-06-13 transition day, which saw only 225 transactions total — a deployment-day traffic collapse) go to `quarantined`, not guessed at. **Corrected 2026-08-10 (Architect gate, N5/FR-015b)**: at 0.03% of the population these are numerically small, but they are **not a reporting footnote** — their orphan `transaction_taxes` rows are the *only surviving record* of those 216 transactions' tax lines anywhere (no payload, no linkage, no re-keying possible). FR-015b requires them archived and **retained permanently**, never deleted. Small population, permanent and non-negotiable disposition.
 3. Scale is confirmed at ~809K transactions / ~3.24M inserted rows — chunking, runtime, and replica-lag design must assume this magnitude.
 4. **V2 is now moot** — `transaction_intake` is not needed as a fallback, since the primary source covers all but 216 rows.
 
