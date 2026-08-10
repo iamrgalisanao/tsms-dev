@@ -89,7 +89,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
         // unread-notifications query piled up in dozens of concurrent, 400-750+ second-long
         // executions during the staging ingestion-index migration (likely loaded globally on
         // every authenticated page). Re-enable once that migration has fully completed.
-        // Route::get('dashboard/notifications', [DashboardController::class, 'apiNotifications']);
+        Route::get('dashboard/notifications', fn () => response()->json(['message' => 'Temporarily disabled'], 404));
         Route::post('dashboard/notifications/dismiss', [DashboardController::class, 'apiDismissNotification']);
     });
 
@@ -136,18 +136,18 @@ Route::middleware(['auth:sanctum'])->group(function () {
         // dashboard aggregate queries against `transactions` (gross_sales sums and
         // voided_at counts) piling up for 40-70+ seconds after the index migration.
         // Re-enable after metrics are backed by cached/pre-aggregated data or safer indexes.
-        // Route::get('dashboard/metrics', [DashboardController::class, 'apiMetrics']);
+        Route::get('dashboard/metrics', fn () => response()->json(['message' => 'Temporarily disabled'], 404));
         // TEMP: disabled 2026-08-10 with dashboard/metrics during staging DB
         // recovery; this endpoint groups large `transactions` ranges for dashboard
         // charts and should be restored only after cached/pre-aggregated reads exist.
-        // Route::get('dashboard/charts', [DashboardController::class, 'apiCharts']);
+        Route::get('dashboard/charts', fn () => response()->json(['message' => 'Temporarily disabled'], 404));
         Route::get('dashboard/transactions', [DashboardController::class, 'apiTransactions']);
         // TEMP: disabled 2026-08-10 during the ingestion-index migration on staging — this
         // endpoint's underlying per-terminal aggregate query in DashboardService was causing
         // repeated MySQL metadata-lock contention against `transactions` while the
         // 2026_08_07_000001_add_official_ingestion_short_path_indexes migration was running.
         // Re-enable once that migration has fully completed.
-        // Route::get('dashboard/terminal-performance', [DashboardController::class, 'apiTerminalPerformance']);
+        Route::get('dashboard/terminal-performance', fn () => response()->json(['message' => 'Temporarily disabled'], 404));
         Route::get('monitoring/activity/daily-report', [ProviderActivityMonitoringController::class, 'dailyReport'])
             ->middleware('role:admin|manager');
         Route::put('monitoring/tenants/{tenant}/config', [ProviderActivityMonitoringController::class, 'updateTenantConfig'])
