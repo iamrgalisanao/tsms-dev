@@ -7,13 +7,32 @@
   <meta name="csrf-token" content="{{ csrf_token() }}">
   <title>Transaction Monitoring Dashboard</title>
 
-  {{-- Add this line to ensure Vite integration --}}
-  @if(app()->environment('local') && in_array(request()->getHost(), ['localhost', '127.0.0.1', '::1'], true))
-    @viteReactRefresh
-  @endif
-
   {{-- Load assets --}}
-  @vite(['resources/css/app.css', 'resources/js/app.js'])
+  @php
+    $isLocalViteHost = app()->environment('local') && in_array(request()->getHost(), ['localhost', '127.0.0.1', '::1'], true);
+    $manifestPath = public_path('build/manifest.json');
+    $manifest = (!$isLocalViteHost && is_file($manifestPath))
+      ? json_decode(file_get_contents($manifestPath), true)
+      : null;
+    $appEntry = is_array($manifest) ? ($manifest['resources/js/app.js'] ?? null) : null;
+  @endphp
+
+  @if($isLocalViteHost)
+    @viteReactRefresh
+    @vite(['resources/css/app.css', 'resources/js/app.js'])
+  @elseif(is_array($appEntry))
+    @foreach(($appEntry['imports'] ?? []) as $import)
+      @if(isset($manifest[$import]['file']))
+        <link rel="modulepreload" href="{{ asset('build/' . $manifest[$import]['file']) }}">
+      @endif
+    @endforeach
+    @if(isset($manifest['resources/css/app.css']['file']))
+      <link rel="stylesheet" href="{{ asset('build/' . $manifest['resources/css/app.css']['file']) }}">
+    @endif
+    <script type="module" src="{{ asset('build/' . $appEntry['file']) }}"></script>
+  @else
+    @vite(['resources/css/app.css', 'resources/js/app.js'])
+  @endif
 </head>
 
 <body class="min-h-screen bg-gray-100">

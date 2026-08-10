@@ -17,10 +17,31 @@
     <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet" />
 
     <!-- Styles / Scripts -->
-    @if(app()->environment('local') && in_array(request()->getHost(), ['localhost', '127.0.0.1', '::1'], true))
+    @php
+        $isLocalViteHost = app()->environment('local') && in_array(request()->getHost(), ['localhost', '127.0.0.1', '::1'], true);
+        $manifestPath = public_path('build/manifest.json');
+        $manifest = (!$isLocalViteHost && is_file($manifestPath))
+            ? json_decode(file_get_contents($manifestPath), true)
+            : null;
+        $appEntry = is_array($manifest) ? ($manifest['resources/js/app.jsx'] ?? null) : null;
+    @endphp
+
+    @if($isLocalViteHost)
         @viteReactRefresh
+        @vite(['resources/css/app.css', 'resources/js/app.jsx'])
+    @elseif(is_array($appEntry))
+        @foreach(($appEntry['imports'] ?? []) as $import)
+            @if(isset($manifest[$import]['file']))
+                <link rel="modulepreload" href="{{ asset('build/' . $manifest[$import]['file']) }}">
+            @endif
+        @endforeach
+        @foreach(($appEntry['css'] ?? []) as $css)
+            <link rel="stylesheet" href="{{ asset('build/' . $css) }}">
+        @endforeach
+        <script type="module" src="{{ asset('build/' . $appEntry['file']) }}"></script>
+    @else
+        @vite(['resources/css/app.css', 'resources/js/app.jsx'])
     @endif
-    @vite(['resources/css/app.css', 'resources/js/app.jsx'])
 
     <style>
         body {
