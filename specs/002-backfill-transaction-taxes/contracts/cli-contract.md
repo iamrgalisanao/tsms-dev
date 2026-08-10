@@ -10,8 +10,9 @@ Ergonomics deliberately mirror `app/Console/Commands/LicenseBindingBackfillComma
 
 ```
 transactions:backfill-taxes
-    {--from= : Window start (Y-m-d). Required.}
-    {--to= : Window end, exclusive (Y-m-d). Required.}
+    {--from= : Window start (Y-m-d). Required unless --day given.}
+    {--to= : Window end, exclusive (Y-m-d). Required unless --day given.}
+    {--day= : Single day (Y-m-d). REQUIRED for --apply runs (FR-014a).}
     {--tenant= : Restrict to one tenant id. Repeatable.}
     {--apply : Persist changes. WITHOUT THIS FLAG THE COMMAND IS DRY-RUN ONLY.}
     {--chunk=500 : Transactions per chunk.}
@@ -28,7 +29,8 @@ transactions:backfill-taxes
 | Non-destructive | MUST NOT update or delete any **linked** `transaction_taxes` row; inserts only where the transaction has zero linked rows (FR-003). NULL-keyed orphan deletion is Command 5's job, never this command's. |
 | Resumable | Interruption MUST NOT corrupt state; re-invocation continues safely (R6). |
 | Bounded | MUST NOT hold a long-lived transaction or table-wide lock on `transactions`/`transaction_taxes` (FR-005, R9). |
-| Pre-flight | MUST validate required columns exist and fail with a non-zero exit before any mutation. |
+| Pre-flight | MUST validate required columns, `idx_tx_taxes_pk`, `fk_tx_taxes_pk` (+ its `ON DELETE` action) and `transaction_pk` nullability, recording all in the run record; fail non-zero before any mutation. |
+| **Day-scoped apply** | `--apply` MUST require `--day` (FR-014a). A whole-window `--apply` MUST be rejected — it would write ~3.24M rows before any reconciliation could run. Dry-run may span the full window. |
 | Fail-safe | A transaction whose payload is missing, unparseable, or inconsistent with the R3 cross-check MUST be recorded as `quarantined`, never guessed at. |
 
 **Exit codes**: `0` success (including a clean dry-run); non-zero on pre-flight failure, or when any transaction ended `failed`.
@@ -79,6 +81,7 @@ Read-only. Serves US3 (auditability) and makes the 216 quarantined rows reviewab
 ```
 transactions:archive-orphan-taxes
     {--phase= : archive | reconcile | delete  (required)}
+    {--day= : Single day (Y-m-d). REQUIRED for reconcile and delete.}
     {--apply : Persist. WITHOUT THIS FLAG THE COMMAND IS DRY-RUN ONLY.}
     {--chunk=1000}
     {--json}
@@ -88,7 +91,8 @@ Handles the 3,238,180 NULL-keyed rows (research.md V4). **Insert-first**: `archi
 
 | Guarantee | Requirement |
 |-----------|-------------|
-| Ordering | `delete` MUST refuse to run unless `archive` completed, reconstructed rows are present, and `reconcile` passed for the affected day |
+| Ordering | `delete` MUST refuse to run unless `archive` completed, reconstructed rows are present **for that `--day`**, and `reconcile` passed **for that same day**. The interlock is per-day, not per-run |
+| 2026-06-13 | `delete` MUST refuse outright for `--day=2026-06-13` (FR-015b, retained wholesale) |
 | Archive fidelity | Archive MUST preserve `id`, `tax_type`, `amount`, timestamps; restoring MUST reproduce pre-run state (FR-013) |
 | Reconcile | Inserted rows MUST reproduce the orphans' per-(`created_at` second, `tax_type`, `amount`) multiset, evaluated **per day**; mismatch halts before any other day is touched (FR-014) |
 | Delete predicate | Strictly `transaction_pk IS NULL` **and** belonging to a reconstructed transaction. MUST NOT delete any linked row (FR-015), and MUST NOT delete 2026-06-13's unrecoverable orphans (FR-015b) |

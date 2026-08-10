@@ -33,7 +33,7 @@
 
 ## Blocking items
 
-**Stakeholder decisions**: S1 finance re-sign-off (T084) · S2 FR-016 disposition (T086) · S3 216-row retention record (T085) · S4 PITX worksheet provenance (T088b) · S5 alias sub-question · S6 external `$appends` consumer check (T088a-1) · S7 `sc_vat_exempt_sales` fallback, pending quantification
+**Stakeholder decisions**: S1 finance re-sign-off (T084) · S2 FR-016 disposition (T086) · S3 216-row retention record (T085) · S4 PITX worksheet provenance (T088b) · S5 alias sub-question · S6 external `$appends` consumer check (T088a-1) · S7 **reduced to a principle confirmation** (quantified: PHP 13.8M / 69 tenants; mechanism closed by D7)
 
 **Engineering**: T088a-2/-2b/-3 (allow-list implementation), plus the pre-gate baseline and staging schema confirmation.
 

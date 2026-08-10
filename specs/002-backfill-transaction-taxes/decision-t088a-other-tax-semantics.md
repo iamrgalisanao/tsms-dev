@@ -35,7 +35,9 @@ Both correct implementations use the *same* exclusion set. `TransactionValidatio
 | 1 | `Transaction::getNetAmountAttribute():244` | `$appends['net_amount']` — every JSON serialization | **High** — API-visible on 809,107 transactions |
 | 2 | `Transaction::getCalculatedNetSalesAttribute():257` | `$appends['calculated_net_sales']` | **High** — same |
 | 3 | `TransactionValidationService::validateAmounts():593` | — | **None** *(corrected)* — assigns `$otherTaxSum` and **never uses it**; verified as the sole occurrence in the method. Real exposure is `validateAmountReconciliation():684-701`, whose tax loop is empty today and becomes non-empty post-reconstruction: **Medium** |
-| 4 | `JobProcessingService:491` (used at 520) | Net-sales computation during processing | **Medium** — window transactions are already processed; risk is on reprocessing |
+| 4 | `JobProcessingService:491` (used at 520) | — | **None** *(corrected pass 4)* — line 520 sits in the `else` of `method_exists($transaction, 'calculateExpectedNetSales')`, and that method exists at `Transaction.php:419`. Dead branch. |
+
+**A fifth net-sales definition exists**: `Transaction::calculateExpectedNetSales()` (`Transaction.php:419`) returns `gross_sales − vat_amount` — live in `JobProcessingService`'s computation-validation path, and different again from the other four. Pre-existing, not introduced here, but named so it is not discovered later.
 
 **Not affected** (verified): `validateAmountReconciliation()` uses correct inline logic; `RefreshDailyTransactionSummaries`, `SalesReportDataService`, and `FinanceCalculationService` all use their own SQL/list logic and never call the helper. No frontend code in `resources/js` or `resources/views` reads `net_amount` or `calculated_net_sales`.
 
@@ -64,7 +66,7 @@ Internally consistent: `58.04 × 12% = 6.9648 ≈ 6.96`. Gross **derived** from 
 
 ⚠️ **This property holds only when `sc_vat_exempt_sales = 0`, as it is in this example.** `otherTaxSum()` has a column-fallback branch (`Transaction.php:275-278`): when **no** `SC_VAT_EXEMPT_SALES` *row* exists, it adds the `sc_vat_exempt_sales` *column*. Every window transaction has zero rows today, so the fallback is **live**; reconstruction inserts such a row (even `0.00`) and **disables** it. For any transaction with a non-zero column, `net_amount` shifts by that amount **even with the allow-list fix applied**.
 
-D1-D6 do not decide the fallback's fate. It is escalated to finance as **S7**, to be presented with quantified exposure (count, peso total, aggregate `net_amount` delta), because PITX NET SALES *does* deduct VAT Exempt Sales — so removing the fallback moves away from the formula, while keeping it means `otherTaxSum()` remains a mixed net-sales helper rather than denoting `OTHER_TAX`.
+**Resolved by D7**: the fallback mechanism is removed and the VAT-exempt deduction becomes an explicit accessor term sourced from the `sc_vat_exempt_sales` **column** (T088a-6) — exactly neutral for the backfill population, whose current `net_amount` already derives from that column. S7 is reduced to a principle confirmation for finance; the mechanism question is closed.
 
 **Revised blast radius**: not only out-of-window transactions with linked rows, but also any transaction with zero linked rows and a non-zero `sc_vat_exempt_sales` column — potentially much of the defect window itself.
 
@@ -83,7 +85,7 @@ D1-D6 do not decide the fallback's fate. It is escalated to finance as **S7**, t
 | Makes backfill a genuine no-op for accessors (see table above) | Requires deciding the alias sub-question below |
 | One definition of `other_tax` in the model layer, permanently | Touches a shared model outside the feature's nominal boundary |
 
-**Blast radius today** (before any backfill): transactions *outside* the defect window that already have linked tax rows. Their `net_amount` would change from `gross − (VATABLE + SC_VAT_EXEMPT + OTHER)` to `gross − OTHER`, i.e. **increase**. This is a correction, but it is a visible change to already-published values and must be acknowledged, not glossed.
+**Blast radius today** (before any backfill): transactions *outside* the defect window that already have linked tax rows. Under D7 they move from `gross − (VATABLE + SC_VAT_EXEMPT + OTHER + aliases)` to `gross − OTHER − sc_vat_exempt_column`, i.e. **increase** (dominated by `VATABLE_SALES` no longer being deducted), plus the T088a-7 alias residual. This is a correction, but it is a visible change to already-published values and must be acknowledged, not glossed.
 
 **Regression coverage required**:
 - The 65.00 / 58.04 / 6.96 / 0.00 case → `net_amount` stays 65.00
@@ -209,7 +211,7 @@ So S7 is not really "keep or remove the fallback". The real question is: **shoul
 |---|---|---|
 | Today | `gross − sc_vat_exempt` (via fallback) | — |
 | (a) Allow-list only, fallback disabled by reconstruction | `gross − OTHER_TAX` | **+PHP 13.8M** — away from PITX |
-| (b) Allow-list **+ explicit VAT-exempt deduction** | `gross − OTHER_TAX − sc_vat_exempt` | **≈ −OTHER_TAX only** — the genuine backfill effect |
+| **(b) ADOPTED** — allow-list **+ explicit VAT-exempt deduction** | `gross − otherTaxSum() − sc_vat_exempt_column` | **≈ −OTHER_TAX only** — the genuine backfill effect |
 
 Option (b) satisfies D1/D2 (`otherTaxSum()` denotes `OTHER_TAX` alone), preserves the PITX-consistent VAT-exempt deduction as an *explicit* term rather than a fallback side-effect, and isolates the real correction (`OTHER_TAX` now deducted, previously absent because no rows existed) from the spurious PHP 13.8M swing.
 

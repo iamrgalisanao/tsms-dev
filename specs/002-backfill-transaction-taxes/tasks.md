@@ -32,7 +32,7 @@ description: "Task list for Backfill Transaction Taxes"
 
 ⚠️ **This feature is NOT insert-only.** V4 confirmed the defective inserts *succeeded* with a NULL key — the data was never lost, only its linkage. The run deletes 3.24M rows. See Phase 0A.
 
-⚠️ **Gate status: `ARCHITECTURE_NOT_APPROVED` (re-review #2, 2026-08-10).** Five blocking items outstanding — see Phase 0B.
+⚠️ **Gate status: `ARCHITECTURE_APPROVED_WITH_CHANGES` (pass 4, 2026-08-10).** Architecture is sound; C1-C4 must land before the literal `ARCHITECTURE_APPROVED` that Gate 0 requires.
 
 ⚠️ **Finance sign-off is WITHDRAWN.** It rested on a false claim that the payload fallback covered `other_tax`. Fresh sign-off required before any live run (spec.md).
 
@@ -228,7 +228,6 @@ description: "Task list for Backfill Transaction Taxes"
 
 ### Gate-ordering fix
 
-- [ ] T083 Move T002 (test baseline) and T004 (staging schema confirmation) out of the numbered task list into the pre-implementation gate sequence where `workflow.md` places them. As written, Gate 0 depends on `BASELINE_RECORDED`, which depends on a task Gate 0 blocks — a circular dependency (Architect F9)
 
 ---
 
@@ -238,13 +237,16 @@ description: "Task list for Backfill Transaction Taxes"
 - [ ] T085 Obtain the separate stakeholder decision on the 216 unrecoverable transactions' orphan rows. Default per user direction: **retained, not deleted** (T070a). This task records the decision; it does not authorize deletion
 - [ ] T086 Decide and document the FR-016 disposition of `SUM(tax_exempt)` (boolean summed as currency) and state it in SC-003 and FR-009a. Fixing the underlying defect is out of scope; deciding how this feature treats it is not
 - [ ] T087 Implement containment for `backfill:transaction-aggregates --allow-write` (FR-017): it is inert today only because the window has no linked rows, and this feature arms it. Add a guard or window-exclusion, plus a runbook prohibition alongside T057
-- [ ] T088a **DECIDED 2026-08-10 — Option 1, allow-list variant.** Implement per D1-D6 in [decision-t088a-other-tax-semantics.md](decision-t088a-other-tax-semantics.md). No longer an open branch
+- [ ] T088a **DECIDED 2026-08-10 — Option 1, allow-list variant.** Implement per D1-D8 in [decision-t088a-other-tax-semantics.md](decision-t088a-other-tax-semantics.md). No longer an open branch
 - [ ] T088a-1 Establish whether any external consumer (POS provider, webapp client) reads the `$appends` attributes `net_amount` / `calculated_net_sales`. Nothing in-repo does; this is Option 1's main residual risk and cannot be answered from the codebase alone
 - [ ] T088a-2 Implement the **allow-list** in `app/Models/Transaction.php`: `otherTaxSum()` counts only `OTHER_TAX`/`OTHER-TAX` (D1) and its `sc_vat_exempt_sales` column-fallback is **removed**. Move that deduction into `getNetAmountAttribute()`/`getCalculatedNetSalesAttribute()` as an explicit term — `gross − otherTaxSum() − scVatExemptSales` (D7). Converge `validateAmounts():593` and `validateAmountReconciliation():688` on that one shared helper and list (D4), and remove the now-unnecessary subtract-back workaround at lines 693-696
 - [ ] T088a-2b Implement D3 observability, specified testably: (i) define the **known-type universe** as an explicit companion list (`VAT`, `VATABLE_SALES`, `SC_VAT_EXEMPT_SALES`, vat-exempt aliases, zero-rated/non-VAT aliases) so recognised-but-excluded types do NOT trigger warnings — otherwise every serialization warns; (ii) map context→mechanism (ingestion → validation warning; backfill → quarantine; accessor → log); (iii) **dedupe/rate-limit** per `tax_type` per request — this helper runs inside `$appends` on every API serialization and would otherwise flood logs and add per-request I/O; (iv) acceptance criterion: an unknown type is surfaced exactly once per request and contributes `0.00` to `other_tax`
+- [ ] T088a-6 **Pin the `scVatExemptSales` source for D7 to the `transactions.sc_vat_exempt_sales` COLUMN** (not a row sum). Rationale: window transactions have zero linked rows today, so their current `net_amount` already derives from the column — a column-based term is therefore **exactly neutral** for the backfill population, which is D7's whole purpose. Record the choice explicitly so an implementer does not substitute a row sum
+- [ ] T088a-7 Quantify the **alias residual** as an S7-analogue before implementing: `applyTaxColumns()` (`TransactionIngestService.php:356`) populates the column only for `SC_VAT_EXEMPT_SALES`/`VAT_EXEMPT_SALES`/`VATEXEMPT_SALES`, so rows typed `VATEXEMPT`/`EXEMPT`/`VAT-EXEMPT` are deducted today (via the all-non-VAT sum) but would not be under a column-based D7. This affects **out-of-window** transactions that already have linked rows. Measure count, tenants and peso exposure before the fix ships
+- [ ] T088a-8 **Resolve D4 vs `validateAmountReconciliation()`.** They legitimately differ: the validator checks a *submitted payload* against the ingestion contract (which excludes `SC_VAT_EXEMPT_SALES` from other_tax, per its comment at :682-683), while the D7 accessors compute a *derived display* value that PITX says must deduct VAT-exempt. D4 is therefore **narrowed**: both MUST share one `otherTaxSum()` allow-list for the `OTHER_TAX` component; their surrounding net-sales formulas MAY differ because they answer different questions, and that difference MUST be documented at both sites. T088a-3's fixture must exercise a **non-zero** VAT-exempt case so the divergence is asserted, not papered over
 - [ ] T088a-5 Confirm the canonical `OTHER_TAX` alias set against Track B (`docs/specs/report-vat-correction-coverage.md`), which owns alias normalization. The allow-list must not fork a second alias vocabulary
 - [ ] T088a-3 [P] Regression tests: the 65.00/58.04/6.96/0.00 fixture must leave `net_amount` at 65.00; the same shape with `OTHER_TAX = 10.00` must yield 55.00; a transaction with non-zero `sc_vat_exempt_sales` must have `net_amount` **unchanged** across the fix (D7 — proving no PHP 13.8M swing); a transaction with no linked rows but non-zero `sc_vat_exempt_sales` must preserve the column-fallback behaviour; `validateAmountReconciliation()` (the method that actually consumes the value — **not** `validateAmounts()`, which assigns `$otherTaxSum` at line 593 and never uses it) must agree with the accessors on one fixture
-- [ ] T088a-4 Assess and communicate the pre-backfill blast radius of Option 1: transactions **outside** the defect window that already have linked rows will see `net_amount` **increase** (from `gross − (VATABLE + SC_VAT_EXEMPT + OTHER)` to `gross − OTHER`). A correction, but a visible change to already-published values
+- [ ] T088a-4 Assess and communicate the pre-backfill blast radius: transactions **outside** the defect window that already have linked rows move from `gross − (VATABLE + SC_VAT_EXEMPT + OTHER + aliases)` to D7's `gross − OTHER − sc_vat_exempt_column`. Dominated by `VATABLE_SALES` no longer being deducted, so `net_amount` **increases** substantially. A correction, but a visible change to already-published values, and it includes the T088a-7 alias residual
 - [ ] T088b Close provenance on the PITX formula worksheet (owner, date, version, approval status) and promote it to a tracked source document, or have [other-tax-semantics.md](other-tax-semantics.md) confirmed and signed by its owner. The plan must not rest on an untracked image as its sole business-rule authority
 - [ ] T088c [P] Log the four-way `other_tax` divergence (`TSMSTransactionRequest` / `RefreshDailyTransactionSummaries` SQL / `FinanceCalculationService` / `Transaction::otherTaxSum()`) against the PITX formula as a defect for the Track B workstream in `docs/specs/report-vat-correction-coverage.md`. Track B currently covers alias normalization but **not** the `other_tax` component question
 - [ ] T088 Enumerate the `Transaction::$appends` / `otherTaxSum()` API surface (N4): `net_amount` and `calculated_net_sales` change per-transaction post-backfill, and `TransactionValidationService::validateAmounts()` uses the same helper. Decide whether re-validation may run over the window; include in or explicitly exclude from the FR-012 snapshot scope
@@ -267,25 +269,29 @@ BLOCKING (engineering):          other_tax allow-list fix [T088a: DECIDED, T088a
 BLOCKING (outside engineering):  finance re-sign-off [T084] · 216-row decision [T085]
                                  FR-016 disposition [T086] · formula provenance [T088b]
   ↓
-PRE-GATE (not numbered tasks):   baseline recording · staging schema confirmation  [T090]
+PRE-GATE (not numbered tasks):   baseline recording · staging schema confirmation
   ↓
 GATE 0: ARCHITECTURE_APPROVED (re-review #3) · IMPACT_ANALYZED · BASELINE_RECORDED · READY_TO_IMPLEMENT
   ↓
- 1. Doc corrections, retractions, containment    T087, T094, T096, T097, T099, T100-T102
+ 1. Doc corrections, retractions, containment    T087, T096, T097, T099, T100-T102
  2. Reconstruction core + tests (defect-era)     T005-T009, T096
  3. Audit/quarantine persistence                 T010-T015
- 4. Pre-backfill baselines (IRREVERSIBLE)        T073-T075, T093, T099
+ 4. Pre-backfill baselines (IRREVERSIBLE)        T073-T075, T099
  5. Orphan ARCHIVE (all, incl. 06-13)            T066-T068, T072
  6. Dry-run command                              T017-T022
  7. Oracle: post-fix attribution proof           T023-T025, T101
  8. Pre-flight assertions + op controls          T097, T100
- 9. INSERT reconstructed rows (batched)          T026-T029, T078, T089, T034-T035
-10. RECONCILE in situ vs orphans, per day        T069, T071
-11. DELETE proven subset only (never 06-13)      T070, T070a, T079
-12. Throttle / resume / kill switch              T030-T033, T102
-13. Connection assertion → scoped agg refresh    T077, T094, T095, T039-T040
-14. Validation incl. isolation + dup rework      T058-T061, T076, T080, T092
-15. US3 / US4 / polish / handoff                 T041-T051, T052-T057, T063-T065
+ 9. PER-DAY LOOP over 2026-06-13 .. 2026-08-09   (FR-014a — NOT phase-wide)
+       for each day D:
+         9a. INSERT reconstructed rows for D       T026-T029, T078, T034-T035
+         9b. RECONCILE in situ vs D's orphans      T069, T071
+         9c. DELETE D's orphans                    T070, T079
+             └─ EXCEPT 2026-06-13, retained whole  T070a
+         halt immediately on mismatch — do NOT advance to D+1
+10. Throttle / resume / kill switch (spans loop)  T030-T033, T102
+11. Connection assertion → scoped agg refresh    T077, T094, T039-T040
+12. Validation incl. isolation + dup rework      T058-T061, T076, T080
+13. US3 / US4 / polish / handoff                 T041-T051, T052-T057, T063-T065
 ```
 
 **Ordering rationale**: insert (9) precedes reconcile (10) precedes delete (11). Originals survive until their replacement is proven *in place*; a bad insert rolls back without touching the archive; and reconciliation compares what was actually written, not what a dry run predicted.

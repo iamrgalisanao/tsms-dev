@@ -104,9 +104,22 @@ GROUP BY transaction_pk, tax_type HAVING COUNT(*) > 1;
 
 **Expected**: matches the pre-run baseline captured in T075 — **not** necessarily empty, and the NULL-keyed count must equal the *retained residual* (~900 rows from 2026-06-13), **not zero**. Payloads may legitimately repeat a `tax_type` (`taxes` is validated `min:4` with no uniqueness constraint), so a bare "must be zero" check false-positives on correct data (Architect F8). The authoritative check is T076: inserted row ids equal the sum of audit-record reconstructed counts, and the `transaction_pk IS NULL` count equals the **retained residual** (~900 rows from 2026-06-13, FR-015b) — never zero.
 
-## Step 5 — Full backfill
+## Step 5 — Full backfill: PER-DAY LOOP (FR-014a)
 
-Run without `--tenant`/`--limit`, with `--apply`. Monitor concurrently:
+**Not a single whole-window `--apply`.** Iterate 2026-06-13 → 2026-08-09, one day at a time:
+
+```bash
+for D in <each day in window>; do
+  php artisan transactions:backfill-taxes        --day=$D --apply    # 9a insert
+  php artisan transactions:archive-orphan-taxes  --day=$D --phase=reconcile   # 9b
+  # 9c delete — SKIP ENTIRELY for 2026-06-13 (retained wholesale, FR-015b)
+  [ "$D" = "2026-06-13" ] ||     php artisan transactions:archive-orphan-taxes --day=$D --phase=delete --apply
+done
+```
+
+**Halt on the first mismatch — do not advance to the next day.** Phase-wide execution would write all ~3.24M rows before any reconciliation runs, surfacing a systematic reconstruction defect only after the entire population is committed.
+
+Monitor concurrently:
 
 ```sql
 SHOW PROCESSLIST;   -- must stay calm; no "Waiting for table metadata lock" pile-up

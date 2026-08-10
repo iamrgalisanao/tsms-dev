@@ -91,11 +91,11 @@ The backfill does not merely *reveal* this inconsistency — it **detonates** it
 
 ## Resolution — DECIDED 2026-08-10
 
-**Option 1, allow-list variant.** Fix `otherTaxSum()` to count only `OTHER_TAX`/`OTHER-TAX`; unknown types observable but never counted; `validateAmounts()` and `validateAmountReconciliation()` converge on one shared helper. Binding details D1-D6 in the [decision memo](decision-t088a-other-tax-semantics.md).
+**Option 1, allow-list variant.** Fix `otherTaxSum()` to count only `OTHER_TAX`/`OTHER-TAX`; unknown types observable but never counted; `validateAmounts()` and `validateAmountReconciliation()` converge on one shared helper. Binding details D1-D8 in the [decision memo](decision-t088a-other-tax-semantics.md).
 
 Option 2 (isolate backfilled rows) was rejected: all three candidate mechanisms are defective — a source marker needs an out-of-scope schema change, distinguishing by `created_at` destroys temporal fidelity and breaks FR-014 reconciliation, and joining the audit table puts an N+1 against 3.24M rows inside a per-serialization accessor.
 
-**One sub-question remains open and is a business decision, not an engineering one**: the `sc_vat_exempt_sales` column-fallback (`Transaction.php:275-278`). It is live today for window transactions (zero linked rows) and is **disabled** by reconstruction inserting an `SC_VAT_EXEMPT_SALES` row — shifting `net_amount` by the column amount even with the allow-list applied. PITX NET SALES does deduct VAT Exempt Sales, so removal moves away from the formula; retention leaves `otherTaxSum()` a mixed net-sales helper rather than denoting `OTHER_TAX`. Escalated to finance as **S7**, pending quantification of the affected population and peso exposure.
+**(Superseded — resolved by D7.)** Formerly open sub-question: the `sc_vat_exempt_sales` column-fallback (`Transaction.php:275-278`). It is live today for window transactions (zero linked rows) and is **disabled** by reconstruction inserting an `SC_VAT_EXEMPT_SALES` row — shifting `net_amount` by the column amount even with the allow-list applied. PITX NET SALES does deduct VAT Exempt Sales, so removal moves away from the formula; retention leaves `otherTaxSum()` a mixed net-sales helper rather than denoting `OTHER_TAX`. Escalated to finance as **S7**, pending quantification of the affected population and peso exposure.
 
 ## Cross-references
 
