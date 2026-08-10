@@ -17,9 +17,9 @@
     <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet" />
 
     <!-- Styles / Scripts -->
-    @env('local')
+    @if(app()->environment('local') && in_array(request()->getHost(), ['localhost', '127.0.0.1', '::1'], true))
         @viteReactRefresh
-    @endenv
+    @endif
     @vite(['resources/css/app.css', 'resources/js/app.jsx'])
 
     <style>

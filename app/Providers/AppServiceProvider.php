@@ -38,6 +38,8 @@ class AppServiceProvider extends ServiceProvider
             return;
         }
 
+        $this->removeStaleViteHotFileOutsideLocalhost();
+
         // Make sure View facade is available
         if (!$this->app->bound('view')) {
             $this->app->singleton('view', function ($app) {
@@ -62,6 +64,28 @@ class AppServiceProvider extends ServiceProvider
             }
         } catch (\Throwable $e) {
             // no-op
+        }
+    }
+
+    private function removeStaleViteHotFileOutsideLocalhost(): void
+    {
+        try {
+            $host = request()->getHost();
+            $isLocalhost = in_array($host, ['localhost', '127.0.0.1', '::1'], true);
+
+            if (app()->environment('local') && $isLocalhost) {
+                return;
+            }
+
+            $hotFile = public_path('hot');
+            if (is_file($hotFile) && ! @unlink($hotFile)) {
+                Log::warning('Unable to remove stale Vite hot file outside localhost.', [
+                    'host' => $host,
+                    'hot_file' => $hotFile,
+                ]);
+            }
+        } catch (\Throwable $e) {
+            Log::warning('Unable to check stale Vite hot file.', ['error' => $e->getMessage()]);
         }
     }
 

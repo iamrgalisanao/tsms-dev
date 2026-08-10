@@ -8,9 +8,9 @@
   <title>Transaction Monitoring Dashboard</title>
 
   {{-- Add this line to ensure Vite integration --}}
-  @env('local')
+  @if(app()->environment('local') && in_array(request()->getHost(), ['localhost', '127.0.0.1', '::1'], true))
     @viteReactRefresh
-  @endenv
+  @endif
 
   {{-- Load assets --}}
   @vite(['resources/css/app.css', 'resources/js/app.js'])
