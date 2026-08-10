@@ -1,6 +1,6 @@
 # Decision Memo — T088a: `other_tax` Row-Level Semantics
 
-**Date**: 2026-08-10 · **Status**: **DECIDED — Option 1, allow-list variant** · **Blocks**: all of `002-backfill-transaction-taxes`
+**Date**: 2026-08-10 · **Status**: **DECIDED — Option 1, allow-list variant, with explicit VAT-exempt deduction (b)** · **Blocks**: all of `002-backfill-transaction-taxes`
 
 **Decision owner**: architecture (with finance input on the alias sub-question)
 
@@ -139,6 +139,8 @@ Rationale as recorded by the decision owner: the blast radius is bounded and the
 | D3 | Unknown or unsupported tax types MUST be **observable** — logged, quarantined, or raised as a validation warning depending on context — but MUST NOT be counted as `other_tax`. Silent exclusion is as unacceptable as silent inclusion. |
 | D4 | `validateAmounts()` and `validateAmountReconciliation()` MUST share the same helper and the same allow-list. No second definition may survive. |
 | D5 | The live API-visible behaviour change MUST be acknowledged before deploy, because `$appends` exposes `net_amount` / `calculated_net_sales` externally. |
+| D7 | **`net_amount` / `calculated_net_sales` MUST deduct VAT-exempt sales as an EXPLICIT separate term**, not as a side effect inside `otherTaxSum()`. Formula: `gross − otherTaxSum() − scVatExemptSales`. This preserves the PITX principle that VAT-exempt sales are deducted, while avoiding the false +PHP 13.8M movement that (a) would produce by disabling the fallback. The `sc_vat_exempt_sales` column-fallback inside `otherTaxSum()` is **removed** — the deduction moves to the accessor, where it belongs. |
+| D8 | **Scope honesty — do not overstate the fix.** Even under D7 these accessors are **not** PITX NET SALES: that formula also deducts promos, senior discount, PWD discount, employee discount and service charge, none of which these accessors handle unless addressed elsewhere. The accurate claim is *"`other_tax` and VAT-exempt semantics are no longer conflated"*, **not** *"net sales is now fully PITX-correct"*. Any communication to finance or tenants MUST use the narrower claim. |
 | D6 | **T088a-1 remains a shipping gate**: establish whether any external consumer relies on `net_amount` / `calculated_net_sales` before this ships. Architecturally the decision is settled; empirically the consumer question is not. |
 
 D3 is the substantive addition to the memo's original recommendation. An allow-list that silently drops unrecognised types would trade one invisible failure mode for another — the whole defect class this feature exists to remove began with a value being silently discarded.
