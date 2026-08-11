@@ -47,7 +47,7 @@ Needed for FR-007 (auditable record) and R6 (resumability). **DECIDED 2026-08-11
 | window start / end | The defect window actually processed. |
 | mode | `dry-run` or `apply`. |
 | counters | scanned, reconstructed, skipped-already-present, quarantined, failed. **Noted at Slice 3 drift revalidation (2026-08-11)**: `failed` conflates two distinct situations — a transaction whose classification failed *and* was successfully recorded as a `failed` `TaxBackfillRecord`, versus the rarer case where even that recording write itself failed (no record exists for that transaction at all). The run row alone can't distinguish these; derive it by diffing `scanned_count` against `TaxBackfillRecord::where('run_id', ...)->count()` — a shortfall indicates the latter case. Worth revisiting (e.g. a dedicated counter) before resumability logic (R6) is built on top of this. |
-| status | Run lifecycle state (e.g. running / completed / interrupted / failed) — supports R6 resumability. |
+| status | Run lifecycle state (`running` / `completed` / `interrupted` / `failed` / `stopped` — the last added at Slice 7, 2026-08-11, for a deliberate operator kill-switch stop, distinct from `interrupted`'s unanticipated-crash meaning) — supports R6 resumability. |
 | operator / context | Who/what invoked the run (CLI user, or automation identity) — audit accountability. |
 | started / completed timestamps | Duration, and detection of interrupted runs. |
 

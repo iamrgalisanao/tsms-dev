@@ -182,10 +182,37 @@ class TaxBackfillRunner
      * marks the run `interrupted` before re-throwing, so a run is never left
      * sitting at `status = 'running'` indefinitely.
      *
+     * Slice 7 additions (T031/T033), both chunk-granularity, never
+     * per-transaction — a 500-per-chunk default makes per-transaction
+     * throttling/checking far too fine-grained and would defeat the point of
+     * chunking for throughput:
+     *  - $throttleMs (T031): when non-null, sleep that many milliseconds
+     *    after each chunk's transactions have all been processed. Default
+     *    `null` preserves today's behavior (no delay) for every existing
+     *    caller/test.
+     *  - $killSwitchPath (T033): when non-null, checked for existence
+     *    *before* a new chunk's transactions are processed (the chunk has
+     *    already been fetched from the DB by chunkById() by that point, but
+     *    none of its rows are touched). If the sentinel file exists, the run
+     *    stops there — the chunk about to start is never processed, nor is
+     *    any chunk after it — and ends `STATUS_STOPPED`, never
+     *    `failed`/`interrupted`/`completed`: this is a deliberate operator
+     *    stop, not an error. Resume is not new production logic here — it
+     *    falls out of the same `taxes()->exists()` idempotency check that
+     *    already makes re-running `apply()` over the same day converge
+     *    (T034); re-invoking `apply()` after a kill-switch stop (or any
+     *    other interruption) simply picks up where the audit trail left off.
+     *
      * @param  int|array<int>|null  $tenantId
      */
-    public function apply(Carbon $day, int|array|null $tenantId = null, ?int $limit = null, int $chunkSize = 500): TaxBackfillRun
-    {
+    public function apply(
+        Carbon $day,
+        int|array|null $tenantId = null,
+        ?int $limit = null,
+        int $chunkSize = 500,
+        ?int $throttleMs = null,
+        ?string $killSwitchPath = null
+    ): TaxBackfillRun {
         $from = $day->copy()->startOfDay();
         $to = $day->copy()->endOfDay();
 
@@ -213,9 +240,23 @@ class TaxBackfillRunner
         $processed = 0;
         $reachedLimit = false;
         $hadUnrecoverableFailure = false;
+        $killSwitchTriggered = false;
 
         try {
-            $query->chunkById($chunkSize, function ($transactions) use ($run, $limit, &$processed, &$reachedLimit, &$hadUnrecoverableFailure) {
+            $query->chunkById($chunkSize, function ($transactions) use ($run, $limit, $throttleMs, $killSwitchPath, &$processed, &$reachedLimit, &$hadUnrecoverableFailure, &$killSwitchTriggered) {
+                // T033: checked before this chunk's transactions are
+                // touched. chunkById() has already fetched $transactions
+                // from the DB by this point, but none of its rows are
+                // processed/recorded if the sentinel file is present —
+                // scanned_count and every other counter are left exactly as
+                // they were after the previous chunk.
+                if ($killSwitchPath !== null && file_exists($killSwitchPath)) {
+                    $killSwitchTriggered = true;
+
+                    // Returning false stops chunkById from fetching further chunks.
+                    return false;
+                }
+
                 foreach ($transactions as $transaction) {
                     if ($limit !== null && $processed >= $limit) {
                         $reachedLimit = true;
@@ -227,6 +268,13 @@ class TaxBackfillRunner
                     }
 
                     $processed++;
+                }
+
+                // T031: chunk-granularity throttle only — sleeps once after
+                // this whole chunk's transactions have been processed, never
+                // per-transaction.
+                if ($throttleMs !== null) {
+                    usleep($throttleMs * 1000);
                 }
 
                 // Returning false stops chunkById from fetching further chunks.
@@ -254,8 +302,19 @@ class TaxBackfillRunner
             throw $e;
         }
 
+        // T033: a deliberate kill-switch stop takes precedence over
+        // $hadUnrecoverableFailure — it is not an error condition, so it
+        // must never be reported as `failed` even if an earlier chunk (fully
+        // processed before the stop) happened to contain a genuinely
+        // unrecordable transaction.
+        $status = match (true) {
+            $killSwitchTriggered => TaxBackfillRun::STATUS_STOPPED,
+            $hadUnrecoverableFailure => TaxBackfillRun::STATUS_FAILED,
+            default => TaxBackfillRun::STATUS_COMPLETED,
+        };
+
         $run->update([
-            'status' => $hadUnrecoverableFailure ? TaxBackfillRun::STATUS_FAILED : TaxBackfillRun::STATUS_COMPLETED,
+            'status' => $status,
             'completed_at' => now(),
         ]);
 

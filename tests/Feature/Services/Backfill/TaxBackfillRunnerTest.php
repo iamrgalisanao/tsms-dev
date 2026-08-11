@@ -1178,6 +1178,453 @@ class TaxBackfillRunnerTest extends TestCase
         }
     }
 
+    /**
+     * Slice 7, T031: apply() with a small chunkSize (forcing multiple
+     * chunks) and a non-null $throttleMs measurably delays — the sleep
+     * happens once per completed chunk (chunk-granularity, never
+     * per-transaction, per the architecture brief), so wall-clock elapsed
+     * time must be at least (chunk_count - 1) * $throttleMs. Small values
+     * throughout keep this fast.
+     */
+    public function test_apply_with_a_throttle_measurably_delays_between_chunks(): void
+    {
+        $tenant = Tenant::factory()->create();
+
+        // 5 transactions, chunkSize 2 -> 3 chunks (2, 2, 1).
+        for ($n = 1; $n <= 5; $n++) {
+            $this->makeTransaction($tenant, ['original_payload' => null]);
+        }
+
+        $throttleMs = 50;
+        $chunkCount = 3;
+
+        $start = microtime(true);
+        $run = $this->runner()->apply(now(), $tenant->id, null, chunkSize: 2, throttleMs: $throttleMs);
+        $elapsedMs = (microtime(true) - $start) * 1000;
+
+        $this->assertSame(TaxBackfillRun::STATUS_COMPLETED, $run->status);
+        $this->assertSame(5, $run->scanned_count);
+        $this->assertGreaterThanOrEqual(
+            ($chunkCount - 1) * $throttleMs,
+            $elapsedMs,
+            'Expected at least (chunk_count - 1) * throttleMs of delay from the inter-chunk throttle.'
+        );
+    }
+
+    /**
+     * Slice 7, T031: the default ($throttleMs = null) path is unaffected —
+     * a regression here would silently slow down every existing caller that
+     * never asks for throttling. Kept fast and simply asserts no throttling
+     * delay was introduced (well under a single $throttleMs-sized sleep).
+     */
+    public function test_apply_without_a_throttle_has_no_inter_chunk_delay(): void
+    {
+        $tenant = Tenant::factory()->create();
+
+        for ($n = 1; $n <= 5; $n++) {
+            $this->makeTransaction($tenant, ['original_payload' => null]);
+        }
+
+        $start = microtime(true);
+        $run = $this->runner()->apply(now(), $tenant->id, null, chunkSize: 2);
+        $elapsedMs = (microtime(true) - $start) * 1000;
+
+        $this->assertSame(TaxBackfillRun::STATUS_COMPLETED, $run->status);
+        $this->assertSame(5, $run->scanned_count);
+        // Comfortably below the throttled test's (chunk_count - 1) * 50ms =
+        // 100ms floor, so this fails loudly if any inter-chunk sleep leaks
+        // into the default no-throttle path, while leaving headroom for
+        // ordinary DB/test-runner overhead.
+        $this->assertLessThan(100, $elapsedMs, 'Expected no throttling delay when $throttleMs is not provided.');
+    }
+
+    /**
+     * Slice 7, T033: a kill-switch sentinel file created mid-run (via a side
+     * effect inside the mocked reconstruction step, so this exercises a
+     * genuine partial-progress stop rather than a trivially-immediate one)
+     * stops the run before its next chunk starts. Chunks fully processed
+     * before the stop keep their correct, complete audit records and real
+     * transaction_taxes rows; chunks after the stop are never touched at
+     * all — not scanned, not recorded.
+     */
+    public function test_apply_stops_at_the_kill_switch_and_leaves_earlier_chunks_intact(): void
+    {
+        $tenant = Tenant::factory()->create();
+
+        $killSwitchPath = sys_get_temp_dir().'/tsms-backfill-kill-switch-'.uniqid('', true).'.stop';
+
+        // 5 transactions across 3 chunks of size 2 (2, 2, 1), all otherwise
+        // cleanly reconstructable/applicable.
+        $transactions = collect();
+        for ($n = 1; $n <= 5; $n++) {
+            $transactions->push($this->makeTransaction($tenant, [
+                'original_payload' => json_encode(['taxes' => [['tax_type' => 'VAT', 'amount' => $n * 10.00]]]),
+                'vat_amount' => $n * 10.00,
+            ]));
+        }
+        $transactions = $transactions->sortBy('id')->values();
+
+        $firstChunkLastTransactionId = $transactions[1]->id;
+
+        $real = new TaxReconstructionService;
+        $mock = \Mockery::mock(TaxReconstructionService::class);
+        $mock->shouldReceive('reconstructTaxRows')
+            ->andReturnUsing(function (Transaction $transaction) use ($real, $firstChunkLastTransactionId, $killSwitchPath) {
+                if ($transaction->id === $firstChunkLastTransactionId) {
+                    // Drop the sentinel as a side effect of finishing the
+                    // first chunk's last transaction, so the kill-switch
+                    // check ahead of the SECOND chunk is what actually
+                    // triggers the stop — a genuine mid-run stop, not an
+                    // immediate no-op one.
+                    touch($killSwitchPath);
+                }
+
+                return $real->reconstructTaxRows($transaction);
+            });
+        $mock->shouldReceive('crossCheck')
+            ->andReturnUsing(fn (Transaction $transaction, array $rows) => $real->crossCheck($transaction, $rows));
+
+        try {
+            $run = $this->runner($mock)->apply(now(), $tenant->id, null, chunkSize: 2, killSwitchPath: $killSwitchPath);
+
+            $this->assertSame(TaxBackfillRun::STATUS_STOPPED, $run->status);
+            $this->assertNotNull($run->completed_at);
+
+            // First chunk (2 transactions) fully processed and applied.
+            $this->assertSame(2, $run->scanned_count);
+            $this->assertSame(2, $run->reconstructed_count);
+
+            foreach ($transactions->take(2) as $transaction) {
+                $this->assertDatabaseHas('tax_backfill_records', [
+                    'run_id' => $run->id,
+                    'transaction_pk' => $transaction->id,
+                    'outcome' => TaxBackfillOutcome::Applied->value,
+                ]);
+                $this->assertSame(1, DB::table('transaction_taxes')->where('transaction_pk', $transaction->id)->count());
+            }
+
+            // Remaining 3 transactions (chunks 2 and 3) were never touched:
+            // no audit record and no transaction_taxes row at all.
+            foreach ($transactions->slice(2) as $transaction) {
+                $this->assertDatabaseMissing('tax_backfill_records', [
+                    'run_id' => $run->id,
+                    'transaction_pk' => $transaction->id,
+                ]);
+                $this->assertSame(0, DB::table('transaction_taxes')->where('transaction_pk', $transaction->id)->count());
+            }
+        } finally {
+            if (file_exists($killSwitchPath)) {
+                unlink($killSwitchPath);
+            }
+        }
+    }
+
+    /**
+     * Code review follow-up: proves the `match(true)` precedence in apply()'s
+     * final status resolution — STATUS_STOPPED must win even when an
+     * EARLIER chunk's transaction genuinely failed (setting
+     * $hadUnrecoverableFailure = true) before a LATER chunk trips the
+     * kill-switch. None of the other kill-switch tests combine a genuine
+     * failure with a kill-switch stop in the same run, so without this test
+     * a future reordering of the match arms (checking
+     * $hadUnrecoverableFailure before $killSwitchTriggered) would silently
+     * report STATUS_FAILED instead and go uncaught.
+     *
+     * Reuses the double-failure technique from
+     * test_a_genuine_db_level_insert_failure_for_one_transaction_does_not_corrupt_the_recording_of_others():
+     * the "reconstruction" step hard-deletes the failing transaction's own
+     * row as a side effect, so both its transaction_taxes insert and its
+     * failed-outcome TaxBackfillRecord write genuinely violate a real FK
+     * constraint — this is what makes processTransactionForApply() return
+     * false and apply() set $hadUnrecoverableFailure. The same side effect
+     * also drops the kill-switch sentinel, so the run's SECOND chunk (never
+     * reached) is what actually stops the run — the failure and the stop
+     * are genuinely in different chunks.
+     */
+    public function test_apply_reports_stopped_not_failed_when_an_earlier_chunk_failed_before_the_kill_switch_tripped(): void
+    {
+        Log::spy();
+
+        $tenant = Tenant::factory()->create();
+
+        $killSwitchPath = sys_get_temp_dir().'/tsms-backfill-kill-switch-'.uniqid('', true).'.stop';
+
+        // Chunk 1 (ids ascending, chunkSize 2): $ok then $failing.
+        $ok = $this->makeTransaction($tenant, [
+            'original_payload' => json_encode(['taxes' => [['tax_type' => 'VAT', 'amount' => 15.00]]]),
+            'vat_amount' => 15.00,
+        ]);
+        $failing = $this->makeTransaction($tenant, [
+            'original_payload' => json_encode(['taxes' => [['tax_type' => 'VAT', 'amount' => 25.00]]]),
+            'vat_amount' => 25.00,
+        ]);
+        // Chunk 2: never processed once the kill-switch trips ahead of it.
+        $untouchedC = $this->makeTransaction($tenant, ['original_payload' => null]);
+        $untouchedD = $this->makeTransaction($tenant, ['original_payload' => null]);
+
+        $real = new TaxReconstructionService;
+        $mock = \Mockery::mock(TaxReconstructionService::class);
+        $mock->shouldReceive('reconstructTaxRows')
+            ->andReturnUsing(function (Transaction $transaction) use ($real, $failing, $killSwitchPath) {
+                $rows = $real->reconstructTaxRows($transaction);
+
+                if ($transaction->id === $failing->id) {
+                    // Simulate the transaction row disappearing mid-scan
+                    // (same technique as the Slice 6 double-failure tests):
+                    // both the transaction_taxes insert and the
+                    // failed-outcome audit write for this transaction
+                    // genuinely violate a real FK constraint, so
+                    // processTransactionForApply() returns false and
+                    // apply() sets $hadUnrecoverableFailure = true.
+                    DB::table('transactions')->where('id', $failing->id)->delete();
+
+                    // Drop the kill-switch sentinel as a side effect of
+                    // finishing this (first chunk's second) transaction.
+                    touch($killSwitchPath);
+                }
+
+                return $rows;
+            });
+        $mock->shouldReceive('crossCheck')
+            ->andReturnUsing(fn (Transaction $transaction, array $rows) => $real->crossCheck($transaction, $rows));
+
+        try {
+            $run = $this->runner($mock)->apply(now(), $tenant->id, null, chunkSize: 2, killSwitchPath: $killSwitchPath);
+
+            // The precedence under test: a genuine failure happened, AND the
+            // kill-switch tripped — the run must report STOPPED, never
+            // FAILED.
+            $this->assertSame(TaxBackfillRun::STATUS_STOPPED, $run->status);
+            $this->assertNotSame(TaxBackfillRun::STATUS_FAILED, $run->status);
+            $this->assertNotNull($run->completed_at);
+
+            // First chunk ($ok + $failing) fully processed.
+            $this->assertSame(2, $run->scanned_count);
+            $this->assertSame(1, $run->reconstructed_count);
+            // failed_count stays 0: the increment lives inside the same
+            // now-rolled-back transaction as the failed-outcome audit write,
+            // which is exactly what also failed here (Slice 6 code review
+            // finding 1's fix) — matching the equivalent double-failure
+            // tests above.
+            $this->assertSame(0, $run->failed_count);
+
+            $this->assertDatabaseHas('tax_backfill_records', [
+                'run_id' => $run->id,
+                'transaction_pk' => $ok->id,
+                'outcome' => TaxBackfillOutcome::Applied->value,
+            ]);
+            $this->assertSame(1, DB::table('transaction_taxes')->where('transaction_pk', $ok->id)->count());
+
+            // The failing transaction has no audit record and no tax row —
+            // both write attempts genuinely failed at the DB level.
+            $this->assertDatabaseMissing('tax_backfill_records', [
+                'run_id' => $run->id,
+                'transaction_pk' => $failing->id,
+            ]);
+            $this->assertSame(0, DB::table('transaction_taxes')->where('transaction_pk', $failing->id)->count());
+
+            // Second chunk never touched at all.
+            foreach ([$untouchedC, $untouchedD] as $transaction) {
+                $this->assertDatabaseMissing('tax_backfill_records', [
+                    'run_id' => $run->id,
+                    'transaction_pk' => $transaction->id,
+                ]);
+                $this->assertSame(0, DB::table('transaction_taxes')->where('transaction_pk', $transaction->id)->count());
+            }
+
+            Log::shouldHaveReceived('error')
+                ->once()
+                ->withArgs(function (string $message, array $context) use ($failing) {
+                    return str_contains($message, 'could not record a failed-outcome audit row for a transaction during apply')
+                        && $context['transaction_id'] === $failing->id;
+                });
+        } finally {
+            if (file_exists($killSwitchPath)) {
+                unlink($killSwitchPath);
+            }
+        }
+    }
+
+    /**
+     * Slice 7, T033: the default ($killSwitchPath = null) path, and a path
+     * that is provided but whose file never exists, both run to completion
+     * exactly as before this slice — no behavior change for existing
+     * callers/tests.
+     */
+    public function test_apply_without_a_kill_switch_or_with_a_nonexistent_one_runs_to_completion(): void
+    {
+        $tenant = Tenant::factory()->create();
+
+        $transactions = collect();
+        for ($n = 1; $n <= 4; $n++) {
+            $transactions->push($this->makeTransaction($tenant, [
+                'original_payload' => json_encode(['taxes' => [['tax_type' => 'VAT', 'amount' => $n * 10.00]]]),
+                'vat_amount' => $n * 10.00,
+            ]));
+        }
+
+        $nonExistentPath = sys_get_temp_dir().'/tsms-backfill-kill-switch-does-not-exist-'.uniqid('', true).'.stop';
+        $this->assertFileDoesNotExist($nonExistentPath);
+
+        $run = $this->runner()->apply(now(), $tenant->id, null, chunkSize: 2, killSwitchPath: $nonExistentPath);
+
+        $this->assertSame(TaxBackfillRun::STATUS_COMPLETED, $run->status);
+        $this->assertSame(4, $run->scanned_count);
+        $this->assertSame(4, $run->reconstructed_count);
+
+        foreach ($transactions as $transaction) {
+            $this->assertSame(1, DB::table('transaction_taxes')->where('transaction_pk', $transaction->id)->count());
+        }
+    }
+
+    /**
+     * Slice 7, T032: proves resume holds for the kill-switch-stopped case
+     * specifically (T034 already proved the plain "ran to completion twice"
+     * case). Stop a run partway via the kill-switch, then re-invoke apply()
+     * over the same day with no kill-switch path: it must complete, and
+     * every transaction across both runs combined ends up with exactly one
+     * applied/audit record — the ones from before the stop converge to
+     * skipped_existing in the second run, the ones after are freshly
+     * applied.
+     */
+    public function test_apply_resumes_correctly_after_a_kill_switch_stop(): void
+    {
+        $tenant = Tenant::factory()->create();
+
+        $killSwitchPath = sys_get_temp_dir().'/tsms-backfill-kill-switch-'.uniqid('', true).'.stop';
+
+        $transactions = collect();
+        for ($n = 1; $n <= 4; $n++) {
+            $transactions->push($this->makeTransaction($tenant, [
+                'original_payload' => json_encode(['taxes' => [['tax_type' => 'VAT', 'amount' => $n * 10.00]]]),
+                'vat_amount' => $n * 10.00,
+            ]));
+        }
+        $transactions = $transactions->sortBy('id')->values();
+        $day = $transactions->first()->created_at->copy();
+
+        $firstChunkLastTransactionId = $transactions[1]->id;
+
+        $real = new TaxReconstructionService;
+        $mock = \Mockery::mock(TaxReconstructionService::class);
+        $mock->shouldReceive('reconstructTaxRows')
+            ->andReturnUsing(function (Transaction $transaction) use ($real, $firstChunkLastTransactionId, $killSwitchPath) {
+                if ($transaction->id === $firstChunkLastTransactionId) {
+                    touch($killSwitchPath);
+                }
+
+                return $real->reconstructTaxRows($transaction);
+            });
+        $mock->shouldReceive('crossCheck')
+            ->andReturnUsing(fn (Transaction $transaction, array $rows) => $real->crossCheck($transaction, $rows));
+
+        try {
+            $firstRun = $this->runner($mock)->apply($day, $tenant->id, null, chunkSize: 2, killSwitchPath: $killSwitchPath);
+
+            $this->assertSame(TaxBackfillRun::STATUS_STOPPED, $firstRun->status);
+            $this->assertSame(2, $firstRun->reconstructed_count);
+
+            $this->assertTrue(file_exists($killSwitchPath));
+            unlink($killSwitchPath);
+
+            // Resume: same day, no kill-switch path, real reconstruction
+            // service this time.
+            $secondRun = $this->runner()->apply($day, $tenant->id);
+
+            $this->assertSame(TaxBackfillRun::STATUS_COMPLETED, $secondRun->status);
+            $this->assertSame(4, $secondRun->scanned_count);
+            // The 2 already-applied transactions converge to skipped_existing...
+            $this->assertSame(2, $secondRun->skipped_existing_count);
+            // ...and the 2 that were never touched are freshly applied.
+            $this->assertSame(2, $secondRun->reconstructed_count);
+
+            // Exactly one real transaction_taxes row per transaction across
+            // both runs combined — no duplicates, nothing lost.
+            foreach ($transactions as $transaction) {
+                $this->assertSame(
+                    1,
+                    DB::table('transaction_taxes')->where('transaction_pk', $transaction->id)->count(),
+                    "Expected exactly one transaction_taxes row for transaction {$transaction->id}."
+                );
+            }
+        } finally {
+            if (file_exists($killSwitchPath)) {
+                unlink($killSwitchPath);
+            }
+        }
+    }
+
+    /**
+     * Slice 7, T032: resume also holds after a genuine unanticipated escape
+     * (STATUS_INTERRUPTED), not just a deliberate kill-switch stop. Reuses
+     * Slice 6's "escapes both containment layers" technique
+     * (DB::beforeExecuting() forcing a failure on the one always-executes
+     * scanned_count increment) to force a run to end `interrupted`, then
+     * confirms a fresh apply() invocation over the same day completes
+     * correctly afterward.
+     */
+    public function test_apply_resumes_correctly_after_an_interrupted_run(): void
+    {
+        $tenant = Tenant::factory()->create();
+
+        $first = $this->makeTransaction($tenant, [
+            'original_payload' => json_encode(['taxes' => [['tax_type' => 'VAT', 'amount' => 22.00]]]),
+            'vat_amount' => 22.00,
+        ]);
+        $second = $this->makeTransaction($tenant, [
+            'original_payload' => json_encode(['taxes' => [['tax_type' => 'VAT', 'amount' => 33.00]]]),
+            'vat_amount' => 33.00,
+        ]);
+
+        $day = $first->created_at->copy();
+
+        $scannedCountUpdates = 0;
+        DB::beforeExecuting(function (string $query) use (&$scannedCountUpdates) {
+            $isScannedCountIncrement = str_starts_with(strtolower(trim($query)), 'update ')
+                && str_contains($query, 'tax_backfill_runs')
+                && str_contains($query, 'scanned_count');
+
+            if (! $isScannedCountIncrement) {
+                return;
+            }
+
+            $scannedCountUpdates++;
+
+            if ($scannedCountUpdates === 2) {
+                throw new \RuntimeException('Simulated DB failure escaping both containment layers.');
+            }
+        });
+
+        $runner = $this->runner();
+
+        try {
+            $runner->apply($day, $tenant->id, chunkSize: 2);
+            $this->fail('Expected apply() to rethrow the exception that escaped both containment layers.');
+        } catch (\RuntimeException $e) {
+            $this->assertSame('Simulated DB failure escaping both containment layers.', $e->getMessage());
+        }
+
+        $firstRun = TaxBackfillRun::where('mode', TaxBackfillRun::MODE_APPLY)
+            ->where('window_start', $day->copy()->startOfDay())
+            ->latest('id')
+            ->firstOrFail();
+        $this->assertSame(TaxBackfillRun::STATUS_INTERRUPTED, $firstRun->status);
+
+        // Resume: no forced failures this time, real reconstruction service.
+        $secondRun = $this->runner()->apply($day, $tenant->id);
+
+        $this->assertSame(TaxBackfillRun::STATUS_COMPLETED, $secondRun->status);
+        $this->assertSame(2, $secondRun->scanned_count);
+        // Both were already applied (durably committed before the escape,
+        // per Slice 6's per-transaction commit-boundary guarantee) -> both
+        // converge to skipped_existing on this fresh run.
+        $this->assertSame(2, $secondRun->skipped_existing_count);
+        $this->assertSame(0, $secondRun->reconstructed_count);
+
+        $this->assertSame(1, DB::table('transaction_taxes')->where('transaction_pk', $first->id)->count());
+        $this->assertSame(1, DB::table('transaction_taxes')->where('transaction_pk', $second->id)->count());
+    }
+
     protected function tearDown(): void
     {
         \Mockery::close();

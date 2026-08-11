@@ -29,6 +29,18 @@ class TaxBackfillRun extends Model
 
     public const STATUS_FAILED = 'failed';
 
+    /**
+     * Slice 7 (T033): a deliberate operator stop via TaxBackfillRunner::apply()'s
+     * kill-switch (a sentinel file checked between chunks), distinct from
+     * both STATUS_FAILED (a genuine per-transaction/audit-write error) and
+     * STATUS_INTERRUPTED (an unanticipated escape past both of apply()'s
+     * failure-containment layers). Chunks already processed before the stop
+     * are untouched — their outcomes/counters stand as recorded; the run
+     * simply never starts the chunk that was about to run when the sentinel
+     * file was found.
+     */
+    public const STATUS_STOPPED = 'stopped';
+
     protected $table = 'tax_backfill_runs';
 
     protected $fillable = [
