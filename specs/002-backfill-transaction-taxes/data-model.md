@@ -46,7 +46,7 @@ Needed for FR-007 (auditable record) and R6 (resumability). **DECIDED 2026-08-11
 | run identifier | Correlates every row-level record to one invocation. |
 | window start / end | The defect window actually processed. |
 | mode | `dry-run` or `apply`. |
-| counters | scanned, reconstructed, skipped-already-present, quarantined, failed. |
+| counters | scanned, reconstructed, skipped-already-present, quarantined, failed. **Noted at Slice 3 drift revalidation (2026-08-11)**: `failed` conflates two distinct situations — a transaction whose classification failed *and* was successfully recorded as a `failed` `TaxBackfillRecord`, versus the rarer case where even that recording write itself failed (no record exists for that transaction at all). The run row alone can't distinguish these; derive it by diffing `scanned_count` against `TaxBackfillRecord::where('run_id', ...)->count()` — a shortfall indicates the latter case. Worth revisiting (e.g. a dedicated counter) before resumability logic (R6) is built on top of this. |
 | status | Run lifecycle state (e.g. running / completed / interrupted / failed) — supports R6 resumability. |
 | operator / context | Who/what invoked the run (CLI user, or automation identity) — audit accountability. |
 | started / completed timestamps | Duration, and detection of interrupted runs. |
@@ -60,7 +60,7 @@ Needed for FR-007 (auditable record) and R6 (resumability). **DECIDED 2026-08-11
 | tenant id | Enables per-tenant materiality rollup (FR-009a) without re-joining. |
 | reconstructed tax rows | What was written (type/amount set) — the "after" state. |
 | prior state | Confirms "before" was empty; makes the no-overwrite claim auditable. |
-| outcome | `applied` \| `skipped_existing` \| `quarantined` \| `failed`. |
+| outcome | `applied` \| `skipped_existing` \| `quarantined` \| `failed`. **Noted at Slice 3 drift revalidation (2026-08-11)**: under `run.mode = 'dry-run'`, `outcome = 'applied'` means the reconstruction is clean and *would be* applied by a real `--apply` run — it does not mean a `transaction_taxes` write actually happened. `run.mode` is the only disambiguator between a projected and a real `applied` outcome; this convention was previously documented only in `App\Services\Backfill\TaxBackfillRunner`'s class docblock, not here. |
 | reason code | Machine-readable reason for `quarantined`/`failed` outcomes — `missing_payload`, `cross_check_mismatch` (T013), or a failure-specific code. |
 | archive/reconciliation references | Links to the orphan-archive row(s) (FR-013) and/or FR-014 reconciliation result this row's correction corresponds to, where applicable — connects this feature's two audit trails (backfill correction vs. orphan archive/delete) without requiring a re-join at read time. |
 | timestamps | Row-level created/updated for this audit record itself. |
