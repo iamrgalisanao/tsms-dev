@@ -68,6 +68,18 @@ class TaxBackfillRunner
      * 4). One invocation always produces exactly one TaxBackfillRun row
      * covering every specified tenant, never one run per tenant.
      *
+     * Slice 10 (T018): immediately after the run row is created,
+     * TaxBackfillPreflightChecker::checkRequiredColumns() runs — this
+     * method's first-ever use of that class (T097's `check()`, the
+     * index/FK/nullability check, stays apply()-only per Slice 9's original
+     * scoping and is never called here). The result is recorded on
+     * `preflight_checks` as `{'required_columns' => ..., 'schema_integrity' =>
+     * null}` — see TaxBackfillRun's own docblock for the full envelope
+     * shape. If a required column is missing, the run is marked
+     * `STATUS_PREFLIGHT_FAILED` with `completed_at` set and returned
+     * immediately: the chunked query below is never built, and every
+     * counter stays at its just-created 0.
+     *
      * @param  int|array<int>|null  $tenantId
      */
     public function dryRun(Carbon $from, Carbon $to, int|array|null $tenantId = null, ?int $limit = null, int $chunkSize = 500): TaxBackfillRun
@@ -84,6 +96,26 @@ class TaxBackfillRunner
             'status' => TaxBackfillRun::STATUS_RUNNING,
             'started_at' => now(),
         ]);
+
+        // Slice 10 (T018): required-column existence check, run before any
+        // transaction is scanned or the chunked query is even built. A
+        // missing column is exactly as much a "pre-flight failed" condition
+        // as T097's missing index/FK, so it reuses the same terminal status.
+        $requiredColumnsResult = $this->preflightChecker->checkRequiredColumns();
+
+        $run->update(['preflight_checks' => [
+            'required_columns' => $requiredColumnsResult,
+            'schema_integrity' => null,
+        ]]);
+
+        if (! $requiredColumnsResult['passed']) {
+            $run->update([
+                'status' => TaxBackfillRun::STATUS_PREFLIGHT_FAILED,
+                'completed_at' => now(),
+            ]);
+
+            return $run;
+        }
 
         $query = Transaction::query()
             ->whereBetween('created_at', [$from, $to])
@@ -204,14 +236,32 @@ class TaxBackfillRunner
      *    (T034); re-invoking `apply()` after a kill-switch stop (or any
      *    other interruption) simply picks up where the audit trail left off.
      *
-     * Slice 9 (T097): immediately after the run row is created (status =
-     * running), TaxBackfillPreflightChecker::check() runs once — before the
-     * chunked query is even built. Its full result is always recorded on
-     * `preflight_checks`; if `passed` is false, the run is marked
-     * `STATUS_PREFLIGHT_FAILED` with `completed_at` set and returned
-     * immediately, with scanned_count and every other counter left at their
-     * just-created 0 — no transaction is scanned, no chunk is processed.
-     * dryRun() deliberately never calls this checker.
+     * Slice 9 (T097) + Slice 10 (T018): immediately after the run row is
+     * created (status = running), two independent pre-flight checks run, in
+     * this order:
+     *  1. TaxBackfillPreflightChecker::checkRequiredColumns() (T018) — a
+     *     missing column is a more fundamental problem than a missing index,
+     *     so it's checked first. If it fails, `check()` is deliberately never
+     *     called at all (a short-circuit, not an oversight: there is no point
+     *     checking an index/FK on a column that might not even exist, even
+     *     though in practice idx_tx_taxes_pk/fk_tx_taxes_pk are on
+     *     `transaction_pk`, not one of the newly-checked columns — this
+     *     orders defensively regardless). `preflight_checks` records
+     *     `{'required_columns' => ..., 'schema_integrity' => null}` — the
+     *     `null` is what makes the short-circuit visible in the audit trail,
+     *     not merely inferable from the failure.
+     *  2. TaxBackfillPreflightChecker::check() (T097) — the pre-existing
+     *     index/FK/nullability check, unchanged, run only once
+     *     checkRequiredColumns() has passed. `preflight_checks` then records
+     *     `{'required_columns' => ..., 'schema_integrity' => ...}`.
+     *
+     * Either check failing marks the run `STATUS_PREFLIGHT_FAILED` with
+     * `completed_at` set and returns immediately, with scanned_count and
+     * every other counter left at their just-created 0 — no transaction is
+     * scanned, no chunk is processed. See TaxBackfillRun's own docblock for
+     * the full `preflight_checks` envelope shape. dryRun() also now runs
+     * checkRequiredColumns() (Slice 10), but never check() — that check
+     * stays apply()-only, per Slice 9's original scoping.
      *
      * @param  int|array<int>|null  $tenantId
      */
@@ -239,16 +289,40 @@ class TaxBackfillRunner
             'started_at' => now(),
         ]);
 
-        // Slice 9 (T097): schema pre-flight, run before any transaction is
-        // scanned or the chunked query is even built. The full observed
-        // result (not just pass/fail) is always recorded on the run, so the
-        // audit trail is honest about the exact schema state this run saw
-        // regardless of outcome.
-        $preflightResult = $this->preflightChecker->check();
+        // Slice 10 (T018): required-column existence check runs first — a
+        // missing column is a more fundamental problem than a missing
+        // index/FK. Deliberate short-circuit: if this fails, T097's check()
+        // is never even called, and `schema_integrity` is recorded as `null`
+        // rather than a fabricated pass/fail for a check that never ran.
+        $requiredColumnsResult = $this->preflightChecker->checkRequiredColumns();
 
-        $run->update(['preflight_checks' => $preflightResult]);
+        if (! $requiredColumnsResult['passed']) {
+            $run->update([
+                'preflight_checks' => [
+                    'required_columns' => $requiredColumnsResult,
+                    'schema_integrity' => null,
+                ],
+                'status' => TaxBackfillRun::STATUS_PREFLIGHT_FAILED,
+                'completed_at' => now(),
+            ]);
 
-        if (! $preflightResult['passed']) {
+            return $run;
+        }
+
+        // Slice 9 (T097): schema pre-flight (index/FK/nullability), run
+        // before any transaction is scanned or the chunked query is even
+        // built — only reached once the required-columns check above has
+        // passed. The full observed result (not just pass/fail) is always
+        // recorded on the run, so the audit trail is honest about the exact
+        // schema state this run saw regardless of outcome.
+        $schemaIntegrityResult = $this->preflightChecker->check();
+
+        $run->update(['preflight_checks' => [
+            'required_columns' => $requiredColumnsResult,
+            'schema_integrity' => $schemaIntegrityResult,
+        ]]);
+
+        if (! $schemaIntegrityResult['passed']) {
             $run->update([
                 'status' => TaxBackfillRun::STATUS_PREFLIGHT_FAILED,
                 'completed_at' => now(),

@@ -23,14 +23,18 @@ use Illuminate\Support\Facades\DB;
  * when --day (a single day, never a --from/--to window) is given —
  * validateInput() enforces this before the runner is ever touched.
  *
- * Slice 9 (T097) closed the gap Slice 8 disclosed: TaxBackfillRunner::apply()
- * now runs a schema pre-flight (idx_tx_taxes_pk, fk_tx_taxes_pk + its ON
- * DELETE action, transaction_pk nullability) before scanning a single
- * transaction. A failed pre-flight ends the run in
- * TaxBackfillRun::STATUS_PREFLIGHT_FAILED (exit code self::EXIT_PREFLIGHT_FAILED
- * below) with zero transactions touched — surfaced loudly in both human and
- * --json output via the `preflight_checks` result. dryRun() never runs this
- * check.
+ * Slice 9 (T097) closed one gap Slice 8 disclosed: TaxBackfillRunner::apply()
+ * runs a schema pre-flight (idx_tx_taxes_pk, fk_tx_taxes_pk + its ON DELETE
+ * action, transaction_pk nullability) before scanning a single transaction.
+ * Slice 10 (T018) added a second, independent pre-flight check — required-
+ * column existence on `transactions`/`transaction_taxes` — run from BOTH
+ * dryRun() and apply() (T097's check stays apply()-only). Either check
+ * failing ends the run in TaxBackfillRun::STATUS_PREFLIGHT_FAILED (exit code
+ * self::EXIT_PREFLIGHT_FAILED below) with zero transactions touched —
+ * surfaced loudly in both human and --json output via the `preflight_checks`
+ * result, now a `{'required_columns' => ..., 'schema_integrity' => ...|null}`
+ * envelope (see buildResult()'s docblock) rather than Slice 9's original flat
+ * shape.
  *
  * Ergonomics mirror App\Console\Commands\LicenseBindingBackfillCommand per
  * specs/002-backfill-transaction-taxes/contracts/cli-contract.md (research
@@ -74,7 +78,7 @@ class BackfillTransactionTaxes extends Command
         {--to= : Window end (Y-m-d, inclusive). Required unless --day is given. Not permitted with --apply.}
         {--day= : Single day (Y-m-d). Shorthand for --from/--to over that one day. Required when --apply is given.}
         {--tenant=* : Restrict to one or more tenant ids. Repeatable, e.g. --tenant=1 --tenant=2.}
-        {--apply : Persist changes. Requires --day (single-day only — --from/--to whole-window apply is not permitted). A schema pre-flight check runs automatically before any write: verifies idx_tx_taxes_pk and fk_tx_taxes_pk are present on transaction_taxes, and fails the run before touching any transaction if either is missing.}
+        {--apply : Persist changes. Requires --day (single-day only — --from/--to whole-window apply is not permitted). Schema pre-flight checks run automatically before any write: required-column existence on transactions/transaction_taxes, then idx_tx_taxes_pk/fk_tx_taxes_pk presence on transaction_taxes — either failing fails the run before touching any transaction. Dry-run also checks required-column existence (not the index/FK check).}
         {--chunk=500 : Transactions per chunk.}
         {--limit= : Stop after N transactions scanned (piloting).}
         {--throttle= : Inter-chunk delay in milliseconds for --apply. Defaults to 500 when --apply is given and this is omitted. Ignored for dry-run.}
@@ -320,7 +324,10 @@ class BackfillTransactionTaxes extends Command
      *     totals: array{scanned: int, reconstructed: int, skipped_existing: int, quarantined: int, failed: int},
      *     per_tenant: list<array<string, int>>,
      *     per_day: list<array<string, int|string>>,
-     *     preflight_checks: array{index_present: bool, fk_present: bool, fk_on_delete_action: string|null, transaction_pk_nullable: bool, passed: bool}|null,
+     *     preflight_checks: array{
+     *         required_columns: array{missing: list<string>, passed: bool},
+     *         schema_integrity: array{index_present: bool, fk_present: bool, fk_on_delete_action: string|null, transaction_pk_nullable: bool, passed: bool}|null,
+     *     }|null,
      * }
      */
     protected function buildResult(TaxBackfillRun $run): array
@@ -343,9 +350,11 @@ class BackfillTransactionTaxes extends Command
             ],
             'per_tenant' => $this->breakdownByTenant($run),
             'per_day' => $this->breakdownByDay($run),
-            // Slice 9 (T097): null for dry-run rows (dryRun() never runs the
-            // pre-flight check) and for any legacy apply row created before
-            // this column existed.
+            // Slice 9 (T097) + Slice 10 (T018): the envelope shape is
+            // `{'required_columns' => ..., 'schema_integrity' => ...|null}`
+            // as of Slice 10 — both dryRun() and apply() now always record
+            // something here, so `null` should only ever be seen for a
+            // legacy run row created before this column existed.
             'preflight_checks' => $run->preflight_checks,
         ];
     }
@@ -505,22 +514,41 @@ class BackfillTransactionTaxes extends Command
     }
 
     /**
-     * Slice 9 (T097): a run that failed schema pre-flight is the one place
-     * "loud failure" matters as much as Slice 5's verification oracle did —
-     * an operator reading this output must immediately understand *why*
-     * nothing happened, without cross-referencing anything else.
+     * Slice 9 (T097) + Slice 10 (T018): a run that failed schema pre-flight
+     * is the one place "loud failure" matters as much as Slice 5's
+     * verification oracle did — an operator reading this output must
+     * immediately understand *why* nothing happened, without cross-
+     * referencing anything else. As of Slice 10, $checks is the
+     * `{'required_columns' => ..., 'schema_integrity' => ...|null}` envelope
+     * (see buildResult()'s docblock), and this method names *which* of the
+     * two independent checks failed — a missing required column reads
+     * distinctly from a missing index/FK, never a generic "pre-flight
+     * failed" with no further detail.
      *
-     * @param  array{index_present: bool, fk_present: bool, fk_on_delete_action: string|null, transaction_pk_nullable: bool, passed: bool}  $checks
+     * @param  array{required_columns: array{missing: list<string>, passed: bool}, schema_integrity: array{index_present: bool, fk_present: bool, fk_on_delete_action: string|null, transaction_pk_nullable: bool, passed: bool}|null}  $checks
      */
     protected function renderPreflightFailure(array $checks): void
     {
         $this->newLine();
         $this->error('SCHEMA PRE-FLIGHT FAILED — no transactions were scanned, nothing was written.');
 
-        $failedChecks = array_filter([
-            $checks['index_present'] ? null : 'missing index: idx_tx_taxes_pk on transaction_taxes.transaction_pk',
-            $checks['fk_present'] ? null : 'missing foreign key: fk_tx_taxes_pk on transaction_taxes.transaction_pk',
-        ]);
+        $failedChecks = [];
+
+        foreach ($checks['required_columns']['missing'] as $column) {
+            $failedChecks[] = "required column '{$column}' is missing";
+        }
+
+        if ($checks['schema_integrity'] !== null) {
+            $schemaIntegrity = $checks['schema_integrity'];
+
+            if (! $schemaIntegrity['index_present']) {
+                $failedChecks[] = 'schema integrity check failed: missing index idx_tx_taxes_pk on transaction_taxes.transaction_pk';
+            }
+
+            if (! $schemaIntegrity['fk_present']) {
+                $failedChecks[] = 'schema integrity check failed: missing foreign key fk_tx_taxes_pk on transaction_taxes.transaction_pk';
+            }
+        }
 
         foreach ($failedChecks as $reason) {
             $this->error('  - '.$reason);
@@ -532,22 +560,43 @@ class BackfillTransactionTaxes extends Command
 
     /**
      * Plain, non-alarming rendering of the observed pre-flight facts for a
-     * run that has them — used both standalone (a passing apply run) and as
-     * part of the louder failure rendering above.
+     * run that has them — used both standalone (a passing dry-run/apply run)
+     * and as part of the louder failure rendering above. `schema_integrity`
+     * is rendered only when present (non-null) — it's always null for
+     * dry-run rows, and also null for an apply row whose `required_columns`
+     * check already failed (T018's deliberate short-circuit: `check()` was
+     * never even called).
      *
-     * @param  array{index_present: bool, fk_present: bool, fk_on_delete_action: string|null, transaction_pk_nullable: bool, passed: bool}  $checks
+     * @param  array{required_columns: array{missing: list<string>, passed: bool}, schema_integrity: array{index_present: bool, fk_present: bool, fk_on_delete_action: string|null, transaction_pk_nullable: bool, passed: bool}|null}  $checks
      */
     protected function renderPreflightFacts(array $checks): void
     {
-        $this->line('Schema pre-flight:');
+        $requiredColumns = $checks['required_columns'];
+
+        $this->line('Schema pre-flight — required columns:');
+        $this->table(
+            ['Missing columns', 'Passed'],
+            [[
+                $requiredColumns['missing'] === [] ? 'none' : implode(', ', $requiredColumns['missing']),
+                $requiredColumns['passed'] ? 'yes' : 'NO',
+            ]]
+        );
+
+        if ($checks['schema_integrity'] === null) {
+            return;
+        }
+
+        $schemaIntegrity = $checks['schema_integrity'];
+
+        $this->line('Schema pre-flight — schema integrity (transaction_taxes):');
         $this->table(
             ['Index present (idx_tx_taxes_pk)', 'FK present (fk_tx_taxes_pk)', 'FK ON DELETE action', 'transaction_pk nullable', 'Passed'],
             [[
-                $checks['index_present'] ? 'yes' : 'NO',
-                $checks['fk_present'] ? 'yes' : 'NO',
-                $checks['fk_on_delete_action'] ?? 'n/a',
-                $checks['transaction_pk_nullable'] ? 'yes' : 'no',
-                $checks['passed'] ? 'yes' : 'NO',
+                $schemaIntegrity['index_present'] ? 'yes' : 'NO',
+                $schemaIntegrity['fk_present'] ? 'yes' : 'NO',
+                $schemaIntegrity['fk_on_delete_action'] ?? 'n/a',
+                $schemaIntegrity['transaction_pk_nullable'] ? 'yes' : 'no',
+                $schemaIntegrity['passed'] ? 'yes' : 'NO',
             ]]
         );
     }

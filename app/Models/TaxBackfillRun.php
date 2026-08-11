@@ -42,14 +42,17 @@ class TaxBackfillRun extends Model
     public const STATUS_STOPPED = 'stopped';
 
     /**
-     * Slice 9 (T097): a schema pre-flight check
+     * Slice 9 (T097) + Slice 10 (T018): a schema pre-flight check
      * (App\Services\Backfill\TaxBackfillPreflightChecker) failed before
-     * TaxBackfillRunner::apply() scanned a single transaction — distinct
-     * from STATUS_FAILED (a processing error), STATUS_INTERRUPTED (an
-     * unanticipated crash), and STATUS_STOPPED (a deliberate operator
+     * TaxBackfillRunner::dryRun()/apply() scanned a single transaction —
+     * distinct from STATUS_FAILED (a processing error), STATUS_INTERRUPTED
+     * (an unanticipated crash), and STATUS_STOPPED (a deliberate operator
      * kill-switch stop). scanned_count and every other counter stay exactly
-     * 0 for a run in this status. Never reachable from dryRun(), which never
-     * calls the checker.
+     * 0 for a run in this status. Reachable from both dryRun() and apply():
+     * dryRun() can reach it via a missing required column
+     * (checkRequiredColumns()); apply() can reach it via either that same
+     * check or T097's index/FK/nullability check() — dryRun() never calls
+     * check() itself.
      */
     public const STATUS_PREFLIGHT_FAILED = 'preflight_failed';
 

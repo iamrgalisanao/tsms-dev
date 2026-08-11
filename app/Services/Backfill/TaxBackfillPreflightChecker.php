@@ -7,15 +7,29 @@ namespace App\Services\Backfill;
 use Illuminate\Support\Facades\Schema;
 
 /**
- * 002-backfill-transaction-taxes, Slice 9 (T097).
+ * 002-backfill-transaction-taxes, Slice 9 (T097) + Slice 10 (T018).
  *
- * Schema pre-flight check run once, at the very start of
- * TaxBackfillRunner::apply() (never dryRun()), before any transaction is
- * scanned — see specs/002-backfill-transaction-taxes/slice-9-preflight-brief.md
- * for the full scope contract.
+ * Two independent, differently-scoped schema pre-flight checks, both
+ * recorded (as a small envelope — see TaxBackfillRunner's own docblock for
+ * the exact shape) on TaxBackfillRun::preflight_checks:
  *
- * Per the brief's fact table, only two of the four observed facts gate the
- * run:
+ *  - check() (T097, Slice 9): index/FK/nullability on transaction_taxes.
+ *    apply()-only, unchanged by Slice 10 — see this method's own docblock
+ *    below.
+ *  - checkRequiredColumns() (T018, Slice 10): column *existence* across
+ *    `transactions` and `transaction_taxes` — the columns this feature's
+ *    read path (TaxReconstructionService) and write path
+ *    (TaxBackfillRunner::insertTaxRows()) actually depend on. Run from BOTH
+ *    dryRun() and apply(), because a missing column breaks dry-run too (just
+ *    with a confusing raw SQL error instead of a clean pre-flight failure).
+ *
+ * These two methods are deliberately independent — different callers,
+ * different gating scope — and neither is merged into the other. See
+ * specs/002-backfill-transaction-taxes/slice-9-preflight-brief.md and
+ * specs/002-backfill-transaction-taxes/slice-10-t018-column-preflight-brief.md.
+ *
+ * Per the Slice 9 brief's fact table, only two of check()'s four observed
+ * facts gate the run:
  *  - `index_present` (idx_tx_taxes_pk on transaction_taxes.transaction_pk):
  *    gates. Without it, chunked scans/deletes against a multi-million-row
  *    table are unsafe by construction.
@@ -58,6 +72,53 @@ class TaxBackfillPreflightChecker
     protected const COLUMN_NAME = 'transaction_pk';
 
     /**
+     * Slice 10 (T018): columns this feature's read/write paths depend on in
+     * `transactions` — a table this feature reads from but does not own the
+     * schema of. Most (original_payload, vatable_sales, vat_amount,
+     * sc_vat_exempt_sales) are read directly by
+     * TaxReconstructionService::reconstructTaxRows()/crossCheck(); `id` and
+     * `created_at` are read/written via TaxBackfillRunner::insertTaxRows();
+     * `tenant_id` is included defensively (recorded on
+     * TaxBackfillRecord/used for --tenant filtering elsewhere in this
+     * feature) rather than because either of those two classes reads it
+     * directly.
+     *
+     * @var list<string>
+     */
+    protected const REQUIRED_TRANSACTIONS_COLUMNS = [
+        'id',
+        'tenant_id',
+        'created_at',
+        'original_payload',
+        'vatable_sales',
+        'vat_amount',
+        'sc_vat_exempt_sales',
+    ];
+
+    /**
+     * Slice 10 (T018): columns this feature's read/write paths depend on in
+     * `transaction_taxes`. `transaction_pk`, `tax_type`, and `amount` are
+     * written directly by TaxBackfillRunner::insertTaxRows() and read back
+     * by TaxReconstructionService::crossCheck()/the verification oracle;
+     * `created_at` is written by insertTaxRows() (the parent transaction's
+     * own created_at, per its docblock); `id` is included defensively (an
+     * ordinary primary key expected on any real table, not one this
+     * feature's own code reads by name). `updated_at` is deliberately
+     * excluded — it's already conditionally checked via Schema::hasColumn()
+     * inside insertTaxRows() itself, so duplicating it here would be
+     * redundant.
+     *
+     * @var list<string>
+     */
+    protected const REQUIRED_TRANSACTION_TAXES_COLUMNS = [
+        'id',
+        'transaction_pk',
+        'tax_type',
+        'amount',
+        'created_at',
+    ];
+
+    /**
      * @return array{index_present: bool, fk_present: bool, fk_on_delete_action: string|null, transaction_pk_nullable: bool, passed: bool}
      */
     public function check(): array
@@ -85,6 +146,46 @@ class TaxBackfillPreflightChecker
             'fk_on_delete_action' => $fkOnDeleteAction,
             'transaction_pk_nullable' => $transactionPkNullable,
             'passed' => $indexPresent && $fkPresent,
+        ];
+    }
+
+    /**
+     * Slice 10 (T018): existence check (not full column introspection —
+     * Schema::hasColumn() is the simplest, most direct tool for a plain
+     * existence question) for every column named in
+     * self::REQUIRED_TRANSACTIONS_COLUMNS / self::REQUIRED_TRANSACTION_TAXES_COLUMNS.
+     * Independent of check() — different caller (both dryRun() and apply(),
+     * not apply()-only), different gating rule, never merged into one
+     * combined method.
+     *
+     * Deliberately does not check `tax_backfill_runs`/`tax_backfill_records`
+     * — this feature's own migrated tables. If those are missing, the very
+     * first TaxBackfillRun::create() call already fails immediately and
+     * unambiguously; that is not the confusing case this check exists to
+     * prevent (a column silently missing on a table this feature doesn't
+     * own the schema of).
+     *
+     * @return array{missing: list<string>, passed: bool}
+     */
+    public function checkRequiredColumns(): array
+    {
+        $missing = [];
+
+        foreach (self::REQUIRED_TRANSACTIONS_COLUMNS as $column) {
+            if (! Schema::hasColumn('transactions', $column)) {
+                $missing[] = "transactions.{$column}";
+            }
+        }
+
+        foreach (self::REQUIRED_TRANSACTION_TAXES_COLUMNS as $column) {
+            if (! Schema::hasColumn('transaction_taxes', $column)) {
+                $missing[] = "transaction_taxes.{$column}";
+            }
+        }
+
+        return [
+            'missing' => $missing,
+            'passed' => $missing === [],
         ];
     }
 }

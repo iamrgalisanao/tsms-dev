@@ -640,9 +640,15 @@ class BackfillTransactionTaxesTest extends TestCase
             $this->assertIsArray($decoded, 'Expected valid JSON output: '.$jsonOutput);
             $this->assertSame(TaxBackfillRun::STATUS_PREFLIGHT_FAILED, $decoded['status']);
             $this->assertSame(0, $decoded['totals']['scanned']);
+            // Slice 10: preflight_checks is now the
+            // {'required_columns' => ..., 'schema_integrity' => ...} envelope
+            // — the index/FK facts this test forces live under the nested
+            // schema_integrity key, not the top level.
             $this->assertIsArray($decoded['preflight_checks']);
-            $this->assertFalse($decoded['preflight_checks']['index_present']);
-            $this->assertTrue($decoded['preflight_checks']['fk_present']);
+            $this->assertTrue($decoded['preflight_checks']['required_columns']['passed']);
+            $this->assertIsArray($decoded['preflight_checks']['schema_integrity']);
+            $this->assertFalse($decoded['preflight_checks']['schema_integrity']['index_present']);
+            $this->assertTrue($decoded['preflight_checks']['schema_integrity']['fk_present']);
 
             $humanExit = Artisan::call('transactions:backfill-taxes', [
                 '--day' => $day,
@@ -654,6 +660,7 @@ class BackfillTransactionTaxesTest extends TestCase
             $this->assertSame(4, $humanExit);
             $this->assertStringContainsString('PRE-FLIGHT FAILED', $humanOutput);
             $this->assertStringContainsString('idx_tx_taxes_pk', $humanOutput);
+            $this->assertStringContainsString('schema integrity check failed', $humanOutput);
 
             $this->assertSame(0, DB::table('transaction_taxes')->where('transaction_pk', $tx->id)->count());
         } finally {
@@ -668,10 +675,96 @@ class BackfillTransactionTaxesTest extends TestCase
     }
 
     /**
-     * Slice 9 (T097): dry-run output never includes a real preflight_checks
-     * result — dryRun() never calls the checker.
+     * Slice 10 (T018): a missing required column (a distinct failure mode
+     * from Slice 9's missing index/FK above) also surfaces via the CLI with
+     * the same distinct exit code, but wording that clearly names *which*
+     * check failed — "required column ... is missing" for this case, never
+     * conflated with "schema integrity check failed" (the index/FK wording
+     * exercised by the test above).
+     *
+     * Same DDL-implicit-commit/manual-restoration discipline as every other
+     * destructive test in this suite: ALTER TABLE flushes the ambient
+     * RefreshDatabase transaction, so restoration is explicit and verified
+     * via a real Schema::hasColumn() assertion inside `finally` itself.
      */
-    public function test_dry_run_json_output_has_null_preflight_checks(): void
+    public function test_apply_against_a_forced_missing_column_exits_with_the_distinct_code_and_names_the_missing_column(): void
+    {
+        $tenant = Tenant::factory()->create();
+        $day = '2026-07-22';
+
+        $tx = $this->makeTransaction($tenant, [
+            'created_at' => "{$day} 08:00:00",
+            'original_payload' => json_encode(['taxes' => [['tax_type' => 'VAT', 'amount' => 45.00]]]),
+            'vat_amount' => 45.00,
+        ]);
+
+        $columnDefinition = collect(Schema::getColumns('transactions'))
+            ->firstOrFail(fn (array $c) => $c['name'] === 'vat_amount');
+
+        DB::statement('ALTER TABLE transactions DROP COLUMN vat_amount');
+
+        try {
+            $jsonExit = Artisan::call('transactions:backfill-taxes', [
+                '--day' => $day,
+                '--tenant' => [$tenant->id],
+                '--apply' => true,
+                '--json' => true,
+            ]);
+            $jsonOutput = Artisan::output();
+            $decoded = json_decode($jsonOutput, true);
+
+            $this->assertSame(4, $jsonExit);
+            $this->assertIsArray($decoded, 'Expected valid JSON output: '.$jsonOutput);
+            $this->assertSame(TaxBackfillRun::STATUS_PREFLIGHT_FAILED, $decoded['status']);
+            $this->assertSame(0, $decoded['totals']['scanned']);
+            $this->assertIsArray($decoded['preflight_checks']);
+            $this->assertFalse($decoded['preflight_checks']['required_columns']['passed']);
+            $this->assertContains('transactions.vat_amount', $decoded['preflight_checks']['required_columns']['missing']);
+            // The deliberate short-circuit: check() was never even called
+            // once the required-columns check already failed.
+            $this->assertNull($decoded['preflight_checks']['schema_integrity']);
+
+            $humanExit = Artisan::call('transactions:backfill-taxes', [
+                '--day' => $day,
+                '--tenant' => [$tenant->id],
+                '--apply' => true,
+            ]);
+            $humanOutput = Artisan::output();
+
+            $this->assertSame(4, $humanExit);
+            $this->assertStringContainsString('PRE-FLIGHT FAILED', $humanOutput);
+            $this->assertStringContainsString("required column 'transactions.vat_amount' is missing", $humanOutput);
+            // Distinct wording from a schema-integrity (index/FK) failure —
+            // an operator must be able to tell the two failure modes apart
+            // immediately.
+            $this->assertStringNotContainsString('schema integrity check failed', $humanOutput);
+
+            $this->assertSame(0, DB::table('transaction_taxes')->where('transaction_pk', $tx->id)->count());
+        } finally {
+            $nullClause = $columnDefinition['nullable'] ? 'NULL' : 'NOT NULL';
+            $defaultClause = $columnDefinition['default'] !== null && $columnDefinition['default'] !== ''
+                ? " DEFAULT '{$columnDefinition['default']}'"
+                : '';
+
+            DB::statement(
+                "ALTER TABLE transactions ADD COLUMN vat_amount {$columnDefinition['type']} {$nullClause}{$defaultClause} AFTER sc_vat_exempt_sales"
+            );
+
+            $this->assertTrue(
+                Schema::hasColumn('transactions', 'vat_amount'),
+                'CRITICAL: transactions.vat_amount was not restored after this test — the shared test database schema is now broken for every subsequent test run.'
+            );
+        }
+    }
+
+    /**
+     * Slice 9 (T097) + Slice 10 (T018): dry-run output's `schema_integrity`
+     * sub-key is always null — dryRun() never calls check() (T097's
+     * index/FK/nullability check stays apply()-only) — but as of Slice 10,
+     * `required_columns` is always populated for dry-run too, since
+     * checkRequiredColumns() now runs from both dryRun() and apply().
+     */
+    public function test_dry_run_json_output_has_populated_required_columns_and_null_schema_integrity(): void
     {
         $tenant = Tenant::factory()->create();
         $day = '2026-07-21';
@@ -690,7 +783,10 @@ class BackfillTransactionTaxesTest extends TestCase
 
         $this->assertSame(0, $exitCode);
         $this->assertArrayHasKey('preflight_checks', $decoded);
-        $this->assertNull($decoded['preflight_checks']);
+        $this->assertIsArray($decoded['preflight_checks']);
+        $this->assertTrue($decoded['preflight_checks']['required_columns']['passed']);
+        $this->assertSame([], $decoded['preflight_checks']['required_columns']['missing']);
+        $this->assertNull($decoded['preflight_checks']['schema_integrity']);
     }
 
     public function test_zero_writes_to_transaction_taxes_regardless_of_outcome_mix(): void

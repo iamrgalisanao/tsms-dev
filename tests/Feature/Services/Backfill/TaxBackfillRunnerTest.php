@@ -1632,10 +1632,11 @@ class TaxBackfillRunnerTest extends TestCase
     }
 
     /**
-     * Slice 9 (T097): against today's real schema (both idx_tx_taxes_pk and
-     * fk_tx_taxes_pk present), the pre-flight check passes and apply()
-     * proceeds exactly as it did before this slice — with the full observed
-     * result recorded on the run regardless.
+     * Slice 9 (T097) + Slice 10 (T018): against today's real schema (both
+     * idx_tx_taxes_pk and fk_tx_taxes_pk present, all required columns
+     * present), both pre-flight checks pass and apply() proceeds exactly as
+     * it did before this slice — with the full observed envelope recorded on
+     * the run regardless.
      */
     public function test_apply_records_a_passing_preflight_check_and_proceeds_normally(): void
     {
@@ -1654,13 +1655,187 @@ class TaxBackfillRunnerTest extends TestCase
         $this->assertSame(1, $run->scanned_count);
         $this->assertSame(1, $run->reconstructed_count);
 
+        $this->assertTrue($run->preflight_checks['required_columns']['passed']);
+        $this->assertSame([], $run->preflight_checks['required_columns']['missing']);
+
         $this->assertSame([
             'index_present' => true,
             'fk_present' => true,
             'fk_on_delete_action' => 'cascade',
             'transaction_pk_nullable' => true,
             'passed' => true,
-        ], $run->preflight_checks);
+        ], $run->preflight_checks['schema_integrity']);
+    }
+
+    /**
+     * Slice 10 (T018): dryRun() against today's real schema also runs
+     * checkRequiredColumns() and records a passing result — but never
+     * touches check() (T097's index/FK/nullability check stays apply()-only),
+     * so `schema_integrity` is always null for a dry-run row.
+     */
+    public function test_dry_run_records_a_passing_required_columns_check_and_proceeds_normally(): void
+    {
+        $tenant = Tenant::factory()->create();
+
+        $this->makeTransaction($tenant, ['original_payload' => null]);
+
+        $run = $this->runner()->dryRun(now()->subDay(), now()->addDay(), $tenant->id);
+
+        $this->assertSame(TaxBackfillRun::STATUS_COMPLETED, $run->status);
+        $this->assertSame(1, $run->scanned_count);
+
+        $this->assertIsArray($run->preflight_checks);
+        $this->assertTrue($run->preflight_checks['required_columns']['passed']);
+        $this->assertSame([], $run->preflight_checks['required_columns']['missing']);
+        $this->assertNull($run->preflight_checks['schema_integrity']);
+    }
+
+    /**
+     * Captures transactions.vat_amount's exact column definition (type,
+     * nullable, default) via Schema::getColumns() so a test that drops it
+     * can restore it faithfully afterward — not merely as "a column with
+     * this name," per the Slice 10 brief's explicit restoration discipline.
+     *
+     * @return array{type: string, nullable: bool, default: mixed}
+     */
+    private function captureVatAmountColumnDefinition(): array
+    {
+        $column = collect(Schema::getColumns('transactions'))
+            ->firstOrFail(fn (array $c) => $c['name'] === 'vat_amount');
+
+        return [
+            'type' => $column['type'],
+            'nullable' => (bool) $column['nullable'],
+            'default' => $column['default'],
+        ];
+    }
+
+    /**
+     * Restores transactions.vat_amount from a definition captured by
+     * captureVatAmountColumnDefinition(), positioned back after
+     * sc_vat_exempt_sales (its real position in the live schema, confirmed
+     * via `SHOW CREATE TABLE transactions`) so the column order matches what
+     * it was before the test dropped it.
+     *
+     * @param  array{type: string, nullable: bool, default: mixed}  $definition
+     */
+    private function restoreVatAmountColumn(array $definition): void
+    {
+        $nullClause = $definition['nullable'] ? 'NULL' : 'NOT NULL';
+        $defaultClause = $definition['default'] !== null && $definition['default'] !== ''
+            ? " DEFAULT '{$definition['default']}'"
+            : '';
+
+        DB::statement(
+            "ALTER TABLE transactions ADD COLUMN vat_amount {$definition['type']} {$nullClause}{$defaultClause} AFTER sc_vat_exempt_sales"
+        );
+    }
+
+    /**
+     * Slice 10 (T018): a required column missing from `transactions` must
+     * fail dryRun() before it scans a single transaction — dryRun() would
+     * otherwise fail with a raw, confusing SQL error the first time it tried
+     * to read the missing column, rather than a clean pre-flight failure.
+     *
+     * ALTER TABLE causes an implicit commit in MySQL/InnoDB, flushing this
+     * test's ambient RefreshDatabase transaction (the known isolation gap
+     * tracked at tests/TestCase.php:38 — Slice 9 already established this
+     * exact discipline for its own destructive index/FK tests), so
+     * restoration is explicit and verified via a real Schema::hasColumn()
+     * assertion inside `finally` itself, never a normal assertion an early
+     * failure could skip.
+     */
+    public function test_dry_run_fails_preflight_and_touches_nothing_when_a_required_transactions_column_is_missing(): void
+    {
+        $tenant = Tenant::factory()->create();
+
+        $transaction = $this->makeTransaction($tenant, [
+            'original_payload' => json_encode([
+                'taxes' => [['tax_type' => 'VAT', 'amount' => 20.00]],
+            ]),
+            'vat_amount' => 20.00,
+        ]);
+
+        $columnDefinition = $this->captureVatAmountColumnDefinition();
+
+        DB::statement('ALTER TABLE transactions DROP COLUMN vat_amount');
+
+        try {
+            $run = $this->runner()->dryRun(now()->subDay(), now()->addDay(), $tenant->id);
+
+            $this->assertSame(TaxBackfillRun::STATUS_PREFLIGHT_FAILED, $run->status);
+            $this->assertNotNull($run->completed_at);
+            $this->assertSame(0, $run->scanned_count);
+            $this->assertSame(0, $run->reconstructed_count);
+            $this->assertSame(0, $run->skipped_existing_count);
+            $this->assertSame(0, $run->quarantined_count);
+            $this->assertSame(0, $run->failed_count);
+
+            $this->assertSame(0, TaxBackfillRecord::where('run_id', $run->id)->count());
+
+            $this->assertIsArray($run->preflight_checks);
+            $this->assertFalse($run->preflight_checks['required_columns']['passed']);
+            $this->assertContains('transactions.vat_amount', $run->preflight_checks['required_columns']['missing']);
+            $this->assertNull($run->preflight_checks['schema_integrity']);
+            $this->assertSame(0, DB::table('transaction_taxes')->where('transaction_pk', $transaction->id)->count());
+        } finally {
+            $this->restoreVatAmountColumn($columnDefinition);
+
+            $this->assertTrue(
+                Schema::hasColumn('transactions', 'vat_amount'),
+                'CRITICAL: transactions.vat_amount was not restored after this test — the shared test database schema is now broken for every subsequent test run.'
+            );
+        }
+    }
+
+    /**
+     * Slice 10 (T018): the same missing-column scenario proven against
+     * apply() — must fail just as cleanly, before scanning or writing
+     * anything, and (per the deliberate short-circuit documented on
+     * TaxBackfillRunner::apply()) `schema_integrity` stays null because
+     * check() (T097's index/FK check) is never even called once
+     * checkRequiredColumns() has already failed.
+     */
+    public function test_apply_fails_preflight_and_touches_nothing_when_a_required_transactions_column_is_missing(): void
+    {
+        $tenant = Tenant::factory()->create();
+
+        $transaction = $this->makeTransaction($tenant, [
+            'original_payload' => json_encode([
+                'taxes' => [['tax_type' => 'VAT', 'amount' => 20.00]],
+            ]),
+            'vat_amount' => 20.00,
+        ]);
+
+        $columnDefinition = $this->captureVatAmountColumnDefinition();
+
+        DB::statement('ALTER TABLE transactions DROP COLUMN vat_amount');
+
+        try {
+            $run = $this->runner()->apply($transaction->created_at->copy(), $tenant->id);
+
+            $this->assertSame(TaxBackfillRun::STATUS_PREFLIGHT_FAILED, $run->status);
+            $this->assertNotNull($run->completed_at);
+            $this->assertSame(0, $run->scanned_count);
+
+            $this->assertSame(0, TaxBackfillRecord::where('run_id', $run->id)->count());
+            $this->assertSame(0, DB::table('transaction_taxes')->where('transaction_pk', $transaction->id)->count());
+
+            $this->assertIsArray($run->preflight_checks);
+            $this->assertFalse($run->preflight_checks['required_columns']['passed']);
+            $this->assertContains('transactions.vat_amount', $run->preflight_checks['required_columns']['missing']);
+            // The deliberate short-circuit: check() was never called at all,
+            // so schema_integrity is null rather than a fabricated pass/fail
+            // for a check that never ran.
+            $this->assertNull($run->preflight_checks['schema_integrity']);
+        } finally {
+            $this->restoreVatAmountColumn($columnDefinition);
+
+            $this->assertTrue(
+                Schema::hasColumn('transactions', 'vat_amount'),
+                'CRITICAL: transactions.vat_amount was not restored after this test — the shared test database schema is now broken for every subsequent test run.'
+            );
+        }
     }
 
     /**
@@ -1713,10 +1888,15 @@ class TaxBackfillRunnerTest extends TestCase
             $this->assertSame(0, TaxBackfillRecord::where('run_id', $run->id)->count());
             $this->assertSame(0, DB::table('transaction_taxes')->where('transaction_pk', $transaction->id)->count());
 
+            // Slice 10: required_columns still passes (nothing about this
+            // test drops a column) — schema_integrity is the check that
+            // fails, now nested under its own envelope key.
             $this->assertIsArray($run->preflight_checks);
-            $this->assertFalse($run->preflight_checks['index_present']);
-            $this->assertTrue($run->preflight_checks['fk_present']);
-            $this->assertFalse($run->preflight_checks['passed']);
+            $this->assertTrue($run->preflight_checks['required_columns']['passed']);
+            $this->assertIsArray($run->preflight_checks['schema_integrity']);
+            $this->assertFalse($run->preflight_checks['schema_integrity']['index_present']);
+            $this->assertTrue($run->preflight_checks['schema_integrity']['fk_present']);
+            $this->assertFalse($run->preflight_checks['schema_integrity']['passed']);
         } finally {
             DB::statement('ALTER TABLE transaction_taxes ADD INDEX idx_tx_taxes_pk (transaction_pk)');
             DB::statement('ALTER TABLE transaction_taxes DROP INDEX idx_tmp_preflight_holder');
@@ -1759,11 +1939,15 @@ class TaxBackfillRunnerTest extends TestCase
             $this->assertSame(0, TaxBackfillRecord::where('run_id', $run->id)->count());
             $this->assertSame(0, DB::table('transaction_taxes')->where('transaction_pk', $transaction->id)->count());
 
+            // Slice 10: required_columns still passes — schema_integrity is
+            // the check that fails, now nested under its own envelope key.
             $this->assertIsArray($run->preflight_checks);
-            $this->assertTrue($run->preflight_checks['index_present']);
-            $this->assertFalse($run->preflight_checks['fk_present']);
-            $this->assertNull($run->preflight_checks['fk_on_delete_action']);
-            $this->assertFalse($run->preflight_checks['passed']);
+            $this->assertTrue($run->preflight_checks['required_columns']['passed']);
+            $this->assertIsArray($run->preflight_checks['schema_integrity']);
+            $this->assertTrue($run->preflight_checks['schema_integrity']['index_present']);
+            $this->assertFalse($run->preflight_checks['schema_integrity']['fk_present']);
+            $this->assertNull($run->preflight_checks['schema_integrity']['fk_on_delete_action']);
+            $this->assertFalse($run->preflight_checks['schema_integrity']['passed']);
         } finally {
             DB::statement('ALTER TABLE transaction_taxes ADD CONSTRAINT fk_tx_taxes_pk FOREIGN KEY (transaction_pk) REFERENCES transactions (id) ON DELETE CASCADE');
 
@@ -1778,25 +1962,32 @@ class TaxBackfillRunnerTest extends TestCase
     }
 
     /**
-     * Slice 9 (T097): dryRun() must never call the pre-flight checker at
-     * all, and a dry-run TaxBackfillRun row must never have preflight_checks
-     * populated. Proved via a mock with shouldNotReceive('check') rather
-     * than merely asserting the outcome, so a future accidental call from
-     * inside dryRun() is caught even if it wouldn't otherwise change this
-     * run's recorded result.
+     * Slice 9 (T097) + Slice 10 (T018): dryRun() must never call check()
+     * (T097's index/FK/nullability check stays apply()-only), even though
+     * Slice 10 gave dryRun() its first-ever use of
+     * TaxBackfillPreflightChecker via checkRequiredColumns(). Proved via a
+     * mock with shouldNotReceive('check') rather than merely asserting the
+     * outcome, so a future accidental call from inside dryRun() is caught
+     * even if it wouldn't otherwise change this run's recorded result.
      */
-    public function test_dry_run_never_invokes_the_preflight_checker_and_records_no_preflight_checks(): void
+    public function test_dry_run_never_invokes_check_but_does_invoke_the_required_columns_check(): void
     {
         $tenant = Tenant::factory()->create();
         $this->makeTransaction($tenant, ['original_payload' => null]);
 
         $mockChecker = \Mockery::mock(TaxBackfillPreflightChecker::class);
         $mockChecker->shouldNotReceive('check');
+        $mockChecker->shouldReceive('checkRequiredColumns')
+            ->once()
+            ->andReturn(['missing' => [], 'passed' => true]);
 
         $run = $this->runner(null, $mockChecker)->dryRun(now()->subDay(), now()->addDay(), $tenant->id);
 
         $this->assertSame(TaxBackfillRun::STATUS_COMPLETED, $run->status);
-        $this->assertNull($run->preflight_checks);
+        $this->assertSame([
+            'required_columns' => ['missing' => [], 'passed' => true],
+            'schema_integrity' => null,
+        ], $run->preflight_checks);
     }
 
     protected function tearDown(): void

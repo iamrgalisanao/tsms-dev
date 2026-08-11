@@ -9,12 +9,21 @@ return new class extends Migration
     /**
      * Run the migrations.
      *
-     * Slice 9 (T097): holds the full structured result of
-     * App\Services\Backfill\TaxBackfillPreflightChecker::check() — not just
-     * a pass/fail bit — so the run's audit trail is honest about the exact
-     * schema state (index/FK presence, ON DELETE action, transaction_pk
-     * nullability) TaxBackfillRunner::apply() ran against. Always null for
-     * dry-run rows: TaxBackfillRunner::dryRun() never calls the checker.
+     * Slice 9 (T097) + Slice 10 (T018): holds a small envelope,
+     * `{'required_columns' => ..., 'schema_integrity' => ...|null}`, not a
+     * single flat result:
+     *  - `required_columns` is
+     *    App\Services\Backfill\TaxBackfillPreflightChecker::checkRequiredColumns()'s
+     *    result — populated for every row, dry-run and apply alike.
+     *  - `schema_integrity` is
+     *    App\Services\Backfill\TaxBackfillPreflightChecker::check()'s full
+     *    structured result (index/FK presence, ON DELETE action,
+     *    transaction_pk nullability) — so the run's audit trail is honest
+     *    about the exact schema state TaxBackfillRunner::apply() ran
+     *    against. Always null for dry-run rows (TaxBackfillRunner::dryRun()
+     *    never calls check()), and also null for an apply() row whose
+     *    `required_columns` check already failed (check() is short-
+     *    circuited in that case).
      */
     public function up(): void
     {
