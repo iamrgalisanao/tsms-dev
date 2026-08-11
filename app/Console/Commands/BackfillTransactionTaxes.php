@@ -23,11 +23,14 @@ use Illuminate\Support\Facades\DB;
  * when --day (a single day, never a --from/--to window) is given —
  * validateInput() enforces this before the runner is ever touched.
  *
- * Slice 8 deliberately does NOT add the T097 schema/index/FK pre-flight
- * (idx_tx_taxes_pk, fk_tx_taxes_pk + its ON DELETE action, transaction_pk
- * nullability) — see the brief's "Explicit gap" section. A real production
- * --apply invocation still requires that pre-flight (or a manual schema
- * check) before it's safe to run.
+ * Slice 9 (T097) closed the gap Slice 8 disclosed: TaxBackfillRunner::apply()
+ * now runs a schema pre-flight (idx_tx_taxes_pk, fk_tx_taxes_pk + its ON
+ * DELETE action, transaction_pk nullability) before scanning a single
+ * transaction. A failed pre-flight ends the run in
+ * TaxBackfillRun::STATUS_PREFLIGHT_FAILED (exit code self::EXIT_PREFLIGHT_FAILED
+ * below) with zero transactions touched — surfaced loudly in both human and
+ * --json output via the `preflight_checks` result. dryRun() never runs this
+ * check.
  *
  * Ergonomics mirror App\Console\Commands\LicenseBindingBackfillCommand per
  * specs/002-backfill-transaction-taxes/contracts/cli-contract.md (research
@@ -49,6 +52,15 @@ class BackfillTransactionTaxes extends Command
     protected const EXIT_STOPPED = 3;
 
     /**
+     * Slice 9 (T097): a schema pre-flight check failed before any
+     * transaction was scanned — distinct from both self::FAILURE (a
+     * processing error) and self::EXIT_INTERRUPTED, so a calling script can
+     * tell "the schema isn't safe to run against" apart from either. Only
+     * ever reachable via --apply; dry-run never runs the pre-flight check.
+     */
+    protected const EXIT_PREFLIGHT_FAILED = 4;
+
+    /**
      * Conservative default throttle (ms) applied between chunks for a real
      * --apply run when --throttle isn't given explicitly. Irrelevant to
      * dry-run. Chosen per the Slice 8 brief as a middle ground: enough to
@@ -62,7 +74,7 @@ class BackfillTransactionTaxes extends Command
         {--to= : Window end (Y-m-d, inclusive). Required unless --day is given. Not permitted with --apply.}
         {--day= : Single day (Y-m-d). Shorthand for --from/--to over that one day. Required when --apply is given.}
         {--tenant=* : Restrict to one or more tenant ids. Repeatable, e.g. --tenant=1 --tenant=2.}
-        {--apply : Persist changes. Requires --day (single-day only — --from/--to whole-window apply is not permitted). Schema pre-flight (index/FK checks) not yet implemented — confirm target schema manually before a live run.}
+        {--apply : Persist changes. Requires --day (single-day only — --from/--to whole-window apply is not permitted). A schema pre-flight check runs automatically before any write: verifies idx_tx_taxes_pk and fk_tx_taxes_pk are present on transaction_taxes, and fails the run before touching any transaction if either is missing.}
         {--chunk=500 : Transactions per chunk.}
         {--limit= : Stop after N transactions scanned (piloting).}
         {--throttle= : Inter-chunk delay in milliseconds for --apply. Defaults to 500 when --apply is given and this is omitted. Ignored for dry-run.}
@@ -116,17 +128,21 @@ class BackfillTransactionTaxes extends Command
     }
 
     /**
-     * Five possible TaxBackfillRun statuses, mapped to distinct exit codes
-     * (Slice 8 brief, decision 3): 0 = completed with zero failures, 1 =
-     * failed (or completed with failed_count > 0), 2 = interrupted, 3 =
-     * stopped (deliberate kill-switch stop, never conflated with failed).
-     * Applies identically to dry-run and apply — a dry run can also end
-     * interrupted/failed in principle, just never stopped (dry-run never
-     * takes a kill-switch path).
+     * Six possible TaxBackfillRun statuses, mapped to distinct exit codes
+     * (Slice 8 brief, decision 3; Slice 9 brief for preflight_failed): 0 =
+     * completed with zero failures, 1 = failed (or completed with
+     * failed_count > 0), 2 = interrupted, 3 = stopped (deliberate
+     * kill-switch stop, never conflated with failed), 4 = preflight_failed
+     * (schema pre-flight rejected the run before any transaction was
+     * scanned). Applies identically to dry-run and apply for the first four
+     * — a dry run can also end interrupted/failed in principle, just never
+     * stopped or preflight_failed (dry-run never takes a kill-switch path
+     * and never runs the pre-flight check).
      */
     protected function exitCodeFor(array $result): int
     {
         return match (true) {
+            $result['status'] === TaxBackfillRun::STATUS_PREFLIGHT_FAILED => self::EXIT_PREFLIGHT_FAILED,
             $result['status'] === TaxBackfillRun::STATUS_STOPPED => self::EXIT_STOPPED,
             $result['status'] === TaxBackfillRun::STATUS_INTERRUPTED => self::EXIT_INTERRUPTED,
             $result['status'] === TaxBackfillRun::STATUS_FAILED => self::FAILURE,
@@ -304,6 +320,7 @@ class BackfillTransactionTaxes extends Command
      *     totals: array{scanned: int, reconstructed: int, skipped_existing: int, quarantined: int, failed: int},
      *     per_tenant: list<array<string, int>>,
      *     per_day: list<array<string, int|string>>,
+     *     preflight_checks: array{index_present: bool, fk_present: bool, fk_on_delete_action: string|null, transaction_pk_nullable: bool, passed: bool}|null,
      * }
      */
     protected function buildResult(TaxBackfillRun $run): array
@@ -326,6 +343,10 @@ class BackfillTransactionTaxes extends Command
             ],
             'per_tenant' => $this->breakdownByTenant($run),
             'per_day' => $this->breakdownByDay($run),
+            // Slice 9 (T097): null for dry-run rows (dryRun() never runs the
+            // pre-flight check) and for any legacy apply row created before
+            // this column existed.
+            'preflight_checks' => $run->preflight_checks,
         ];
     }
 
@@ -435,6 +456,12 @@ class BackfillTransactionTaxes extends Command
             $result['window']['end']
         ));
 
+        if ($result['status'] === TaxBackfillRun::STATUS_PREFLIGHT_FAILED) {
+            $this->renderPreflightFailure($result['preflight_checks']);
+        } elseif ($result['preflight_checks'] !== null) {
+            $this->renderPreflightFacts($result['preflight_checks']);
+        }
+
         $this->table(
             ['Scanned', 'Reconstructed', 'Skipped (existing)', 'Quarantined', 'Failed'],
             [[
@@ -475,5 +502,53 @@ class BackfillTransactionTaxes extends Command
                 ])->all()
             );
         }
+    }
+
+    /**
+     * Slice 9 (T097): a run that failed schema pre-flight is the one place
+     * "loud failure" matters as much as Slice 5's verification oracle did —
+     * an operator reading this output must immediately understand *why*
+     * nothing happened, without cross-referencing anything else.
+     *
+     * @param  array{index_present: bool, fk_present: bool, fk_on_delete_action: string|null, transaction_pk_nullable: bool, passed: bool}  $checks
+     */
+    protected function renderPreflightFailure(array $checks): void
+    {
+        $this->newLine();
+        $this->error('SCHEMA PRE-FLIGHT FAILED — no transactions were scanned, nothing was written.');
+
+        $failedChecks = array_filter([
+            $checks['index_present'] ? null : 'missing index: idx_tx_taxes_pk on transaction_taxes.transaction_pk',
+            $checks['fk_present'] ? null : 'missing foreign key: fk_tx_taxes_pk on transaction_taxes.transaction_pk',
+        ]);
+
+        foreach ($failedChecks as $reason) {
+            $this->error('  - '.$reason);
+        }
+
+        $this->renderPreflightFacts($checks);
+        $this->newLine();
+    }
+
+    /**
+     * Plain, non-alarming rendering of the observed pre-flight facts for a
+     * run that has them — used both standalone (a passing apply run) and as
+     * part of the louder failure rendering above.
+     *
+     * @param  array{index_present: bool, fk_present: bool, fk_on_delete_action: string|null, transaction_pk_nullable: bool, passed: bool}  $checks
+     */
+    protected function renderPreflightFacts(array $checks): void
+    {
+        $this->line('Schema pre-flight:');
+        $this->table(
+            ['Index present (idx_tx_taxes_pk)', 'FK present (fk_tx_taxes_pk)', 'FK ON DELETE action', 'transaction_pk nullable', 'Passed'],
+            [[
+                $checks['index_present'] ? 'yes' : 'NO',
+                $checks['fk_present'] ? 'yes' : 'NO',
+                $checks['fk_on_delete_action'] ?? 'n/a',
+                $checks['transaction_pk_nullable'] ? 'yes' : 'no',
+                $checks['passed'] ? 'yes' : 'NO',
+            ]]
+        );
     }
 }

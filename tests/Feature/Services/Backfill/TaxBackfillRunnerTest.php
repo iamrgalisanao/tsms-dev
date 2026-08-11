@@ -8,6 +8,7 @@ use App\Models\Tenant;
 use App\Models\Transaction;
 use App\Models\TransactionTax;
 use App\Services\Backfill\TaxBackfillOutcome;
+use App\Services\Backfill\TaxBackfillPreflightChecker;
 use App\Services\Backfill\TaxBackfillReasonCode;
 use App\Services\Backfill\TaxBackfillRunner;
 use App\Services\Backfill\TaxReconstructionService;
@@ -15,6 +16,7 @@ use App\Services\DeadlockRetryService;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use PDO;
 use PDOException;
 use PDOStatement;
@@ -110,9 +112,13 @@ class TaxBackfillRunnerTest extends TestCase
         ], $attributes));
     }
 
-    private function runner(?TaxReconstructionService $service = null): TaxBackfillRunner
+    private function runner(?TaxReconstructionService $service = null, ?TaxBackfillPreflightChecker $preflightChecker = null): TaxBackfillRunner
     {
-        return new TaxBackfillRunner($service ?? new TaxReconstructionService, new DeadlockRetryService);
+        return new TaxBackfillRunner(
+            $service ?? new TaxReconstructionService,
+            new DeadlockRetryService,
+            $preflightChecker ?? new TaxBackfillPreflightChecker
+        );
     }
 
     public function test_classifies_mixed_batch_into_correct_outcomes_and_updates_run_counters(): void
@@ -1623,6 +1629,174 @@ class TaxBackfillRunnerTest extends TestCase
 
         $this->assertSame(1, DB::table('transaction_taxes')->where('transaction_pk', $first->id)->count());
         $this->assertSame(1, DB::table('transaction_taxes')->where('transaction_pk', $second->id)->count());
+    }
+
+    /**
+     * Slice 9 (T097): against today's real schema (both idx_tx_taxes_pk and
+     * fk_tx_taxes_pk present), the pre-flight check passes and apply()
+     * proceeds exactly as it did before this slice — with the full observed
+     * result recorded on the run regardless.
+     */
+    public function test_apply_records_a_passing_preflight_check_and_proceeds_normally(): void
+    {
+        $tenant = Tenant::factory()->create();
+
+        $transaction = $this->makeTransaction($tenant, [
+            'original_payload' => json_encode([
+                'taxes' => [['tax_type' => 'VAT', 'amount' => 12.00]],
+            ]),
+            'vat_amount' => 12.00,
+        ]);
+
+        $run = $this->runner()->apply($transaction->created_at->copy(), $tenant->id);
+
+        $this->assertSame(TaxBackfillRun::STATUS_COMPLETED, $run->status);
+        $this->assertSame(1, $run->scanned_count);
+        $this->assertSame(1, $run->reconstructed_count);
+
+        $this->assertSame([
+            'index_present' => true,
+            'fk_present' => true,
+            'fk_on_delete_action' => 'cascade',
+            'transaction_pk_nullable' => true,
+            'passed' => true,
+        ], $run->preflight_checks);
+    }
+
+    /**
+     * Slice 9 (T097): idx_tx_taxes_pk missing must fail the run before any
+     * transaction is scanned — zero TaxBackfillRecord rows, zero
+     * transaction_taxes writes for a transaction that would otherwise have
+     * been cleanly reconstructable.
+     *
+     * MySQL refuses to drop an index that a foreign key still depends on
+     * (`Cannot drop index ... needed in a foreign key constraint`), so a
+     * throwaway holder index on the same column is added first, purely to
+     * satisfy that InnoDB requirement while idx_tx_taxes_pk itself is
+     * dropped. It plays no other role in this test and is removed again in
+     * the `finally` block below, alongside restoring idx_tx_taxes_pk itself.
+     *
+     * ALTER TABLE causes an implicit commit in MySQL/InnoDB, which flushes
+     * this test's ambient RefreshDatabase transaction — the known isolation
+     * gap this repo already tracks (tests/TestCase.php:38, tasks.md
+     * Backlog), so automatic per-test schema rollback cannot be relied on
+     * here. Restoration is therefore explicit, and verified via a real
+     * Schema::hasIndex() assertion inside `finally` itself (not a normal
+     * assertion an early return/failure could skip), per the Slice 9
+     * brief's test plan.
+     */
+    public function test_apply_fails_preflight_and_touches_nothing_when_the_index_is_missing(): void
+    {
+        $tenant = Tenant::factory()->create();
+
+        $transaction = $this->makeTransaction($tenant, [
+            'original_payload' => json_encode([
+                'taxes' => [['tax_type' => 'VAT', 'amount' => 20.00]],
+            ]),
+            'vat_amount' => 20.00,
+        ]);
+
+        DB::statement('ALTER TABLE transaction_taxes ADD INDEX idx_tmp_preflight_holder (transaction_pk)');
+        DB::statement('ALTER TABLE transaction_taxes DROP INDEX idx_tx_taxes_pk');
+
+        try {
+            $run = $this->runner()->apply($transaction->created_at->copy(), $tenant->id);
+
+            $this->assertSame(TaxBackfillRun::STATUS_PREFLIGHT_FAILED, $run->status);
+            $this->assertNotNull($run->completed_at);
+            $this->assertSame(0, $run->scanned_count);
+            $this->assertSame(0, $run->reconstructed_count);
+            $this->assertSame(0, $run->skipped_existing_count);
+            $this->assertSame(0, $run->quarantined_count);
+            $this->assertSame(0, $run->failed_count);
+
+            $this->assertSame(0, TaxBackfillRecord::where('run_id', $run->id)->count());
+            $this->assertSame(0, DB::table('transaction_taxes')->where('transaction_pk', $transaction->id)->count());
+
+            $this->assertIsArray($run->preflight_checks);
+            $this->assertFalse($run->preflight_checks['index_present']);
+            $this->assertTrue($run->preflight_checks['fk_present']);
+            $this->assertFalse($run->preflight_checks['passed']);
+        } finally {
+            DB::statement('ALTER TABLE transaction_taxes ADD INDEX idx_tx_taxes_pk (transaction_pk)');
+            DB::statement('ALTER TABLE transaction_taxes DROP INDEX idx_tmp_preflight_holder');
+
+            $this->assertTrue(
+                Schema::hasIndex('transaction_taxes', 'idx_tx_taxes_pk'),
+                'CRITICAL: idx_tx_taxes_pk was not restored after this test — the shared test database schema is now broken for every subsequent test run.'
+            );
+        }
+    }
+
+    /**
+     * Slice 9 (T097): fk_tx_taxes_pk missing must fail the run the same way
+     * the missing-index case above does. Same DDL-implicit-commit/manual-
+     * restoration discipline: dropping the FK constraint does not require a
+     * holder index (unlike the index-drop case, MySQL freely allows removing
+     * just the constraint while its backing index stays in place), but
+     * restoration is still explicit and verified in `finally`.
+     */
+    public function test_apply_fails_preflight_and_touches_nothing_when_the_foreign_key_is_missing(): void
+    {
+        $tenant = Tenant::factory()->create();
+
+        $transaction = $this->makeTransaction($tenant, [
+            'original_payload' => json_encode([
+                'taxes' => [['tax_type' => 'VAT', 'amount' => 30.00]],
+            ]),
+            'vat_amount' => 30.00,
+        ]);
+
+        DB::statement('ALTER TABLE transaction_taxes DROP FOREIGN KEY fk_tx_taxes_pk');
+
+        try {
+            $run = $this->runner()->apply($transaction->created_at->copy(), $tenant->id);
+
+            $this->assertSame(TaxBackfillRun::STATUS_PREFLIGHT_FAILED, $run->status);
+            $this->assertNotNull($run->completed_at);
+            $this->assertSame(0, $run->scanned_count);
+
+            $this->assertSame(0, TaxBackfillRecord::where('run_id', $run->id)->count());
+            $this->assertSame(0, DB::table('transaction_taxes')->where('transaction_pk', $transaction->id)->count());
+
+            $this->assertIsArray($run->preflight_checks);
+            $this->assertTrue($run->preflight_checks['index_present']);
+            $this->assertFalse($run->preflight_checks['fk_present']);
+            $this->assertNull($run->preflight_checks['fk_on_delete_action']);
+            $this->assertFalse($run->preflight_checks['passed']);
+        } finally {
+            DB::statement('ALTER TABLE transaction_taxes ADD CONSTRAINT fk_tx_taxes_pk FOREIGN KEY (transaction_pk) REFERENCES transactions (id) ON DELETE CASCADE');
+
+            $foreignKeyRestored = collect(Schema::getForeignKeys('transaction_taxes'))
+                ->contains(fn (array $fk) => $fk['name'] === 'fk_tx_taxes_pk');
+
+            $this->assertTrue(
+                $foreignKeyRestored,
+                'CRITICAL: fk_tx_taxes_pk was not restored after this test — the shared test database schema is now broken for every subsequent test run.'
+            );
+        }
+    }
+
+    /**
+     * Slice 9 (T097): dryRun() must never call the pre-flight checker at
+     * all, and a dry-run TaxBackfillRun row must never have preflight_checks
+     * populated. Proved via a mock with shouldNotReceive('check') rather
+     * than merely asserting the outcome, so a future accidental call from
+     * inside dryRun() is caught even if it wouldn't otherwise change this
+     * run's recorded result.
+     */
+    public function test_dry_run_never_invokes_the_preflight_checker_and_records_no_preflight_checks(): void
+    {
+        $tenant = Tenant::factory()->create();
+        $this->makeTransaction($tenant, ['original_payload' => null]);
+
+        $mockChecker = \Mockery::mock(TaxBackfillPreflightChecker::class);
+        $mockChecker->shouldNotReceive('check');
+
+        $run = $this->runner(null, $mockChecker)->dryRun(now()->subDay(), now()->addDay(), $tenant->id);
+
+        $this->assertSame(TaxBackfillRun::STATUS_COMPLETED, $run->status);
+        $this->assertNull($run->preflight_checks);
     }
 
     protected function tearDown(): void

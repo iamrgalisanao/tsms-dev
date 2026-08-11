@@ -41,6 +41,18 @@ class TaxBackfillRun extends Model
      */
     public const STATUS_STOPPED = 'stopped';
 
+    /**
+     * Slice 9 (T097): a schema pre-flight check
+     * (App\Services\Backfill\TaxBackfillPreflightChecker) failed before
+     * TaxBackfillRunner::apply() scanned a single transaction — distinct
+     * from STATUS_FAILED (a processing error), STATUS_INTERRUPTED (an
+     * unanticipated crash), and STATUS_STOPPED (a deliberate operator
+     * kill-switch stop). scanned_count and every other counter stay exactly
+     * 0 for a run in this status. Never reachable from dryRun(), which never
+     * calls the checker.
+     */
+    public const STATUS_PREFLIGHT_FAILED = 'preflight_failed';
+
     protected $table = 'tax_backfill_runs';
 
     protected $fillable = [
@@ -56,6 +68,7 @@ class TaxBackfillRun extends Model
         'operator',
         'started_at',
         'completed_at',
+        'preflight_checks',
     ];
 
     protected $casts = [
@@ -68,6 +81,7 @@ class TaxBackfillRun extends Model
         'failed_count' => 'integer',
         'started_at' => 'datetime',
         'completed_at' => 'datetime',
+        'preflight_checks' => 'array',
     ];
 
     public function records(): HasMany

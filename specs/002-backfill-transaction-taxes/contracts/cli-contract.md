@@ -29,7 +29,7 @@ transactions:backfill-taxes
 | Non-destructive | MUST NOT update or delete any **linked** `transaction_taxes` row; inserts only where the transaction has zero linked rows (FR-003). NULL-keyed orphan deletion is Command 5's job, never this command's. |
 | Resumable | Interruption MUST NOT corrupt state; re-invocation continues safely (R6). |
 | Bounded | MUST NOT hold a long-lived transaction or table-wide lock on `transactions`/`transaction_taxes` (FR-005, R9). |
-| Pre-flight | MUST validate required columns, `idx_tx_taxes_pk`, `fk_tx_taxes_pk` (+ its `ON DELETE` action) and `transaction_pk` nullability, recording all in the run record; fail non-zero before any mutation. |
+| Pre-flight | MUST validate required columns present (T018 — input/window validation only today; general column-existence checking remains open), and `idx_tx_taxes_pk`, `fk_tx_taxes_pk` (+ its `ON DELETE` action) and `transaction_pk` nullability (T097 — **DONE, Slice 9, 2026-08-11**: `TaxBackfillPreflightChecker` gates on index/FK presence, records `ON DELETE` action and nullability, all persisted on the run record); fail non-zero before any mutation. |
 | **Day-scoped apply** | `--apply` MUST require `--day` (FR-014a). A whole-window `--apply` MUST be rejected — it would write ~3.24M rows before any reconciliation could run. Dry-run may span the full window. |
 | Fail-safe | A transaction whose payload is missing, unparseable, or inconsistent with the R3 cross-check MUST be recorded as `quarantined`, never guessed at. |
 

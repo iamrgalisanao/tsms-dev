@@ -34,7 +34,8 @@ class TaxBackfillRunner
 {
     public function __construct(
         protected TaxReconstructionService $reconstructionService,
-        protected DeadlockRetryService $retryService
+        protected DeadlockRetryService $retryService,
+        protected TaxBackfillPreflightChecker $preflightChecker
     ) {}
 
     /**
@@ -203,6 +204,15 @@ class TaxBackfillRunner
      *    (T034); re-invoking `apply()` after a kill-switch stop (or any
      *    other interruption) simply picks up where the audit trail left off.
      *
+     * Slice 9 (T097): immediately after the run row is created (status =
+     * running), TaxBackfillPreflightChecker::check() runs once — before the
+     * chunked query is even built. Its full result is always recorded on
+     * `preflight_checks`; if `passed` is false, the run is marked
+     * `STATUS_PREFLIGHT_FAILED` with `completed_at` set and returned
+     * immediately, with scanned_count and every other counter left at their
+     * just-created 0 — no transaction is scanned, no chunk is processed.
+     * dryRun() deliberately never calls this checker.
+     *
      * @param  int|array<int>|null  $tenantId
      */
     public function apply(
@@ -228,6 +238,24 @@ class TaxBackfillRunner
             'status' => TaxBackfillRun::STATUS_RUNNING,
             'started_at' => now(),
         ]);
+
+        // Slice 9 (T097): schema pre-flight, run before any transaction is
+        // scanned or the chunked query is even built. The full observed
+        // result (not just pass/fail) is always recorded on the run, so the
+        // audit trail is honest about the exact schema state this run saw
+        // regardless of outcome.
+        $preflightResult = $this->preflightChecker->check();
+
+        $run->update(['preflight_checks' => $preflightResult]);
+
+        if (! $preflightResult['passed']) {
+            $run->update([
+                'status' => TaxBackfillRun::STATUS_PREFLIGHT_FAILED,
+                'completed_at' => now(),
+            ]);
+
+            return $run;
+        }
 
         $query = Transaction::query()
             ->whereBetween('created_at', [$from, $to])

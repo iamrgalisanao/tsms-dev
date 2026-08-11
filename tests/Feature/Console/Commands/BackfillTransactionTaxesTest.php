@@ -11,6 +11,7 @@ use App\Services\Backfill\TaxBackfillRunner;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Tests\TestCase;
 
 /**
@@ -593,6 +594,103 @@ class BackfillTransactionTaxesTest extends TestCase
                 "per_day sums do not match run totals for '{$field}'"
             );
         }
+    }
+
+    /**
+     * Slice 9 (T097): a schema pre-flight failure surfaces through the CLI
+     * with a distinct exit code (self::EXIT_PREFLIGHT_FAILED = 4, never
+     * conflated with a generic failure) and output that names which check
+     * failed, in both --json and human form.
+     *
+     * MySQL refuses to drop an index a foreign key still depends on, so a
+     * throwaway holder index on the same column is added first purely to
+     * satisfy that requirement while idx_tx_taxes_pk itself is dropped — it
+     * plays no other role here. ALTER TABLE causes an implicit commit in
+     * MySQL/InnoDB, flushing this test's ambient RefreshDatabase transaction
+     * (the known isolation gap tracked at tests/TestCase.php:38), so
+     * restoration is explicit and verified via a real Schema::hasIndex()
+     * assertion inside `finally` itself — not a normal assertion an early
+     * failure could skip.
+     */
+    public function test_apply_against_a_forced_preflight_failure_exits_with_the_distinct_code_and_names_the_failed_check(): void
+    {
+        $tenant = Tenant::factory()->create();
+        $day = '2026-07-20';
+
+        $tx = $this->makeTransaction($tenant, [
+            'created_at' => "{$day} 08:00:00",
+            'original_payload' => json_encode(['taxes' => [['tax_type' => 'VAT', 'amount' => 45.00]]]),
+            'vat_amount' => 45.00,
+        ]);
+
+        DB::statement('ALTER TABLE transaction_taxes ADD INDEX idx_tmp_cli_preflight_holder (transaction_pk)');
+        DB::statement('ALTER TABLE transaction_taxes DROP INDEX idx_tx_taxes_pk');
+
+        try {
+            $jsonExit = Artisan::call('transactions:backfill-taxes', [
+                '--day' => $day,
+                '--tenant' => [$tenant->id],
+                '--apply' => true,
+                '--json' => true,
+            ]);
+            $jsonOutput = Artisan::output();
+            $decoded = json_decode($jsonOutput, true);
+
+            $this->assertSame(4, $jsonExit);
+            $this->assertIsArray($decoded, 'Expected valid JSON output: '.$jsonOutput);
+            $this->assertSame(TaxBackfillRun::STATUS_PREFLIGHT_FAILED, $decoded['status']);
+            $this->assertSame(0, $decoded['totals']['scanned']);
+            $this->assertIsArray($decoded['preflight_checks']);
+            $this->assertFalse($decoded['preflight_checks']['index_present']);
+            $this->assertTrue($decoded['preflight_checks']['fk_present']);
+
+            $humanExit = Artisan::call('transactions:backfill-taxes', [
+                '--day' => $day,
+                '--tenant' => [$tenant->id],
+                '--apply' => true,
+            ]);
+            $humanOutput = Artisan::output();
+
+            $this->assertSame(4, $humanExit);
+            $this->assertStringContainsString('PRE-FLIGHT FAILED', $humanOutput);
+            $this->assertStringContainsString('idx_tx_taxes_pk', $humanOutput);
+
+            $this->assertSame(0, DB::table('transaction_taxes')->where('transaction_pk', $tx->id)->count());
+        } finally {
+            DB::statement('ALTER TABLE transaction_taxes ADD INDEX idx_tx_taxes_pk (transaction_pk)');
+            DB::statement('ALTER TABLE transaction_taxes DROP INDEX idx_tmp_cli_preflight_holder');
+
+            $this->assertTrue(
+                Schema::hasIndex('transaction_taxes', 'idx_tx_taxes_pk'),
+                'CRITICAL: idx_tx_taxes_pk was not restored after this test — the shared test database schema is now broken for every subsequent test run.'
+            );
+        }
+    }
+
+    /**
+     * Slice 9 (T097): dry-run output never includes a real preflight_checks
+     * result — dryRun() never calls the checker.
+     */
+    public function test_dry_run_json_output_has_null_preflight_checks(): void
+    {
+        $tenant = Tenant::factory()->create();
+        $day = '2026-07-21';
+
+        $this->makeTransaction($tenant, [
+            'created_at' => "{$day} 08:00:00",
+            'original_payload' => null,
+        ]);
+
+        $exitCode = Artisan::call('transactions:backfill-taxes', [
+            '--day' => $day,
+            '--tenant' => [$tenant->id],
+            '--json' => true,
+        ]);
+        $decoded = json_decode(Artisan::output(), true);
+
+        $this->assertSame(0, $exitCode);
+        $this->assertArrayHasKey('preflight_checks', $decoded);
+        $this->assertNull($decoded['preflight_checks']);
     }
 
     public function test_zero_writes_to_transaction_taxes_regardless_of_outcome_mix(): void
