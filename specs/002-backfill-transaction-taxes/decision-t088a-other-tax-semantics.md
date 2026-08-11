@@ -1,8 +1,8 @@
 # Decision Memo — T088a: `other_tax` Row-Level Semantics
 
-**Date**: 2026-08-10 · **Status**: **DECIDED — Option 1, allow-list variant, with explicit VAT-exempt deduction (b)** · **Blocks**: all of `002-backfill-transaction-taxes`
+**Date**: 2026-08-10 · **Status**: **DECIDED — Option 1, allow-list variant, with explicit VAT-exempt deduction (b)** · Finance principle-confirmed 2026-08-11 (S5) · **No longer blocks** `002-backfill-transaction-taxes`
 
-**Decision owner**: architecture (with finance input on the alias sub-question)
+**Decision owner**: architecture (with finance input on the alias sub-question, confirmed 2026-08-11)
 
 ## Why this is blocking
 
@@ -70,7 +70,7 @@ Internally consistent: `58.04 × 12% = 6.9648 ≈ 6.96`. Gross **derived** from 
 
 ⚠️ **This property holds only when `sc_vat_exempt_sales = 0`, as it is in this example.** `otherTaxSum()` has a column-fallback branch (`Transaction.php:275-278`): when **no** `SC_VAT_EXEMPT_SALES` *row* exists, it adds the `sc_vat_exempt_sales` *column*. Every window transaction has zero rows today, so the fallback is **live**; reconstruction inserts such a row (even `0.00`) and **disables** it. For any transaction with a non-zero column, `net_amount` shifts by that amount **even with the allow-list fix applied**.
 
-**Resolved by D7**: the fallback mechanism is removed and the VAT-exempt deduction becomes an explicit accessor term sourced from the `sc_vat_exempt_sales` **column** (T088a-6) — exactly neutral for the backfill population, whose current `net_amount` already derives from that column. S7 is reduced to a principle confirmation for finance; the mechanism question is closed.
+**Resolved by D7**: the fallback mechanism is removed and the VAT-exempt deduction becomes an explicit accessor term sourced from the `sc_vat_exempt_sales` **column** (T088a-6) — exactly neutral for the backfill population, whose current `net_amount` already derives from that column. S7 was reduced to a principle confirmation for finance; the mechanism question was already closed. **Finance principle-confirmed 2026-08-11 (S5 in `stakeholder-request-for-input.md`)**: ingestion stays passive, `other_tax` means only submitted `OTHER_TAX`/`OTHER-TAX`, VAT-exempt sales remains a separate deduction never folded into `otherTaxSum()` — no change to D7.
 
 **Blast radius under D7** *(corrected — an earlier revision of this paragraph described variant (a) and was orphaned when D7 was adopted)*: **out-of-window transactions with linked rows only.** Transactions with zero linked rows and a non-zero `sc_vat_exempt_sales` column — i.e. essentially the whole defect window — are **unaffected**, because D7's explicit term reproduces exactly what the fallback yields today (`gross − 0 − column` = `gross − column`). That neutrality is the point of pinning the source to the column (T088a-6).
 

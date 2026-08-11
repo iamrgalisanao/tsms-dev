@@ -57,7 +57,7 @@ Governance is instead taken from `CLAUDE.md` + `docs/agent-orchestration/`, whic
 
 **Gating Verifications**: V1/V1a/V1b confirmed the window and payload recoverability. **V4 (post-gate) overturned a core premise** — 3,238,180 orphan rows exist that all three earlier checks were blind to. V2 moot. Feasibility risk is closed; residual risk is execution-side (3.24M deletes + 3.24M inserts on a table with a proven lock-contention outage history).
 
-**Gate status (2026-08-10): `ARCHITECTURE_APPROVED` (pass 5) · `IMPACT_ANALYZED` (pass 7, 7 review rounds) · `BASELINE_RECORDED` (461 passed / 112 pre-existing failures, none in this feature's scope — see `baseline.md`), all done.** Only `READY_TO_IMPLEMENT` and the Phase 0B stakeholder gates (S1, S2, S4, S5, S6 — S3 resolved 2026-08-11) remain outstanding — all are stakeholder decisions, not engineering work.
+**Gate status (2026-08-11): `ARCHITECTURE_APPROVED` (pass 5) · `IMPACT_ANALYZED` (pass 7, 7 review rounds) · `BASELINE_RECORDED` (461 passed / 112 pre-existing failures, none in this feature's scope — see `baseline.md`) · `READY_TO_IMPLEMENT`, all done.** All Phase 0B stakeholder gates (S1-S6, see `stakeholder-request-for-input.md`) are decided. Remaining work is the slice-loop implementation itself, plus the small engineering follow-through each decision still carries (T084, T086, T088a-1, T088b).
 
 ## Project Structure
 

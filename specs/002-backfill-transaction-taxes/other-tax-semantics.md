@@ -1,22 +1,22 @@
 # `other_tax` Semantics — Business Authority and Code Divergence
 
 **Date**: 2026-08-10
-**Status**: BLOCKING for `002-backfill-transaction-taxes` · **Resolution DECIDED** — see [decision memo](decision-t088a-other-tax-semantics.md)
+**Status**: **Resolution DECIDED, no longer blocking** `002-backfill-transaction-taxes` (finance principle-confirmed 2026-08-11, S5) — see [decision memo](decision-t088a-other-tax-semantics.md)
 
 ## Provenance (read this first)
 
 The business rules below were transcribed from a comparison worksheet ("NST RECEIPT COMPUTATION" vs "PITX Computation") supplied by the user on 2026-08-10 during architecture review.
 
-**Provenance is incomplete and must be closed before this document is treated as authoritative:**
+**DECIDED 2026-08-11 (S4)**: PITX/Finance is confirmed as the worksheet's owner, and the supplied screenshot is accepted as the source-of-record for this decision. The table below (previously an open question) is resolved as follows:
 
-| Unknown | Needed |
+| Unknown | Resolution |
 |---------|--------|
-| Owner / author | Who produced the worksheet |
-| Date / version | When, and whether superseded |
-| Status | Approved business rule, or working draft |
-| Canonical location | Where the source-of-record lives |
+| Owner / author | PITX/Finance |
+| Date / version | Worksheet as supplied 2026-08-10; no prior version known |
+| Status | Approved business rule (per S4) |
+| Canonical location | Transcribed here; **residual engineering work (T088b)**: preserve the screenshot itself (or a faithful transcription) as a tracked repo artifact rather than an untracked image |
 
-**Why this matters**: the only other written definitions live in `docs/archive/`, which `.gitignore:87` excludes — they are untracked local files, never committed, and they contradict themselves (below). The plan must not rest on an untracked image as its sole business-rule authority. Either promote the worksheet to a tracked source document, or have this summary confirmed and signed by its owner.
+**Why this matters**: the only other written definitions live in `docs/archive/`, which `.gitignore:87` excludes — they are untracked local files, never committed, and they contradict themselves (below). This document is now treated as authoritative for the business rules per S4; T088b's remaining job is making the source durable, not re-deciding ownership.
 
 ## The PITX formulas as transcribed
 
@@ -95,7 +95,7 @@ The backfill does not merely *reveal* this inconsistency — it **detonates** it
 
 Option 2 (isolate backfilled rows) was rejected: all three candidate mechanisms are defective — a source marker needs an out-of-scope schema change, distinguishing by `created_at` destroys temporal fidelity and breaks FR-014 reconciliation, and joining the audit table puts an N+1 against 3.24M rows inside a per-serialization accessor.
 
-**(Superseded — resolved by D7.)** Formerly open sub-question: the `sc_vat_exempt_sales` column-fallback (`Transaction.php:275-278`). It is live today for window transactions (zero linked rows) and is **disabled** by reconstruction inserting an `SC_VAT_EXEMPT_SALES` row — shifting `net_amount` by the column amount even with the allow-list applied. PITX NET SALES does deduct VAT Exempt Sales, so removal moves away from the formula; retention leaves `otherTaxSum()` a mixed net-sales helper rather than denoting `OTHER_TAX`. Escalated to finance as **S7**, pending quantification of the affected population and peso exposure.
+**(Superseded — resolved by D7; finance principle-confirmed 2026-08-11, S5.)** Formerly open sub-question: the `sc_vat_exempt_sales` column-fallback (`Transaction.php:275-278`). It is live today for window transactions (zero linked rows) and is **disabled** by reconstruction inserting an `SC_VAT_EXEMPT_SALES` row — shifting `net_amount` by the column amount even with the allow-list applied. PITX NET SALES does deduct VAT Exempt Sales, so removal moves away from the formula; retention leaves `otherTaxSum()` a mixed net-sales helper rather than denoting `OTHER_TAX`. Escalated to finance as **S7**; quantification completed 2026-08-10 (PHP 13.8M / 69 tenants, see `decision-t088a-other-tax-semantics.md`'s S7 results) and the underlying principle confirmed 2026-08-11 — no change to D7.
 
 ## Cross-references
 
