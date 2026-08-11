@@ -270,8 +270,9 @@ description: "Task list for Backfill Transaction Taxes"
 ```text
 BLOCKING (engineering):          other_tax allow-list fix [T088a: DECIDED, T088a-2/-2b/-3]
                                  gate before ship: external consumer check [T088a-1]
-BLOCKING (outside engineering):  finance re-sign-off [T084] · 216-row decision [T085]
-                                 FR-016 disposition [T086] · formula provenance [T088b]
+BLOCKING (outside engineering):  finance re-sign-off [T084] · FR-016 disposition [T086]
+                                 formula provenance [T088b]
+                                 (216-row decision [T085] resolved 2026-08-11, no longer blocking)
   ↓
 PRE-GATE (not numbered tasks):   baseline recording · staging schema confirmation
   ↓

@@ -28,7 +28,7 @@
 
 - [ ] All functional requirements have clear acceptance criteria — FR-016 pending
 - [x] User scenarios cover primary flows
-- [ ] Feature meets measurable outcomes — SC-002 qualified for permanent residue; SC-003 excludes `other_tax` pending FR-016
+- [ ] Feature meets measurable outcomes — SC-002's permanent-residue qualifier is **resolved 2026-08-11** (zero `transaction_pk IS NULL` rows is now the target end state, FR-015b); item stays unchecked only because SC-003 still excludes `other_tax` pending FR-016 (S2)
 - [x] No implementation details leak into the specification
 
 ## Blocking items
