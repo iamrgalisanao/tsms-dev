@@ -7,6 +7,8 @@ use App\Models\TaxBackfillRun;
 use App\Models\Tenant;
 use App\Models\Transaction;
 use App\Models\TransactionTax;
+use App\Services\Backfill\TaxBackfillRunner;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
@@ -256,13 +258,17 @@ class BackfillTransactionTaxesTest extends TestCase
         $this->assertFalse(in_array($tenantC->id, $tenantIdsInBreakdown, true));
     }
 
-    public function test_apply_is_rejected_outright_with_zero_writes_and_no_run_created(): void
+    /**
+     * Slice 8 (T017-... apply wiring): --apply given alongside --from/--to
+     * (instead of --day) must be rejected before the runner ever runs —
+     * whole-window apply is structurally forbidden.
+     */
+    public function test_apply_with_from_and_to_instead_of_day_is_rejected_with_zero_writes_and_no_run_created(): void
     {
         $tenant = Tenant::factory()->create();
-        $day = '2026-06-25';
 
         $tx = $this->makeTransaction($tenant, [
-            'created_at' => "{$day} 08:00:00",
+            'created_at' => '2026-06-25 08:00:00',
             'original_payload' => json_encode(['taxes' => [['tax_type' => 'VAT', 'amount' => 25.00]]]),
             'vat_amount' => 25.00,
         ]);
@@ -270,7 +276,8 @@ class BackfillTransactionTaxesTest extends TestCase
         $watermark = $this->taxBackfillRunWatermark();
 
         $exitCode = Artisan::call('transactions:backfill-taxes', [
-            '--day' => $day,
+            '--from' => '2026-06-25',
+            '--to' => '2026-06-26',
             '--tenant' => [$tenant->id],
             '--apply' => true,
         ]);
@@ -278,13 +285,270 @@ class BackfillTransactionTaxesTest extends TestCase
 
         $this->assertNotSame(0, $exitCode);
         $this->assertStringContainsString('--apply', $output);
-        $this->assertStringContainsString('not yet implemented', $output);
+        $this->assertStringContainsString('--day', $output);
 
-        // No TaxBackfillRun created for this invocation (delta from watermark).
+        $this->assertSame(0, TaxBackfillRun::where('id', '>', $watermark)->count());
+        $this->assertSame(0, DB::table('transaction_taxes')->where('transaction_pk', $tx->id)->count());
+    }
+
+    /**
+     * Slice 8: --apply given with --day entirely missing must also be
+     * rejected before the runner ever runs.
+     */
+    public function test_apply_without_day_is_rejected_with_zero_writes_and_no_run_created(): void
+    {
+        $watermark = $this->taxBackfillRunWatermark();
+
+        $exitCode = Artisan::call('transactions:backfill-taxes', [
+            '--apply' => true,
+        ]);
+        $output = Artisan::output();
+
+        $this->assertNotSame(0, $exitCode);
+        $this->assertStringContainsString('--apply', $output);
+        $this->assertStringContainsString('--day', $output);
+
+        $this->assertSame(0, TaxBackfillRun::where('id', '>', $watermark)->count());
+    }
+
+    /**
+     * Slice 8: --apply --day=<valid> against a clean fixture actually writes
+     * real transaction_taxes rows, with mode=apply, status=completed, and
+     * exit code 0. --throttle is set low here (this test isn't exercising
+     * the default) to keep the test fast.
+     */
+    public function test_apply_with_day_and_clean_fixture_writes_real_tax_rows_and_completes(): void
+    {
+        $tenant = Tenant::factory()->create();
+        $day = '2026-07-10';
+
+        $applied = $this->makeTransaction($tenant, [
+            'created_at' => "{$day} 08:00:00",
+            'original_payload' => json_encode(['taxes' => [['tax_type' => 'VAT', 'amount' => 40.00]]]),
+            'vat_amount' => 40.00,
+        ]);
+
+        $exitCode = Artisan::call('transactions:backfill-taxes', [
+            '--day' => $day,
+            '--tenant' => [$tenant->id],
+            '--apply' => true,
+            '--throttle' => 1,
+            '--json' => true,
+        ]);
+        $decoded = json_decode(Artisan::output(), true);
+
+        $this->assertSame(0, $exitCode);
+        $this->assertSame('apply', $decoded['mode']);
+        $this->assertSame(TaxBackfillRun::STATUS_COMPLETED, $decoded['status']);
+        $this->assertSame(1, $decoded['totals']['scanned']);
+        $this->assertSame(1, $decoded['totals']['reconstructed']);
+        $this->assertSame(0, $decoded['totals']['failed']);
+
+        $this->assertSame(1, DB::table('transaction_taxes')
+            ->where('transaction_pk', $applied->id)
+            ->where('tax_type', 'VAT')
+            ->where('amount', 40.00)
+            ->count());
+    }
+
+    /**
+     * Slice 8 (code review fix): when --apply is given without --throttle,
+     * the command must invoke TaxBackfillRunner::apply() with the
+     * conservative default of 500. Proved deterministically via a mock bound
+     * into the container instead of wall-clock timing (a flakiness risk
+     * under CI load) — the mock still returns a real, persisted
+     * TaxBackfillRun so buildResult()/render() run against genuine data
+     * exactly as they would with the real runner.
+     */
+    public function test_apply_without_throttle_option_uses_conservative_default_of_500ms(): void
+    {
+        $tenant = Tenant::factory()->create();
+        $day = '2026-07-11';
+
+        $run = TaxBackfillRun::factory()->apply()->completed()->create([
+            'window_start' => "{$day} 00:00:00",
+            'window_end' => "{$day} 23:59:59",
+        ]);
+
+        $this->mock(TaxBackfillRunner::class, function ($mock) use ($tenant, $run) {
+            $mock->shouldReceive('apply')
+                ->once()
+                ->withArgs(function ($day, $tenantIds, $limit, $chunk, $throttleMs, $killSwitchPath) use ($tenant) {
+                    return $day instanceof Carbon
+                        && $day->format('Y-m-d') === '2026-07-11'
+                        && $tenantIds === [$tenant->id]
+                        && $limit === null
+                        && $chunk === 500
+                        && $throttleMs === 500
+                        && $killSwitchPath === null;
+                })
+                ->andReturn($run);
+        });
+
+        $exitCode = Artisan::call('transactions:backfill-taxes', [
+            '--day' => $day,
+            '--tenant' => [$tenant->id],
+            '--apply' => true,
+        ]);
+
+        $this->assertSame(0, $exitCode);
+    }
+
+    /**
+     * Slice 8 (code review fix): an explicit --throttle overrides the 500
+     * default — proved the same mock-based way, for consistency with the
+     * default-throttle test above.
+     */
+    public function test_apply_with_explicit_throttle_option_overrides_the_default(): void
+    {
+        $tenant = Tenant::factory()->create();
+        $day = '2026-07-12';
+
+        $run = TaxBackfillRun::factory()->apply()->completed()->create([
+            'window_start' => "{$day} 00:00:00",
+            'window_end' => "{$day} 23:59:59",
+        ]);
+
+        $this->mock(TaxBackfillRunner::class, function ($mock) use ($tenant, $run) {
+            $mock->shouldReceive('apply')
+                ->once()
+                ->withArgs(function ($day, $tenantIds, $limit, $chunk, $throttleMs, $killSwitchPath) use ($tenant) {
+                    return $day instanceof Carbon
+                        && $day->format('Y-m-d') === '2026-07-12'
+                        && $tenantIds === [$tenant->id]
+                        && $limit === null
+                        && $chunk === 500
+                        && $throttleMs === 5
+                        && $killSwitchPath === null;
+                })
+                ->andReturn($run);
+        });
+
+        $exitCode = Artisan::call('transactions:backfill-taxes', [
+            '--day' => $day,
+            '--tenant' => [$tenant->id],
+            '--apply' => true,
+            '--throttle' => 5,
+        ]);
+
+        $this->assertSame(0, $exitCode);
+    }
+
+    /**
+     * Slice 8 (code review fix): --throttle must be validated the same way
+     * --chunk/--limit already are — a malformed value silently (int)-casts
+     * ("5oo" -> 5, "abc" -> 0) with no operator feedback, which could turn
+     * the conservative 500 default's safety margin into a near-zero throttle
+     * by typo. Zero is rejected too, same as --chunk=0/--limit=0.
+     */
+    public function test_invalid_throttle_value_is_rejected_before_any_run_is_created(): void
+    {
+        $tenant = Tenant::factory()->create();
+        $watermark = $this->taxBackfillRunWatermark();
+
+        $exitCode = Artisan::call('transactions:backfill-taxes', [
+            '--day' => '2026-07-11',
+            '--tenant' => [$tenant->id],
+            '--apply' => true,
+            '--throttle' => 'abc',
+        ]);
+        $output = Artisan::output();
+
+        $this->assertNotSame(0, $exitCode);
+        $this->assertStringContainsString('--throttle', $output);
         $this->assertSame(0, TaxBackfillRun::where('id', '>', $watermark)->count());
 
-        // Zero transaction_taxes writes for this fixture's transaction.
-        $this->assertSame(0, DB::table('transaction_taxes')->where('transaction_pk', $tx->id)->count());
+        $zeroExitCode = Artisan::call('transactions:backfill-taxes', [
+            '--day' => '2026-07-11',
+            '--tenant' => [$tenant->id],
+            '--apply' => true,
+            '--throttle' => 0,
+        ]);
+        $zeroOutput = Artisan::output();
+
+        $this->assertNotSame(0, $zeroExitCode);
+        $this->assertStringContainsString('--throttle', $zeroOutput);
+        $this->assertSame(0, TaxBackfillRun::where('id', '>', $watermark)->count());
+    }
+
+    /**
+     * Slice 8: a kill-switch sentinel present before the run starts stops
+     * the run cleanly before its first chunk is processed — a distinct exit
+     * code from a generic failure, and output text that says "stopped," not
+     * "failed."
+     */
+    public function test_apply_with_kill_switch_path_present_stops_cleanly_with_distinct_exit_code(): void
+    {
+        $tenant = Tenant::factory()->create();
+        $day = '2026-07-13';
+
+        $tx = $this->makeTransaction($tenant, [
+            'created_at' => "{$day} 08:00:00",
+            'original_payload' => json_encode(['taxes' => [['tax_type' => 'VAT', 'amount' => 15.00]]]),
+            'vat_amount' => 15.00,
+        ]);
+
+        $killSwitchPath = sys_get_temp_dir().'/tsms_tax_backfill_kill_switch_'.uniqid('', true);
+        file_put_contents($killSwitchPath, '');
+
+        try {
+            $exitCode = Artisan::call('transactions:backfill-taxes', [
+                '--day' => $day,
+                '--tenant' => [$tenant->id],
+                '--apply' => true,
+                '--throttle' => 1,
+                '--kill-switch-path' => $killSwitchPath,
+                '--json' => true,
+            ]);
+            $output = Artisan::output();
+            $decoded = json_decode($output, true);
+
+            $this->assertNotSame(0, $exitCode);
+            $this->assertNotSame(1, $exitCode, 'Stopped runs must use a distinct exit code from a generic failure.');
+            $this->assertIsArray($decoded, 'Expected valid JSON output: '.$output);
+            $this->assertSame(TaxBackfillRun::STATUS_STOPPED, $decoded['status']);
+            $this->assertStringContainsString('"status": "stopped"', $output);
+            $this->assertStringNotContainsString('"status": "failed"', $output);
+            $this->assertSame(0, $decoded['totals']['scanned']);
+
+            $this->assertSame(0, DB::table('transaction_taxes')->where('transaction_pk', $tx->id)->count());
+        } finally {
+            @unlink($killSwitchPath);
+        }
+    }
+
+    /**
+     * Slice 8: the human-output header must reflect the actual run mode —
+     * "apply run" for --apply, "dry run" (unchanged) otherwise.
+     */
+    public function test_apply_and_dry_run_headers_are_mode_aware(): void
+    {
+        $tenant = Tenant::factory()->create();
+        $day = '2026-07-14';
+
+        $this->makeTransaction($tenant, [
+            'created_at' => "{$day} 08:00:00",
+            'original_payload' => null,
+        ]);
+
+        Artisan::call('transactions:backfill-taxes', [
+            '--day' => $day,
+            '--tenant' => [$tenant->id],
+        ]);
+        $dryRunOutput = Artisan::output();
+
+        $this->assertStringContainsString('dry run', $dryRunOutput);
+        $this->assertStringNotContainsString('apply run', $dryRunOutput);
+
+        Artisan::call('transactions:backfill-taxes', [
+            '--day' => $day,
+            '--tenant' => [$tenant->id],
+            '--apply' => true,
+            '--throttle' => 1,
+        ]);
+        $applyRunOutput = Artisan::output();
+
+        $this->assertStringContainsString('apply run', $applyRunOutput);
     }
 
     public function test_per_tenant_and_per_day_breakdowns_sum_correctly_to_run_level_totals(): void

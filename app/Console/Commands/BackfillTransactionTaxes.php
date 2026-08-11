@@ -14,13 +14,20 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
 /**
- * 002-backfill-transaction-taxes, Slice 4 (T017-T022).
+ * 002-backfill-transaction-taxes, Slice 4 (T017-T022) + Slice 8 (--apply
+ * wiring, per specs/002-backfill-transaction-taxes/slice-8-cli-apply-wiring-brief.md).
  *
- * Deliberately dry-run/operator-surface only for this slice: proves command
- * ergonomics, input validation, counts, JSON output, and TaxBackfillRun
- * creation via TaxBackfillRunner::dryRun(). This command NEVER writes to
- * `transaction_taxes` — `--apply` is rejected outright below rather than
- * implemented; the real write path is a later slice.
+ * Dry-run (--from/--to or --day, no --apply) drives TaxBackfillRunner::dryRun()
+ * exactly as it did in Slice 4 — unchanged. --apply now drives
+ * TaxBackfillRunner::apply() instead of being rejected outright, but only
+ * when --day (a single day, never a --from/--to window) is given —
+ * validateInput() enforces this before the runner is ever touched.
+ *
+ * Slice 8 deliberately does NOT add the T097 schema/index/FK pre-flight
+ * (idx_tx_taxes_pk, fk_tx_taxes_pk + its ON DELETE action, transaction_pk
+ * nullability) — see the brief's "Explicit gap" section. A real production
+ * --apply invocation still requires that pre-flight (or a manual schema
+ * check) before it's safe to run.
  *
  * Ergonomics mirror App\Console\Commands\LicenseBindingBackfillCommand per
  * specs/002-backfill-transaction-taxes/contracts/cli-contract.md (research
@@ -29,28 +36,43 @@ use Illuminate\Support\Facades\DB;
  */
 class BackfillTransactionTaxes extends Command
 {
+    /**
+     * Distinct non-zero exit codes for STATUS_INTERRUPTED/STATUS_STOPPED, so
+     * a calling script can tell "the operator meant to stop this" apart from
+     * "something broke" without parsing output text (Slice 8 brief, decision
+     * 3). self::SUCCESS (0) and self::FAILURE (1) — inherited from
+     * Illuminate\Console\Command — cover the completed-clean and
+     * failed/completed-with-failures cases respectively.
+     */
+    protected const EXIT_INTERRUPTED = 2;
+
+    protected const EXIT_STOPPED = 3;
+
+    /**
+     * Conservative default throttle (ms) applied between chunks for a real
+     * --apply run when --throttle isn't given explicitly. Irrelevant to
+     * dry-run. Chosen per the Slice 8 brief as a middle ground: enough to
+     * yield to live traffic without making a large day's worth of
+     * transactions impractically slow to apply.
+     */
+    protected const DEFAULT_APPLY_THROTTLE_MS = 500;
+
     protected $signature = 'transactions:backfill-taxes
-        {--from= : Window start (Y-m-d). Required unless --day is given.}
-        {--to= : Window end (Y-m-d, inclusive). Required unless --day is given.}
-        {--day= : Single day (Y-m-d). Shorthand for --from/--to over that one day.}
+        {--from= : Window start (Y-m-d). Required unless --day is given. Not permitted with --apply.}
+        {--to= : Window end (Y-m-d, inclusive). Required unless --day is given. Not permitted with --apply.}
+        {--day= : Single day (Y-m-d). Shorthand for --from/--to over that one day. Required when --apply is given.}
         {--tenant=* : Restrict to one or more tenant ids. Repeatable, e.g. --tenant=1 --tenant=2.}
-        {--apply : Persist changes. NOT YET IMPLEMENTED — rejected in this build.}
+        {--apply : Persist changes. Requires --day (single-day only — --from/--to whole-window apply is not permitted). Schema pre-flight (index/FK checks) not yet implemented — confirm target schema manually before a live run.}
         {--chunk=500 : Transactions per chunk.}
         {--limit= : Stop after N transactions scanned (piloting).}
+        {--throttle= : Inter-chunk delay in milliseconds for --apply. Defaults to 500 when --apply is given and this is omitted. Ignored for dry-run.}
+        {--kill-switch-path= : Path to a sentinel file; if it exists, an --apply run stops cleanly before its next chunk. Optional, no default. Ignored for dry-run.}
         {--json : Emit machine-readable JSON instead of a summary table.}';
 
-    protected $description = 'Dry-run reconstruction of missing transaction_taxes rows (Slice 4: dry-run only, --apply not yet implemented)';
+    protected $description = 'Reconstruct missing transaction_taxes rows: dry-run by default (--from/--to or --day), or persist via --apply (--day only)';
 
     public function handle(TaxBackfillRunner $runner): int
     {
-        // --apply is rejected outright in this slice, before any other
-        // validation or runner execution — no code path here ever uses it.
-        if ($this->option('apply')) {
-            $this->error('--apply is not yet implemented — this command is dry-run only in the current build.');
-
-            return self::FAILURE;
-        }
-
         $validationError = $this->validateInput();
 
         if ($validationError !== null) {
@@ -59,22 +81,59 @@ class BackfillTransactionTaxes extends Command
             return self::FAILURE;
         }
 
-        [$from, $to] = $this->resolveWindow();
         $tenantIds = $this->resolveTenantIds();
         $limit = $this->option('limit') !== null ? (int) $this->option('limit') : null;
         $chunk = (int) $this->option('chunk');
 
-        $run = $runner->dryRun($from, $to, $tenantIds, $limit, $chunk);
+        if ($this->option('apply')) {
+            // validateInput() guarantees --day is present and --from/--to
+            // are absent whenever --apply is set, so this is always exactly
+            // one resolved day, never a window.
+            $day = Carbon::createFromFormat('Y-m-d', $this->option('day'));
+
+            $throttleMs = $this->option('throttle') !== null
+                ? (int) $this->option('throttle')
+                : self::DEFAULT_APPLY_THROTTLE_MS;
+
+            $killSwitchPath = $this->option('kill-switch-path');
+            $killSwitchPath = ($killSwitchPath !== null && $killSwitchPath !== '') ? $killSwitchPath : null;
+
+            $run = $runner->apply($day, $tenantIds, $limit, $chunk, $throttleMs, $killSwitchPath);
+        } else {
+            // Dry-run path, byte-for-byte what Slice 4 shipped: --throttle/
+            // --kill-switch-path are simply never read here if an operator
+            // mistakenly passes them on a dry run.
+            [$from, $to] = $this->resolveWindow();
+
+            $run = $runner->dryRun($from, $to, $tenantIds, $limit, $chunk);
+        }
 
         $result = $this->buildResult($run);
 
         $this->render($result);
 
-        if ($result['status'] !== TaxBackfillRun::STATUS_COMPLETED || $result['totals']['failed'] > 0) {
-            return self::FAILURE;
-        }
+        return $this->exitCodeFor($result);
+    }
 
-        return self::SUCCESS;
+    /**
+     * Five possible TaxBackfillRun statuses, mapped to distinct exit codes
+     * (Slice 8 brief, decision 3): 0 = completed with zero failures, 1 =
+     * failed (or completed with failed_count > 0), 2 = interrupted, 3 =
+     * stopped (deliberate kill-switch stop, never conflated with failed).
+     * Applies identically to dry-run and apply — a dry run can also end
+     * interrupted/failed in principle, just never stopped (dry-run never
+     * takes a kill-switch path).
+     */
+    protected function exitCodeFor(array $result): int
+    {
+        return match (true) {
+            $result['status'] === TaxBackfillRun::STATUS_STOPPED => self::EXIT_STOPPED,
+            $result['status'] === TaxBackfillRun::STATUS_INTERRUPTED => self::EXIT_INTERRUPTED,
+            $result['status'] === TaxBackfillRun::STATUS_FAILED => self::FAILURE,
+            $result['status'] === TaxBackfillRun::STATUS_COMPLETED && $result['totals']['failed'] > 0 => self::FAILURE,
+            $result['status'] === TaxBackfillRun::STATUS_COMPLETED => self::SUCCESS,
+            default => self::FAILURE,
+        };
     }
 
     /**
@@ -87,10 +146,25 @@ class BackfillTransactionTaxes extends Command
         $day = $this->option('day');
         $from = $this->option('from');
         $to = $this->option('to');
+        $apply = (bool) $this->option('apply');
 
         $hasDay = $day !== null && $day !== '';
         $hasFrom = $from !== null && $from !== '';
         $hasTo = $to !== null && $to !== '';
+
+        // --apply checks come first, before any other validation, once we
+        // know --apply is set — this structurally forbids whole-window
+        // apply: there is no code path where --apply reaches the runner
+        // without a single resolved --day. Dry-run's existing --day-or-
+        // --from/--to flexibility below is completely unchanged when --apply
+        // is not set.
+        if ($apply && ($hasFrom || $hasTo)) {
+            return '--apply requires --day (a single day) — --from/--to whole-window apply is not permitted.';
+        }
+
+        if ($apply && ! $hasDay) {
+            return '--apply requires --day.';
+        }
 
         if ($hasDay && ($hasFrom || $hasTo)) {
             return 'Provide either --day, or --from and --to — not both forms.';
@@ -142,6 +216,16 @@ class BackfillTransactionTaxes extends Command
 
         if ($this->option('limit') !== null && ! $this->isPositiveInteger($this->option('limit'))) {
             return "Invalid --limit value '{$this->option('limit')}': must be a positive integer.";
+        }
+
+        // Code review finding (Slice 8): --throttle silently (int)-casts a
+        // malformed value ("5oo" -> 5, "abc" -> 0) with no operator
+        // feedback, which could turn the conservative 500ms default's
+        // intended safety margin into a near-zero throttle by typo. Validate
+        // it exactly like --chunk/--limit — including rejecting 0, which
+        // would defeat the point of throttling the same way --chunk=0 does.
+        if ($this->option('throttle') !== null && ! $this->isPositiveInteger($this->option('throttle'))) {
+            return "Invalid --throttle value '{$this->option('throttle')}': must be a positive integer.";
         }
 
         return null;
@@ -343,7 +427,8 @@ class BackfillTransactionTaxes extends Command
         }
 
         $this->info(sprintf(
-            'Tax backfill dry run #%d — status: %s (window %s to %s)',
+            'Tax backfill %s #%d — status: %s (window %s to %s)',
+            $result['mode'] === TaxBackfillRun::MODE_APPLY ? 'apply run' : 'dry run',
             $result['run_id'],
             $result['status'],
             $result['window']['start'],
