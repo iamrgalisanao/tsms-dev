@@ -67,7 +67,7 @@ description: "Task list for Backfill Transaction Taxes"
 
 ### Audit, progress, quarantine
 
-- [ ] T010 Create migration in `database/migrations/` for the backfill run + row-level audit records per [data-model.md](data-model.md) — run id, window, mode, counters, timestamps; per-row transaction_pk, tenant_id, reconstructed rows, prior state, outcome. Must be idempotent (guard with `Schema::hasTable`), matching this repo's migration conventions
+- [ ] T010 **DECIDED 2026-08-11: dedicated tables, not `SubmissionEvent` reuse** (see data-model.md's "Audit storage decision" and T045). Create migrations in `database/migrations/` for two tables per [data-model.md](data-model.md)'s finalized schema: a run table (run id, window start/end, mode, counters, status, operator/context, started/completed timestamps) and a row table (run id FK, transaction_pk, tenant id, reconstructed tax rows, prior state, outcome, reason code, archive/reconciliation references, timestamps). Must be idempotent (guard with `Schema::hasTable`), matching this repo's migration conventions
 - [ ] T011 Create `app/Models/TaxBackfillRecord.php` (and run model if separate) with `$fillable` explicitly listing every writable column — the original defect was a silently-discarded non-fillable attribute, so this is a correctness requirement, not boilerplate
 - [ ] T012 Implement outcome states `applied | skipped_existing | quarantined | failed` with a required reason string on `quarantined` and `failed`
 - [ ] T013 Represent the 216 unrecoverable rows as `quarantined` with a machine-readable reason (`missing_payload`); they must be recorded, never silently skipped (research V1a). **Extended 2026-08-11**: `quarantined` needs a **second**, distinct reason code — `cross_check_mismatch` — for transactions whose payload exists and parses but fails T008's R3 cross-check (reconstructed values disagree with the transaction's own stored columns). This is a materially different failure mode from "no payload at all" and must be distinguishable in the audit trail: `missing_payload` = no-match (unrecoverable), `cross_check_mismatch` = ambiguous-match (recoverable-looking but suspect, needs human review before ever being trusted)
@@ -142,7 +142,7 @@ description: "Task list for Backfill Transaction Taxes"
 - [ ] T042 [US3] Create a list/inspect surface for quarantined rows following `IngestionQuarantineList`, so the 216 unrecoverable rows are reviewable rather than buried
 - [ ] T043 [US3] Ensure every applied correction records prior state (empty) and resulting rows, making the no-overwrite guarantee auditable after the fact
 - [ ] T044 [P] [US3] Feature test: after an applied run, each corrected transaction has exactly one retrievable audit record with correct before/after
-- [ ] T045 [P] [US3] Decide and document whether a `SubmissionEvent` is also emitted per correction, or whether the dedicated audit table is the sole record (architect open item #2)
+- [ ] T045 [P] [US3] **DECIDED 2026-08-11**: the dedicated backfill audit table (T010) is the sole source of truth for per-correction records — `SubmissionEvent` is not emitted per correction. `SubmissionEvent` may optionally receive one high-level summary event per *completed run* (not per row); implementing that summary emission, if wanted, is this task's remaining work. See data-model.md's "Audit storage decision"
 
 ---
 
@@ -365,7 +365,7 @@ Phase 1 (Setup)
 ## Open Questions for the Architecture Gate
 
 1. ~~Read-replica lag~~ — **RESOLVED**: no replica gate needed; both refresh commands aggregate on the primary. Superseded by T077.
-2. **Audit persistence** (T010, T045) — dedicated table vs. `SubmissionEvent` reuse.
+2. ~~**Audit persistence** (T010, T045) — dedicated table vs. `SubmissionEvent` reuse.~~ **RESOLVED 2026-08-11**: dedicated tables; `SubmissionEvent` gets, at most, one optional per-run summary event. See data-model.md.
 3. **Exposing `insertTaxes()` semantics** — it is `protected`; extract a shared writer vs. duplicate carefully (research R5), without destabilizing the live path.
 4. **Execution vehicle** (T016, T030-T033) — synchronous command vs. dedicated queue; must not touch live shards.
 5. **Void/refund handling** — spec edge case; confirm reconstructed taxes for voided transactions match live semantics.

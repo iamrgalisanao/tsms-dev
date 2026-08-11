@@ -35,7 +35,9 @@ Source of both the recovery payload and the cross-check values.
 
 ## New entity: backfill run/progress record
 
-Needed for FR-007 (auditable record) and R6 (resumability). Exact persistence mechanism is an architecture-gate decision — a dedicated table, or reuse of `SubmissionEvent`.
+Needed for FR-007 (auditable record) and R6 (resumability). **DECIDED 2026-08-11**: dedicated tables, not `SubmissionEvent` reuse — see rationale below.
+
+**Audit storage decision**: use dedicated backfill audit tables (a run table and a row/correction-record table), not `SubmissionEvent`. `SubmissionEvent` is the wrong aggregate boundary — it describes submission/batch lifecycle events (`submission_uuid`, `terminal_id`, `status`, `transaction_count`), not durable, queryable, per-run/per-transaction correction evidence. Reusing it would mean either cramming structured backfill detail into its `reason_details` JSON blob (losing queryability) or bolting backfill-only columns onto a table serving unrelated ingestion auditing. `SubmissionEvent` **may optionally** receive one high-level summary event per completed run (not per correction) — it is never the source of truth for backfill audit; the dedicated row table is. Why: keeps ingestion audit and remediation audit separate; supports queryable materiality/reconciliation evidence; avoids hiding critical facts in a JSON blob; matches this section's required shape; supports resume/idempotency and audit inspection; avoids polluting `submission_events` with backfill-only columns. **Resolves T045 and the "Audit persistence" open architecture-gate item.**
 
 **Run-level**
 
@@ -45,6 +47,8 @@ Needed for FR-007 (auditable record) and R6 (resumability). Exact persistence me
 | window start / end | The defect window actually processed. |
 | mode | `dry-run` or `apply`. |
 | counters | scanned, reconstructed, skipped-already-present, quarantined, failed. |
+| status | Run lifecycle state (e.g. running / completed / interrupted / failed) — supports R6 resumability. |
+| operator / context | Who/what invoked the run (CLI user, or automation identity) — audit accountability. |
 | started / completed timestamps | Duration, and detection of interrupted runs. |
 
 **Row-level (per corrected transaction)**
@@ -56,7 +60,10 @@ Needed for FR-007 (auditable record) and R6 (resumability). Exact persistence me
 | tenant id | Enables per-tenant materiality rollup (FR-009a) without re-joining. |
 | reconstructed tax rows | What was written (type/amount set) — the "after" state. |
 | prior state | Confirms "before" was empty; makes the no-overwrite claim auditable. |
-| outcome | `applied` \| `skipped_existing` \| `quarantined` \| `failed`, with reason. |
+| outcome | `applied` \| `skipped_existing` \| `quarantined` \| `failed`. |
+| reason code | Machine-readable reason for `quarantined`/`failed` outcomes — `missing_payload`, `cross_check_mismatch` (T013), or a failure-specific code. |
+| archive/reconciliation references | Links to the orphan-archive row(s) (FR-013) and/or FR-014 reconciliation result this row's correction corresponds to, where applicable — connects this feature's two audit trails (backfill correction vs. orphan archive/delete) without requiring a re-join at read time. |
+| timestamps | Row-level created/updated for this audit record itself. |
 
 **State transitions**: `pending → applied | skipped_existing | quarantined | failed`. Only `pending → applied` writes tax rows. `quarantined` is terminal pending human review (used when the payload is missing, unparseable, or fails the R3 cross-check).
 
