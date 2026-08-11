@@ -55,8 +55,15 @@ class TaxBackfillRunner
      *    handling altogether), the run is marked `interrupted` with a
      *    `completed_at` timestamp before the exception is re-thrown — a run
      *    must never be left sitting at `status = 'running'` indefinitely.
+     *
+     * $tenantId accepts a single tenant id, a list of tenant ids, or null for
+     * no tenant restriction (CLI contract's `--tenant` is repeatable — Slice
+     * 4). One invocation always produces exactly one TaxBackfillRun row
+     * covering every specified tenant, never one run per tenant.
+     *
+     * @param  int|array<int>|null  $tenantId
      */
-    public function dryRun(Carbon $from, Carbon $to, ?int $tenantId = null, ?int $limit = null, int $chunkSize = 500): TaxBackfillRun
+    public function dryRun(Carbon $from, Carbon $to, int|array|null $tenantId = null, ?int $limit = null, int $chunkSize = 500): TaxBackfillRun
     {
         $run = TaxBackfillRun::create([
             'window_start' => $from,
@@ -73,7 +80,11 @@ class TaxBackfillRunner
 
         $query = Transaction::query()
             ->whereBetween('created_at', [$from, $to])
-            ->when($tenantId !== null, fn ($q) => $q->where('tenant_id', $tenantId));
+            ->when($tenantId !== null, function ($q) use ($tenantId) {
+                is_array($tenantId)
+                    ? $q->whereIn('tenant_id', $tenantId)
+                    : $q->where('tenant_id', $tenantId);
+            });
 
         $processed = 0;
         $reachedLimit = false;

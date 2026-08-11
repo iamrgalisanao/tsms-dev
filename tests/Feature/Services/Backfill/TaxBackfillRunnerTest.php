@@ -336,6 +336,31 @@ class TaxBackfillRunnerTest extends TestCase
             });
     }
 
+    /**
+     * Slice 4 (T017 drift note): cli-contract.md specifies `--tenant` as
+     * repeatable, so dryRun() must accept a list of tenant ids and restrict
+     * to exactly those tenants — not just the single-int / null cases
+     * already covered above.
+     */
+    public function test_dry_run_restricts_to_exactly_the_given_list_of_tenant_ids(): void
+    {
+        $tenantA = Tenant::factory()->create();
+        $tenantB = Tenant::factory()->create();
+        $tenantC = Tenant::factory()->create();
+
+        $inA = $this->makeTransaction($tenantA, ['original_payload' => null]);
+        $inB = $this->makeTransaction($tenantB, ['original_payload' => null]);
+        $inC = $this->makeTransaction($tenantC, ['original_payload' => null]);
+
+        $run = $this->runner()->dryRun(now()->subDay(), now()->addDay(), [$tenantA->id, $tenantB->id]);
+
+        $this->assertSame(2, $run->scanned_count);
+
+        $recordedTransactionIds = TaxBackfillRecord::where('run_id', $run->id)->pluck('transaction_pk')->sort()->values()->all();
+        $this->assertSame([$inA->id, $inB->id], $recordedTransactionIds);
+        $this->assertFalse(in_array($inC->id, $recordedTransactionIds, true));
+    }
+
     public function test_run_status_and_timestamps_end_in_expected_state_after_a_successful_dry_run(): void
     {
         $tenant = Tenant::factory()->create();
