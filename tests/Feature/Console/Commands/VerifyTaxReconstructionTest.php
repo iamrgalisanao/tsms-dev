@@ -2,10 +2,12 @@
 
 namespace Tests\Feature\Console\Commands;
 
+use App\Console\Commands\VerifyTaxReconstruction;
 use App\Models\PosTerminal;
 use App\Models\Tenant;
 use App\Models\Transaction;
 use App\Models\TransactionTax;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\Artisan;
 use Tests\TestCase;
 
@@ -398,5 +400,294 @@ class VerifyTaxReconstructionTest extends TestCase
 
         $this->assertNotSame(0, $exitCode);
         $this->assertStringContainsString('Invalid --sample', $output);
+    }
+
+    /**
+     * 002-backfill-transaction-taxes, Slice 11 (T101).
+     *
+     * allocate() and sampleStratified() are protected — invoked here via
+     * reflection with setAccessible(true), the same convention already used
+     * elsewhere in this codebase for testing protected methods in isolation
+     * (see tests/Feature/Services/Backfill/TaxBackfillRunnerTest.php).
+     * sampleStratified() in particular is exercised directly (bypassing
+     * Artisan::call) so the breadth tests below can inspect the actual
+     * Transaction models selected — not just the coverage array's
+     * self-reported numbers, per the slice-11 brief's own caution that "a
+     * bug in the allocator could report numbers that don't match what was
+     * actually queried."
+     */
+    private function allocate(int $total, array $capacities): array
+    {
+        $method = new \ReflectionMethod(VerifyTaxReconstruction::class, 'allocate');
+        $method->setAccessible(true);
+
+        return $method->invoke(new VerifyTaxReconstruction, $total, $capacities);
+    }
+
+    private function sampleStratified(Builder $candidateQuery, int $sampleSize): array
+    {
+        $method = new \ReflectionMethod(VerifyTaxReconstruction::class, 'sampleStratified');
+        $method->setAccessible(true);
+
+        return $method->invoke(new VerifyTaxReconstruction, $candidateQuery, $sampleSize);
+    }
+
+    public function test_allocate_gives_every_stratum_full_capacity_when_total_covers_all(): void
+    {
+        $result = $this->allocate(10, ['a' => 2, 'b' => 3, 'c' => 1]);
+
+        $this->assertSame(['a' => 2, 'b' => 3, 'c' => 1], $result);
+    }
+
+    public function test_allocate_spreads_one_unit_per_bucket_before_any_bucket_gets_a_second(): void
+    {
+        $result = $this->allocate(2, ['a' => 5, 'b' => 5, 'c' => 5, 'd' => 5]);
+
+        $this->assertSame(['a' => 1, 'b' => 1, 'c' => 0, 'd' => 0], $result);
+    }
+
+    public function test_allocate_round_robins_across_multiple_passes_once_a_bucket_is_full(): void
+    {
+        // a caps out at 1 on the first pass; b and c keep receiving on
+        // later passes until the 4-unit budget is exhausted.
+        $result = $this->allocate(4, ['a' => 1, 'b' => 3, 'c' => 2]);
+
+        $this->assertSame(['a' => 1, 'b' => 2, 'c' => 1], $result);
+    }
+
+    public function test_allocate_handles_single_bucket_case(): void
+    {
+        $this->assertSame(['x' => 5], $this->allocate(5, ['x' => 10]));
+        $this->assertSame(['x' => 10], $this->allocate(15, ['x' => 10]));
+    }
+
+    public function test_allocate_returns_all_zeros_for_zero_total(): void
+    {
+        $this->assertSame(['a' => 0, 'b' => 0], $this->allocate(0, ['a' => 5, 'b' => 5]));
+    }
+
+    public function test_allocate_handles_empty_capacities_without_error(): void
+    {
+        $this->assertSame([], $this->allocate(5, []));
+    }
+
+    /**
+     * Breadth proof: 3 distinct days x 3 distinct tenants each (9 strata, 1
+     * transaction per stratum). Requesting a sample that covers the full
+     * pool must select every single fixture — verified by reading the
+     * tenant_id/day of the actually-returned Transaction models, not just
+     * coverage's self-reported counts.
+     */
+    public function test_stratified_sampling_spans_every_distinct_tenant_and_day_when_sample_covers_full_pool(): void
+    {
+        $days = ['2037-01-01', '2037-01-02', '2037-01-03'];
+        $expectedTenantIds = [];
+
+        foreach ($days as $day) {
+            for ($i = 1; $i <= 3; $i++) {
+                $transaction = $this->makeTransaction([
+                    'created_at' => "{$day} 0{$i}:00:00",
+                    'original_payload' => json_encode(['taxes' => [['tax_type' => 'VAT', 'amount' => 10.00]]]),
+                ]);
+                $this->linkTax($transaction, 'VAT', 10.00);
+
+                $expectedTenantIds[] = $transaction->tenant_id;
+            }
+        }
+
+        $candidateQuery = Transaction::query()
+            ->where('created_at', '>=', '2037-01-01')
+            ->where('created_at', '<', '2037-01-04')
+            ->whereHas('taxes');
+
+        [$transactions, $coverage] = $this->sampleStratified($candidateQuery, 9);
+
+        $this->assertCount(9, $transactions);
+
+        $actualTenantIds = $transactions->pluck('tenant_id')->values()->all();
+        $actualDays = $transactions->pluck('created_at')
+            ->map(fn ($dt) => $dt->toDateString())
+            ->unique()
+            ->values()
+            ->all();
+
+        $this->assertEqualsCanonicalizing($expectedTenantIds, $actualTenantIds);
+        $this->assertEqualsCanonicalizing($days, $actualDays);
+
+        $this->assertSame(9, $coverage['total_strata']);
+        $this->assertSame(9, $coverage['sampled_strata']);
+    }
+
+    /**
+     * Breadth-under-budget proof: 4 distinct days x 3 distinct tenants each
+     * (12 strata), sample budget of 5 — smaller than total_strata. The
+     * round-robin allocator must spread across as many distinct strata as
+     * the budget allows (min(sample, total_strata) = 5), spanning all 4
+     * days rather than clustering into fewer days than the budget permits.
+     * Verified against the actual selected Transaction models' day/tenant,
+     * cross-checked against coverage's self-reported numbers.
+     */
+    public function test_stratified_sampling_spreads_breadth_first_when_sample_is_smaller_than_total_strata(): void
+    {
+        $days = ['2037-02-01', '2037-02-02', '2037-02-03', '2037-02-04'];
+
+        foreach ($days as $day) {
+            for ($i = 1; $i <= 3; $i++) {
+                $transaction = $this->makeTransaction([
+                    'created_at' => "{$day} 0{$i}:00:00",
+                    'original_payload' => json_encode(['taxes' => [['tax_type' => 'VAT', 'amount' => 10.00]]]),
+                ]);
+                $this->linkTax($transaction, 'VAT', 10.00);
+            }
+        }
+
+        $candidateQuery = Transaction::query()
+            ->where('created_at', '>=', '2037-02-01')
+            ->where('created_at', '<', '2037-02-05')
+            ->whereHas('taxes');
+
+        [$transactions, $coverage] = $this->sampleStratified($candidateQuery, 5);
+
+        $this->assertCount(5, $transactions);
+        $this->assertSame(12, $coverage['total_strata']);
+        $this->assertSame(5, $coverage['sampled_strata']);
+
+        // Every distinct day must be represented — 4 days <= budget of 5,
+        // so round-robin water-filling must not cluster into fewer days.
+        $sampledDays = $transactions->pluck('created_at')
+            ->map(fn ($dt) => $dt->toDateString())
+            ->unique()
+            ->values()
+            ->all();
+        $this->assertCount(4, $sampledDays, 'Expected every distinct day to receive at least one sampled transaction.');
+
+        // Cross-check: the actual distinct (day, tenant) pairs among the
+        // returned models must independently match coverage's self-reported
+        // sampled_strata — this is the "not just from coverage's
+        // self-reported numbers" proof from the slice-11 brief.
+        $actualStrataCount = $transactions
+            ->map(fn ($t) => $t->created_at->toDateString().'|'.$t->tenant_id)
+            ->unique()
+            ->count();
+        $this->assertSame(5, $actualStrataCount);
+        $this->assertSame($actualStrataCount, $coverage['sampled_strata']);
+    }
+
+    /**
+     * coverage's per_day/per_tenant pool counts and total_strata must match
+     * independently-computed fixture totals, via the full command
+     * (Artisan::call + --json), not the reflection shortcut used above.
+     */
+    public function test_coverage_output_matches_independently_computed_fixture_totals(): void
+    {
+        $days = ['2037-03-01', '2037-03-02'];
+        $tenantIdsByDay = [];
+
+        foreach ($days as $day) {
+            for ($i = 1; $i <= 2; $i++) {
+                $transaction = $this->makeTransaction([
+                    'created_at' => "{$day} 0{$i}:00:00",
+                    'original_payload' => json_encode(['taxes' => [['tax_type' => 'VAT', 'amount' => 5.00]]]),
+                ]);
+                $this->linkTax($transaction, 'VAT', 5.00);
+
+                $tenantIdsByDay[$day][] = $transaction->tenant_id;
+            }
+        }
+
+        $exitCode = Artisan::call('transactions:verify-tax-reconstruction', [
+            '--from' => '2037-03-01',
+            '--sample' => 4,
+            '--json' => true,
+        ]);
+        $decoded = json_decode(Artisan::output(), true);
+
+        $this->assertSame(0, $exitCode);
+        $this->assertSame(4, $decoded['checked_count']);
+
+        $coverage = $decoded['coverage'];
+        $this->assertSame(4, $coverage['total_strata']);
+        $this->assertSame(4, $coverage['sampled_strata']);
+
+        $this->assertCount(2, $coverage['per_day']);
+        foreach ($coverage['per_day'] as $row) {
+            $this->assertContains($row['day'], $days);
+            $this->assertSame(2, $row['pool_count']);
+            $this->assertSame(2, $row['sampled_count']);
+        }
+
+        $allTenantIds = array_merge(...array_values($tenantIdsByDay));
+        $this->assertCount(4, $coverage['per_tenant']);
+        foreach ($coverage['per_tenant'] as $row) {
+            $this->assertContains($row['tenant_id'], $allTenantIds);
+            $this->assertSame(1, $row['pool_count']);
+            $this->assertSame(1, $row['sampled_count']);
+        }
+    }
+
+    /**
+     * Regression (post-implementation review): the per-stratum row draw in
+     * sampleStratified() previously built a *fresh* Transaction::query()
+     * scoped only by tenant_id + whereDate('created_at', $day), instead of
+     * extending the already-correctly-scoped $candidateQuery. That silently
+     * dropped the --from lower bound on the boundary day whenever --from
+     * carries a time component: whereDate() alone re-admits rows from
+     * earlier the same calendar day, before the cutoff time. This is not a
+     * theoretical edge case — research.md documents 2026-08-10 as a real
+     * straddling day (2,694 with taxes / 2,032 without, straddling the
+     * ~10:00 fix), which is exactly the scenario DEFAULT_FROM's own
+     * docblock is built around ("an operator ... can override with
+     * --from=2026-08-10 or a more precise timestamp").
+     *
+     * Fixture: one pre-cutoff and one post-cutoff transaction on the same
+     * boundary day. Both candidate_pool_size/coverage (full command path)
+     * and the actually-drawn transaction ids (direct sampleStratified()
+     * call) must exclude the pre-cutoff row.
+     */
+    public function test_stratified_sampling_respects_from_time_component_on_the_boundary_day(): void
+    {
+        $preCutoff = $this->makeTransaction([
+            'created_at' => '2037-04-01 08:00:00',
+            'original_payload' => json_encode(['taxes' => [['tax_type' => 'VAT', 'amount' => 1.00]]]),
+        ]);
+        $this->linkTax($preCutoff, 'VAT', 1.00);
+
+        $postCutoff = $this->makeTransaction([
+            'created_at' => '2037-04-01 12:00:00',
+            'original_payload' => json_encode(['taxes' => [['tax_type' => 'VAT', 'amount' => 2.00]]]),
+        ]);
+        $this->linkTax($postCutoff, 'VAT', 2.00);
+
+        $exitCode = Artisan::call('transactions:verify-tax-reconstruction', [
+            '--from' => '2037-04-01 10:00:00',
+            '--sample' => 10,
+            '--json' => true,
+        ]);
+        $decoded = json_decode(Artisan::output(), true);
+
+        $this->assertSame(0, $exitCode);
+        // The pre-cutoff transaction must not even be in the candidate pool.
+        $this->assertSame(1, $decoded['candidate_pool_size']);
+        $this->assertSame(1, $decoded['checked_count']);
+
+        $coverage = $decoded['coverage'];
+        $this->assertSame(1, $coverage['total_strata']);
+        $this->assertSame(1, $coverage['sampled_strata']);
+        $this->assertCount(1, $coverage['per_day']);
+        $this->assertSame('2037-04-01', $coverage['per_day'][0]['day']);
+        $this->assertSame(1, $coverage['per_day'][0]['pool_count'], 'Boundary-day pool_count must exclude the pre-cutoff row.');
+        $this->assertSame(1, $coverage['per_day'][0]['sampled_count']);
+
+        // Direct proof against the actual selected models, independent of
+        // candidate_pool_size/coverage's self-reported numbers.
+        $candidateQuery = Transaction::query()
+            ->where('created_at', '>=', '2037-04-01 10:00:00')
+            ->whereHas('taxes');
+
+        [$transactions] = $this->sampleStratified($candidateQuery, 10);
+
+        $sampledIds = $transactions->pluck('id')->all();
+        $this->assertNotContains($preCutoff->id, $sampledIds, 'Pre-cutoff transaction must never appear in the drawn sample.');
+        $this->assertContains($postCutoff->id, $sampledIds);
     }
 }

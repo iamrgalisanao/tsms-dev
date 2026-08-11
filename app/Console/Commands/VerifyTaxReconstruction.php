@@ -7,7 +7,9 @@ namespace App\Console\Commands;
 use App\Models\Transaction;
 use App\Services\Backfill\TaxReconstructionService;
 use Illuminate\Console\Command;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
 
 /**
  * 002-backfill-transaction-taxes, Slice 5 (T023-T025).
@@ -57,6 +59,21 @@ class VerifyTaxReconstruction extends Command
      */
     protected const DEFAULT_FROM = '2026-08-11 00:00:00';
 
+    /**
+     * A single (tenant, day) stratum is assumed small (a handful to a few
+     * hundred rows) based on this feature's known data shape (research.md:
+     * ~87 tenants, ~55K+/day post-fix transactions), not on a direct
+     * measurement against representative staging/production data — no such
+     * access was available at implementation time. This threshold is a
+     * conservative safety net, not a proven cutoff: if a single stratum
+     * ever exceeds it (e.g. one unusually high-volume tenant on one day),
+     * drawStratumRows() falls back to the same random-offset-window
+     * technique the original full-pool sampling used (see the class-level
+     * comment history / Slice 5) rather than assume inRandomOrder()'s
+     * filesort stays cheap at any stratum size.
+     */
+    protected const STRATUM_INRANDOMORDER_THRESHOLD = 2000;
+
     public function handle(TaxReconstructionService $service): int
     {
         $from = $this->resolveFrom();
@@ -89,7 +106,7 @@ class VerifyTaxReconstruction extends Command
         $candidatePoolSize = (clone $candidateQuery)->count();
 
         if ($candidatePoolSize === 0) {
-            $result = $this->buildResult($from, $sampleSize, 0, 0, []);
+            $result = $this->buildResult($from, $sampleSize, 0, 0, [], $this->emptyCoverage());
             $this->render($result);
 
             // An empty candidate pool proves nothing. Treating this as a
@@ -99,38 +116,17 @@ class VerifyTaxReconstruction extends Command
             return self::FAILURE;
         }
 
-        // Sampling method: a random contiguous window, ordered by `id`, via
-        // offset()->limit(). Deliberately NOT inRandomOrder()->limit() —
-        // that compiles to `ORDER BY RAND() LIMIT N`, which forces MySQL to
-        // filesort the *entire* candidate pool on every invocation. This
-        // command is meant to run routinely against a growing live
-        // population (research.md: ~55K+/day post-fix transactions, growing
-        // indefinitely), and research.md separately documents a real prior
-        // production incident caused by exactly this class of heavy,
-        // full-table-scanning query against `transactions` — this command
-        // must not reintroduce it.
-        //
-        // Picking a random offset in [0, candidatePoolSize - sampleSize] and
-        // reading `sampleSize` rows from there, ordered by `id`, avoids the
-        // filesort while still avoiding the oldest-N bias a bare
-        // orderBy('id')->limit() would have. This is an approximation, not
-        // true uniform random — it samples a contiguous block of ids rather
-        // than an independently-random subset, so rows adjacent to each
-        // other in id order are always sampled together. That's an
-        // acceptable tradeoff for this slice: it's a simple, non-stratified
-        // sample by design, and T101 (tasks.md) is the tracked, separate
-        // follow-up that replaces this selection query entirely with proper
-        // stratified-by-tenant/day sampling — nothing here hardcodes an
-        // assumption T101 would need to unwind.
-        $maxOffset = max(0, $candidatePoolSize - $sampleSize);
-        $randomOffset = $maxOffset > 0 ? random_int(0, $maxOffset) : 0;
-
-        $transactions = (clone $candidateQuery)
-            ->with('taxes')
-            ->orderBy('id')
-            ->offset($randomOffset)
-            ->limit($sampleSize)
-            ->get();
+        // Sampling method (T101, Slice 11): two-level stratified sampling —
+        // first across days, then across tenants within each day — using
+        // round-robin water-filling (allocate()) at both levels. This
+        // replaces the original random-offset contiguous-id window (see git
+        // history/Slice 5 for that design and its filesort-avoidance
+        // reasoning), which gave no breadth guarantee: a run could, by
+        // chance, sample almost entirely from one or two large tenants on
+        // one or two days. See sampleStratified() for the query shape and
+        // why inRandomOrder() is safe at the per-stratum level even though
+        // it was deliberately avoided at full-pool scale.
+        [$transactions, $coverage] = $this->sampleStratified($candidateQuery, $sampleSize);
 
         $divergences = [];
 
@@ -152,11 +148,217 @@ class VerifyTaxReconstruction extends Command
             }
         }
 
-        $result = $this->buildResult($from, $sampleSize, $candidatePoolSize, $transactions->count(), $divergences);
+        $result = $this->buildResult($from, $sampleSize, $candidatePoolSize, $transactions->count(), $divergences, $coverage);
 
         $this->render($result);
 
         return $divergences === [] ? self::SUCCESS : self::FAILURE;
+    }
+
+    /**
+     * Round-robin water-filling allocator (T101). Pure function: no DB
+     * access, no randomness. Every stratum gets one unit before any stratum
+     * gets a second, so breadth is maximized first — additional depth is
+     * only added once every stratum already has equal representation. This
+     * is deliberately NOT population-proportional: a proportional
+     * allocation would still let the sample concentrate on the largest few
+     * strata when $total is small relative to the number of buckets, which
+     * is exactly the breadth failure this method exists to close.
+     *
+     * $capacities must already be in the stable/deterministic order the
+     * caller wants ties broken in (e.g. ksort() by stratum key) — this
+     * method iterates in the order given and does not sort internally, so
+     * the same ($total, $capacities) always produces the same allocation.
+     *
+     * @param  array<int|string, int>  $capacities  stratum key => capacity, in caller-chosen stable order
+     * @return array<int|string, int> stratum key => allocated count (same keys/order as $capacities)
+     */
+    protected function allocate(int $total, array $capacities): array
+    {
+        $allocated = array_fill_keys(array_keys($capacities), 0);
+        $remaining = $total;
+
+        while ($remaining > 0) {
+            $madeProgress = false;
+
+            foreach ($capacities as $key => $capacity) {
+                if ($remaining === 0) {
+                    break;
+                }
+
+                if ($allocated[$key] < $capacity) {
+                    $allocated[$key]++;
+                    $remaining--;
+                    $madeProgress = true;
+                }
+            }
+
+            // Every stratum is already at full capacity (sample size >=
+            // pool size, or $capacities is empty) — stop instead of
+            // spinning forever.
+            if (! $madeProgress) {
+                break;
+            }
+        }
+
+        return $allocated;
+    }
+
+    /**
+     * Two-level stratified sampling (T101): allocate() across days, then
+     * allocate() again across tenants within each day, then draw each
+     * (day, tenant) stratum's quota directly.
+     *
+     * Query shape: a single query groups the candidate pool by
+     * (DATE(created_at), tenant_id) up front, which yields everything
+     * needed for both allocation levels AND the full-pool coverage
+     * pool-counts (including days that end up with a zero sample quota) —
+     * this deliberately trades the brief's illustrative "one day-count
+     * query, then one tenant-count query per day that gets a non-zero
+     * quota" shape for a single grouped query, because per_tenant/
+     * total_strata coverage needs every day's tenant breakdown regardless
+     * of whether that day was allocated any sample quota, and computing
+     * that from a per-quota-day-only query would under-report coverage for
+     * a candidate pool where --sample is smaller than the number of days.
+     *
+     * @return array{0: Collection<int, Transaction>, 1: array}
+     */
+    protected function sampleStratified(Builder $candidateQuery, int $sampleSize): array
+    {
+        $strataRows = (clone $candidateQuery)
+            ->selectRaw('DATE(created_at) as day, tenant_id, COUNT(*) as cnt')
+            ->groupBy('day', 'tenant_id')
+            ->orderBy('day')
+            ->orderBy('tenant_id')
+            ->get();
+
+        $dayCounts = [];
+        $tenantCountsByDay = [];
+        $tenantPoolCounts = [];
+
+        foreach ($strataRows as $row) {
+            $day = (string) $row->day;
+            $tenantId = (int) $row->tenant_id;
+            $count = (int) $row->cnt;
+
+            $dayCounts[$day] = ($dayCounts[$day] ?? 0) + $count;
+            $tenantCountsByDay[$day][$tenantId] = $count;
+            $tenantPoolCounts[$tenantId] = ($tenantPoolCounts[$tenantId] ?? 0) + $count;
+        }
+
+        // ksort gives allocate() a stable, deterministic iteration order
+        // (chronological for days — Y-m-d strings sort correctly as
+        // strings; numeric for tenant ids) independent of whatever order
+        // the DB happened to return rows in.
+        ksort($dayCounts);
+        ksort($tenantPoolCounts);
+
+        $totalStrata = 0;
+        foreach ($tenantCountsByDay as $tenantsForDay) {
+            $totalStrata += count($tenantsForDay);
+        }
+
+        $dayQuotas = $this->allocate($sampleSize, $dayCounts);
+
+        $transactions = collect();
+        $tenantSampledCounts = [];
+        $perDay = [];
+        $sampledStrata = 0;
+
+        foreach ($dayCounts as $day => $poolCount) {
+            $dayQuota = $dayQuotas[$day] ?? 0;
+
+            $perDay[] = [
+                'day' => $day,
+                'pool_count' => $poolCount,
+                'sampled_count' => $dayQuota,
+            ];
+
+            if ($dayQuota === 0) {
+                continue;
+            }
+
+            $tenantCounts = $tenantCountsByDay[$day];
+            ksort($tenantCounts);
+
+            $tenantQuotas = $this->allocate($dayQuota, $tenantCounts);
+
+            foreach ($tenantQuotas as $tenantId => $quota) {
+                if ($quota === 0) {
+                    continue;
+                }
+
+                $sampledStrata++;
+                $tenantSampledCounts[$tenantId] = ($tenantSampledCounts[$tenantId] ?? 0) + $quota;
+
+                $stratumTransactions = $this->drawStratumRows($candidateQuery, $tenantId, $day, $quota, $tenantCounts[$tenantId]);
+
+                $transactions = $transactions->merge($stratumTransactions);
+            }
+        }
+
+        $perTenant = [];
+
+        foreach ($tenantPoolCounts as $tenantId => $poolCount) {
+            $perTenant[] = [
+                'tenant_id' => $tenantId,
+                'pool_count' => $poolCount,
+                'sampled_count' => $tenantSampledCounts[$tenantId] ?? 0,
+            ];
+        }
+
+        $coverage = [
+            'total_strata' => $totalStrata,
+            'sampled_strata' => $sampledStrata,
+            'per_day' => $perDay,
+            'per_tenant' => $perTenant,
+        ];
+
+        return [$transactions, $coverage];
+    }
+
+    /**
+     * Draws $quota rows for one (tenant, day) stratum, extending
+     * $candidateQuery (not a fresh query) so the `--from` lower bound and
+     * whereHas('taxes') filter always stay in sync with the candidate
+     * population's own definition.
+     */
+    protected function drawStratumRows(Builder $candidateQuery, int $tenantId, string $day, int $quota, int $stratumSize): Collection
+    {
+        $stratumQuery = (clone $candidateQuery)
+            ->where('tenant_id', $tenantId)
+            ->whereDate('created_at', $day)
+            ->with('taxes');
+
+        if ($stratumSize <= self::STRATUM_INRANDOMORDER_THRESHOLD) {
+            return $stratumQuery->inRandomOrder()->limit($quota)->get();
+        }
+
+        // Same random-offset-window approach as the pre-T101 full-pool
+        // sampling: avoids filesorting this (unusually large) stratum while
+        // still avoiding the oldest-N bias a bare orderBy('id')->limit()
+        // would have.
+        $maxOffset = max(0, $stratumSize - $quota);
+        $randomOffset = $maxOffset > 0 ? random_int(0, $maxOffset) : 0;
+
+        return $stratumQuery
+            ->orderBy('id')
+            ->offset($randomOffset)
+            ->limit($quota)
+            ->get();
+    }
+
+    /**
+     * @return array{total_strata: int, sampled_strata: int, per_day: array, per_tenant: array}
+     */
+    protected function emptyCoverage(): array
+    {
+        return [
+            'total_strata' => 0,
+            'sampled_strata' => 0,
+            'per_day' => [],
+            'per_tenant' => [],
+        ];
     }
 
     protected function resolveFrom(): ?Carbon
@@ -248,6 +450,7 @@ class VerifyTaxReconstruction extends Command
      * One result array drives both the human table and --json output.
      *
      * @param  list<array{transaction_id: int, reconstructed: array, actual: array, descriptions: list<string>}>  $divergences
+     * @param  array{total_strata: int, sampled_strata: int, per_day: array, per_tenant: array}  $coverage
      * @return array{
      *     from: string,
      *     sample_requested: int,
@@ -255,9 +458,10 @@ class VerifyTaxReconstruction extends Command
      *     checked_count: int,
      *     divergence_count: int,
      *     divergences: array,
+     *     coverage: array,
      * }
      */
-    protected function buildResult(Carbon $from, int $sampleSize, int $candidatePoolSize, int $checkedCount, array $divergences): array
+    protected function buildResult(Carbon $from, int $sampleSize, int $candidatePoolSize, int $checkedCount, array $divergences, array $coverage): array
     {
         return [
             'from' => $from->toDateTimeString(),
@@ -266,6 +470,7 @@ class VerifyTaxReconstruction extends Command
             'checked_count' => $checkedCount,
             'divergence_count' => count($divergences),
             'divergences' => $divergences,
+            'coverage' => $coverage,
         ];
     }
 
@@ -304,6 +509,8 @@ class VerifyTaxReconstruction extends Command
             ]]
         );
 
+        $this->renderCoverage($result['coverage']);
+
         if ($result['divergence_count'] === 0) {
             $this->info('Zero divergences — reconstruction matches actual tax rows for every checked transaction.');
 
@@ -321,6 +528,49 @@ class VerifyTaxReconstruction extends Command
             foreach ($divergence['descriptions'] as $description) {
                 $this->line("  - {$description}");
             }
+        }
+    }
+
+    /**
+     * T101 (Slice 11): reporting-only breadth summary of the stratified
+     * sample — does not affect the pass/fail verdict. Shows every distinct
+     * day/tenant in the candidate pool (not just the ones that got sampled)
+     * so an operator can see which strata, if any, got zero coverage when
+     * --sample is smaller than total_strata.
+     *
+     * @param  array{total_strata: int, sampled_strata: int, per_day: array, per_tenant: array}  $coverage
+     */
+    protected function renderCoverage(array $coverage): void
+    {
+        $this->line('');
+        $this->info(sprintf(
+            'Coverage — %d of %d distinct (day, tenant) strata sampled.',
+            $coverage['sampled_strata'],
+            $coverage['total_strata']
+        ));
+
+        if ($coverage['per_day'] !== []) {
+            $this->line('Per day:');
+            $this->table(
+                ['Day', 'Pool count', 'Sampled count'],
+                collect($coverage['per_day'])->map(fn ($row) => [
+                    $row['day'],
+                    $row['pool_count'],
+                    $row['sampled_count'],
+                ])->all()
+            );
+        }
+
+        if ($coverage['per_tenant'] !== []) {
+            $this->line('Per tenant:');
+            $this->table(
+                ['Tenant', 'Pool count', 'Sampled count'],
+                collect($coverage['per_tenant'])->map(fn ($row) => [
+                    $row['tenant_id'],
+                    $row['pool_count'],
+                    $row['sampled_count'],
+                ])->all()
+            );
         }
     }
 
