@@ -15,7 +15,77 @@ use App\Services\DeadlockRetryService;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use PDO;
+use PDOException;
+use PDOStatement;
 use Tests\TestCase;
+use Tests\Traits\FakesMetricsDistributionRedis;
+
+/**
+ * Test double for the nested-transaction/DeadlockException regression test
+ * below: makes the underlying PDO driver throw a *real* PDOException —
+ * indistinguishable, once wrapped by Laravel's
+ * Connection::runQueryCallback() into a QueryException, from a genuine
+ * MySQL deadlock — on the first execute() call whose SQL matches $matcher,
+ * then behaves exactly like the real PDOStatement afterward (including for
+ * every later retry of the very same query). This exercises
+ * DeadlockRetryService's actual QueryException-catching retry loop and
+ * Laravel's real nested-transaction handling
+ * (ManagesTransactions::handleTransactionException()) for real, rather than
+ * mocking DeadlockRetryService or TaxBackfillRunner — the bug being tested
+ * lives specifically in how those two interact through the connection's
+ * genuine transaction-depth counter, which no amount of mocking either
+ * class could reproduce.
+ */
+class DeadlockOnceOnMatchStatement extends PDOStatement
+{
+    /** @var null|callable(string): bool */
+    public static $matcher = null;
+
+    public static int $remainingFailures = 0;
+
+    public static int $timesTriggered = 0;
+
+    protected function __construct()
+    {
+        // PDO instantiates statement subclasses internally via
+        // PDO::ATTR_STATEMENT_CLASS; nothing to set up here.
+    }
+
+    public function execute(?array $params = null): bool
+    {
+        if (
+            self::$remainingFailures > 0
+            && self::$matcher !== null
+            && (self::$matcher)($this->queryString)
+        ) {
+            self::$remainingFailures--;
+            self::$timesTriggered++;
+
+            $exception = new PDOException(
+                'SQLSTATE[40001]: Serialization failure: 1213 Deadlock found when trying to get lock; try restarting transaction',
+                1213
+            );
+            // Populated exactly as a real MySQL deadlock would (mirrors
+            // DeadlockRetryServiceTest::deadlockException()) so
+            // QueryException::__construct's errorInfo copy and
+            // DeadlockRetryService::isRetryableDeadlock()'s message check
+            // both see realistic data.
+            $exception->errorInfo = ['40001', 1213, 'Deadlock found when trying to get lock; try restarting transaction'];
+
+            throw $exception;
+        }
+
+        return parent::execute($params);
+    }
+
+    public static function reset(): void
+    {
+        self::$matcher = null;
+        self::$remainingFailures = 0;
+        self::$timesTriggered = 0;
+    }
+}
 
 /**
  * 002-backfill-transaction-taxes, Slice 3 (T016).
@@ -26,6 +96,8 @@ use Tests\TestCase;
  */
 class TaxBackfillRunnerTest extends TestCase
 {
+    use FakesMetricsDistributionRedis;
+
     private function makeTransaction(Tenant $tenant, array $attributes = []): Transaction
     {
         $terminal = \App\Models\PosTerminal::factory()->create([
@@ -930,6 +1002,180 @@ class TaxBackfillRunnerTest extends TestCase
         }
 
         $this->assertSame($beforeCount, DB::table('transaction_taxes')->count());
+    }
+
+    /**
+     * Regression test for the nested-transaction/DeadlockException bug fixed
+     * alongside this test: every write site inside processTransactionForApply()
+     * used to wrap its DeadlockRetryService::withDeadlockRetry() closure in a
+     * *second*, redundant DB::transaction() — but withDeadlockRetry() already
+     * opens one itself (it calls DB::transaction($callback, 1) internally).
+     * With two transactions nested, Laravel's own
+     * ManagesTransactions::handleTransactionException() treats a
+     * deadlock/lock-wait caught while $this->transactions > 1 as
+     * unrecoverable: it throws a DeadlockException (a PDOException subclass,
+     * NOT a QueryException) instead of rolling back and letting the caller
+     * retry. DeadlockRetryService::withDeadlockRetry()'s catch block is
+     * `catch (QueryException $e)`, so it can never catch that
+     * DeadlockException — the retry never engages and the transaction ends
+     * up recorded as `failed` instead of `applied`.
+     *
+     * This test forces a *genuine* QueryException matching
+     * isRetryableDeadlock()'s exact phrase ("Deadlock found when trying to
+     * get lock") on the very first execution of the `transaction_taxes`
+     * insert inside the `Applied` write path, via DeadlockOnceOnMatchStatement
+     * (defined above) installed on the real PDO connection — deliberately
+     * NOT a mocked DeadlockRetryService/TaxBackfillRunner, because the bug
+     * lives specifically in Laravel's real transaction-depth bookkeeping,
+     * which no amount of mocking those two classes could reproduce.
+     *
+     * RefreshDatabase already wraps this test in its own transaction before
+     * this method runs, which by itself would push the connection's nesting
+     * depth to >1 the moment ANY DB::transaction() opens inside apply() —
+     * masking whether TaxBackfillRunner's own code adds a SECOND level on
+     * top, i.e. exactly the distinction this test exists to prove. DB::commit()
+     * below flushes that ambient wrapping transaction away (down to depth 0)
+     * before exercising apply(), so the only transaction depth in play is
+     * whatever apply()'s own write path creates. The corresponding `finally`
+     * block below then manually cleans up the rows this test consequently
+     * commits for real (RefreshDatabase's usual rollback can no longer do
+     * it) and reopens an empty transaction so RefreshDatabase's teardown
+     * rollback — and its "was the connection left mid-transaction?"
+     * remigration check — behave exactly as they would for any other test.
+     *
+     * Cleanup precision note: DB::commit()-ing away RefreshDatabase's wrap
+     * also makes permanent two side effects that would otherwise have been
+     * silently rolled back for free: (1) TransactionFactory::definition()
+     * unconditionally calls Tenant::factory()->create() and
+     * PosTerminal::factory()->create() as throwaway defaults BEFORE this
+     * test's own tenant_id/terminal_id overrides are applied — those rows
+     * are created for real regardless of the override, orphaning a Company
+     * (via TenantFactory's own nested Company::factory() default) + Tenant
+     * + PosTerminal that nothing in this test otherwise references; and (2)
+     * this test's own explicit Tenant::factory()->create() call similarly
+     * creates a backing Company via TenantFactory's nested default. Neither
+     * is identifiable by a fixed id captured up front (they're never
+     * assigned to a variable), so companies/tenants/pos_terminals row ids
+     * are snapshotted immediately after DB::commit() (before ANY fixture
+     * creation) and diffed against the post-setup state — every id absent
+     * from the snapshot, whether this test's own explicit fixtures or one
+     * of the factory's throwaway side effects, is deleted in the `finally`
+     * block below. This is deliberately id-set-based rather than a blanket
+     * "delete everything in these tables," so it cannot touch a row another
+     * concurrently-running test process created.
+     */
+    public function test_a_genuine_deadlock_on_the_apply_write_path_is_retried_and_the_second_attempt_succeeds(): void
+    {
+        config()->set('tsms.metrics.distribution.redis_connection', 'default');
+        config()->set('tsms.metrics.distribution.key_prefix', 'metrics:dist:');
+        config()->set('tsms.metrics.distribution.sample_cap', 1000);
+        config()->set('tsms.metrics.distribution.sample_ttl_seconds', 3600);
+        config()->set('tsms.metrics.distribution.cardinality_budget', 200);
+        config()->set('tsms.metrics.distribution.cardinality_ttl_seconds', 3600);
+        config()->set('tsms.metrics.distribution.allowed_dimensions', ['route', 'shard']);
+        $this->fakeMetricsDistributionRedis();
+
+        DB::commit();
+
+        // Baseline snapshots, captured before any fixture in this test
+        // exists, so cleanup below can precisely identify every row this
+        // test's DB::commit() workaround caused to become permanent —
+        // including factory side-effect rows never assigned to a variable
+        // (see the docblock above). DB::table() bypasses Eloquent's
+        // SoftDeletes global scope, so the tenants snapshot includes
+        // already soft-deleted rows too, exactly matching what the later
+        // diff query (also via DB::table()) will see.
+        $companyIdsBefore = DB::table('companies')->pluck('id')->all();
+        $tenantIdsBefore = DB::table('tenants')->pluck('id')->all();
+        $terminalIdsBefore = DB::table('pos_terminals')->pluck('id')->all();
+
+        $pdo = DB::connection()->getPdo();
+        $defaultStatementClass = $pdo->getAttribute(PDO::ATTR_STATEMENT_CLASS);
+
+        $transaction = null;
+        $run = null;
+
+        try {
+            $tenant = Tenant::factory()->create();
+            $transaction = $this->makeTransaction($tenant, [
+                'original_payload' => json_encode([
+                    'taxes' => [['tax_type' => 'VAT', 'amount' => 77.00]],
+                ]),
+                'vat_amount' => 77.00,
+            ]);
+
+            $day = $transaction->created_at->copy();
+
+            $pdo->setAttribute(PDO::ATTR_STATEMENT_CLASS, [DeadlockOnceOnMatchStatement::class, []]);
+            DeadlockOnceOnMatchStatement::$matcher = fn (string $sql) => str_starts_with(strtolower(trim($sql)), 'insert')
+                && str_contains($sql, 'transaction_taxes');
+            DeadlockOnceOnMatchStatement::$remainingFailures = 1;
+
+            $run = $this->runner()->apply($day, $tenant->id);
+
+            $pdo->setAttribute(PDO::ATTR_STATEMENT_CLASS, $defaultStatementClass);
+
+            $this->assertSame(
+                1,
+                DeadlockOnceOnMatchStatement::$timesTriggered,
+                'The forced deadlock never actually triggered on the transaction_taxes insert — this test would otherwise pass vacuously.'
+            );
+
+            $this->assertSame(TaxBackfillRun::MODE_APPLY, $run->mode);
+            $this->assertSame(TaxBackfillRun::STATUS_COMPLETED, $run->status);
+            $this->assertSame(1, $run->reconstructed_count);
+            $this->assertSame(0, $run->failed_count);
+
+            $taxRow = DB::table('transaction_taxes')->where('transaction_pk', $transaction->id)->first();
+            $this->assertNotNull($taxRow, 'Expected the retried second attempt to have inserted the tax row.');
+            $this->assertSame('VAT', $taxRow->tax_type);
+            $this->assertEquals(77.00, $taxRow->amount);
+
+            $record = TaxBackfillRecord::where('run_id', $run->id)->where('transaction_pk', $transaction->id)->firstOrFail();
+            $this->assertSame(
+                TaxBackfillOutcome::Applied->value,
+                $record->outcome,
+                'Expected the retried second attempt to converge on `applied`, not `failed`.'
+            );
+            $this->assertNull($record->reason_code);
+        } finally {
+            $pdo->setAttribute(PDO::ATTR_STATEMENT_CLASS, $defaultStatementClass);
+            DeadlockOnceOnMatchStatement::reset();
+
+            // Manual cleanup in FK-safe order (children before parents):
+            // tax_backfill_records before tax_backfill_runs (no cascade —
+            // see the migration) and before transactions (also no cascade
+            // on transaction_pk); transactions before pos_terminals/tenants
+            // (both RESTRICT); tenants before companies (RESTRICT). Every
+            // delete goes through DB::table() rather than the Eloquent
+            // models so this is a genuine hard delete regardless of
+            // SoftDeletes (Tenant) — leaving zero footprint on a raw
+            // COUNT(*), not just an Eloquent-invisible soft-deleted row.
+            if ($run !== null) {
+                DB::table('tax_backfill_records')->where('run_id', $run->id)->delete();
+                DB::table('tax_backfill_runs')->where('id', $run->id)->delete();
+            }
+            if ($transaction !== null) {
+                DB::table('transaction_taxes')->where('transaction_pk', $transaction->id)->delete();
+                DB::table('transactions')->where('id', $transaction->id)->delete();
+            }
+
+            // Diff-based cleanup for every companies/tenants/pos_terminals
+            // row that appeared since the pre-fixture snapshot above —
+            // covers both this test's own explicit Tenant (+ its
+            // TenantFactory-nested Company) and the wholly-unreferenced
+            // orphan Company+Tenant+PosTerminal that
+            // TransactionFactory::definition() creates as a side effect
+            // regardless of the tenant_id/terminal_id overrides passed to
+            // it (see the docblock above). pos_terminals first (references
+            // tenants), then tenants (references companies), then
+            // companies.
+            DB::table('pos_terminals')->whereNotIn('id', $terminalIdsBefore)->delete();
+            DB::table('tenants')->whereNotIn('id', $tenantIdsBefore)->delete();
+            DB::table('companies')->whereNotIn('id', $companyIdsBefore)->delete();
+
+            DB::beginTransaction();
+        }
     }
 
     protected function tearDown(): void

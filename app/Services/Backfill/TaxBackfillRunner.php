@@ -297,10 +297,8 @@ class TaxBackfillRunner
         try {
             if ($transaction->taxes()->exists()) {
                 $this->retryService->withDeadlockRetry(function () use ($run, $transaction) {
-                    return DB::transaction(function () use ($run, $transaction) {
-                        $this->recordOutcome($run, $transaction, TaxBackfillOutcome::SkippedExisting, null, [], true);
-                        $run->increment('skipped_existing_count');
-                    });
+                    $this->recordOutcome($run, $transaction, TaxBackfillOutcome::SkippedExisting, null, [], true);
+                    $run->increment('skipped_existing_count');
                 });
 
                 return true;
@@ -310,10 +308,8 @@ class TaxBackfillRunner
 
             if ($reconstructedRows === []) {
                 $this->retryService->withDeadlockRetry(function () use ($run, $transaction) {
-                    return DB::transaction(function () use ($run, $transaction) {
-                        $this->recordOutcome($run, $transaction, TaxBackfillOutcome::Quarantined, TaxBackfillReasonCode::MissingPayload->value, [], false);
-                        $run->increment('quarantined_count');
-                    });
+                    $this->recordOutcome($run, $transaction, TaxBackfillOutcome::Quarantined, TaxBackfillReasonCode::MissingPayload->value, [], false);
+                    $run->increment('quarantined_count');
                 });
 
                 return true;
@@ -323,10 +319,8 @@ class TaxBackfillRunner
 
             if ($mismatches !== []) {
                 $this->retryService->withDeadlockRetry(function () use ($run, $transaction, $reconstructedRows) {
-                    return DB::transaction(function () use ($run, $transaction, $reconstructedRows) {
-                        $this->recordOutcome($run, $transaction, TaxBackfillOutcome::Quarantined, TaxBackfillReasonCode::CrossCheckMismatch->value, $reconstructedRows, false);
-                        $run->increment('quarantined_count');
-                    });
+                    $this->recordOutcome($run, $transaction, TaxBackfillOutcome::Quarantined, TaxBackfillReasonCode::CrossCheckMismatch->value, $reconstructedRows, false);
+                    $run->increment('quarantined_count');
                 });
 
                 return true;
@@ -336,13 +330,20 @@ class TaxBackfillRunner
             // existing linked rows. Insert the real tax rows, the `applied`
             // audit record, and the counter increment atomically, in one
             // short transaction (deadlock-retried) scoped to this
-            // transaction alone.
+            // transaction alone. The transaction boundary comes solely from
+            // DeadlockRetryService::withDeadlockRetry() itself (it already
+            // wraps its callback in DB::transaction($callback, 1) — see
+            // that class) — this closure must NOT open its own nested
+            // DB::transaction(), or a genuine deadlock on a statement in
+            // here surfaces as Laravel's nested-transaction DeadlockException
+            // (ManagesTransactions::handleTransactionException(), thrown
+            // when $this->transactions > 1), which is not a QueryException
+            // and so is invisible to withDeadlockRetry()'s `catch
+            // (QueryException $e)` — defeating retry entirely.
             $this->retryService->withDeadlockRetry(function () use ($run, $transaction, $reconstructedRows) {
-                return DB::transaction(function () use ($run, $transaction, $reconstructedRows) {
-                    $this->insertTaxRows($transaction, $reconstructedRows);
-                    $this->recordOutcome($run, $transaction, TaxBackfillOutcome::Applied, null, $reconstructedRows, false);
-                    $run->increment('reconstructed_count');
-                });
+                $this->insertTaxRows($transaction, $reconstructedRows);
+                $this->recordOutcome($run, $transaction, TaxBackfillOutcome::Applied, null, $reconstructedRows, false);
+                $run->increment('reconstructed_count');
             });
 
             return true;
@@ -363,17 +364,15 @@ class TaxBackfillRunner
 
             try {
                 $this->retryService->withDeadlockRetry(function () use ($run, $transaction, $reconstructedRows, $e) {
-                    return DB::transaction(function () use ($run, $transaction, $reconstructedRows, $e) {
-                        $this->recordOutcome(
-                            $run,
-                            $transaction,
-                            TaxBackfillOutcome::Failed,
-                            $this->describeException($e),
-                            $reconstructedRows,
-                            false
-                        );
-                        $run->increment('failed_count');
-                    });
+                    $this->recordOutcome(
+                        $run,
+                        $transaction,
+                        TaxBackfillOutcome::Failed,
+                        $this->describeException($e),
+                        $reconstructedRows,
+                        false
+                    );
+                    $run->increment('failed_count');
                 });
 
                 return true;
