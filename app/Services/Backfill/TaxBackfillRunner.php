@@ -7,10 +7,13 @@ namespace App\Services\Backfill;
 use App\Models\TaxBackfillRecord;
 use App\Models\TaxBackfillRun;
 use App\Models\Transaction;
+use App\Services\DeadlockRetryService;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
+use RuntimeException;
 use Throwable;
 
 /**
@@ -29,7 +32,10 @@ use Throwable;
  */
 class TaxBackfillRunner
 {
-    public function __construct(protected TaxReconstructionService $reconstructionService) {}
+    public function __construct(
+        protected TaxReconstructionService $reconstructionService,
+        protected DeadlockRetryService $retryService
+    ) {}
 
     /**
      * Scan transactions created between $from and $to (inclusive), classify
@@ -130,6 +136,333 @@ class TaxBackfillRunner
         ]);
 
         return $run;
+    }
+
+    /**
+     * Scan transactions created on $day, classify each into exactly one
+     * outcome, and — for the clean/reconstructable case only — actually
+     * insert the reconstructed rows into `transaction_taxes` (Slice 6,
+     * T026-T029). Single-day only: $day resolves to
+     * [$day->copy()->startOfDay(), $day->copy()->endOfDay()], so this method
+     * has no way to be called across a multi-day window (FR-014a,
+     * cli-contract.md's "Day-scoped apply" guarantee). Wiring --apply into
+     * the CLI (with --day enforcement at that layer) is a separate follow-up
+     * task, not this method's concern.
+     *
+     * Classification ordering mirrors dryRun()'s processTransaction()
+     * exactly: taxes()->exists() first (skipped_existing, no reconstruction
+     * attempted at all), then reconstructTaxRows() (quarantined /
+     * missing_payload if empty), then crossCheck() (quarantined /
+     * cross_check_mismatch if non-empty). Only once all three checks pass
+     * does this method insert anything. This ordering is also what makes
+     * T034 (idempotency) and T035 (no-overwrite) hold "for free": re-running
+     * apply() over the same day converges every previously-applied
+     * transaction to skipped_existing on the second pass, and a transaction
+     * with a pre-existing linked row is never reconstructed, cross-checked,
+     * or touched at all.
+     *
+     * Transaction-boundary note (differs from dryRun()): dryRun() wraps each
+     * *chunk's* audit writes in one DB::transaction() because nothing in it
+     * ever writes a real tax row — losing an audit chunk to a rollback is
+     * acceptable. Here, a chunk's already-successfully-inserted real
+     * `transaction_taxes` rows must never be rolled back because a
+     * *different* transaction in the same chunk hit a DB error, so each
+     * transaction's insert + its TaxBackfillRecord write are wrapped in one
+     * short DB::transaction() *per transaction processed* (via
+     * DeadlockRetryService::withDeadlockRetry(), this repo's established
+     * convention — see TransactionIngestService::ingest()), not per chunk.
+     *
+     * Failure containment mirrors dryRun()'s two-layer design, adapted for
+     * the per-transaction boundary: processTransactionForApply() catches
+     * anything from classification/insert and records a `failed` outcome in
+     * its own short transaction; if even that recording throws (a genuine
+     * DB error), it's logged and reported via the return value so this
+     * method marks the run `failed` rather than `completed`. This method
+     * itself catches anything that escapes that containment entirely and
+     * marks the run `interrupted` before re-throwing, so a run is never left
+     * sitting at `status = 'running'` indefinitely.
+     *
+     * @param  int|array<int>|null  $tenantId
+     */
+    public function apply(Carbon $day, int|array|null $tenantId = null, ?int $limit = null, int $chunkSize = 500): TaxBackfillRun
+    {
+        $from = $day->copy()->startOfDay();
+        $to = $day->copy()->endOfDay();
+
+        $run = TaxBackfillRun::create([
+            'window_start' => $from,
+            'window_end' => $to,
+            'mode' => TaxBackfillRun::MODE_APPLY,
+            'scanned_count' => 0,
+            'reconstructed_count' => 0,
+            'skipped_existing_count' => 0,
+            'quarantined_count' => 0,
+            'failed_count' => 0,
+            'status' => TaxBackfillRun::STATUS_RUNNING,
+            'started_at' => now(),
+        ]);
+
+        $query = Transaction::query()
+            ->whereBetween('created_at', [$from, $to])
+            ->when($tenantId !== null, function ($q) use ($tenantId) {
+                is_array($tenantId)
+                    ? $q->whereIn('tenant_id', $tenantId)
+                    : $q->where('tenant_id', $tenantId);
+            });
+
+        $processed = 0;
+        $reachedLimit = false;
+        $hadUnrecoverableFailure = false;
+
+        try {
+            $query->chunkById($chunkSize, function ($transactions) use ($run, $limit, &$processed, &$reachedLimit, &$hadUnrecoverableFailure) {
+                foreach ($transactions as $transaction) {
+                    if ($limit !== null && $processed >= $limit) {
+                        $reachedLimit = true;
+                        break;
+                    }
+
+                    if (! $this->processTransactionForApply($transaction, $run)) {
+                        $hadUnrecoverableFailure = true;
+                    }
+
+                    $processed++;
+                }
+
+                // Returning false stops chunkById from fetching further chunks.
+                return ! $reachedLimit;
+            });
+        } catch (Throwable $e) {
+            Log::error('TaxBackfillRunner: apply run interrupted by an unexpected error', [
+                'run_id' => $run->id,
+                'exception' => $e->getMessage(),
+            ]);
+
+            // Discard any stale in-memory counter left by whatever
+            // just-rolled-back statement caused this escape (see the
+            // matching comment in processTransactionForApply()'s outer
+            // catch) before this update() call — otherwise Eloquent's dirty
+            // tracking would resurrect that never-actually-committed value
+            // into the DB alongside the status/completed_at change below.
+            $run->refresh();
+
+            $run->update([
+                'status' => TaxBackfillRun::STATUS_INTERRUPTED,
+                'completed_at' => now(),
+            ]);
+
+            throw $e;
+        }
+
+        $run->update([
+            'status' => $hadUnrecoverableFailure ? TaxBackfillRun::STATUS_FAILED : TaxBackfillRun::STATUS_COMPLETED,
+            'completed_at' => now(),
+        ]);
+
+        return $run;
+    }
+
+    /**
+     * Classify and (for the clean case) apply a single transaction, in its
+     * own short DeadlockRetryService/DB::transaction() boundary — never a
+     * chunk-wide one, per apply()'s docblock. Returns false only when even
+     * recording the `failed` outcome itself throws (a genuine DB error, not
+     * merely a reconstruction/insert failure) — mirrors
+     * processTransaction()'s return-value contract in dryRun().
+     *
+     * Code-review fix: every `$run->increment(...)` call for the outcome
+     * counters lives *inside* the same DeadlockRetryService/DB::transaction()
+     * closure as the TaxBackfillRecord write (and the tax-row insert, for
+     * `Applied`) it corresponds to — never after that closure returns. An
+     * increment failing after the closure already committed used to leave a
+     * committed `applied`/`quarantined`/`skipped_existing` TaxBackfillRecord
+     * in place while control fell through to the outer catch, which then
+     * wrote a *second*, contradictory `failed` TaxBackfillRecord for the
+     * same transaction and double-counted the run totals — breaking the
+     * one-transaction-one-outcome invariant. With the increment inside the
+     * transaction, a failure there rolls back the whole unit (no tax row, no
+     * audit record, no partial counter), and the outer catch's
+     * failure-recording path runs against a transaction with zero prior
+     * state, exactly as the two-layer containment design already intends
+     * for every other kind of mid-transaction failure. `scanned_count` is
+     * the one exception: it is incremented once per transaction regardless
+     * of outcome via `finally`, deliberately outside any of the per-outcome
+     * transactions, since it must still increase even when scanning
+     * genuinely fails.
+     */
+    protected function processTransactionForApply(Transaction $transaction, TaxBackfillRun $run): bool
+    {
+        $reconstructedRows = [];
+
+        try {
+            if ($transaction->taxes()->exists()) {
+                $this->retryService->withDeadlockRetry(function () use ($run, $transaction) {
+                    return DB::transaction(function () use ($run, $transaction) {
+                        $this->recordOutcome($run, $transaction, TaxBackfillOutcome::SkippedExisting, null, [], true);
+                        $run->increment('skipped_existing_count');
+                    });
+                });
+
+                return true;
+            }
+
+            $reconstructedRows = $this->reconstructionService->reconstructTaxRows($transaction);
+
+            if ($reconstructedRows === []) {
+                $this->retryService->withDeadlockRetry(function () use ($run, $transaction) {
+                    return DB::transaction(function () use ($run, $transaction) {
+                        $this->recordOutcome($run, $transaction, TaxBackfillOutcome::Quarantined, TaxBackfillReasonCode::MissingPayload->value, [], false);
+                        $run->increment('quarantined_count');
+                    });
+                });
+
+                return true;
+            }
+
+            $mismatches = $this->reconstructionService->crossCheck($transaction, $reconstructedRows);
+
+            if ($mismatches !== []) {
+                $this->retryService->withDeadlockRetry(function () use ($run, $transaction, $reconstructedRows) {
+                    return DB::transaction(function () use ($run, $transaction, $reconstructedRows) {
+                        $this->recordOutcome($run, $transaction, TaxBackfillOutcome::Quarantined, TaxBackfillReasonCode::CrossCheckMismatch->value, $reconstructedRows, false);
+                        $run->increment('quarantined_count');
+                    });
+                });
+
+                return true;
+            }
+
+            // Clean case: reconstruction is trustworthy and has zero
+            // existing linked rows. Insert the real tax rows, the `applied`
+            // audit record, and the counter increment atomically, in one
+            // short transaction (deadlock-retried) scoped to this
+            // transaction alone.
+            $this->retryService->withDeadlockRetry(function () use ($run, $transaction, $reconstructedRows) {
+                return DB::transaction(function () use ($run, $transaction, $reconstructedRows) {
+                    $this->insertTaxRows($transaction, $reconstructedRows);
+                    $this->recordOutcome($run, $transaction, TaxBackfillOutcome::Applied, null, $reconstructedRows, false);
+                    $run->increment('reconstructed_count');
+                });
+            });
+
+            return true;
+        } catch (Throwable $e) {
+            // Discard any stale in-memory counter mutation left by the
+            // just-rolled-back attempt above. Eloquent's increment() sets
+            // the attribute in memory *before* issuing its UPDATE
+            // (Model::incrementOrDecrement()); if that specific UPDATE is
+            // what failed, the in-memory value never gets resynced to the
+            // (correctly rolled-back) DB value via syncOriginalAttribute().
+            // Left uncorrected, that stale value would look "dirty" to
+            // Eloquent and get resurrected into the DB the next time
+            // anything calls $run->update(...) or $run->save() — including
+            // apply()'s own final status-setting update. refresh() re-reads
+            // the actually-persisted row so every counter this method (and
+            // apply() afterward) reasons about is truthful.
+            $run->refresh();
+
+            try {
+                $this->retryService->withDeadlockRetry(function () use ($run, $transaction, $reconstructedRows, $e) {
+                    return DB::transaction(function () use ($run, $transaction, $reconstructedRows, $e) {
+                        $this->recordOutcome(
+                            $run,
+                            $transaction,
+                            TaxBackfillOutcome::Failed,
+                            $this->describeException($e),
+                            $reconstructedRows,
+                            false
+                        );
+                        $run->increment('failed_count');
+                    });
+                });
+
+                return true;
+            } catch (Throwable $recordingException) {
+                // Recording the failure itself failed (e.g. a genuine DB
+                // error, not just a reconstruction/insert failure) — don't
+                // let this vanish silently: log both exceptions and surface
+                // it via the return value so apply() marks the run `failed`
+                // instead of `completed`. No TaxBackfillRecord exists for
+                // this transaction; it genuinely could not be written, and —
+                // because the insert attempt (if one happened) was wrapped
+                // in the same now-rolled-back transaction as this failed
+                // recording attempt — no orphan `transaction_taxes` row was
+                // left behind either. failed_count is intentionally NOT
+                // incremented here: the transaction that would have carried
+                // it never committed, so bumping the in-memory counter here
+                // would itself double-count against a future successful
+                // retry/rerun's accounting. The gap is visible instead via
+                // the logged error below and the run ending in `failed`
+                // status rather than `completed`. Also discard any stale
+                // in-memory counter this now-rolled-back attempt may have
+                // left behind (same reasoning as the refresh() above), so
+                // apply()'s own final $run->update() can't resurrect it.
+                $run->refresh();
+
+                Log::error('TaxBackfillRunner: could not record a failed-outcome audit row for a transaction during apply', [
+                    'run_id' => $run->id,
+                    'transaction_id' => $transaction->id,
+                    'original_exception' => $e->getMessage(),
+                    'recording_exception' => $recordingException->getMessage(),
+                ]);
+
+                return false;
+            }
+        } finally {
+            $run->increment('scanned_count');
+        }
+    }
+
+    /**
+     * Build and insert one multi-row `insert()` statement for every
+     * reconstructed row belonging to $transaction (T029). Cross-transaction
+     * batching (multiple transactions' rows in one statement) is explicitly
+     * deferred to T078 — out of scope here.
+     *
+     * `created_at` is always the *parent transaction's own* `created_at` —
+     * never `now()` — per FR-014/data-model.md/T068a: using insertion time
+     * would fail day-level reconciliation by construction. `updated_at`, by
+     * contrast, genuinely is being written now (this row did not exist a
+     * moment ago), so it uses `now()` — only when Schema::hasColumn()
+     * confirms the column exists, mirroring
+     * TransactionIngestService::insertTaxes()'s own guard
+     * (TransactionIngestService.php:450-455) both in its presence-check and
+     * its `now()` value. This method does not reuse or extract from that
+     * method (R5/Q8/N10: this class's insert semantics diverge from the live
+     * ingestion path), it only mirrors the same defensive Schema guard.
+     *
+     * @param  array<int, array{tax_type: mixed, amount: mixed}>  $reconstructedRows
+     */
+    protected function insertTaxRows(Transaction $transaction, array $reconstructedRows): void
+    {
+        if ($transaction->id === null) {
+            // Defensive only — taxes()->exists() and everything upstream
+            // already require a persisted transaction with a non-null id.
+            // This should be unreachable, but per data-model.md's own
+            // warning that transaction_pk is nullable at the DB level (the
+            // exact nullability that caused the original 3.24M-row defect),
+            // refuse to insert rather than let a null slip through.
+            throw new RuntimeException('TaxBackfillRunner: refusing to insert transaction_taxes rows for a transaction with a null id.');
+        }
+
+        $hasUpdatedAt = Schema::hasColumn('transaction_taxes', 'updated_at');
+
+        $rows = array_map(function (array $row) use ($transaction, $hasUpdatedAt) {
+            $insertRow = [
+                'transaction_pk' => $transaction->id,
+                'tax_type' => $row['tax_type'],
+                'amount' => $row['amount'],
+                'created_at' => $transaction->created_at,
+            ];
+
+            if ($hasUpdatedAt) {
+                $insertRow['updated_at'] = now();
+            }
+
+            return $insertRow;
+        }, $reconstructedRows);
+
+        DB::table('transaction_taxes')->insert($rows);
     }
 
     /**
