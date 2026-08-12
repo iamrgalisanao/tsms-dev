@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Console\Commands;
 
 use App\Services\Backfill\OrphanTaxArchiver;
+use App\Services\Backfill\OrphanTaxDeleter;
 use App\Services\Backfill\OrphanTaxReconciler;
 use Carbon\Carbon;
 use Illuminate\Console\Command;
@@ -12,54 +13,61 @@ use Illuminate\Support\Facades\DB;
 
 /**
  * 002-backfill-transaction-taxes — orphan archive/reconcile/delete pipeline.
- * Slice 12 (T068) built `--phase=archive`; Slice 13 (T069/T071-partial) adds
- * `--phase=reconcile` — see
- * specs/002-backfill-transaction-taxes/slice-12-orphan-archive-brief.md and
- * .../slice-13-orphan-reconcile-brief.md.
+ * Slice 12 (T068) built `--phase=archive`; Slice 13 (T069/T071-partial) added
+ * `--phase=reconcile`; Slice 14 (T070/T070a/T071/T079) adds `--phase=delete`
+ * — see specs/002-backfill-transaction-taxes/slice-12-orphan-archive-brief.md,
+ * .../slice-13-orphan-reconcile-brief.md, and
+ * .../slice-14-orphan-delete-brief.md.
  *
- * `archive` and `reconcile` are implemented in this build. `--phase=delete`
- * (or any other value) is rejected outright, before any DB access at all —
- * mirroring how Slice 4's BackfillTransactionTaxes rejected `--apply`
- * outright before Slice 8 implemented it. Delete is Stage 3 (T070/T070a),
- * a separate later slice with its own authorization-token mechanism
- * (T079/Architect Q4) — deliberately not started here.
+ * `archive`, `reconcile`, and `delete` are all implemented in this build.
+ * Any other `--phase` value is rejected outright, before any DB access at
+ * all. `delete` is Stage 3 — the only phase that ever issues a DELETE
+ * against a live table — gated by OrphanTaxDeleter's authorization-token
+ * mechanism (T079): a dry-run (no `--apply`) reports the current evidence
+ * hash and a preview count without writing anything; `--apply` requires a
+ * non-empty `--token=` matching that hash, validated before any DB access.
  *
  * Each phase keeps its own buildResult()/render() pair (buildResult()/
  * render() for archive, buildReconcileResult()/renderReconcile() for
- * reconcile) — the two phases have entirely different result shapes, but
- * each individually follows this feature's established one-result-object
- * convention (see BackfillTransactionTaxes's own buildResult()/render()
- * split): a single array drives both human and `--json` output for that
- * phase, so the two representations can never drift apart.
+ * reconcile, buildDeleteResult()/renderDelete() for delete) — the phases
+ * have entirely different result shapes, but each individually follows this
+ * feature's established one-result-object convention (see
+ * BackfillTransactionTaxes's own buildResult()/render() split): a single
+ * array drives both human and `--json` output for that phase, so the two
+ * representations can never drift apart.
  */
 class ArchiveOrphanTaxRows extends Command
 {
     protected const DEFAULT_CHUNK_SIZE = 1000;
 
     protected $signature = 'transactions:archive-orphan-taxes
-        {--phase=archive : \'archive\' and \'reconcile\' are implemented. \'delete\' is rejected (Stage 3, a later slice).}
-        {--apply : Persist. Without this flag, dry-run only: report counts/verdict, write nothing.}
-        {--chunk=1000 : Archive phase only.}
-        {--day= : Single day (Y-m-d). Required when --phase=reconcile.}
+        {--phase=archive : \'archive\', \'reconcile\', and \'delete\' are implemented.}
+        {--apply : Persist. Without this flag, dry-run only: report counts/verdict/preview, write nothing.}
+        {--chunk=1000 : Archive phase\'s insert chunk size, and delete phase\'s DELETE chunk size.}
+        {--day= : Single day (Y-m-d). Required when --phase=reconcile or --phase=delete.}
+        {--token= : Required when --phase=delete --apply is set. Must equal the authorization_token preflight() reports for this day.}
         {--json}';
 
-    protected $description = 'Archive orphaned (transaction_pk IS NULL) transaction_taxes rows into transaction_taxes_orphan_archive, and reconcile a day\'s already-archived orphans against reconstructed replacements';
+    protected $description = 'Archive orphaned (transaction_pk IS NULL) transaction_taxes rows into transaction_taxes_orphan_archive, reconcile a day\'s already-archived orphans against reconstructed replacements, and delete a day\'s archived+reconciled orphans from the live table under a token-gated authorization check';
 
-    public function handle(OrphanTaxArchiver $archiver, OrphanTaxReconciler $reconciler): int
+    public function handle(OrphanTaxArchiver $archiver, OrphanTaxReconciler $reconciler, OrphanTaxDeleter $deleter): int
     {
         $phase = (string) $this->option('phase');
 
         // Rejected before any other option is even validated, let alone any
-        // DB access — matches this slice's hard scope boundary that delete
-        // simply doesn't exist yet in this build.
-        if (! in_array($phase, ['archive', 'reconcile'], true)) {
-            $this->error("--phase={$phase} is not yet implemented in this build — delete remains later slices scope.");
+        // DB access.
+        if (! in_array($phase, ['archive', 'reconcile', 'delete'], true)) {
+            $this->error("--phase={$phase} is invalid — must be one of: archive, reconcile, delete.");
 
             return self::FAILURE;
         }
 
         if ($phase === 'reconcile') {
             return $this->handleReconcile($reconciler);
+        }
+
+        if ($phase === 'delete') {
+            return $this->handleDelete($deleter);
         }
 
         return $this->handleArchive($archiver);
@@ -133,6 +141,69 @@ class ArchiveOrphanTaxRows extends Command
         $this->renderReconcile($result);
 
         return $evaluation['passed'] ? self::SUCCESS : self::FAILURE;
+    }
+
+    /**
+     * `--phase=delete` wiring (T070/T079's CLI half). `--day` is required,
+     * same as reconcile. Dry-run (no `--apply`) calls
+     * OrphanTaxDeleter::preflight() only — precondition status, the current
+     * evidence hash (`authorization_token`), and a delete-preview count,
+     * nothing written. `--apply` requires a non-empty `--token=`, rejected
+     * before any DB access if missing or empty (mirroring this command's
+     * existing validate-before-DB-access convention), then calls delete(),
+     * which itself re-verifies both preconditions and the token fresh —
+     * this method's own token-presence guard is a second, belt-and-braces
+     * check rather than the only thing preventing an unauthorized delete.
+     */
+    protected function handleDelete(OrphanTaxDeleter $deleter): int
+    {
+        $dayOption = $this->option('day');
+
+        if ($dayOption === null || $dayOption === '') {
+            $this->error('--day is required when --phase=delete.');
+
+            return self::FAILURE;
+        }
+
+        if (! $this->isValidDate((string) $dayOption)) {
+            $this->error("Invalid --day value '{$dayOption}': expected format Y-m-d.");
+
+            return self::FAILURE;
+        }
+
+        $chunkValidationError = $this->validateChunkOption();
+
+        if ($chunkValidationError !== null) {
+            $this->error($chunkValidationError);
+
+            return self::FAILURE;
+        }
+
+        $apply = (bool) $this->option('apply');
+        $token = (string) ($this->option('token') ?? '');
+
+        if ($apply && $token === '') {
+            $this->error('--token is required when --phase=delete --apply is set.');
+
+            return self::FAILURE;
+        }
+
+        $day = Carbon::createFromFormat('Y-m-d', (string) $dayOption)->startOfDay();
+        $chunkSize = (int) $this->option('chunk');
+
+        if ($apply) {
+            $outcome = $deleter->delete($day, $token, $chunkSize);
+            $passed = $outcome['authorized'];
+        } else {
+            $outcome = $deleter->preflight($day);
+            $passed = $outcome['passed'];
+        }
+
+        $result = $this->buildDeleteResult((string) $dayOption, $apply, $outcome);
+
+        $this->renderDelete($result);
+
+        return $passed ? self::SUCCESS : self::FAILURE;
     }
 
     protected function isValidDate(string $value): bool
@@ -294,5 +365,107 @@ class ArchiveOrphanTaxRows extends Command
             'Persisted to archive: %s',
             $result['persisted'] ? 'yes' : 'no'
         ));
+    }
+
+    /**
+     * One result array drives both the human table and --json output for
+     * `--phase=delete`, same convention as archive/reconcile's own
+     * buildResult()/render() pairs. Dry-run and --apply have different
+     * underlying shapes (OrphanTaxDeleter::preflight() vs. ::delete()), so
+     * fields that don't apply to the current mode are reported as null
+     * rather than omitted — keeping the result's key set stable across both
+     * modes for --json consumers.
+     *
+     * @return array{
+     *     phase: string,
+     *     day: string,
+     *     applied: bool,
+     *     passed: bool,
+     *     refusal_reason: string|null,
+     *     refusal_message: string|null,
+     *     preconditions: array|null,
+     *     authorization_token: string|null,
+     *     preview_count: int|null,
+     *     token_verified: bool|null,
+     *     chunks_processed: int|null,
+     *     rows_deleted: int|null,
+     *     already_deleted: int|null,
+     * }
+     */
+    protected function buildDeleteResult(string $day, bool $applied, array $outcome): array
+    {
+        if (! $applied) {
+            return [
+                'phase' => 'delete',
+                'day' => $day,
+                'applied' => false,
+                'passed' => $outcome['passed'],
+                'refusal_reason' => $outcome['refusal_reason'],
+                'refusal_message' => $outcome['refusal_message'],
+                'preconditions' => $outcome['preconditions'],
+                'authorization_token' => $outcome['authorization_token'],
+                'preview_count' => $outcome['preview_count'],
+                'token_verified' => null,
+                'chunks_processed' => null,
+                'rows_deleted' => null,
+                'already_deleted' => null,
+            ];
+        }
+
+        return [
+            'phase' => 'delete',
+            'day' => $day,
+            'applied' => true,
+            'passed' => $outcome['authorized'],
+            'refusal_reason' => $outcome['refusal_reason'],
+            'refusal_message' => $outcome['refusal_message'],
+            'preconditions' => null,
+            'authorization_token' => null,
+            'preview_count' => null,
+            'token_verified' => $outcome['token_verified'],
+            'chunks_processed' => $outcome['chunks_processed'],
+            'rows_deleted' => $outcome['rows_deleted'],
+            'already_deleted' => $outcome['already_deleted'],
+        ];
+    }
+
+    protected function renderDelete(array $result): void
+    {
+        if ($this->option('json')) {
+            $this->line(json_encode($result, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES));
+
+            return;
+        }
+
+        $this->info(sprintf(
+            'Orphan tax delete — day: %s (%s) — %s',
+            $result['day'],
+            $result['applied'] ? 'apply' : 'dry-run',
+            $result['passed'] ? ($result['applied'] ? 'DELETED' : 'READY') : 'REFUSED'
+        ));
+
+        if ($result['refusal_message'] !== null) {
+            $this->warn($result['refusal_message']);
+        }
+
+        if (! $result['applied']) {
+            if ($result['authorization_token'] !== null) {
+                $this->line("authorization_token: {$result['authorization_token']}");
+            }
+
+            $this->table(
+                ['Preview count'],
+                [[$result['preview_count'] ?? 0]]
+            );
+        } else {
+            $this->table(
+                ['Chunks processed', 'Rows deleted', 'Already deleted'],
+                [[
+                    $result['chunks_processed'] ?? 0,
+                    $result['rows_deleted'] ?? 0,
+                    $result['already_deleted'] ?? 0,
+                ]]
+            );
+        }
     }
 }

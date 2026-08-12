@@ -19,10 +19,13 @@ use Tests\TestCase;
  *
  * Covers the `transactions:archive-orphan-taxes` command: dry-run reports
  * accurate counts and writes nothing; --apply actually archives; every
- * `--phase` other than 'archive'/'reconcile' (i.e. 'delete' or garbage) is
+ * `--phase` other than 'archive'/'reconcile'/'delete' (i.e. garbage) is
  * rejected with zero DB access beyond option parsing; human/--json output
- * agree structurally for both phases; and reconcile's own --day
- * requirement, all-or-nothing persistence, and never-deletes guarantees.
+ * agree structurally across all three phases; reconcile's own --day
+ * requirement, all-or-nothing persistence, and never-deletes guarantees;
+ * and delete's own --day/--token requirements and token-gated authorization
+ * (see tests/Feature/Services/Backfill/OrphanTaxDeleterTest.php for the
+ * service-level coverage this file's CLI tests build on top of).
  *
  * Counts/assertions below are scoped to this test's own fixture ids (never
  * table-wide), matching this feature's established discipline for the known
@@ -147,8 +150,8 @@ class ArchiveOrphanTaxRowsTest extends TestCase
         );
 
         $this->assertNotSame(0, $exitCode);
-        $this->assertStringContainsString('not yet implemented in this build', $output);
-        $this->assertStringContainsString('later slices', $output);
+        $this->assertStringContainsString('is invalid', $output);
+        $this->assertStringContainsString('archive, reconcile, delete', $output);
 
         // Corroborating side-effect checks, kept alongside the direct
         // query-log proof above: no archive rows created at all (watermark
@@ -162,11 +165,6 @@ class ArchiveOrphanTaxRowsTest extends TestCase
         $original = DB::table('transaction_taxes')->where('id', $id)->first();
         $this->assertNotNull($original);
         $this->assertNull($original->transaction_pk);
-    }
-
-    public function test_phase_delete_is_rejected_with_zero_db_access(): void
-    {
-        $this->assertPhaseIsRejectedWithZeroDbAccess('delete');
     }
 
     public function test_garbage_phase_is_rejected_with_zero_db_access(): void
@@ -425,8 +423,27 @@ class ArchiveOrphanTaxRowsTest extends TestCase
         $day = Carbon::parse('2027-05-04 00:00:00');
         $dummyTransactionId = Transaction::factory()->create()->id;
 
-        $this->insertOrphanAt($day->copy()->addSeconds(3), '13.00');
+        $orphanId = $this->insertOrphanAt($day->copy()->addSeconds(3), '13.00');
         $this->insertReconstructedAt($dummyTransactionId, $day->copy()->addSeconds(0), '13.00');
+
+        // Stage 1 (OrphanTaxArchiver) always archives every live orphan
+        // before Stage 2 ever reconciles a day -- persist() now asserts this
+        // invariant (Slice 13 Code Review finding #3) and throws rather than
+        // silently no-opping if an orphan has no archive row, so this
+        // fixture must reflect that precondition like every other reconcile
+        // fixture in this file does.
+        DB::table('transaction_taxes_orphan_archive')->insert([
+            'original_id' => $orphanId,
+            'transaction_pk' => null,
+            'tax_type' => 'VAT',
+            'amount' => '13.00',
+            'created_at' => now(),
+            'updated_at' => now(),
+            'archive_run_id' => 'test-fixture',
+            'archived_at' => now(),
+            'reconciled_status' => null,
+            'reason_code' => null,
+        ]);
 
         $watermark = (int) DB::table('transaction_taxes')->count();
 
@@ -500,5 +517,290 @@ class ArchiveOrphanTaxRowsTest extends TestCase
         $this->assertArrayHasKey('no_replacement_exists', $jsonDecoded['totals']);
         $this->assertArrayHasKey('orphan_content_mismatch', $jsonDecoded['totals']);
         $this->assertArrayHasKey('content_gap', $jsonDecoded);
+    }
+
+    /**
+     * 002-backfill-transaction-taxes, Slice 14 (T070/T070a/T071/T079) —
+     * `--phase=delete` wiring. See
+     * specs/002-backfill-transaction-taxes/slice-14-orphan-delete-brief.md.
+     *
+     * Service-level coverage of OrphanTaxDeleter itself (both precondition
+     * refusals, token mismatch, happy path, chunking, idempotency, hash
+     * determinism/day-binding) lives in
+     * tests/Feature/Services/Backfill/OrphanTaxDeleterTest.php. This file's
+     * delete tests are CLI-wiring only: option validation order, dry-run
+     * vs. --apply routing, and human/--json output parity.
+     *
+     * Every test below uses a dedicated future calendar day (2027-06-2N),
+     * for the same leaked-fixture-avoidance reason as this file's own
+     * reconcile-phase tests above.
+     */
+    private function seedReconciledDayForCli(Carbon $day, int $count): array
+    {
+        $ids = [];
+
+        for ($i = 0; $i < $count; $i++) {
+            $ts = $day->copy()->addMinutes($i);
+            $id = $this->insertOrphanRow([
+                'tax_type' => 'VAT',
+                'amount' => '10.00',
+                'created_at' => $ts,
+                'updated_at' => $ts,
+            ]);
+
+            DB::table('transaction_taxes_orphan_archive')->insert([
+                'original_id' => $id,
+                'transaction_pk' => null,
+                'tax_type' => 'VAT',
+                'amount' => '10.00',
+                'created_at' => $ts,
+                'updated_at' => $ts,
+                'archive_run_id' => 'test-fixture',
+                'archived_at' => now(),
+                'reconciled_status' => 'reconciled',
+                'reason_code' => null,
+            ]);
+
+            $ids[] = $id;
+        }
+
+        return $ids;
+    }
+
+    public function test_delete_requires_day_option(): void
+    {
+        $exitCode = Artisan::call('transactions:archive-orphan-taxes', [
+            '--phase' => 'delete',
+        ]);
+
+        $this->assertNotSame(0, $exitCode);
+        $this->assertStringContainsString('--day is required', Artisan::output());
+    }
+
+    public function test_delete_rejects_a_malformed_day(): void
+    {
+        $exitCode = Artisan::call('transactions:archive-orphan-taxes', [
+            '--phase' => 'delete',
+            '--day' => '2027-13-99',
+        ]);
+
+        $this->assertNotSame(0, $exitCode);
+        $this->assertStringContainsString('Invalid --day value', Artisan::output());
+    }
+
+    public function test_delete_apply_without_token_is_rejected_before_any_db_access(): void
+    {
+        $day = Carbon::parse('2027-06-20 00:00:00');
+        $ids = $this->seedReconciledDayForCli($day, 2);
+
+        DB::flushQueryLog();
+        DB::enableQueryLog();
+
+        $exitCode = Artisan::call('transactions:archive-orphan-taxes', [
+            '--phase' => 'delete',
+            '--day' => '2027-06-20',
+            '--apply' => true,
+        ]);
+        $output = Artisan::output();
+
+        $queryLog = DB::getQueryLog();
+        DB::disableQueryLog();
+
+        $this->assertNotSame(0, $exitCode);
+        $this->assertStringContainsString('--token is required', $output);
+        $this->assertSame([], $queryLog, '--apply without --token must be rejected before any DB access.');
+
+        foreach ($ids as $id) {
+            $this->assertNotNull(DB::table('transaction_taxes')->where('id', $id)->first());
+        }
+    }
+
+    public function test_delete_apply_with_empty_token_is_rejected_before_any_db_access(): void
+    {
+        $day = Carbon::parse('2027-06-21 00:00:00');
+        $this->seedReconciledDayForCli($day, 1);
+
+        DB::flushQueryLog();
+        DB::enableQueryLog();
+
+        $exitCode = Artisan::call('transactions:archive-orphan-taxes', [
+            '--phase' => 'delete',
+            '--day' => '2027-06-21',
+            '--apply' => true,
+            '--token' => '',
+        ]);
+        $output = Artisan::output();
+
+        $queryLog = DB::getQueryLog();
+        DB::disableQueryLog();
+
+        $this->assertNotSame(0, $exitCode);
+        $this->assertStringContainsString('--token is required', $output);
+        $this->assertSame([], $queryLog);
+    }
+
+    public function test_delete_dry_run_never_requires_a_token_and_deletes_nothing(): void
+    {
+        $day = Carbon::parse('2027-06-22 00:00:00');
+        $ids = $this->seedReconciledDayForCli($day, 3);
+
+        $exitCode = Artisan::call('transactions:archive-orphan-taxes', [
+            '--phase' => 'delete',
+            '--day' => '2027-06-22',
+            '--json' => true,
+        ]);
+        $decoded = json_decode(Artisan::output(), true);
+
+        $this->assertSame(0, $exitCode);
+        $this->assertSame('delete', $decoded['phase']);
+        $this->assertFalse($decoded['applied']);
+        $this->assertTrue($decoded['passed']);
+        $this->assertNotNull($decoded['authorization_token']);
+        $this->assertSame(3, $decoded['preview_count']);
+
+        foreach ($ids as $id) {
+            $this->assertNotNull(DB::table('transaction_taxes')->where('id', $id)->first(), 'Dry-run delete must never remove a live row.');
+        }
+    }
+
+    public function test_delete_apply_with_correct_token_deletes_and_reports_via_json(): void
+    {
+        $day = Carbon::parse('2027-06-23 00:00:00');
+        $ids = $this->seedReconciledDayForCli($day, 2);
+
+        $dryRunExitCode = Artisan::call('transactions:archive-orphan-taxes', [
+            '--phase' => 'delete',
+            '--day' => '2027-06-23',
+            '--json' => true,
+        ]);
+        $dryRunDecoded = json_decode(Artisan::output(), true);
+        $this->assertSame(0, $dryRunExitCode);
+        $token = $dryRunDecoded['authorization_token'];
+
+        $applyExitCode = Artisan::call('transactions:archive-orphan-taxes', [
+            '--phase' => 'delete',
+            '--day' => '2027-06-23',
+            '--apply' => true,
+            '--token' => $token,
+            '--json' => true,
+        ]);
+        $applyDecoded = json_decode(Artisan::output(), true);
+
+        $this->assertSame(0, $applyExitCode);
+        $this->assertTrue($applyDecoded['applied']);
+        $this->assertTrue($applyDecoded['passed']);
+        $this->assertTrue($applyDecoded['token_verified']);
+        $this->assertSame(2, $applyDecoded['rows_deleted']);
+
+        foreach ($ids as $id) {
+            $this->assertNull(DB::table('transaction_taxes')->where('id', $id)->first());
+            $this->assertNotNull(DB::table('transaction_taxes_orphan_archive')->where('original_id', $id)->first());
+        }
+    }
+
+    public function test_delete_apply_with_wrong_token_is_refused_with_nonzero_exit(): void
+    {
+        $day = Carbon::parse('2027-06-24 00:00:00');
+        $ids = $this->seedReconciledDayForCli($day, 2);
+
+        $exitCode = Artisan::call('transactions:archive-orphan-taxes', [
+            '--phase' => 'delete',
+            '--day' => '2027-06-24',
+            '--apply' => true,
+            '--token' => 'not-the-right-hash',
+            '--json' => true,
+        ]);
+        $decoded = json_decode(Artisan::output(), true);
+
+        $this->assertNotSame(0, $exitCode);
+        $this->assertFalse($decoded['passed']);
+        $this->assertSame('token_mismatch', $decoded['refusal_reason']);
+
+        foreach ($ids as $id) {
+            $this->assertNotNull(DB::table('transaction_taxes')->where('id', $id)->first());
+        }
+    }
+
+    public function test_delete_human_and_json_output_agree_structurally(): void
+    {
+        $day = Carbon::parse('2027-06-25 00:00:00');
+        $this->seedReconciledDayForCli($day, 1);
+
+        $jsonExitCode = Artisan::call('transactions:archive-orphan-taxes', [
+            '--phase' => 'delete',
+            '--day' => '2027-06-25',
+            '--json' => true,
+        ]);
+        $jsonDecoded = json_decode(Artisan::output(), true);
+
+        $humanExitCode = Artisan::call('transactions:archive-orphan-taxes', [
+            '--phase' => 'delete',
+            '--day' => '2027-06-25',
+            '--json' => false,
+        ]);
+        $humanOutput = Artisan::output();
+
+        $this->assertSame(0, $jsonExitCode);
+        $this->assertSame(0, $humanExitCode);
+
+        $this->assertStringContainsString('delete', $humanOutput);
+        $this->assertStringContainsString('dry-run', $humanOutput);
+        $this->assertStringContainsString('authorization_token', $humanOutput);
+        $this->assertMatchesRegularExpression('/\|\s*Preview count\s*\|/', $humanOutput);
+
+        $this->assertArrayHasKey('phase', $jsonDecoded);
+        $this->assertArrayHasKey('day', $jsonDecoded);
+        $this->assertArrayHasKey('applied', $jsonDecoded);
+        $this->assertArrayHasKey('passed', $jsonDecoded);
+        $this->assertArrayHasKey('authorization_token', $jsonDecoded);
+        $this->assertArrayHasKey('preview_count', $jsonDecoded);
+    }
+
+    public function test_archive_and_reconcile_phases_are_unaffected_by_delete_phase_wiring(): void
+    {
+        $ids = [
+            $this->insertOrphanRow(),
+            $this->insertOrphanRow(),
+        ];
+
+        $archiveExitCode = Artisan::call('transactions:archive-orphan-taxes', [
+            '--apply' => true,
+            '--json' => true,
+        ]);
+        $archiveDecoded = json_decode(Artisan::output(), true);
+
+        $this->assertSame(0, $archiveExitCode);
+        $this->assertSame('archive', $archiveDecoded['phase']);
+        $this->assertSame(2, $this->archivedCountFor($ids));
+
+        $day = Carbon::parse('2027-06-26 00:00:00');
+        $dummyTransactionId = Transaction::factory()->create()->id;
+        $orphanId = $this->insertOrphanAt($day->copy()->addSeconds(3), '15.00');
+        $this->insertReconstructedAt($dummyTransactionId, $day->copy()->addSeconds(0), '15.00');
+
+        DB::table('transaction_taxes_orphan_archive')->insert([
+            'original_id' => $orphanId,
+            'transaction_pk' => null,
+            'tax_type' => 'VAT',
+            'amount' => '15.00',
+            'created_at' => now(),
+            'updated_at' => now(),
+            'archive_run_id' => 'test-fixture',
+            'archived_at' => now(),
+            'reconciled_status' => null,
+            'reason_code' => null,
+        ]);
+
+        $reconcileExitCode = Artisan::call('transactions:archive-orphan-taxes', [
+            '--phase' => 'reconcile',
+            '--day' => '2027-06-26',
+            '--apply' => true,
+            '--json' => true,
+        ]);
+        $reconcileDecoded = json_decode(Artisan::output(), true);
+
+        $this->assertSame(0, $reconcileExitCode);
+        $this->assertTrue($reconcileDecoded['passed']);
+        $this->assertTrue($reconcileDecoded['persisted']);
     }
 }
