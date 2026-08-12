@@ -6,6 +6,7 @@ use App\Models\PosProvider;
 use App\Models\PosTerminal;
 use App\Models\Tenant;
 use App\Models\Transaction;
+use App\Services\Backfill\ConnectionIdentityResolver;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -155,5 +156,62 @@ class RepairOvercorrectedProviderTimestampsCommandTest extends TestCase
             '2026-07-03 21:41:38',
             Carbon::parse($alreadyCorrect->fresh()->transaction_timestamp)->format('Y-m-d H:i:s')
         );
+    }
+
+    /**
+     * Slice 18 (T077) follow-up: reports:refresh-daily-transaction-summaries
+     * can now genuinely refuse (connection-identity mismatch). This command
+     * still repairs rows and exits 0 in that case (the repair itself
+     * succeeded), but must surface the refresh failure rather than silently
+     * implying summaries were refreshed.
+     */
+    public function test_it_surfaces_an_error_but_still_succeeds_when_summary_refresh_fails(): void
+    {
+        $tenant = Tenant::factory()->create();
+        $provider = PosProvider::factory()->create([
+            'timezone' => 'Asia/Manila',
+            'timestamp_mode' => 'local_time_with_z',
+        ]);
+        $terminal = PosTerminal::factory()->create([
+            'tenant_id' => $tenant->id,
+            'provider_id' => $provider->id,
+        ]);
+
+        Transaction::factory()->create([
+            'tenant_id' => $tenant->id,
+            'terminal_id' => $terminal->id,
+            'receipt_no' => '000000000034255',
+            'transaction_timestamp' => '2026-07-03 13:35:41',
+            'submission_timestamp' => '2026-07-03 13:35:50',
+            'original_payload' => json_encode([
+                'transaction_timestamp' => '2026-07-04T05:35:41Z',
+                'receipt_no' => '000000000034255',
+            ]),
+        ]);
+
+        $this->app->instance(ConnectionIdentityResolver::class, new class implements ConnectionIdentityResolver
+        {
+            private int $calls = 0;
+
+            public function resolve(string $connectionName): array
+            {
+                $this->calls++;
+
+                return $this->calls === 1
+                    ? ['server_id' => 999, 'database' => 'wrong_db']
+                    : ['server_id' => 1, 'database' => 'primary_db'];
+            }
+        });
+
+        $this->artisan('tsms:repair-overcorrected-provider-timestamps', [
+            '--tenant' => $tenant->id,
+            '--from' => '2026-07-03 00:00:00',
+            '--to' => '2026-07-04 23:59:59',
+            '--timezone' => 'Asia/Manila',
+            '--apply' => true,
+            '--refresh-summaries' => true,
+        ])
+            ->expectsOutputToContain('Daily summary refresh failed')
+            ->assertExitCode(0);
     }
 }

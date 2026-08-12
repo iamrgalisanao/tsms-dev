@@ -184,12 +184,16 @@ class RepairOvercorrectedProviderTimestamps extends Command
         }
 
         if ($this->option('refresh-summaries') && ! empty($dates)) {
-            Artisan::call('reports:refresh-daily-transaction-summaries', [
+            $refreshExitCode = Artisan::call('reports:refresh-daily-transaction-summaries', [
                 '--tenant' => $tenantId,
                 '--from' => reset($dates),
                 '--to' => end($dates),
             ]);
             $this->line(Artisan::output());
+
+            if ($refreshExitCode !== self::SUCCESS) {
+                $this->error('Daily summary refresh failed — affected dates are NOT reflected in daily_transaction_summaries. See output/logs above and re-run reports:refresh-daily-transaction-summaries manually once resolved.');
+            }
         } elseif (! empty($dates)) {
             $this->warn('Daily summaries were not refreshed. Run reports:refresh-daily-transaction-summaries for the affected dates.');
         }

@@ -353,14 +353,16 @@ class TemporaryCorrectionController extends Controller
             }
         });
 
+        $summaryRefreshFailed = false;
         if ($correctTimestamps && ! empty($scan['affected_dates'])) {
             $dates = $scan['affected_dates'];
             sort($dates);
-            Artisan::call('reports:refresh-daily-transaction-summaries', [
+            $refreshExitCode = Artisan::call('reports:refresh-daily-transaction-summaries', [
                 '--tenant' => $tenantId,
                 '--from' => reset($dates),
                 '--to' => end($dates),
             ]);
+            $summaryRefreshFailed = $refreshExitCode !== \Illuminate\Console\Command::SUCCESS;
         }
 
         $afterProviderIds = DB::table('pos_terminals')->where('tenant_id', $tenantId)->pluck('provider_id')->uniqueStrict()->values()->all();
@@ -379,7 +381,8 @@ class TemporaryCorrectionController extends Controller
                     'new' => $afterProviderIds,
                 ],
                 'sample' => $scan['sample'],
-                'refreshed_summary_dates' => $scan['affected_dates'],
+                'refreshed_summary_dates' => $summaryRefreshFailed ? [] : $scan['affected_dates'],
+                'summary_refresh_failed' => $summaryRefreshFailed,
             ],
         ];
     }

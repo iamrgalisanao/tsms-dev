@@ -21,6 +21,11 @@ class AppServiceProvider extends ServiceProvider
         $this->app->singleton('transaction.validation', function ($app) {
             return new \App\Services\TransactionValidationService();
         });
+
+        $this->app->bind(
+            \App\Services\Backfill\ConnectionIdentityResolver::class,
+            \App\Services\Backfill\DatabaseConnectionIdentityResolver::class
+        );
     }
 
     /**

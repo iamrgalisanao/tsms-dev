@@ -2,10 +2,12 @@
 
 namespace App\Console\Commands;
 
+use App\Services\Backfill\ConnectionIdentityResolver;
 use App\Traits\ResolvesReportBusinessDate;
 use Carbon\Carbon;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 
 class RefreshDailyTransactionSummaries extends Command
@@ -20,10 +22,31 @@ class RefreshDailyTransactionSummaries extends Command
 
     protected $description = 'Refresh derived daily transaction summaries from authoritative raw transactions.';
 
+    public function __construct(private ConnectionIdentityResolver $identity)
+    {
+        parent::__construct();
+    }
+
     public function handle(): int
     {
         if (! Schema::hasTable('daily_transaction_summaries') || ! Schema::hasTable('report_refresh_states')) {
             $this->error('Summary tables are missing. Run migrations first.');
+
+            return self::FAILURE;
+        }
+
+        // 'mysql' is hardcoded as this app's canonical primary connection name (T077).
+        // If a future deployment renames or multiplies primary connections, this needs updating too.
+        $aggregating = $this->identity->resolve(config('database.default'));
+        $primary = $this->identity->resolve('mysql');
+
+        if ($aggregating !== $primary) {
+            $this->error('Aggregating connection identity does not match the primary connection (mysql). Refusing to aggregate or write — no summaries were refreshed and no refresh-state identity was persisted for this attempt. See logs for both connection identities.');
+            Log::error('reports:refresh-daily-transaction-summaries: connection identity mismatch, refusing to run', [
+                'aggregating_connection' => config('database.default'),
+                'aggregating' => $aggregating,
+                'primary' => $primary,
+            ]);
 
             return self::FAILURE;
         }
@@ -137,7 +160,7 @@ class RefreshDailyTransactionSummaries extends Command
             $affectedDates->push($date->toDateString());
         }
 
-        DB::transaction(function () use ($rows, $affectedDates, $tenantId, $payloadAdjustments) {
+        DB::transaction(function () use ($rows, $affectedDates, $tenantId, $payloadAdjustments, $aggregating) {
             DB::table('daily_transaction_summaries')
                 ->whereBetween('business_date', [$affectedDates->first(), $affectedDates->last()])
                 ->when($tenantId, fn ($q) => $q->where('tenant_id', $tenantId))
@@ -182,6 +205,8 @@ class RefreshDailyTransactionSummaries extends Command
                 ], [
                     'status' => 'completed',
                     'refreshed_at' => now(),
+                    'server_id' => $aggregating['server_id'],
+                    'database_name' => $aggregating['database'],
                     'updated_at' => now(),
                     'created_at' => now(),
                 ]);

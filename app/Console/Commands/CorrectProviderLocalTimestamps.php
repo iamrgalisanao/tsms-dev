@@ -239,11 +239,15 @@ class CorrectProviderLocalTimestamps extends Command
         if ($this->option('refresh-summaries') && ! empty($dates)) {
             $fromDate = reset($dates);
             $toDate = end($dates);
-            $this->call('reports:refresh-daily-transaction-summaries', [
+            $refreshExitCode = $this->call('reports:refresh-daily-transaction-summaries', [
                 '--tenant' => $tenantId,
                 '--from' => $fromDate,
                 '--to' => $toDate,
             ]);
+
+            if ($refreshExitCode !== self::SUCCESS) {
+                $this->error('Daily summary refresh failed — affected dates are NOT reflected in daily_transaction_summaries. Re-run reports:refresh-daily-transaction-summaries manually once resolved.');
+            }
         } elseif (! empty($dates)) {
             $this->warn('Daily summaries were not refreshed. Run reports:refresh-daily-transaction-summaries for the affected dates.');
         }

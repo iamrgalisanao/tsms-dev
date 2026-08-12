@@ -122,13 +122,17 @@ php artisan transactions:archive-orphan-taxes --phase=archive --apply --json
 
 **Halt-on-mismatch is structural, not procedural**: `--phase=reconcile --apply` and `--phase=delete --apply` both already refuse to proceed/persist on failure (verified in Slice 13/14's own tests) — the rehearsal script's job is to *stop the loop* on a non-zero exit, not to re-implement the safety check.
 
-### 3.7 — Aggregate refresh (only after connection-identity assertion — BLOCKED on T077)
+### 3.7 — Aggregate refresh (connection-identity gate built, Slice 18, 2026-08-13)
 
 ```bash
 php artisan reports:refresh-daily-transaction-summaries --from=2026-06-13 --to=2026-08-10 --tenant=<ID>
 ```
 
-T077 (recording, not just asserting, the aggregating connection's `@@server_id`/`DATABASE()`) is not yet implemented. Until it lands, this step has no recorded proof the refresh ran against the primary — proceed only with a manual, logged confirmation in rehearsal, and treat T077 as a hard blocker for the live run itself.
+T077 is built: before any aggregation query, the command resolves `@@server_id`/`DATABASE()` for both `config('database.default')` and the literal `mysql` connection and refuses (zero writes, exit 1) on any mismatch, logging both identity tuples. On a match it persists the resolved identity into `report_refresh_states` for every affected date — the recorded proof this step previously lacked. Fail-closed by design (no automated `MASTER_POS_WAIT`/replication-wait mechanism) — a mismatch here means misconfiguration, not ordinary lag, and the safe response is a human investigating, not an automated retry loop.
+
+**Interaction with §3.2's pre-backfill snapshot (Slice 15) worth knowing, not a blocker**: if this gate ever trips during the live-run window, `SalesReportDataService::hasCompleteDailySummaryRefresh()` will find no `completed` row for the affected dates and every rendered-report consumer (CMSR dashboards, and `SnapshotPreBackfillAggregates` itself) automatically falls back to computing the same figures live from `raw_transactions` instead of from `daily_transaction_summaries` — correct numbers, just a different, slower source, and it's auditable via `SalesReportResult`'s own `source` field. Not a correctness or data-loss risk; flagged here so a mixed-source snapshot mid-window isn't a surprise.
+
+Non-blocking operational note from Slice 18's architect drift-revalidation: this codebase has no scheduled-command failure-alerting pattern anywhere (checked `routes/console.php` in full), so a persistent mismatch on the 15-minute cron entry for this same command would only be visible via `Log::error` — worth adding alerting for this specific schedule entry before relying on it operationally, though this is a pre-existing gap this slice did not introduce.
 
 ### 3.8 — Post-run validation
 
@@ -147,7 +151,7 @@ Per-chunk and per-day duration, peak `SHOW PROCESSLIST` depth, total wall-clock 
 5. `php artisan transactions:backfill-taxes --day=... --tenant=<pilot> --apply` (×2, idempotency proof)
 6. `php artisan transactions:archive-orphan-taxes --phase=archive --apply` (once)
 7. Per day: `transactions:backfill-taxes --day=$D --apply` → `archive-orphan-taxes --phase=reconcile --day=$D --apply` → `archive-orphan-taxes --phase=delete --day=$D` (dry-run, get token) → `archive-orphan-taxes --phase=delete --day=$D --apply --token=$TOKEN`
-8. `php artisan reports:refresh-daily-transaction-summaries --from=... --to=... --tenant=<ID>` (per tenant/day, after T077's connection-identity recording)
+8. `php artisan reports:refresh-daily-transaction-summaries --from=... --to=... --tenant=<ID>` (per tenant/day — T077's connection-identity gate runs automatically, built Slice 18)
 9. `php artisan transactions:tax-backfill-materiality --run=<RUN_ID>` *(not yet built)*
 10. `php artisan txn:pk-integrity` (post-run, compare against step 1)
 
@@ -159,7 +163,7 @@ Per-chunk and per-day duration, peak `SHOW PROCESSLIST` depth, total wall-clock 
 - Every `TaxBackfillRun`/`tax_backfill_records` row this run produces — already durable via existing audit tables, no new capture step needed.
 - Every orphan-archive/reconcile/delete verdict per day — already durable via `transaction_taxes_orphan_archive`'s persisted `reconciled_status`/`reason_code`, no new capture step needed.
 - `SHOW PROCESSLIST` samples during the run, captured to the run record rather than only watched live by a human — built (Slice 17): `IdleTransactionWatchdog::sampleProcesslist()`, taken once before and once after each mutating phase, persisted into `TaxBackfillRun.preflight_checks.operational_safety` for `--apply` runs and into `ArchiveOrphanTaxRows`'s own result output for the three orphan-pipeline phases.
-- Connection identity (`@@server_id`, `DATABASE()`) for the aggregating connection at refresh time (T077 — not yet built).
+- Connection identity (`@@server_id`, `DATABASE()`) for the aggregating connection at refresh time — built (Slice 18, 2026-08-13): persisted to `report_refresh_states.server_id`/`database_name` on every successful refresh; on a mismatch the run refuses and both identity tuples are logged instead.
 
 ## 6. Backup and restore requirements (T054 — procedure documented 2026-08-12, see [rollback.md](rollback.md); the drill itself not yet run)
 
@@ -212,7 +216,7 @@ Two-part rollback, both required, with the exact commands in `rollback.md`:
 
 - [x] T073/T074 — pre-backfill snapshot command exists and is tested (Slice 15, 2026-08-12)
 - [x] T075/T099 — duplicate-check baseline + `txn:pk-integrity` evidence capture exists and is tested (Slice 16, 2026-08-12)
-- [ ] T077 — connection-identity recording (not just assertion) exists
+- [x] T077 — connection-identity recording (not just assertion) exists (Slice 18, 2026-08-13); scheduler-level failure alerting for the 15-minute cron entry remains an open, non-blocking operational recommendation (not part of this feature's scope)
 - [x] T052 — `rollback.md` written (2026-08-12); its restore-from-archive path is a documented, schema-verified procedure, not yet executed against real data (no rehearsal has run to produce something to roll back)
 - [ ] T054 — backup procedure documented (2026-08-12, in `rollback.md`); the verification drill itself (isolated restore + Slice 16 cross-check) has not yet been run
 - [x] T052a — scheduled-job inventory and pause procedure documented (2026-08-12, `containment-plan.md`); `transactions-prune`/`transactions-watchdog` pause via existing config toggles (not yet drilled live); `tsms:reconcile-intake` has no toggle at all — documented as an accepted tradeoff, not a false claim of a clean pause
