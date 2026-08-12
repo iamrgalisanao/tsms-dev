@@ -29,6 +29,8 @@ Being honest about this now is cheaper than discovering it mid-rehearsal.
 
 **Update 2026-08-12 (Slice 15)**: `SnapshotPreBackfillAggregates` (T073/T074) is now built, tested, code-reviewed, and architect-revalidated — §3.2 below is no longer blocked. One operational note carried over from that slice's review: the command's concurrency guard requires `CACHE_DRIVER` to be a distributed-lock-capable driver (redis/database/memcached/dynamodb) in whatever environment runs it for real — confirm this before rehearsal, not just in production.
 
+**Update 2026-08-12 (Slice 16)**: `CaptureIntegrityEvidence` (T075/T099) is now built, tested, code-reviewed, and architect-revalidated — §5 below is no longer blocked for the pre-run half. It found and fixed a real correctness trap: the T062 duplicate-check query, applied naively, would have let MySQL's NULL-grouping behavior collapse the 3.24M-row orphan population into meaningless phantom "duplicate" groups — `WHERE transaction_pk IS NOT NULL` is now mandatory and regression-tested. T076's post-run half of this evidence (the `post_run` phase) remains unbuilt — the schema already supports it, but nothing writes it yet.
+
 ### NOT yet built — this plan's dependencies, not this plan's content
 
 | Missing piece | Blocks | Task(s) |
@@ -37,7 +39,7 @@ Being honest about this now is cheaper than discovering it mid-rehearsal.
 | `transactions:tax-backfill-show` command (correction/quarantine inspection) | US3 auditability, reviewing the 216 quarantined rows | Command 4, T042 |
 | `rollback.md` (documented + scripted two-part rollback) | §8 below | T052 |
 | Idle-transaction watchdog + low `innodb_lock_wait_timeout` operational controls | §7/§9 below, direct mitigation for the 2026-08-10 incident's failure mode | T100 |
-| Duplicate-check pre-run baseline capture | T076's post-run comparison (compares against a captured baseline, not zero) | T075 |
+| T076's post-run comparison logic (reads the `pre_run` capture Slice 16 now produces) | Full pre/post integrity validation | T076 |
 | Documented, drilled backup/restore procedure | §6 below | T054 |
 | Scheduled-job pause/inventory runbook entry | §7 below | T052a |
 | Mid-run "zero rows so far" containment note | §9 below | T102 |
@@ -130,7 +132,7 @@ T077 (recording, not just asserting, the aggregating connection's `@@server_id`/
 
 ### 3.8 — Post-run validation
 
-Coverage (Step 6), tenant/tax-type/totals validation (T058-T061), duplicate check (T062 — compared against T075's pre-run baseline, once that exists). Confirm `transaction_pk IS NULL` count in `transaction_taxes` is **zero** (T076, revised: FR-015b means zero is the correct end state for the whole window, not just reconciled days).
+Coverage (Step 6), tenant/tax-type/totals validation (T058-T061), duplicate check (T062 — compared against T075's pre-run baseline, captured via Slice 16's `transactions:capture-integrity-evidence`). Confirm `transaction_pk IS NULL` count in `transaction_taxes` is **zero** (T076, revised: FR-015b means zero is the correct end state for the whole window, not just reconciled days).
 
 ### 3.9 — Record rehearsal timings
 
@@ -151,9 +153,9 @@ Per-chunk and per-day duration, peak `SHOW PROCESSLIST` depth, total wall-clock 
 
 ## 5. Pre-run evidence to capture
 
-- `txn:pk-integrity` output, before and after (T099) — currently plain-text console output only; capture verbatim with a timestamp, no `--json` exists yet.
+- `txn:pk-integrity` output, before and after (T099) — captured verbatim (plain text) via `php artisan transactions:capture-integrity-evidence --from=... --to=... --apply` (Slice 16, built 2026-08-12). Run it once now for the `pre_run` phase; the `post_run` phase still has no writer (T076).
 - Pre-backfill rendered aggregate snapshot, per (tenant, month) (T073/T074) — **irreversible if skipped**; once rows are inserted, this baseline cannot be reconstructed.
-- Duplicate-check baseline (T075) — the pre-run `GROUP BY (transaction_pk, tax_type)` result, so T076's post-run comparison has a real baseline instead of an assumed zero.
+- Duplicate-check baseline (T075) — built (Slice 16): the same command above also persists the corrected (`WHERE transaction_pk IS NOT NULL`) `GROUP BY (transaction_pk, tax_type)` result, so T076's post-run comparison has a real baseline instead of an assumed zero.
 - Every `TaxBackfillRun`/`tax_backfill_records` row this run produces — already durable via existing audit tables, no new capture step needed.
 - Every orphan-archive/reconcile/delete verdict per day — already durable via `transaction_taxes_orphan_archive`'s persisted `reconciled_status`/`reason_code`, no new capture step needed.
 - `SHOW PROCESSLIST` samples during the run, captured to the run record rather than only watched live by a human (T100 — not yet built; until it exists, this is a manual watch-and-log responsibility, not automated).
@@ -218,7 +220,7 @@ Two-part rollback, both required (`rollback.md` does not exist yet — write it 
 ## 12. Summary checklist before rehearsal can be attempted
 
 - [x] T073/T074 — pre-backfill snapshot command exists and is tested (Slice 15, 2026-08-12)
-- [ ] T075 — duplicate-check baseline capture exists
+- [x] T075/T099 — duplicate-check baseline + `txn:pk-integrity` evidence capture exists and is tested (Slice 16, 2026-08-12)
 - [ ] T077 — connection-identity recording (not just assertion) exists
 - [ ] T052 — `rollback.md` written and its restore-from-archive path tested at least once
 - [ ] T054 — backup procedure documented and a restore drilled successfully
