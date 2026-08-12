@@ -169,6 +169,8 @@ description: "Task list for Backfill Transaction Taxes"
 
 **Purpose**: Rollback, rehearsal, and the finance/compliance handoff. **These are not optional cleanup — T053-T057 gate the real run.**
 
+**Planning artifact (2026-08-12)**: [live-run-readiness-plan.md](live-run-readiness-plan.md) consolidates T052-T057, T073-T077, and T099-T102 into one rehearsal/live-run readiness plan — the exact operator command sequence, pre-run evidence, backup/restore requirements, scheduled-job containment, success/failure gates, authorization boundary, and rollback decision points. It is planning only; it explicitly lists which of those tasks (T073/T074, T075, T077, T052, T054, T052a, T100, T102) still have no implementation and therefore block rehearsal from running end-to-end as written.
+
 ### Rollback and containment
 
 - [ ] T052 Document and script two-part rollback in `specs/002-backfill-transaction-taxes/rollback.md`: (a) delete rows attributable to the run via audit records, **and** (b) restore orphans from the archive (FR-013). Note that `daily_transaction_summaries` merges with `max()` so aggregates are monotonic — only a post-rollback refresh restores prior figures (Architect F11)
