@@ -40,8 +40,7 @@ Being honest about this now is cheaper than discovering it mid-rehearsal.
 | Idle-transaction watchdog + low `innodb_lock_wait_timeout` operational controls | §7/§9 below, direct mitigation for the 2026-08-10 incident's failure mode | T100 |
 | T076's post-run comparison logic (reads the `pre_run` capture Slice 16 now produces) | Full pre/post integrity validation | T076 |
 | Backup/restore **verification drill** — the procedure is documented (`rollback.md`), but the drill itself (restore into an isolated DB, confirm via Slice 16's integrity tooling) has not actually been run yet | §6 below | T054 |
-| Scheduled-job pause/inventory runbook entry | §7 below | T052a |
-| Mid-run "zero rows so far" containment note | §9 below | T102 |
+| `tsms:reconcile-intake`'s pause mechanism — no config toggle exists (`transactions-prune`/`transactions-watchdog` both have one); pausing it during a maintenance window requires a temporary code change, documented as an open tradeoff in `containment-plan.md` §2, not built here | §7 below | (no task id — a documented gap, candidate for a future small enhancement) |
 
 **Consequence for sequencing**: the rehearsal in §3 cannot run end-to-end exactly as written until the "not yet built" column is closed. Where a step below depends on a missing command, it says so and names the fallback (a manual query, or "blocked until T0xx lands") rather than pretending the automation exists.
 
@@ -168,19 +167,9 @@ Per-chunk and per-day duration, peak `SHOW PROCESSLIST` depth, total wall-clock 
 - The orphan archive table (`transaction_taxes_orphan_archive`) is itself a form of backup for the rows Stage 3 deletes — but it does **not** substitute for a full `transaction_taxes` backup, since it only covers rows with `transaction_pk IS NULL`, not the newly-inserted linked rows a bad `--apply` could also get wrong.
 - **The full backup/restore mechanism is last-resort disaster recovery, not the primary rollback path** — `rollback.md`'s Mechanism 1 (targeted, audit-record-driven undo) is what a normal rollback uses, since a full restore discards any legitimate activity that occurred after the backup was taken.
 
-## 7. Pause/containment plan for scheduled jobs (T052a)
+## 7. Pause/containment plan for scheduled jobs (T052a — built 2026-08-12, see [containment-plan.md](containment-plan.md))
 
-Inventory (already captured in tasks.md, consolidated here as the authoritative pre-run checklist):
-
-| Job | Frequency | Risk if left running during the backfill |
-|---|---|---|
-| `reports:refresh-daily-transaction-summaries --days=2` | Every 15 min | Writes `report_refresh_states`, which FR-012a's source-label pin depends on being stable between snapshot and materiality computation |
-| `transactions-prune` | Hourly | Deletes `FAILED` transactions older than 14 days, cascading to linked tax rows via `ON DELETE CASCADE`; its bulk `DELETE` can fail entirely on an FK violation if its batch includes a transaction already holding a `TaxBackfillRecord` row (RESTRICT FK) |
-| `transactions-watchdog` | Every 5 min | Flips `PENDING → FAILED`, continuously re-feeding `transactions-prune`'s candidate pool |
-| `tsms:reconcile-intake` | Every minute | Highest-frequency job touching the intake↔transactions relationship (~1,400 runs across a full-window backfill) |
-| `tsms:reconcile-intake --repair-missing` | Daily 23:00 | Could recreate a transaction row with a fresh id and no orphan correspondence |
-
-**Action**: pause the pruner/watchdog pair (and ideally `reconcile-intake`) for the entire maintenance window, not just the mutation phase. Capture a transaction-count census at run start and end regardless of whether pausing succeeds cleanly, as a corroborating signal.
+Full inventory (verified exhaustively against `routes/console.php`, including two jobs an earlier pass here missed — `reporting:refresh transactions_hourly` and the dead-code `reporting:dispatch`), exact pause/resume actions, and the transaction-count census procedure are all in `containment-plan.md` — not duplicated here. Summary: `transactions-prune` and `transactions-watchdog` both have existing config toggles (`TX_ENABLE_PRUNING`, `TX_WATCHDOG_ENABLED` — no code change needed); `tsms:reconcile-intake` (both variants) has **no such toggle**, a genuine documented gap, not a false claim of one.
 
 ## 8. Rollback and decision points (T052 — built 2026-08-12, see [rollback.md](rollback.md))
 
@@ -202,7 +191,7 @@ Two-part rollback, both required, with the exact commands in `rollback.md`:
 
 - **Kill-switch**: a sentinel file path, checked via `file_exists()` immediately before each chunk starts inside `TaxBackfillRunner::apply()` (T033). Triggering it produces `TaxBackfillRun::STATUS_STOPPED` — distinct from `STATUS_INTERRUPTED` (e.g. a crash) and `STATUS_FAILED` (an unrecoverable error), so a deliberate operator stop is never misreported as a crash.
 - **Resume**: there is no separate "resume" flag or command. Re-invoking the identical `--day=$D --apply` command is safe and idempotent by construction (`taxes()->exists()` ordering, T032/T034) — already-applied transactions report `skipped_existing`, not a duplicate insert. This applies whether the prior run was stopped (kill-switch) or interrupted (crash).
-- **Mid-run "zero tax rows found" state** (T102, not yet written into a runbook): if an operator observes zero rows written partway through a day, this is **not necessarily a failure** — a day whose transactions were mostly already reconstructed (or already had linked rows) can legitimately show near-zero new inserts. The containment runbook must name this explicitly so an operator doesn't panic-abort a healthy run.
+- **Mid-run "zero rows written" state** (T102 — built 2026-08-12, see `containment-plan.md` §4): if an operator observes zero/near-zero new inserts partway through a day, this is **not necessarily a failure** — check the outcome breakdown (`applied`/`skipped_existing`/`quarantined`/`failed`), not just the raw insert count. `containment-plan.md` also corrects a stronger, inaccurate claim from an earlier draft of this note (that external reports show "zero tax figures" broadly pre-backfill) — only `other_tax` genuinely shows that; VAT/vatable/SC-VAT-exempt were already correct throughout the defect window (spec.md's Business Case Re-baseline) and any movement there is a real anomaly, not a benign mid-run state.
 - **Token flow (Stage 3 delete)**: no separate resume concept is needed — the day-bound sha256 token is stable for as long as that day's archived verdict is unchanged (Slice 14), so re-running `--phase=delete --day=$D` with the same previously-captured token after an interruption is safe and correctly idempotent (a chunk that already ran affects zero rows on retry, per design, not an error).
 
 ## 10. Success / failure gates
@@ -224,9 +213,9 @@ Two-part rollback, both required, with the exact commands in `rollback.md`:
 - [ ] T077 — connection-identity recording (not just assertion) exists
 - [x] T052 — `rollback.md` written (2026-08-12); its restore-from-archive path is a documented, schema-verified procedure, not yet executed against real data (no rehearsal has run to produce something to roll back)
 - [ ] T054 — backup procedure documented (2026-08-12, in `rollback.md`); the verification drill itself (isolated restore + Slice 16 cross-check) has not yet been run
-- [ ] T052a — scheduled-job pause procedure documented and tested (can the jobs actually be paused cleanly?)
+- [x] T052a — scheduled-job inventory and pause procedure documented (2026-08-12, `containment-plan.md`); `transactions-prune`/`transactions-watchdog` pause via existing config toggles (not yet drilled live); `tsms:reconcile-intake` has no toggle at all — documented as an accepted tradeoff, not a false claim of a clean pause
 - [ ] T100 — idle-transaction watchdog / lock-wait-timeout controls exist, or an explicit manual-monitoring substitute is written down
-- [ ] T102 — mid-run "zero rows so far" note added to the containment runbook
+- [x] T102 — mid-run "zero rows written" note added to the containment runbook (2026-08-12, `containment-plan.md` §4, correctly scoped to the backfill's own insert progress and to `other_tax` specifically — not a broad "reports show zero" claim)
 - [ ] A restored staging snapshot is available and its orphan/transaction counts are confirmed against V4/V1a's figures
 
 Only once this checklist is closed does §3's rehearsal sequence become fully executable as written, rather than partially manual. Closing it is implementation work for a future slice, not part of this plan.
