@@ -27,11 +27,12 @@ Being honest about this now is cheaper than discovering it mid-rehearsal.
 | Orphan delete (two preconditions + day-bound sha256 token) | `OrphanTaxDeleter`, `--phase=delete` | T070, T070a, T071 (delete-side), T079 |
 | Transaction-child PK-integrity report (pre-existing, reusable) | `php artisan txn:pk-integrity` | referenced by T099 |
 
+**Update 2026-08-12 (Slice 15)**: `SnapshotPreBackfillAggregates` (T073/T074) is now built, tested, code-reviewed, and architect-revalidated — §3.2 below is no longer blocked. One operational note carried over from that slice's review: the command's concurrency guard requires `CACHE_DRIVER` to be a distributed-lock-capable driver (redis/database/memcached/dynamodb) in whatever environment runs it for real — confirm this before rehearsal, not just in production.
+
 ### NOT yet built — this plan's dependencies, not this plan's content
 
 | Missing piece | Blocks | Task(s) |
 |---|---|---|
-| `SnapshotPreBackfillAggregates` command (per-tenant/month **rendered** aggregate baseline) | Materiality (FR-009a), SC-003's "components already correct MUST be unchanged" check, §5 below | T073, T074 |
 | `transactions:tax-backfill-materiality` command | Producing the reproducible before/after list (SC-006) | Command 3, cli-contract.md |
 | `transactions:tax-backfill-show` command (correction/quarantine inspection) | US3 auditability, reviewing the 216 quarantined rows | Command 4, T042 |
 | `rollback.md` (documented + scripted two-part rollback) | §8 below | T052 |
@@ -62,13 +63,14 @@ php artisan txn:pk-integrity          # baseline: capture full output, timestamp
 
 Confirm the restored snapshot's orphan count matches V4's 3,238,180 (or the snapshot's own known-current figure, if taken later) before proceeding — a mismatch means the snapshot is stale or was restored incorrectly.
 
-### 3.2 — Pre-backfill snapshot (BLOCKED on T073/T074)
+### 3.2 — Pre-backfill snapshot (built, Slice 15 — 2026-08-12)
 
 ```bash
-php artisan transactions:snapshot-pre-backfill-aggregates --from=2026-06-13 --to=2026-08-10 --json
+php artisan transactions:snapshot-pre-backfill-aggregates --from=2026-06-13 --to=2026-08-10 --json          # preview, zero report calls
+php artisan transactions:snapshot-pre-backfill-aggregates --from=2026-06-13 --to=2026-08-10 --apply --json  # real capture
 ```
 
-**This command does not exist yet.** Until T073/T074 land, this step cannot run, and every downstream materiality/no-unintended-drift check (§5, §9) has no legitimate `before` value. **Do not substitute `before = 0`** — spec.md FR-009a is explicit that doing so would flag nearly every tenant. If rehearsal must proceed before T073/T074 land, this step is a documented gap, not a step to skip silently.
+A completed run for this exact window refuses a bare re-invocation (requires `--force` to start an independent new run) — this is deliberate, not a bug, per FR-012's "unrecoverable once the run begins." **Do not substitute `before = 0`** — spec.md FR-009a is explicit that doing so would flag nearly every tenant. Confirm `CACHE_DRIVER` is redis/database/memcached/dynamodb before running this for real — the command's concurrency guard depends on it (see the command's own docblock).
 
 ### 3.3 — Reconstruction oracle (must be zero divergence)
 
@@ -137,7 +139,7 @@ Per-chunk and per-day duration, peak `SHOW PROCESSLIST` depth, total wall-clock 
 ## 4. Required operator commands, in order (consolidated)
 
 1. `php artisan txn:pk-integrity` (baseline)
-2. `php artisan transactions:snapshot-pre-backfill-aggregates` *(T073/T074 — not yet built)*
+2. `php artisan transactions:snapshot-pre-backfill-aggregates --apply` (T073/T074 — built, Slice 15)
 3. `php artisan transactions:verify-tax-reconstruction --sample=<N>`
 4. `php artisan transactions:backfill-taxes --from=... --to=...` (dry run)
 5. `php artisan transactions:backfill-taxes --day=... --tenant=<pilot> --apply` (×2, idempotency proof)
@@ -205,7 +207,7 @@ Two-part rollback, both required (`rollback.md` does not exist yet — write it 
 
 - **Per-transaction**: FR-008's oracle must show zero divergence before *any* `--apply`.
 - **Per-day** (structural, already enforced in code): `orphan_content_mismatch` or a failed precondition halts that day and blocks its delete — the loop does not advance.
-- **Whole-run** (SC-001 through SC-006, see spec.md): 100% coverage for taxable transactions in-window; zero duplicates and zero `transaction_pk IS NULL` rows remaining; SC-003's stated tolerance on aggregate exactness (excluding `other_tax` per FR-016); zero measurable live-ingestion disruption (SC-004); a traceable audit entry per correction (SC-005); a reproducible materiality set (SC-006, blocked on T073/T074 + the materiality command).
+- **Whole-run** (SC-001 through SC-006, see spec.md): 100% coverage for taxable transactions in-window; zero duplicates and zero `transaction_pk IS NULL` rows remaining; SC-003's stated tolerance on aggregate exactness (excluding `other_tax` per FR-016); zero measurable live-ingestion disruption (SC-004); a traceable audit entry per correction (SC-005); a reproducible materiality set (SC-006, blocked on the materiality command — the snapshot it needs as input, T073/T074, is now built).
 
 ## 11. Who must authorize what
 
@@ -215,7 +217,7 @@ Two-part rollback, both required (`rollback.md` does not exist yet — write it 
 
 ## 12. Summary checklist before rehearsal can be attempted
 
-- [ ] T073/T074 — pre-backfill snapshot command exists and is tested
+- [x] T073/T074 — pre-backfill snapshot command exists and is tested (Slice 15, 2026-08-12)
 - [ ] T075 — duplicate-check baseline capture exists
 - [ ] T077 — connection-identity recording (not just assertion) exists
 - [ ] T052 — `rollback.md` written and its restore-from-archive path tested at least once
