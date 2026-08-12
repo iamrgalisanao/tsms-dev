@@ -303,6 +303,31 @@ ORDER BY ABS(delta_seconds), delta_seconds;
 
 **Required outcome**: if the distribution is `delta_seconds = 0` for effectively all rows, FR-014 keeps exact per-second reconciliation, sourced from `transactions.created_at` rather than `now()`. If a non-trivial spread exists, FR-014's tolerance must be widened to match the measured distribution (e.g. ±N seconds) rather than assumed at ±0. **This measurement gates T069's implementation** — do not code the reconciliation predicate before it returns.
 
+**Measured 2026-08-12, against the real staging database (139,156 post-fix linked rows, `tt.created_at >= '2026-08-10 10:00:00'`)**:
+
+| delta_seconds | row_count | cumulative % |
+|---|---|---|
+| 0 | 29,560 | 21.24% |
+| 1 | 54,958 | 60.74% |
+| 2 | 50,485 | 97.02% |
+| 3 | 2,555 | 98.85% |
+| 4–5 | 668 | 99.33% |
+| 6–10 | 389 | 99.61% |
+| 11–30 | 431 | 99.92% |
+| 31–57 | 110 | 100.00% |
+
+`MIN = 0`, `MAX = 57`, all 51 distinct observed values are `>= 0` (no negative deltas — the tax row is never created before its parent transaction, consistent with same-request sequential inserts). **This is a non-trivial spread, not effectively zero** — FR-014's "exactly" per-second wording does not hold as originally written and requires an amendment with a measured tolerance, per this document's own required-outcome rule above. The distribution is heavily front-loaded (97% of rows land within `delta_seconds <= 2`) but has a real, monotonically-thinning tail out to 57 seconds with non-zero counts at nearly every intermediate value — this is ordinary per-transaction request-processing latency between the parent transaction insert and its tax-row inserts, not noise.
+
+**Tolerance-vs-collision-risk tradeoff (why this isn't just "pick the widest N")**: FR-014's reconciliation is a multiset match on (`created_at` tolerance window, `tax_type`, `amount`) **because the orphan rows have no surviving FK to their transaction** (that link is exactly what the original defect destroyed) — it cannot fall back to matching by `transaction_pk`. Widening the tolerance window increases the risk that a reconstructed row for transaction A matches an orphan that actually belonged to a different transaction B, if both share the same (`tax_type`, `amount`) within that window on the same day (plausible for common round tax amounts). A tolerance chosen only to maximize coverage of this sample, without weighing that risk, would be an incomplete decision.
+
+**DECIDED 2026-08-12**: tolerance is **[0, 10] seconds**, one-directional (covers 99.61% of the measured oracle population, narrow enough to preserve meaningful collision resistance against wider alternatives that were considered and rejected — see below). FR-014 (spec.md) has been amended accordingly with a three-way residual classification:
+
+- `no_replacement_exists` — orphan's transaction was never reconstructed that day (expected, non-halting).
+- `timestamp_out_of_tolerance` — (`tax_type`, `amount`) matches an inserted row, delta exceeds 10s (expected — this is the measured tail; non-halting).
+- `orphan_content_mismatch` — orphan's transaction was reconstructed, but no inserted row matches its (`tax_type`, `amount`) at all — signals a reconstruction defect, halts the run. **Deliberately named distinctly from the pre-existing `cross_check_mismatch` reason code (T013)**, which is a different failure mode (reconstructed payload vs. transaction's own stored VAT columns, at the T008 reconstruction stage) — reusing that name here would conflate two unrelated safety checks in the audit trail.
+
+Alternatives considered and rejected: N=3s (98.85% coverage, tightest collision resistance, but a larger residual population needing the same non-halting handling anyway, so the added safety margin didn't justify the larger `timestamp_out_of_tolerance` bucket); N=57s / max-observed (100% coverage of this sample, simplest single-tolerance rule, but widest window and therefore highest collision risk — rejected specifically because it "weakens the whole point of FR-014's timestamp-bounded multiset check" against a table where common tax amounts recur).
+
 ## Resolved Unknowns Summary
 
 | Unknown | Resolution |
