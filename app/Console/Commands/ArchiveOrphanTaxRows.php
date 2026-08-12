@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Console\Commands;
 
+use App\Services\Backfill\IdleTransactionWatchdog;
 use App\Services\Backfill\OrphanTaxArchiver;
 use App\Services\Backfill\OrphanTaxDeleter;
 use App\Services\Backfill\OrphanTaxReconciler;
@@ -54,7 +55,7 @@ class ArchiveOrphanTaxRows extends Command
 
     protected $description = 'Archive orphaned (transaction_pk IS NULL) transaction_taxes rows into transaction_taxes_orphan_archive, reconcile a day\'s already-archived orphans against reconstructed replacements, and delete a day\'s archived+reconciled orphans from the live table under a token-gated authorization check';
 
-    public function handle(OrphanTaxArchiver $archiver, OrphanTaxReconciler $reconciler, OrphanTaxDeleter $deleter): int
+    public function handle(OrphanTaxArchiver $archiver, OrphanTaxReconciler $reconciler, OrphanTaxDeleter $deleter, IdleTransactionWatchdog $watchdog): int
     {
         $phaseOption = $this->option('phase');
 
@@ -79,17 +80,26 @@ class ArchiveOrphanTaxRows extends Command
         }
 
         if ($phase === 'reconcile') {
-            return $this->handleReconcile($reconciler);
+            return $this->handleReconcile($reconciler, $watchdog);
         }
 
         if ($phase === 'delete') {
-            return $this->handleDelete($deleter);
+            return $this->handleDelete($deleter, $watchdog);
         }
 
-        return $this->handleArchive($archiver);
+        return $this->handleArchive($archiver, $watchdog);
     }
 
-    protected function handleArchive(OrphanTaxArchiver $archiver): int
+    /**
+     * Slice 17 (T100): operational safety gate, checked only when --apply is
+     * set (a dry-run never mutates anything, so there is nothing for the
+     * gate to protect). On failure, refuses before OrphanTaxArchiver is ever
+     * invoked — zero DB access beyond the check itself, so `$summary` is a
+     * zeroed placeholder rather than a real (extra, read-only) dry-run
+     * query. On success, applies the low lock-wait timeout and takes the
+     * "before" processlist snapshot.
+     */
+    protected function handleArchive(OrphanTaxArchiver $archiver, IdleTransactionWatchdog $watchdog): int
     {
         $chunkValidationError = $this->validateChunkOption();
 
@@ -102,15 +112,61 @@ class ArchiveOrphanTaxRows extends Command
         $chunkSize = (int) $this->option('chunk');
         $apply = (bool) $this->option('apply');
 
-        // Dry-run deliberately never touches OrphanTaxArchiver — counts come
-        // entirely from read-only queries below, and zero rows are written.
-        $summary = $apply ? $archiver->archive($chunkSize) : $this->dryRunSummary();
+        $operationalSafety = null;
 
-        $result = $this->buildResult('archive', $apply, $chunkSize, $summary);
+        if ($apply) {
+            $gate = $watchdog->check();
+            $operationalSafety = $this->pendingOperationalSafetyEnvelope($gate);
+
+            if (! $gate['passed']) {
+                $result = $this->buildResult('archive', $apply, $chunkSize, $this->emptyArchiveSummary(), $operationalSafety);
+                $this->render($result);
+
+                return self::FAILURE;
+            }
+
+            $watchdog->applyLowLockWaitTimeout();
+            $operationalSafety['processlist_before'] = $watchdog->sampleProcesslist();
+
+            $summary = $archiver->archive($chunkSize);
+
+            $operationalSafety['processlist_after'] = $watchdog->sampleProcesslist();
+        } else {
+            // Dry-run deliberately never touches OrphanTaxArchiver or the
+            // watchdog — counts come entirely from read-only queries below,
+            // and zero rows are written.
+            $summary = $this->dryRunSummary();
+        }
+
+        $result = $this->buildResult('archive', $apply, $chunkSize, $summary, $operationalSafety);
 
         $this->render($result);
 
         return self::SUCCESS;
+    }
+
+    /**
+     * @return array{gate: array, processlist_before: null, processlist_after: null}
+     */
+    protected function pendingOperationalSafetyEnvelope(array $gate): array
+    {
+        return [
+            'gate' => $gate,
+            'processlist_before' => null,
+            'processlist_after' => null,
+        ];
+    }
+
+    /**
+     * @return array{processed: int, newly_archived: int, already_archived: int}
+     */
+    protected function emptyArchiveSummary(): array
+    {
+        return [
+            'processed' => 0,
+            'newly_archived' => 0,
+            'already_archived' => 0,
+        ];
     }
 
     /**
@@ -124,7 +180,7 @@ class ArchiveOrphanTaxRows extends Command
      * belt-and-braces check rather than the only thing preventing a bad
      * write.
      */
-    protected function handleReconcile(OrphanTaxReconciler $reconciler): int
+    protected function handleReconcile(OrphanTaxReconciler $reconciler, IdleTransactionWatchdog $watchdog): int
     {
         $dayOption = $this->option('day');
 
@@ -143,16 +199,42 @@ class ArchiveOrphanTaxRows extends Command
         $day = Carbon::createFromFormat('Y-m-d', (string) $dayOption)->startOfDay();
         $apply = (bool) $this->option('apply');
 
+        // evaluate() always runs first, read-only, regardless of --apply or
+        // the watchdog gate below — it is the single source of truth for the
+        // day's verdict and this brief changes nothing about it.
         $evaluation = $reconciler->evaluate($day);
 
         $persisted = false;
+        $operationalSafety = null;
 
-        if ($apply && $evaluation['passed']) {
-            $reconciler->persist($evaluation);
-            $persisted = true;
+        if ($apply) {
+            // Slice 17 (T100): checked before persist() (the only mutating
+            // statement in this branch) is ever invoked. A gate failure
+            // refuses persist() outright, even if the day's own evaluation
+            // passed — evaluate()'s own passed/halt_reason fields are never
+            // altered by this gate, only whether persist() actually runs.
+            $gate = $watchdog->check();
+            $operationalSafety = $this->pendingOperationalSafetyEnvelope($gate);
+
+            if (! $gate['passed']) {
+                $result = $this->buildReconcileResult((string) $dayOption, $apply, $persisted, $evaluation, $operationalSafety);
+                $this->renderReconcile($result);
+
+                return self::FAILURE;
+            }
+
+            $watchdog->applyLowLockWaitTimeout();
+            $operationalSafety['processlist_before'] = $watchdog->sampleProcesslist();
+
+            if ($evaluation['passed']) {
+                $reconciler->persist($evaluation);
+                $persisted = true;
+            }
+
+            $operationalSafety['processlist_after'] = $watchdog->sampleProcesslist();
         }
 
-        $result = $this->buildReconcileResult((string) $dayOption, $apply, $persisted, $evaluation);
+        $result = $this->buildReconcileResult((string) $dayOption, $apply, $persisted, $evaluation, $operationalSafety);
 
         $this->renderReconcile($result);
 
@@ -171,7 +253,7 @@ class ArchiveOrphanTaxRows extends Command
      * this method's own token-presence guard is a second, belt-and-braces
      * check rather than the only thing preventing an unauthorized delete.
      */
-    protected function handleDelete(OrphanTaxDeleter $deleter): int
+    protected function handleDelete(OrphanTaxDeleter $deleter, IdleTransactionWatchdog $watchdog): int
     {
         $dayOption = $this->option('day');
 
@@ -207,19 +289,63 @@ class ArchiveOrphanTaxRows extends Command
         $day = Carbon::createFromFormat('Y-m-d', (string) $dayOption)->startOfDay();
         $chunkSize = (int) $this->option('chunk');
 
+        $operationalSafety = null;
+
         if ($apply) {
+            // Slice 17 (T100): checked before delete() (the only mutating
+            // statement in this branch) is ever invoked.
+            $gate = $watchdog->check();
+            $operationalSafety = $this->pendingOperationalSafetyEnvelope($gate);
+
+            if (! $gate['passed']) {
+                $outcome = $this->operationalSafetyRefusalDeleteOutcome();
+                $result = $this->buildDeleteResult((string) $dayOption, $apply, $outcome, $operationalSafety);
+                $this->renderDelete($result);
+
+                return self::FAILURE;
+            }
+
+            $watchdog->applyLowLockWaitTimeout();
+            $operationalSafety['processlist_before'] = $watchdog->sampleProcesslist();
+
             $outcome = $deleter->delete($day, $token, $chunkSize);
             $passed = $outcome['authorized'];
+
+            $operationalSafety['processlist_after'] = $watchdog->sampleProcesslist();
         } else {
             $outcome = $deleter->preflight($day);
             $passed = $outcome['passed'];
         }
 
-        $result = $this->buildDeleteResult((string) $dayOption, $apply, $outcome);
+        $result = $this->buildDeleteResult((string) $dayOption, $apply, $outcome, $operationalSafety);
 
         $this->renderDelete($result);
 
         return $passed ? self::SUCCESS : self::FAILURE;
+    }
+
+    /**
+     * Synthetic OrphanTaxDeleter::delete()-shaped outcome for the case where
+     * this command's own watchdog gate refuses before OrphanTaxDeleter is
+     * ever invoked — deliberately never one of OrphanTaxDeleter's own
+     * REFUSAL_* constants (that class is never called on this path at all),
+     * kept CLI-layer-only so OrphanTaxDeleter itself stays untouched by this
+     * brief.
+     *
+     * @return array{day: null, authorized: bool, refusal_reason: string, refusal_message: string, token_verified: null, chunks_processed: int, rows_deleted: int, already_deleted: int}
+     */
+    protected function operationalSafetyRefusalDeleteOutcome(): array
+    {
+        return [
+            'day' => null,
+            'authorized' => false,
+            'refusal_reason' => 'operational_safety_gate_failed',
+            'refusal_message' => 'Delete refused: the operational safety gate detected an idle transaction older than the configured threshold.',
+            'token_verified' => null,
+            'chunks_processed' => 0,
+            'rows_deleted' => 0,
+            'already_deleted' => 0,
+        ];
     }
 
     protected function isValidDate(string $value): bool
@@ -271,20 +397,23 @@ class ArchiveOrphanTaxRows extends Command
      * separate/duplicated formatting logic that could drift between them.
      *
      * @param  array{processed: int, newly_archived: int, already_archived: int}  $summary
+     * @param  array{gate: array, processlist_before: array|null, processlist_after: array|null}|null  $operationalSafety  Slice 17 (T100) addition — null for a dry-run (the watchdog is never checked then), populated for every --apply invocation.
      * @return array{
      *     phase: string,
      *     applied: bool,
      *     chunk_size: int,
      *     totals: array{processed: int, newly_archived: int, already_archived: int},
+     *     operational_safety: array|null,
      * }
      */
-    protected function buildResult(string $phase, bool $applied, int $chunkSize, array $summary): array
+    protected function buildResult(string $phase, bool $applied, int $chunkSize, array $summary, ?array $operationalSafety = null): array
     {
         return [
             'phase' => $phase,
             'applied' => $applied,
             'chunk_size' => $chunkSize,
             'totals' => $summary,
+            'operational_safety' => $operationalSafety,
         ];
     }
 
@@ -319,6 +448,8 @@ class ArchiveOrphanTaxRows extends Command
      * render() pair above, just for reconcile's own (differently-shaped)
      * result.
      *
+     *
+     * @param  array{gate: array, processlist_before: array|null, processlist_after: array|null}|null  $operationalSafety  Slice 17 (T100) addition — null for a dry-run, populated for every --apply invocation.
      * @return array{
      *     phase: string,
      *     day: string,
@@ -330,9 +461,10 @@ class ArchiveOrphanTaxRows extends Command
      *     precondition: array{passed: bool, pending_count: int},
      *     totals: array{orphans: int, inserted: int, reconciled: int, timestamp_out_of_tolerance: int, no_replacement_exists: int, orphan_content_mismatch: int},
      *     content_gap: array{actual: int, expected: int|null, ratio: int|null, missing_payload_count: int|null, total_affected_transactions: int|null},
+     *     operational_safety: array|null,
      * }
      */
-    protected function buildReconcileResult(string $day, bool $applied, bool $persisted, array $evaluation): array
+    protected function buildReconcileResult(string $day, bool $applied, bool $persisted, array $evaluation, ?array $operationalSafety = null): array
     {
         return [
             'phase' => 'reconcile',
@@ -345,6 +477,7 @@ class ArchiveOrphanTaxRows extends Command
             'precondition' => $evaluation['precondition'],
             'totals' => $evaluation['totals'],
             'content_gap' => $evaluation['content_gap'],
+            'operational_safety' => $operationalSafety,
         ];
     }
 
@@ -392,6 +525,8 @@ class ArchiveOrphanTaxRows extends Command
      * rather than omitted — keeping the result's key set stable across both
      * modes for --json consumers.
      *
+     *
+     * @param  array{gate: array, processlist_before: array|null, processlist_after: array|null}|null  $operationalSafety  Slice 17 (T100) addition — null for a dry-run, populated for every --apply invocation.
      * @return array{
      *     phase: string,
      *     day: string,
@@ -406,9 +541,10 @@ class ArchiveOrphanTaxRows extends Command
      *     chunks_processed: int|null,
      *     rows_deleted: int|null,
      *     already_deleted: int|null,
+     *     operational_safety: array|null,
      * }
      */
-    protected function buildDeleteResult(string $day, bool $applied, array $outcome): array
+    protected function buildDeleteResult(string $day, bool $applied, array $outcome, ?array $operationalSafety = null): array
     {
         if (! $applied) {
             return [
@@ -425,6 +561,7 @@ class ArchiveOrphanTaxRows extends Command
                 'chunks_processed' => null,
                 'rows_deleted' => null,
                 'already_deleted' => null,
+                'operational_safety' => $operationalSafety,
             ];
         }
 
@@ -442,6 +579,7 @@ class ArchiveOrphanTaxRows extends Command
             'chunks_processed' => $outcome['chunks_processed'],
             'rows_deleted' => $outcome['rows_deleted'],
             'already_deleted' => $outcome['already_deleted'],
+            'operational_safety' => $operationalSafety,
         ];
     }
 

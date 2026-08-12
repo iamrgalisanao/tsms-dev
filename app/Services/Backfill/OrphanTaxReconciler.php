@@ -204,6 +204,49 @@ class OrphanTaxReconciler
      * count; a mismatch throws inside the enclosing DB::transaction() so
      * the whole day rolls back rather than silently reporting success on a
      * partial write (corrected 2026-08-12, Code Reviewer finding).
+     *
+     * Slice 17 (T100) originally wrapped each chunk's UPDATE in
+     * DeadlockRetryService::withDeadlockRetry($callback, 5, false) —
+     * $wrapInTransaction = false — reasoning that a "Lock wait timeout
+     * exceeded" error does not abort the enclosing transaction, so retrying
+     * just that chunk's statement in place was safe. That reasoning silently
+     * broke for a *genuine* deadlock (the other error
+     * isRetryableDeadlock() treats identically): MySQL force-rolls-back the
+     * entire connection-level transaction server-side the moment InnoDB
+     * picks a victim, but PDO/Laravel's own transaction-depth counter
+     * (`$this->transactions`) never learns that happened. Concretely: if
+     * chunk 3 of 5 hit a genuine deadlock, chunks 1-2 were already discarded
+     * server-side, yet the old code just retried chunk 3's statement
+     * directly (succeeding, since the connection had silently fallen back to
+     * autocommit) and carried on through chunks 4-5 the same way — the
+     * eventual `commit()` on the enclosing DB::transaction() below was then
+     * a no-op over a transaction that no longer existed. Net effect: a
+     * silent partial write (chunks 1-2 lost, 3-5 committed piecemeal) with
+     * no exception thrown, in direct violation of this method's
+     * all-or-nothing-per-day guarantee. Found and fixed during Slice 17
+     * review before it ever shipped.
+     *
+     * The fix: drop DeadlockRetryService entirely from this method and let
+     * the enclosing `DB::transaction($callback, 5)` use Laravel's own
+     * native retry (its second, `$attempts` argument — see
+     * Illuminate\Database\Concerns\ManagesTransactions::transaction()).
+     * That native retry is safe for exactly the reason the per-chunk
+     * approach wasn't: `handleTransactionException()` unconditionally calls
+     * `$this->rollBack()` (a real, immediate rollback of whatever is left of
+     * the transaction) *before* deciding whether to retry, and only then
+     * re-invokes the *entire* closure from scratch — every chunk, including
+     * ones that already "succeeded" this attempt. A retry is always
+     * "roll back everything, start over," never "keep going from where we
+     * were," so it can never produce a partial commit no matter which chunk
+     * the deadlock/lock-wait hits. `Illuminate\Database\
+     * DetectsConcurrencyErrors::causedByConcurrencyError()` matches both
+     * "Deadlock found when trying to get lock" and "Lock wait timeout
+     * exceeded; try restarting transaction" — the same two phrases this
+     * brief's lower innodb_lock_wait_timeout pairing targets (see
+     * IdleTransactionWatchdog's docblock and the brief's Grounding section)
+     * — so no coverage is lost by moving off DeadlockRetryService here. If
+     * retries are exhausted, Laravel rethrows the original exception out of
+     * `DB::transaction()` exactly as before, rolling back the whole day.
      */
     public function persist(array $evaluation): void
     {
@@ -255,7 +298,7 @@ class OrphanTaxReconciler
                     }
                 }
             }
-        });
+        }, 5);
     }
 
     /**

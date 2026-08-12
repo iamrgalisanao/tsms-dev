@@ -35,7 +35,8 @@ class TaxBackfillRunner
     public function __construct(
         protected TaxReconstructionService $reconstructionService,
         protected DeadlockRetryService $retryService,
-        protected TaxBackfillPreflightChecker $preflightChecker
+        protected TaxBackfillPreflightChecker $preflightChecker,
+        protected IdleTransactionWatchdog $idleTransactionWatchdog
     ) {}
 
     /**
@@ -331,6 +332,45 @@ class TaxBackfillRunner
             return $run;
         }
 
+        // Slice 17 (T100): third and final preflight step, run only once
+        // both schema checks above have passed. Refuses before the chunked
+        // query below is even built if an already-open InnoDB transaction is
+        // genuinely idle (age > threshold) — the exact precondition that
+        // caused the 2026-08-10 incident (research.md R9). Recorded into the
+        // same `preflight_checks` envelope under `operational_safety`,
+        // alongside the two schema checks.
+        $operationalSafetyGateResult = $this->idleTransactionWatchdog->check();
+
+        $run->update(['preflight_checks' => [
+            'required_columns' => $requiredColumnsResult,
+            'schema_integrity' => $schemaIntegrityResult,
+            'operational_safety' => [
+                'idle_transaction_gate' => $operationalSafetyGateResult,
+                'processlist_before' => null,
+                'processlist_after' => null,
+            ],
+        ]]);
+
+        if (! $operationalSafetyGateResult['passed']) {
+            $run->update([
+                'status' => TaxBackfillRun::STATUS_PREFLIGHT_FAILED,
+                'completed_at' => now(),
+            ]);
+
+            return $run;
+        }
+
+        // The gate passed: lower this session's lock-wait timeout (safe only
+        // because OrphanTaxReconciler's native DB::transaction($callback, 5)
+        // retry, OrphanTaxDeleter's DeadlockRetryService extension, and this
+        // class's own existing retry coverage already cover "Lock wait
+        // timeout exceeded" — see the brief's Grounding section) and take
+        // the "before" non-blocking processlist snapshot,
+        // automating what quickstart.md's Step 5 currently asks a human to
+        // watch live.
+        $this->idleTransactionWatchdog->applyLowLockWaitTimeout();
+        $processlistBefore = $this->idleTransactionWatchdog->sampleProcesslist();
+
         $query = Transaction::query()
             ->whereBetween('created_at', [$from, $to])
             ->when($tenantId !== null, function ($q) use ($tenantId) {
@@ -415,9 +455,24 @@ class TaxBackfillRunner
             default => TaxBackfillRun::STATUS_COMPLETED,
         };
 
+        // Slice 17 (T100): "after" non-blocking processlist snapshot, taken
+        // once the chunk loop has finished (regardless of which terminal
+        // status it finished in) — never on the STATUS_INTERRUPTED escape
+        // path above, which by definition never reaches here.
+        $processlistAfter = $this->idleTransactionWatchdog->sampleProcesslist();
+
         $run->update([
             'status' => $status,
             'completed_at' => now(),
+            'preflight_checks' => [
+                'required_columns' => $requiredColumnsResult,
+                'schema_integrity' => $schemaIntegrityResult,
+                'operational_safety' => [
+                    'idle_transaction_gate' => $operationalSafetyGateResult,
+                    'processlist_before' => $processlistBefore,
+                    'processlist_after' => $processlistAfter,
+                ],
+            ],
         ]);
 
         return $run;

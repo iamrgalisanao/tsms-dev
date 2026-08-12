@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Services\Backfill;
 
+use App\Services\DeadlockRetryService;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 
@@ -56,6 +57,10 @@ class OrphanTaxDeleter
     public const REFUSAL_RECONCILIATION_NOT_PASSED = 'reconciliation_not_passed';
 
     public const REFUSAL_TOKEN_MISMATCH = 'token_mismatch';
+
+    public function __construct(
+        protected DeadlockRetryService $retryService
+    ) {}
 
     /**
      * Pure read. Runs both precondition checks for day $day and, only if
@@ -200,10 +205,22 @@ class OrphanTaxDeleter
             // a belt-and-braces guard even though every id here came from
             // the orphan archive — it must never be removed as an
             // "optimization."
-            $affected = DB::table(self::SOURCE_TABLE)
-                ->whereIn('id', $chunk)
-                ->whereNull('transaction_pk')
-                ->delete();
+            //
+            // Slice 17 (T100): wrapped in DeadlockRetryService::
+            // withDeadlockRetry(), matching TaxBackfillRunner's own usage
+            // shape exactly (default $wrapInTransaction = true — each retry
+            // attempt gets its own fresh transaction). Unlike
+            // OrphanTaxReconciler::persist(), there is no outer
+            // all-or-nothing transaction here to preserve: this class's own
+            // idempotency guarantee (a chunk may legitimately affect fewer
+            // rows than its id count on a retry/re-run) already tolerates a
+            // fresh-transaction-per-attempt retry cleanly.
+            $affected = $this->retryService->withDeadlockRetry(function () use ($chunk) {
+                return DB::table(self::SOURCE_TABLE)
+                    ->whereIn('id', $chunk)
+                    ->whereNull('transaction_pk')
+                    ->delete();
+            });
 
             $chunksProcessed++;
             $rowsDeleted += $affected;

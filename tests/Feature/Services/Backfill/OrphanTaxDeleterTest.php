@@ -6,8 +6,11 @@ namespace Tests\Feature\Services\Backfill;
 
 use App\Models\Transaction;
 use App\Services\Backfill\OrphanTaxDeleter;
+use App\Services\DeadlockRetryService;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
+use PDO;
+use Tests\Support\DeadlockOnceOnMatchStatement;
 use Tests\TestCase;
 
 /**
@@ -33,9 +36,9 @@ use Tests\TestCase;
  */
 class OrphanTaxDeleterTest extends TestCase
 {
-    private function deleter(): OrphanTaxDeleter
+    private function deleter(?DeadlockRetryService $retryService = null): OrphanTaxDeleter
     {
-        return new OrphanTaxDeleter;
+        return new OrphanTaxDeleter($retryService ?? new DeadlockRetryService);
     }
 
     private function insertLiveOrphan(Carbon $ts, string $taxType = 'VAT', string $amount = '10.00'): int
@@ -453,6 +456,100 @@ class OrphanTaxDeleterTest extends TestCase
 
         foreach ($idsD1 as $id) {
             $this->assertNotNull(DB::table('transaction_taxes')->where('id', $id)->first(), "Day D+1's orphans must survive day D's rejected token.");
+        }
+    }
+
+    // -- Retry coverage (Slice 17, T100) -------------------------------------
+
+    /**
+     * 002-backfill-transaction-taxes, Slice 17 (T100) — operational
+     * watchdog controls. See
+     * specs/002-backfill-transaction-taxes/slice-17-operational-watchdog-brief.md.
+     *
+     * Proves delete()'s new DeadlockRetryService::withDeadlockRetry()
+     * wrapping around its per-chunk DELETE actually retries (does not
+     * immediately fail) on a genuine QueryException matching a lock-wait/
+     * deadlock message — mirroring TaxBackfillRunnerTest's own equivalent
+     * regression test for TaxBackfillRunner's insert path, reusing the same
+     * shared PDO-statement-swap double (Tests\Support\
+     * DeadlockOnceOnMatchStatement).
+     *
+     * Unlike OrphanTaxReconcilerTest's own retry test, this DOES need the
+     * DB::commit() flattening workaround: delete()'s DELETE is wrapped with
+     * the default $wrapInTransaction = true (matching TaxBackfillRunner's own
+     * shape exactly — see delete()'s docblock), so withDeadlockRetry() opens
+     * its own fresh DB::transaction($callback, 1) per attempt. Left nested
+     * inside this test's own ambient RefreshDatabase transaction, a caught
+     * "Deadlock found"/"Lock wait timeout" QueryException at transaction
+     * depth > 1 is converted by Laravel itself into
+     * Illuminate\Database\DeadlockException (a PDOException subclass, NOT a
+     * QueryException) — which withDeadlockRetry()'s `catch (QueryException
+     * $e)` can never catch, defeating retry on the very first attempt. This
+     * is exactly the hazard TaxBackfillRunner::processTransactionForApply()'s
+     * own docblock documents; DB::commit() flattens the connection to
+     * transaction depth 0 first, so withDeadlockRetry()'s own transaction is
+     * the outermost one — genuine, uncoverted QueryException retry, matching
+     * this method's real (non-nested) production call path from the CLI
+     * command.
+     */
+    public function test_delete_retries_a_simulated_lock_wait_timeout_and_the_second_attempt_succeeds(): void
+    {
+        $day = Carbon::parse('2027-06-19 00:00:00');
+
+        DB::commit();
+
+        $ids = [];
+        $pdo = null;
+        $defaultStatementClass = null;
+
+        try {
+            $ids = $this->seedReconciledDay($day, 2);
+
+            $preflight = $this->deleter()->preflight($day);
+            $this->assertTrue($preflight['passed']);
+
+            $pdo = DB::connection()->getPdo();
+            $defaultStatementClass = $pdo->getAttribute(PDO::ATTR_STATEMENT_CLASS);
+
+            $pdo->setAttribute(PDO::ATTR_STATEMENT_CLASS, [DeadlockOnceOnMatchStatement::class, []]);
+            DeadlockOnceOnMatchStatement::$matcher = fn (string $sql) => str_starts_with(strtolower(trim($sql)), 'delete')
+                && str_contains($sql, 'transaction_taxes');
+            DeadlockOnceOnMatchStatement::$remainingFailures = 1;
+
+            $result = $this->deleter()->delete($day, $preflight['authorization_token'], 1000);
+
+            $pdo->setAttribute(PDO::ATTR_STATEMENT_CLASS, $defaultStatementClass);
+
+            $this->assertSame(
+                1,
+                DeadlockOnceOnMatchStatement::$timesTriggered,
+                'The forced lock-wait-timeout never actually triggered on the DELETE — this test would otherwise pass vacuously.'
+            );
+            $this->assertTrue($result['authorized']);
+            $this->assertSame(2, $result['rows_deleted']);
+            $this->assertSame(0, $result['already_deleted']);
+
+            foreach ($ids as $id) {
+                $this->assertNull(
+                    DB::table('transaction_taxes')->where('id', $id)->first(),
+                    'Expected the retried second attempt to have actually deleted this row.'
+                );
+            }
+        } finally {
+            if ($pdo !== null && $defaultStatementClass !== null) {
+                $pdo->setAttribute(PDO::ATTR_STATEMENT_CLASS, $defaultStatementClass);
+            }
+            DeadlockOnceOnMatchStatement::reset();
+
+            // DB::commit() above made this test's fixtures (and the DELETE
+            // it performs) permanent — RefreshDatabase's usual rollback can
+            // no longer undo them, so clean up explicitly.
+            DB::table('transaction_taxes')->whereIn('id', $ids)->delete();
+            DB::table('transaction_taxes_orphan_archive')->whereIn('original_id', $ids)->delete();
+
+            // Reopen an empty transaction so RefreshDatabase's teardown
+            // rollback behaves exactly as it would for any other test.
+            DB::beginTransaction();
         }
     }
 }

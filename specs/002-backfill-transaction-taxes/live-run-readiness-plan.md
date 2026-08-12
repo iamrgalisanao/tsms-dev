@@ -26,6 +26,9 @@ Being honest about this now is cheaper than discovering it mid-rehearsal.
 | Orphan reconcile (day-scoped, `[0,10]s` tolerance, three-way classification) | `OrphanTaxReconciler`, `--phase=reconcile` | T068a, T069, T071 (reconcile-side) |
 | Orphan delete (two preconditions + day-bound sha256 token) | `OrphanTaxDeleter`, `--phase=delete` | T070, T070a, T071 (delete-side), T079 |
 | Transaction-child PK-integrity report (pre-existing, reusable) | `php artisan txn:pk-integrity` | referenced by T099 |
+| Idle-transaction watchdog, low session lock-wait timeout, before/after processlist evidence | `IdleTransactionWatchdog`, wired into `TaxBackfillRunner::apply()` and `ArchiveOrphanTaxRows`'s three `--apply` branches | T100 |
+
+**Update 2026-08-12 (Slice 17)**: `IdleTransactionWatchdog` (T100) is now built, tested, code-reviewed, and architect-revalidated — this closes §7/§9's remaining gap. Review caught and fixed a serious transaction-safety bug in the accompanying retry-coverage extension (`OrphanTaxReconciler::persist()` risked a silent partial write on a genuine deadlock — fixed via Laravel's native whole-closure transaction retry instead of per-chunk retry; see `tasks.md` T100 for the full account). Two operational notes for whoever runs this for real: confirm the DB user has `information_schema.INNODB_TRX`/`PROCESSLIST` read access before relying on the gate (a permission error surfaces as an uncaught exception, not a clean refusal); confirm this connection isn't multiplexed through a proxy that could route the session-scoped lock-wait-timeout setting and the subsequent mutation to different backend sessions.
 
 **Update 2026-08-12 (Slice 15)**: `SnapshotPreBackfillAggregates` (T073/T074) is now built, tested, code-reviewed, and architect-revalidated — §3.2 below is no longer blocked. One operational note carried over from that slice's review: the command's concurrency guard requires `CACHE_DRIVER` to be a distributed-lock-capable driver (redis/database/memcached/dynamodb) in whatever environment runs it for real — confirm this before rehearsal, not just in production.
 
@@ -37,7 +40,6 @@ Being honest about this now is cheaper than discovering it mid-rehearsal.
 |---|---|---|
 | `transactions:tax-backfill-materiality` command | Producing the reproducible before/after list (SC-006) | Command 3, cli-contract.md |
 | `transactions:tax-backfill-show` command (correction/quarantine inspection) | US3 auditability, reviewing the 216 quarantined rows | Command 4, T042 |
-| Idle-transaction watchdog + low `innodb_lock_wait_timeout` operational controls | §7/§9 below, direct mitigation for the 2026-08-10 incident's failure mode | T100 |
 | T076's post-run comparison logic (reads the `pre_run` capture Slice 16 now produces) | Full pre/post integrity validation | T076 |
 | Backup/restore **verification drill** — the procedure is documented (`rollback.md`), but the drill itself (restore into an isolated DB, confirm via Slice 16's integrity tooling) has not actually been run yet | §6 below | T054 |
 | `tsms:reconcile-intake`'s pause mechanism — no config toggle exists (`transactions-prune`/`transactions-watchdog` both have one); pausing it during a maintenance window requires a temporary code change, documented as an open tradeoff in `containment-plan.md` §2, not built here | §7 below | (no task id — a documented gap, candidate for a future small enhancement) |
@@ -156,7 +158,7 @@ Per-chunk and per-day duration, peak `SHOW PROCESSLIST` depth, total wall-clock 
 - Duplicate-check baseline (T075) — built (Slice 16): the same command above also persists the corrected (`WHERE transaction_pk IS NOT NULL`) `GROUP BY (transaction_pk, tax_type)` result, so T076's post-run comparison has a real baseline instead of an assumed zero.
 - Every `TaxBackfillRun`/`tax_backfill_records` row this run produces — already durable via existing audit tables, no new capture step needed.
 - Every orphan-archive/reconcile/delete verdict per day — already durable via `transaction_taxes_orphan_archive`'s persisted `reconciled_status`/`reason_code`, no new capture step needed.
-- `SHOW PROCESSLIST` samples during the run, captured to the run record rather than only watched live by a human (T100 — not yet built; until it exists, this is a manual watch-and-log responsibility, not automated).
+- `SHOW PROCESSLIST` samples during the run, captured to the run record rather than only watched live by a human — built (Slice 17): `IdleTransactionWatchdog::sampleProcesslist()`, taken once before and once after each mutating phase, persisted into `TaxBackfillRun.preflight_checks.operational_safety` for `--apply` runs and into `ArchiveOrphanTaxRows`'s own result output for the three orphan-pipeline phases.
 - Connection identity (`@@server_id`, `DATABASE()`) for the aggregating connection at refresh time (T077 — not yet built).
 
 ## 6. Backup and restore requirements (T054 — procedure documented 2026-08-12, see [rollback.md](rollback.md); the drill itself not yet run)
@@ -214,7 +216,7 @@ Two-part rollback, both required, with the exact commands in `rollback.md`:
 - [x] T052 — `rollback.md` written (2026-08-12); its restore-from-archive path is a documented, schema-verified procedure, not yet executed against real data (no rehearsal has run to produce something to roll back)
 - [ ] T054 — backup procedure documented (2026-08-12, in `rollback.md`); the verification drill itself (isolated restore + Slice 16 cross-check) has not yet been run
 - [x] T052a — scheduled-job inventory and pause procedure documented (2026-08-12, `containment-plan.md`); `transactions-prune`/`transactions-watchdog` pause via existing config toggles (not yet drilled live); `tsms:reconcile-intake` has no toggle at all — documented as an accepted tradeoff, not a false claim of a clean pause
-- [ ] T100 — idle-transaction watchdog / lock-wait-timeout controls exist, or an explicit manual-monitoring substitute is written down
+- [x] T100 — idle-transaction watchdog / lock-wait-timeout controls exist and are tested (Slice 17, 2026-08-12) — confirm the DB user's `information_schema` read privileges and connection-multiplexing status in the actual rehearsal/production environment before relying on it (see the Slice 17 update above)
 - [x] T102 — mid-run "zero rows written" note added to the containment runbook (2026-08-12, `containment-plan.md` §4, correctly scoped to the backfill's own insert progress and to `other_tax` specifically — not a broad "reports show zero" claim)
 - [ ] A restored staging snapshot is available and its orphan/transaction counts are confirmed against V4/V1a's figures
 

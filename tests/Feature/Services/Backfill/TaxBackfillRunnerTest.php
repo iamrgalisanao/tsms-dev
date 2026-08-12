@@ -7,6 +7,7 @@ use App\Models\TaxBackfillRun;
 use App\Models\Tenant;
 use App\Models\Transaction;
 use App\Models\TransactionTax;
+use App\Services\Backfill\IdleTransactionWatchdog;
 use App\Services\Backfill\TaxBackfillOutcome;
 use App\Services\Backfill\TaxBackfillPreflightChecker;
 use App\Services\Backfill\TaxBackfillReasonCode;
@@ -18,76 +19,9 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use PDO;
-use PDOException;
-use PDOStatement;
+use Tests\Support\DeadlockOnceOnMatchStatement;
 use Tests\TestCase;
 use Tests\Traits\FakesMetricsDistributionRedis;
-
-/**
- * Test double for the nested-transaction/DeadlockException regression test
- * below: makes the underlying PDO driver throw a *real* PDOException —
- * indistinguishable, once wrapped by Laravel's
- * Connection::runQueryCallback() into a QueryException, from a genuine
- * MySQL deadlock — on the first execute() call whose SQL matches $matcher,
- * then behaves exactly like the real PDOStatement afterward (including for
- * every later retry of the very same query). This exercises
- * DeadlockRetryService's actual QueryException-catching retry loop and
- * Laravel's real nested-transaction handling
- * (ManagesTransactions::handleTransactionException()) for real, rather than
- * mocking DeadlockRetryService or TaxBackfillRunner — the bug being tested
- * lives specifically in how those two interact through the connection's
- * genuine transaction-depth counter, which no amount of mocking either
- * class could reproduce.
- */
-class DeadlockOnceOnMatchStatement extends PDOStatement
-{
-    /** @var null|callable(string): bool */
-    public static $matcher = null;
-
-    public static int $remainingFailures = 0;
-
-    public static int $timesTriggered = 0;
-
-    protected function __construct()
-    {
-        // PDO instantiates statement subclasses internally via
-        // PDO::ATTR_STATEMENT_CLASS; nothing to set up here.
-    }
-
-    public function execute(?array $params = null): bool
-    {
-        if (
-            self::$remainingFailures > 0
-            && self::$matcher !== null
-            && (self::$matcher)($this->queryString)
-        ) {
-            self::$remainingFailures--;
-            self::$timesTriggered++;
-
-            $exception = new PDOException(
-                'SQLSTATE[40001]: Serialization failure: 1213 Deadlock found when trying to get lock; try restarting transaction',
-                1213
-            );
-            // Populated exactly as a real MySQL deadlock would (mirrors
-            // DeadlockRetryServiceTest::deadlockException()) so
-            // QueryException::__construct's errorInfo copy and
-            // DeadlockRetryService::isRetryableDeadlock()'s message check
-            // both see realistic data.
-            $exception->errorInfo = ['40001', 1213, 'Deadlock found when trying to get lock; try restarting transaction'];
-
-            throw $exception;
-        }
-
-        return parent::execute($params);
-    }
-
-    public static function reset(): void
-    {
-        self::$matcher = null;
-        self::$remainingFailures = 0;
-        self::$timesTriggered = 0;
-    }
-}
 
 /**
  * 002-backfill-transaction-taxes, Slice 3 (T016).
@@ -112,12 +46,16 @@ class TaxBackfillRunnerTest extends TestCase
         ], $attributes));
     }
 
-    private function runner(?TaxReconstructionService $service = null, ?TaxBackfillPreflightChecker $preflightChecker = null): TaxBackfillRunner
-    {
+    private function runner(
+        ?TaxReconstructionService $service = null,
+        ?TaxBackfillPreflightChecker $preflightChecker = null,
+        ?IdleTransactionWatchdog $idleTransactionWatchdog = null
+    ): TaxBackfillRunner {
         return new TaxBackfillRunner(
             $service ?? new TaxReconstructionService,
             new DeadlockRetryService,
-            $preflightChecker ?? new TaxBackfillPreflightChecker
+            $preflightChecker ?? new TaxBackfillPreflightChecker,
+            $idleTransactionWatchdog ?? new IdleTransactionWatchdog
         );
     }
 
@@ -1988,6 +1926,102 @@ class TaxBackfillRunnerTest extends TestCase
             'required_columns' => ['missing' => [], 'passed' => true],
             'schema_integrity' => null,
         ], $run->preflight_checks);
+    }
+
+    /**
+     * Slice 17 (T100): the third and final preflight step. When
+     * IdleTransactionWatchdog::check() reports a genuinely idle transaction,
+     * apply() must refuse before the chunked query is even built — mirroring
+     * exactly how T097/T018's own preflight failures short-circuit — and
+     * must never call applyLowLockWaitTimeout()/sampleProcesslist() (those
+     * are only safe/meaningful once the gate has actually passed).
+     */
+    public function test_apply_refuses_before_touching_transaction_taxes_when_the_idle_transaction_watchdog_fails(): void
+    {
+        $tenant = Tenant::factory()->create();
+
+        $transaction = $this->makeTransaction($tenant, [
+            'original_payload' => json_encode([
+                'taxes' => [['tax_type' => 'VAT', 'amount' => 20.00]],
+            ]),
+            'vat_amount' => 20.00,
+        ]);
+
+        $mockWatchdog = \Mockery::mock(IdleTransactionWatchdog::class);
+        $mockWatchdog->shouldReceive('check')->once()->andReturn([
+            'idle_transaction_count' => 1,
+            'oldest_age_seconds' => 120,
+            'transactions' => [['trx_id' => '42', 'trx_state' => 'RUNNING', 'age_seconds' => 120]],
+            'passed' => false,
+        ]);
+        $mockWatchdog->shouldNotReceive('applyLowLockWaitTimeout');
+        $mockWatchdog->shouldNotReceive('sampleProcesslist');
+
+        $run = $this->runner(null, null, $mockWatchdog)->apply($transaction->created_at->copy(), $tenant->id);
+
+        $this->assertSame(TaxBackfillRun::STATUS_PREFLIGHT_FAILED, $run->status);
+        $this->assertNotNull($run->completed_at);
+        $this->assertSame(0, $run->scanned_count);
+        $this->assertSame(0, $run->reconstructed_count);
+
+        $this->assertSame(0, TaxBackfillRecord::where('run_id', $run->id)->count());
+        $this->assertSame(0, DB::table('transaction_taxes')->where('transaction_pk', $transaction->id)->count());
+
+        $this->assertIsArray($run->preflight_checks);
+        $this->assertTrue($run->preflight_checks['required_columns']['passed']);
+        $this->assertIsArray($run->preflight_checks['schema_integrity']);
+        $this->assertTrue($run->preflight_checks['schema_integrity']['passed']);
+
+        $this->assertIsArray($run->preflight_checks['operational_safety']);
+        $this->assertFalse($run->preflight_checks['operational_safety']['idle_transaction_gate']['passed']);
+        $this->assertSame(1, $run->preflight_checks['operational_safety']['idle_transaction_gate']['idle_transaction_count']);
+        $this->assertNull($run->preflight_checks['operational_safety']['processlist_before']);
+        $this->assertNull($run->preflight_checks['operational_safety']['processlist_after']);
+    }
+
+    /**
+     * Slice 17 (T100): once the watchdog gate passes, apply() must call
+     * applyLowLockWaitTimeout() exactly once and sampleProcesslist() exactly
+     * twice (before the chunk loop and after it completes), and fold both
+     * snapshots into `preflight_checks.operational_safety` alongside the
+     * gate's own result — a normal, unaffected run otherwise.
+     */
+    public function test_apply_records_a_passing_operational_safety_gate_and_before_after_processlist_samples(): void
+    {
+        $tenant = Tenant::factory()->create();
+
+        $transaction = $this->makeTransaction($tenant, [
+            'original_payload' => json_encode([
+                'taxes' => [['tax_type' => 'VAT', 'amount' => 15.00]],
+            ]),
+            'vat_amount' => 15.00,
+        ]);
+
+        $mockWatchdog = \Mockery::mock(IdleTransactionWatchdog::class);
+        $mockWatchdog->shouldReceive('check')->once()->andReturn([
+            'idle_transaction_count' => 0,
+            'oldest_age_seconds' => null,
+            'transactions' => [],
+            'passed' => true,
+        ]);
+        $mockWatchdog->shouldReceive('applyLowLockWaitTimeout')->once();
+        $mockWatchdog->shouldReceive('sampleProcesslist')->twice()->andReturn([
+            'connection_count' => 3,
+            'longest_running_query_age_seconds' => 0,
+            'queries_above_threshold_count' => 0,
+            'threshold_seconds' => 5,
+        ]);
+
+        $run = $this->runner(null, null, $mockWatchdog)->apply($transaction->created_at->copy(), $tenant->id);
+
+        $this->assertSame(TaxBackfillRun::STATUS_COMPLETED, $run->status);
+        $this->assertSame(1, $run->reconstructed_count);
+
+        $this->assertTrue($run->preflight_checks['operational_safety']['idle_transaction_gate']['passed']);
+        $this->assertIsArray($run->preflight_checks['operational_safety']['processlist_before']);
+        $this->assertIsArray($run->preflight_checks['operational_safety']['processlist_after']);
+        $this->assertSame(3, $run->preflight_checks['operational_safety']['processlist_before']['connection_count']);
+        $this->assertSame(3, $run->preflight_checks['operational_safety']['processlist_after']['connection_count']);
     }
 
     protected function tearDown(): void

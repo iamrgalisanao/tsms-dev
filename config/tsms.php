@@ -333,4 +333,26 @@ return [
             ],
         ],
     ],
+
+    // 002-backfill-transaction-taxes, Slice 17 (T100) — operational watchdog
+    // controls (App\Services\Backfill\IdleTransactionWatchdog). See
+    // specs/002-backfill-transaction-taxes/slice-17-operational-watchdog-brief.md.
+    //
+    // idle_transaction_threshold_seconds: default age (seconds) above which
+    // an open `information_schema.INNODB_TRX` row is treated as "idle" and
+    // blocks a mutating backfill/orphan-pipeline phase from starting. 60 is
+    // the literal incident condition (research.md R9's 2026-08-10 incident),
+    // not an arbitrary round number.
+    //
+    // lock_wait_timeout_seconds: session-scoped `innodb_lock_wait_timeout`
+    // applied once the idle-transaction gate passes, immediately before a
+    // chunked mutation begins. Only safe paired with
+    // App\Services\DeadlockRetryService retry coverage on that same mutation
+    // path (see the brief's Grounding section) — a low timeout without retry
+    // coverage just makes a mutating statement fail faster, not yield more
+    // gracefully to live traffic.
+    'backfill' => [
+        'idle_transaction_threshold_seconds' => (int) env('TSMS_BACKFILL_IDLE_TXN_THRESHOLD_SEC', 60),
+        'lock_wait_timeout_seconds' => (int) env('TSMS_BACKFILL_LOCK_WAIT_TIMEOUT_SEC', 3),
+    ],
 ];

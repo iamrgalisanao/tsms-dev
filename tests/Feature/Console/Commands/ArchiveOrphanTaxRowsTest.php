@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Tests\Feature\Console\Commands;
 
 use App\Models\Transaction;
+use App\Services\Backfill\IdleTransactionWatchdog;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
@@ -832,5 +833,174 @@ class ArchiveOrphanTaxRowsTest extends TestCase
         $this->assertSame(0, $reconcileExitCode);
         $this->assertTrue($reconcileDecoded['passed']);
         $this->assertTrue($reconcileDecoded['persisted']);
+    }
+
+    /**
+     * 002-backfill-transaction-taxes, Slice 17 (T100) — operational watchdog
+     * controls. See
+     * specs/002-backfill-transaction-taxes/slice-17-operational-watchdog-brief.md.
+     *
+     * All three --apply branches must refuse under a failing
+     * IdleTransactionWatchdog::check() gate, with zero DB writes beyond
+     * option parsing — even when the underlying operation would otherwise
+     * have gone on to succeed (a normally-passing archive/reconcile/delete
+     * day).
+     */
+    private function failingWatchdogMock(): IdleTransactionWatchdog
+    {
+        $mock = \Mockery::mock(IdleTransactionWatchdog::class);
+        $mock->shouldReceive('check')->once()->andReturn([
+            'idle_transaction_count' => 1,
+            'oldest_age_seconds' => 90,
+            'transactions' => [['trx_id' => '7', 'trx_state' => 'RUNNING', 'age_seconds' => 90]],
+            'passed' => false,
+        ]);
+        $mock->shouldNotReceive('applyLowLockWaitTimeout');
+        $mock->shouldNotReceive('sampleProcesslist');
+
+        return $mock;
+    }
+
+    public function test_archive_apply_refuses_when_the_idle_transaction_watchdog_fails(): void
+    {
+        $id = $this->insertOrphanRow();
+
+        $this->instance(IdleTransactionWatchdog::class, $this->failingWatchdogMock());
+
+        DB::flushQueryLog();
+        DB::enableQueryLog();
+
+        $exitCode = Artisan::call('transactions:archive-orphan-taxes', [
+            '--phase' => 'archive',
+            '--apply' => true,
+            '--json' => true,
+        ]);
+        $decoded = json_decode(Artisan::output(), true);
+
+        $queryLog = DB::getQueryLog();
+        DB::disableQueryLog();
+
+        $this->assertNotSame(0, $exitCode);
+        $this->assertFalse($decoded['operational_safety']['gate']['passed']);
+        $this->assertNull($decoded['operational_safety']['processlist_before']);
+        $this->assertSame(0, $decoded['totals']['newly_archived']);
+
+        $this->assertSame(
+            [],
+            $queryLog,
+            'A watchdog-refused archive --apply must issue zero DB access beyond the (mocked) check itself.'
+        );
+
+        $this->assertSame(0, $this->archivedCountFor([$id]), 'The refused --apply must never have archived the fixture row.');
+    }
+
+    public function test_reconcile_apply_refuses_when_the_idle_transaction_watchdog_fails_even_though_the_day_would_otherwise_pass(): void
+    {
+        $day = Carbon::parse('2027-05-30 00:00:00');
+        $dummyTransactionId = Transaction::factory()->create()->id;
+
+        $orphanId = $this->insertOrphanAt($day->copy()->addSeconds(3), '16.00');
+        $this->insertReconstructedAt($dummyTransactionId, $day->copy()->addSeconds(0), '16.00');
+
+        DB::table('transaction_taxes_orphan_archive')->insert([
+            'original_id' => $orphanId,
+            'transaction_pk' => null,
+            'tax_type' => 'VAT',
+            'amount' => '16.00',
+            'created_at' => now(),
+            'updated_at' => now(),
+            'archive_run_id' => 'test-fixture',
+            'archived_at' => now(),
+            'reconciled_status' => null,
+            'reason_code' => null,
+        ]);
+
+        $this->instance(IdleTransactionWatchdog::class, $this->failingWatchdogMock());
+
+        DB::flushQueryLog();
+        DB::enableQueryLog();
+
+        $exitCode = Artisan::call('transactions:archive-orphan-taxes', [
+            '--phase' => 'reconcile',
+            '--day' => '2027-05-30',
+            '--apply' => true,
+            '--json' => true,
+        ]);
+        $decoded = json_decode(Artisan::output(), true);
+
+        $queryLog = DB::getQueryLog();
+        DB::disableQueryLog();
+
+        $this->assertNotSame(0, $exitCode);
+        // The day's OWN evaluation genuinely passed -- the watchdog gate is
+        // an orthogonal refusal, never altering evaluate()'s own verdict.
+        $this->assertTrue($decoded['passed']);
+        $this->assertFalse($decoded['persisted'], 'persist() must never run once the watchdog gate has refused.');
+        $this->assertFalse($decoded['operational_safety']['gate']['passed']);
+
+        $writeQueries = array_values(array_filter(
+            $queryLog,
+            fn ($entry) => ! str_starts_with(strtoupper(ltrim($entry['query'])), 'SELECT')
+        ));
+        $this->assertSame([], $writeQueries, 'A watchdog-refused reconcile --apply must issue zero DB writes (reads from evaluate() are expected).');
+
+        $row = DB::table('transaction_taxes_orphan_archive')->where('original_id', $orphanId)->first();
+        $this->assertNull($row->reconciled_status, 'The refused --apply must never have persisted a verdict for this day.');
+    }
+
+    public function test_delete_apply_refuses_when_the_idle_transaction_watchdog_fails_even_with_a_valid_token(): void
+    {
+        $day = Carbon::parse('2027-06-30 00:00:00');
+        $ids = $this->seedReconciledDayForCli($day, 2);
+
+        $dryRunExitCode = Artisan::call('transactions:archive-orphan-taxes', [
+            '--phase' => 'delete',
+            '--day' => '2027-06-30',
+            '--json' => true,
+        ]);
+        $this->assertSame(0, $dryRunExitCode);
+        $token = json_decode(Artisan::output(), true)['authorization_token'];
+
+        $this->instance(IdleTransactionWatchdog::class, $this->failingWatchdogMock());
+
+        DB::flushQueryLog();
+        DB::enableQueryLog();
+
+        $exitCode = Artisan::call('transactions:archive-orphan-taxes', [
+            '--phase' => 'delete',
+            '--day' => '2027-06-30',
+            '--apply' => true,
+            '--token' => $token,
+            '--json' => true,
+        ]);
+        $decoded = json_decode(Artisan::output(), true);
+
+        $queryLog = DB::getQueryLog();
+        DB::disableQueryLog();
+
+        $this->assertNotSame(0, $exitCode);
+        $this->assertFalse($decoded['passed']);
+        $this->assertFalse($decoded['operational_safety']['gate']['passed']);
+        $this->assertSame(0, $decoded['rows_deleted']);
+
+        $this->assertSame(
+            [],
+            $queryLog,
+            'A watchdog-refused delete --apply (even with a correct token) must issue zero DB access beyond the (mocked) check itself -- OrphanTaxDeleter::delete() must never be invoked.'
+        );
+
+        foreach ($ids as $id) {
+            $this->assertNotNull(
+                DB::table('transaction_taxes')->where('id', $id)->first(),
+                "Orphan {$id} must survive a watchdog-refused delete --apply, even with a valid token."
+            );
+        }
+    }
+
+    protected function tearDown(): void
+    {
+        \Mockery::close();
+
+        parent::tearDown();
     }
 }
