@@ -37,10 +37,9 @@ Being honest about this now is cheaper than discovering it mid-rehearsal.
 |---|---|---|
 | `transactions:tax-backfill-materiality` command | Producing the reproducible before/after list (SC-006) | Command 3, cli-contract.md |
 | `transactions:tax-backfill-show` command (correction/quarantine inspection) | US3 auditability, reviewing the 216 quarantined rows | Command 4, T042 |
-| `rollback.md` (documented + scripted two-part rollback) | §8 below | T052 |
 | Idle-transaction watchdog + low `innodb_lock_wait_timeout` operational controls | §7/§9 below, direct mitigation for the 2026-08-10 incident's failure mode | T100 |
 | T076's post-run comparison logic (reads the `pre_run` capture Slice 16 now produces) | Full pre/post integrity validation | T076 |
-| Documented, drilled backup/restore procedure | §6 below | T054 |
+| Backup/restore **verification drill** — the procedure is documented (`rollback.md`), but the drill itself (restore into an isolated DB, confirm via Slice 16's integrity tooling) has not actually been run yet | §6 below | T054 |
 | Scheduled-job pause/inventory runbook entry | §7 below | T052a |
 | Mid-run "zero rows so far" containment note | §9 below | T102 |
 
@@ -161,12 +160,13 @@ Per-chunk and per-day duration, peak `SHOW PROCESSLIST` depth, total wall-clock 
 - `SHOW PROCESSLIST` samples during the run, captured to the run record rather than only watched live by a human (T100 — not yet built; until it exists, this is a manual watch-and-log responsibility, not automated).
 - Connection identity (`@@server_id`, `DATABASE()`) for the aggregating connection at refresh time (T077 — not yet built).
 
-## 6. Backup and restore requirements (T054)
+## 6. Backup and restore requirements (T054 — procedure documented 2026-08-12, see [rollback.md](rollback.md); the drill itself not yet run)
 
-- A **verified** `transaction_taxes` backup is required before any `--apply` run over the full window — "verified" means a restore of that specific backup has been drilled at least once in the rehearsal environment, not merely that the backup command exited zero.
-- Backup scope: `transaction_taxes` at minimum; recommend also backing up `transactions`, `tax_backfill_runs`, `tax_backfill_records`, `transaction_taxes_orphan_archive` as a consistent set, taken in the same snapshot window, so a restore doesn't have to reconcile inconsistent points in time across tables.
-- Document the **exact** backup and restore commands used (tool, flags, target location, retention) — this plan does not prescribe a specific tool (e.g. `mysqldump` vs. a snapshot-based approach); T054's job is to pick one, test it, and write it down precisely enough that a different operator could execute the restore without guessing.
+- A **verified** `transaction_taxes` backup is required before any `--apply` run over the full window — "verified" means a restore of that specific backup has been drilled at least once, not merely that the backup command exited zero. `rollback.md` specifies the exact drill (restore into an isolated database, then cross-check via `transactions:capture-integrity-evidence`, Slice 16) — running that drill for real is still outstanding.
+- Backup scope: all eight tables this feature touches (`transactions`, `transaction_taxes`, `tax_backfill_runs`, `tax_backfill_records`, `transaction_taxes_orphan_archive`, `pre_backfill_snapshot_runs`/`_records`, `pre_run_integrity_captures`), taken together in one `mysqldump` invocation so a restore reconstructs one mutually consistent point in time.
+- Exact commands are in `rollback.md`: `mysqldump --single-transaction --quick --no-tablespaces` (the `--single-transaction` flag is mandatory — without it, the dump takes InnoDB-unsafe table locks, exactly the lock contention this feature exists to avoid).
 - The orphan archive table (`transaction_taxes_orphan_archive`) is itself a form of backup for the rows Stage 3 deletes — but it does **not** substitute for a full `transaction_taxes` backup, since it only covers rows with `transaction_pk IS NULL`, not the newly-inserted linked rows a bad `--apply` could also get wrong.
+- **The full backup/restore mechanism is last-resort disaster recovery, not the primary rollback path** — `rollback.md`'s Mechanism 1 (targeted, audit-record-driven undo) is what a normal rollback uses, since a full restore discards any legitimate activity that occurred after the backup was taken.
 
 ## 7. Pause/containment plan for scheduled jobs (T052a)
 
@@ -182,14 +182,14 @@ Inventory (already captured in tasks.md, consolidated here as the authoritative 
 
 **Action**: pause the pruner/watchdog pair (and ideally `reconcile-intake`) for the entire maintenance window, not just the mutation phase. Capture a transaction-count census at run start and end regardless of whether pausing succeeds cleanly, as a corroborating signal.
 
-## 8. Rollback and decision points (T052)
+## 8. Rollback and decision points (T052 — built 2026-08-12, see [rollback.md](rollback.md))
 
-Two-part rollback, both required (`rollback.md` does not exist yet — write it as part of closing T052, not improvised live):
+Two-part rollback, both required, with the exact commands in `rollback.md`:
 
 1. **Undo inserts**: delete rows attributable to the run via `tax_backfill_records`' row-level audit trail (run-scoped, not a blind delete).
 2. **Restore orphans**: re-insert from `transaction_taxes_orphan_archive` — this is *why* archive-before-delete is mandatory; without it, a delete cannot be undone.
 
-**Caveat that must be in the written runbook**: `daily_transaction_summaries` merges with `max()` (Architect F11), so aggregates are **monotonic** — deleting rows alone does not lower a previously-reported figure. A rollback is not complete, and must not be reported as complete, until a post-rollback aggregate refresh runs.
+**Corrects this plan's own earlier wording** (verified against current code while writing `rollback.md`): `daily_transaction_summaries` is not a monotonic `max()` merge across refreshes — `RefreshDailyTransactionSummaries::handle()` deletes the affected date range and rebuilds it entirely from current source data every run; its `max()` expressions combine multiple sources computed *within* that same refresh call, never a previously-persisted summary value. A post-rollback refresh should reflect the restored, lower values directly — it remains mandatory (nothing recomputes this table until a refresh is run), just not for the "values only go up" reason previously stated here (which traced to an "Architect F11" citation that does not hold against the current implementation).
 
 **Decision points** (when to invoke rollback vs. continue):
 
@@ -222,8 +222,8 @@ Two-part rollback, both required (`rollback.md` does not exist yet — write it 
 - [x] T073/T074 — pre-backfill snapshot command exists and is tested (Slice 15, 2026-08-12)
 - [x] T075/T099 — duplicate-check baseline + `txn:pk-integrity` evidence capture exists and is tested (Slice 16, 2026-08-12)
 - [ ] T077 — connection-identity recording (not just assertion) exists
-- [ ] T052 — `rollback.md` written and its restore-from-archive path tested at least once
-- [ ] T054 — backup procedure documented and a restore drilled successfully
+- [x] T052 — `rollback.md` written (2026-08-12); its restore-from-archive path is a documented, schema-verified procedure, not yet executed against real data (no rehearsal has run to produce something to roll back)
+- [ ] T054 — backup procedure documented (2026-08-12, in `rollback.md`); the verification drill itself (isolated restore + Slice 16 cross-check) has not yet been run
 - [ ] T052a — scheduled-job pause procedure documented and tested (can the jobs actually be paused cleanly?)
 - [ ] T100 — idle-transaction watchdog / lock-wait-timeout controls exist, or an explicit manual-monitoring substitute is written down
 - [ ] T102 — mid-run "zero rows so far" note added to the containment runbook

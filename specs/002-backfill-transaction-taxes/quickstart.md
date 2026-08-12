@@ -188,6 +188,6 @@ php artisan transactions:tax-backfill-materiality --run=<RUN_ID> --json
 1. **Undo inserts**: delete rows attributable to the run via its row-level audit records.
 2. **Restore orphans**: re-insert from the orphan archive (FR-013). This is why archive-before-delete is mandatory — without it, deletion is irreversible.
 
-Then re-run the aggregate refresh. Note that `daily_transaction_summaries` merges sources with `max()` (Architect F11), so aggregates are **monotonic** — deleting rows alone does not lower a previously-reported figure. Only a refresh after rollback restores prior values.
+Then re-run the aggregate refresh. **Corrects earlier Architect F11 wording**: `daily_transaction_summaries` is not a monotonic merge — `RefreshDailyTransactionSummaries::handle()` deletes the affected date range and rebuilds it entirely from current source data on every run; its `max()` expressions combine sources computed within that same refresh call, never a previously-persisted value. A post-rollback refresh should reflect the restored, lower values directly. It's still mandatory — nothing recomputes `daily_transaction_summaries` until a refresh is run — just not for the "values only go up" reason previously stated. Full detail and the exact commands: [rollback.md](rollback.md).
 
-Take a verified `transaction_taxes` backup before Step 5 regardless of the archive.
+Take a verified `transaction_taxes` backup before Step 5 regardless of the archive — see [rollback.md](rollback.md) for the backup/restore procedure and what "verified" means.
