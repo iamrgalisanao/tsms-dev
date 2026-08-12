@@ -83,7 +83,11 @@ transactions:archive-orphan-taxes
     {--phase= : archive | reconcile | delete  (required)}
     {--day= : Single day (Y-m-d). REQUIRED for reconcile and delete.}
     {--apply : Persist. WITHOUT THIS FLAG THE COMMAND IS DRY-RUN ONLY.}
-    {--chunk=1000}
+    {--token= : REQUIRED when --phase=delete --apply is set. Must equal the
+                authorization_token a --phase=delete dry-run reports for the
+                same --day (T079).}
+    {--chunk=1000 : Archive phase's insert chunk size, and delete phase's
+                    DELETE chunk size.}
     {--json}
 ```
 
@@ -97,7 +101,7 @@ Handles the 3,238,180 NULL-keyed rows (research.md V4). **Insert-first**: `archi
 | Reconcile *(revised 2026-08-12 — Slice 13/T069)* | An inserted row and an orphan match when their (`tax_type`, `amount`) are equal and `TIMESTAMPDIFF(SECOND, parent.created_at, orphan.created_at)` is in **[0, 10]** — a measured tolerance (research.md V5), not an exact-second match. Evaluated **per day**, per (`tax_type`, `amount`) bucket, via greedy two-pointer matching — never per-row transaction attribution (research.md V4). Every unmatched orphan is classified `no_replacement_exists`, `timestamp_out_of_tolerance`, or `orphan_content_mismatch` (FR-014); only the last halts, decided by a day-level count cross-check against the known `missing_payload` transaction count, never a per-row guess. Inserted `created_at` is **the parent transaction's `created_at`**, never `now()` — using insertion time would fail this check by construction, since orphans are dated across the defect window, not today. |
 | Delete predicate | Strictly `transaction_pk IS NULL`. MUST NOT delete any linked row (FR-015). Applies uniformly to reconciled and residual rows alike once their respective verification passes |
 | Chunking | Bounded chunks only; never a single bulk `DELETE` (2026-08-10 lock-contention precedent) |
-| Authorization | `--phase=delete --apply` requires the derived token — the reconcile result hash, re-computed server-side (Architect Q4) |
+| Authorization | `--phase=delete --apply` requires `--token=` matching a day-bound sha256 hash of that day's persisted, archived reconciliation verdict (`original_id`/`reconciled_status`/`reason_code`, day-prefixed) — recomputed server-side and compared with `hash_equals()`, never cached or trusted from a prior call. A token captured for one day is structurally rejected against any other day (Architect Q4, T079) |
 
 ## Command 6 — Snapshot pre-backfill aggregates
 

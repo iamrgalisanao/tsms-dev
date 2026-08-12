@@ -11,20 +11,24 @@ use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
 
 /**
- * 002-backfill-transaction-taxes — Stage 1 (Slice 12, T068 archive-phase,
- * T072) and Stage 2 (Slice 13, T069/T071-partial, `--phase=reconcile`) of
- * the orphan archive/reconcile/delete pipeline. See
- * specs/002-backfill-transaction-taxes/slice-12-orphan-archive-brief.md and
- * .../slice-13-orphan-reconcile-brief.md.
+ * 002-backfill-transaction-taxes — all three stages of the orphan archive/
+ * reconcile/delete pipeline: Stage 1 (Slice 12, T068 archive-phase, T072),
+ * Stage 2 (Slice 13, T069/T071-partial, `--phase=reconcile`), and Stage 3
+ * (Slice 14, T070/T070a/T071/T079, `--phase=delete`). See
+ * specs/002-backfill-transaction-taxes/slice-12-orphan-archive-brief.md,
+ * .../slice-13-orphan-reconcile-brief.md, and
+ * .../slice-14-orphan-delete-brief.md.
  *
  * Covers the `transactions:archive-orphan-taxes` command: dry-run reports
- * accurate counts and writes nothing; --apply actually archives; every
- * `--phase` other than 'archive'/'reconcile'/'delete' (i.e. garbage) is
- * rejected with zero DB access beyond option parsing; human/--json output
- * agree structurally across all three phases; reconcile's own --day
- * requirement, all-or-nothing persistence, and never-deletes guarantees;
- * and delete's own --day/--token requirements and token-gated authorization
- * (see tests/Feature/Services/Backfill/OrphanTaxDeleterTest.php for the
+ * accurate counts and writes nothing; --apply actually archives; `--phase`
+ * has no default (corrected 2026-08-12 — required explicitly on every
+ * invocation now that all three phases exist) and is rejected with zero DB
+ * access beyond option parsing when garbage, empty, or omitted entirely;
+ * human/--json output agree structurally across all three phases;
+ * reconcile's own --day requirement, all-or-nothing persistence, and
+ * never-deletes guarantees; and delete's own --day/--token requirements and
+ * token-gated authorization (see
+ * tests/Feature/Services/Backfill/OrphanTaxDeleterTest.php for the
  * service-level coverage this file's CLI tests build on top of).
  *
  * Counts/assertions below are scoped to this test's own fixture ids (never
@@ -59,7 +63,7 @@ class ArchiveOrphanTaxRowsTest extends TestCase
             $this->insertOrphanRow(),
         ];
 
-        $exitCode = Artisan::call('transactions:archive-orphan-taxes', ['--json' => true]);
+        $exitCode = Artisan::call('transactions:archive-orphan-taxes', ['--phase' => 'archive', '--json' => true]);
         $decoded = json_decode(Artisan::output(), true);
 
         $this->assertSame(0, $exitCode);
@@ -80,6 +84,7 @@ class ArchiveOrphanTaxRowsTest extends TestCase
         ];
 
         $exitCode = Artisan::call('transactions:archive-orphan-taxes', [
+            '--phase' => 'archive',
             '--apply' => true,
             '--json' => true,
         ]);
@@ -94,6 +99,7 @@ class ArchiveOrphanTaxRowsTest extends TestCase
         // Running --apply again converges to already_archived for these ids
         // (idempotency), matching OrphanTaxArchiver's own guarantee.
         $secondExitCode = Artisan::call('transactions:archive-orphan-taxes', [
+            '--phase' => 'archive',
             '--apply' => true,
             '--json' => true,
         ]);
@@ -105,14 +111,16 @@ class ArchiveOrphanTaxRowsTest extends TestCase
     }
 
     /**
-     * Shared assertion body for every "not yet implemented" --phase value.
-     * No @dataProvider here — this codebase's PHPUnit 12 doesn't use
-     * doc-comment data providers anywhere else (removed in PHPUnit 10+;
-     * would require the #[DataProvider] attribute instead), so each phase
-     * gets its own explicit test method below, matching this repo's
-     * existing convention of one test method per scenario.
+     * Shared assertion body for every rejected --phase value: garbage,
+     * empty, or omitted entirely (--phase has no default as of 2026-08-12 —
+     * see the command's own docblock). No @dataProvider here — this
+     * codebase's PHPUnit 12 doesn't use doc-comment data providers anywhere
+     * else (removed in PHPUnit 10+; would require the #[DataProvider]
+     * attribute instead), so each scenario gets its own explicit test method
+     * below, matching this repo's existing convention of one test method per
+     * scenario.
      *
-     * Code-review follow-up: the earlier version of this test only proved
+     * Code-review follow-up: an earlier version of this test only proved
      * "zero DB access" via side effects (no archive rows created), which is
      * strictly weaker than the claim itself — a regression that added a
      * read-only query before the phase check would slip past a side-effect-
@@ -123,8 +131,13 @@ class ArchiveOrphanTaxRowsTest extends TestCase
      * setup above it, which legitimately does query) and is read/disabled
      * immediately after, before any of this method's own follow-up
      * verification queries run.
+     *
+     * @param  string|null  $phase  null omits --phase from the Artisan::call
+     *                              options array entirely (the real
+     *                              "operator forgot --phase" scenario); a
+     *                              string passes that literal value.
      */
-    private function assertPhaseIsRejectedWithZeroDbAccess(string $phase): void
+    private function assertPhaseIsRejectedWithZeroDbAccess(?string $phase, string $expectedMessageFragment): void
     {
         $id = $this->insertOrphanRow();
 
@@ -133,11 +146,13 @@ class ArchiveOrphanTaxRowsTest extends TestCase
         DB::flushQueryLog();
         DB::enableQueryLog();
 
-        $exitCode = Artisan::call('transactions:archive-orphan-taxes', [
-            '--apply' => true,
-            '--json' => true,
-            '--phase' => $phase,
-        ]);
+        $options = ['--apply' => true, '--json' => true];
+
+        if ($phase !== null) {
+            $options['--phase'] = $phase;
+        }
+
+        $exitCode = Artisan::call('transactions:archive-orphan-taxes', $options);
         $output = Artisan::output();
 
         $queryLog = DB::getQueryLog();
@@ -146,11 +161,11 @@ class ArchiveOrphanTaxRowsTest extends TestCase
         $this->assertSame(
             [],
             $queryLog,
-            "Rejecting --phase={$phase} must issue zero DB queries, not merely zero writes. Queries observed: ".json_encode($queryLog)
+            "Rejecting --phase='{$phase}' must issue zero DB queries, not merely zero writes. Queries observed: ".json_encode($queryLog)
         );
 
         $this->assertNotSame(0, $exitCode);
-        $this->assertStringContainsString('is invalid', $output);
+        $this->assertStringContainsString($expectedMessageFragment, $output);
         $this->assertStringContainsString('archive, reconcile, delete', $output);
 
         // Corroborating side-effect checks, kept alongside the direct
@@ -169,12 +184,23 @@ class ArchiveOrphanTaxRowsTest extends TestCase
 
     public function test_garbage_phase_is_rejected_with_zero_db_access(): void
     {
-        $this->assertPhaseIsRejectedWithZeroDbAccess('bogus-phase');
+        $this->assertPhaseIsRejectedWithZeroDbAccess('bogus-phase', 'is invalid');
     }
 
     public function test_empty_phase_is_rejected_with_zero_db_access(): void
     {
-        $this->assertPhaseIsRejectedWithZeroDbAccess('');
+        $this->assertPhaseIsRejectedWithZeroDbAccess('', 'is required');
+    }
+
+    /**
+     * --phase now has no default (corrected 2026-08-12 — a defaulted
+     * --phase=archive was only ever a deliberate, temporary concession while
+     * delete didn't exist; now that archive, reconcile, and delete all do,
+     * an operator must state intent explicitly on every invocation).
+     */
+    public function test_missing_phase_option_is_rejected_with_zero_db_access(): void
+    {
+        $this->assertPhaseIsRejectedWithZeroDbAccess(null, 'is required');
     }
 
     public function test_human_and_json_output_agree_structurally(): void
@@ -185,12 +211,14 @@ class ArchiveOrphanTaxRowsTest extends TestCase
         ];
 
         $jsonExitCode = Artisan::call('transactions:archive-orphan-taxes', [
+            '--phase' => 'archive',
             '--apply' => true,
             '--json' => true,
         ]);
         $jsonDecoded = json_decode(Artisan::output(), true);
 
         $humanExitCode = Artisan::call('transactions:archive-orphan-taxes', [
+            '--phase' => 'archive',
             '--json' => false,
         ]);
         $humanOutput = Artisan::output();
@@ -219,6 +247,7 @@ class ArchiveOrphanTaxRowsTest extends TestCase
     public function test_invalid_chunk_option_is_rejected(): void
     {
         $exitCode = Artisan::call('transactions:archive-orphan-taxes', [
+            '--phase' => 'archive',
             '--chunk' => '0',
         ]);
 
@@ -764,6 +793,7 @@ class ArchiveOrphanTaxRowsTest extends TestCase
         ];
 
         $archiveExitCode = Artisan::call('transactions:archive-orphan-taxes', [
+            '--phase' => 'archive',
             '--apply' => true,
             '--json' => true,
         ]);

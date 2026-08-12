@@ -20,8 +20,12 @@ use Illuminate\Support\Facades\DB;
  * .../slice-14-orphan-delete-brief.md.
  *
  * `archive`, `reconcile`, and `delete` are all implemented in this build.
- * Any other `--phase` value is rejected outright, before any DB access at
- * all. `delete` is Stage 3 — the only phase that ever issues a DELETE
+ * `--phase` has no default (corrected 2026-08-12 — a defaulted
+ * `--phase=archive` was only ever a deliberate, temporary concession while
+ * `delete` didn't exist yet; now that all three phases do, an operator must
+ * state intent explicitly on every invocation). Any missing, empty, or
+ * otherwise invalid `--phase` value is rejected outright, before any DB
+ * access at all. `delete` is Stage 3 — the only phase that ever issues a DELETE
  * against a live table — gated by OrphanTaxDeleter's authorization-token
  * mechanism (T079): a dry-run (no `--apply`) reports the current evidence
  * hash and a preview count without writing anything; `--apply` requires a
@@ -41,7 +45,7 @@ class ArchiveOrphanTaxRows extends Command
     protected const DEFAULT_CHUNK_SIZE = 1000;
 
     protected $signature = 'transactions:archive-orphan-taxes
-        {--phase=archive : \'archive\', \'reconcile\', and \'delete\' are implemented.}
+        {--phase= : Required. One of: archive, reconcile, delete.}
         {--apply : Persist. Without this flag, dry-run only: report counts/verdict/preview, write nothing.}
         {--chunk=1000 : Archive phase\'s insert chunk size, and delete phase\'s DELETE chunk size.}
         {--day= : Single day (Y-m-d). Required when --phase=reconcile or --phase=delete.}
@@ -52,10 +56,22 @@ class ArchiveOrphanTaxRows extends Command
 
     public function handle(OrphanTaxArchiver $archiver, OrphanTaxReconciler $reconciler, OrphanTaxDeleter $deleter): int
     {
-        $phase = (string) $this->option('phase');
+        $phaseOption = $this->option('phase');
 
+        // --phase has no default (corrected 2026-08-12 — now that archive,
+        // reconcile, AND delete all exist, an operator must state intent
+        // explicitly on every invocation; a defaulted phase was only ever a
+        // deliberate, temporary concession while delete didn't exist yet).
         // Rejected before any other option is even validated, let alone any
         // DB access.
+        if ($phaseOption === null || $phaseOption === '') {
+            $this->error('--phase is required — must be one of: archive, reconcile, delete.');
+
+            return self::FAILURE;
+        }
+
+        $phase = (string) $phaseOption;
+
         if (! in_array($phase, ['archive', 'reconcile', 'delete'], true)) {
             $this->error("--phase={$phase} is invalid — must be one of: archive, reconcile, delete.");
 

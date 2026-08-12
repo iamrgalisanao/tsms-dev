@@ -38,8 +38,11 @@ ONCE, up front:
 
 THEN PER DAY, 2026-06-13 → 2026-08-09:
   insert reconstructed rows for that day
-    → reconcile in situ vs that day's orphans (FR-014, subset/residual)
-    → delete that day's orphans once reconciliation + archive-write verification both pass (FR-015b, revised 2026-08-11 — uniform for every day, including 2026-06-13)
+    → reconcile in situ vs that day's orphans, [0,10]s tolerance (FR-014, subset/residual — no_replacement_exists / timestamp_out_of_tolerance / orphan_content_mismatch)
+    → delete that day's orphans once ALL THREE gates pass: archive complete, reconciliation
+      persisted (non-NULL reconciled_status), AND the operator-supplied token matches the
+      day-bound evidence hash recomputed server-side (FR-015b/T079, revised 2026-08-11/
+      2026-08-12 — uniform for every day, including 2026-06-13; no gate is documentation-only)
   halt on any mismatch before touching the next day
 
 FINALLY:
@@ -110,12 +113,27 @@ GROUP BY transaction_pk, tax_type HAVING COUNT(*) > 1;
 
 ```bash
 for D in <each day in window>; do
-  php artisan transactions:backfill-taxes        --day=$D --apply    # 9a insert
-  php artisan transactions:archive-orphan-taxes  --day=$D --phase=reconcile   # 9b
-  # 9c delete — uniform for every day, including 2026-06-13 (revised 2026-08-11, FR-015b).
-  # The command itself refuses if archive-write verification or the residual-count
-  # check failed for that day — no manual day-skipping needed or permitted.
-  php artisan transactions:archive-orphan-taxes --day=$D --phase=delete --apply
+  # 9a insert
+  php artisan transactions:backfill-taxes --day=$D --apply
+
+  # 9b reconcile AND PERSIST the verdict to the archive table's reconciled_status/
+  # reason_code columns — --apply is required here, not optional. A dry-run
+  # (no --apply) only reports the verdict; it writes nothing, and delete's
+  # own precondition (every archived row for the day has a non-NULL
+  # reconciled_status) will refuse the day if this step is skipped or run
+  # without --apply.
+  php artisan transactions:archive-orphan-taxes --day=$D --phase=reconcile --apply
+
+  # 9c delete — uniform for every day, including 2026-06-13 (revised 2026-08-11,
+  # FR-015b). Three independent gates, all enforced in code, not documentation
+  # (T079/Architect Q4): (1) every live orphan for the day has an archive row,
+  # (2) every one of that day's archived rows has a non-NULL reconciled_status,
+  # (3) the operator supplies a --token that matches the day-bound sha256
+  # evidence hash the command recomputes server-side. Obtain that token from a
+  # --phase=delete dry-run (no --apply) run against the SAME day, immediately
+  # before authorizing the delete — the token is void against any other day.
+  TOKEN=$(php artisan transactions:archive-orphan-taxes --day=$D --phase=delete --json | jq -r '.authorization_token')
+  php artisan transactions:archive-orphan-taxes --day=$D --phase=delete --apply --token="$TOKEN"
 done
 ```
 
