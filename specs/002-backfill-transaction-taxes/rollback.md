@@ -1,6 +1,6 @@
 # Rollback and Backup Runbook — Backfill Transaction Taxes
 
-**Date**: 2026-08-12 · **Status**: Documentation/procedure only — no code, no rehearsal, no live execution authorized by this document (T052, T054)
+**Date**: 2026-08-12, drill executed 2026-08-13 · **Status**: T052 documentation/procedure only, no live execution authorized by this document. **T054 closed** — the Mechanism 2 backup/restore drill has been executed once (local dev environment, see "Drill executed" below) and passed; Mechanism 1 (the primary rollback path) remains procedure-only, never executed against real data.
 
 ## Purpose
 
@@ -122,6 +122,31 @@ All eight tables are captured together, from the same dump invocation, so a rest
 3. Compare the restored copy's evidence against the `pre_run_integrity_captures` row captured from the **original** database at backup time — `total_duplicate_groups`/`total_duplicate_rows` and the `txn:pk-integrity` report should match exactly (same point-in-time data, no reason for them to differ).
 4. Spot-check row counts for the dumped tables between the isolated restore and the original database (allowing for further-in-time drift on the *original* if this drill runs later than the backup) — a restore that produces materially different counts on the same historical window failed the drill.
 5. Document the drill's outcome (pass/fail, date, backup tooling version) somewhere durable — this runbook does not mandate a specific log location, but "we assumed it worked" is not evidence it did.
+
+### Drill executed — 2026-08-13 (T054, local dev environment)
+
+**Outcome: PASS.** First actual execution of this drill (previously documented but not run). Recorded here as the durable evidence log this section calls for.
+
+**Environment caveat, stated explicitly**: this drill ran against this local dev environment's single MySQL server (Herd-managed, MySQL 8.0.32, `mysqldump` 8.4.2) — source (`tsms_dev`) and restore target (`tsms_restore_drill`) are two databases on the *same* server, not genuinely separate hosts. A staging/production drill should repeat this against a real separate restore target; this local run verifies the *procedure and tooling* (dump scope, restore mechanics, cross-check via Slice 16 tooling), not cross-host restore behavior.
+
+1. **Backup**: `mysqldump --single-transaction --quick --no-tablespaces` against `tsms_dev`, all 8 tables from Mechanism 2's list, 365-line dump, zero errors/warnings on stderr.
+2. **Pre-backup evidence** (captured on `tsms_dev` immediately before the dump, via `transactions:capture-integrity-evidence --from=2026-06-13 --to=2026-08-10 --apply --json`, `capture_id=1`):
+   - `duplicate_check_summary`: `total_duplicate_groups=0`, `total_duplicate_rows=0`.
+   - `txn:pk-integrity` (embedded verbatim): `transaction_taxes (taxes): total=44 nulls=13 (29.55%) orphans=13 (29.55%)`; `transaction_adjustments`/`transaction_jobs`/`transaction_validations` all `total=0`; `Total child rows: 44`.
+   - Connection identity: `server_id=1`, `DATABASE()=tsms_dev`.
+   - Row counts: `transactions=119`, `transaction_taxes=44`, `tax_backfill_runs=58`, `tax_backfill_records=132`, `transaction_taxes_orphan_archive=13`, `pre_backfill_snapshot_runs=0`, `pre_backfill_snapshot_records=0`, `pre_run_integrity_captures=1` (the row just captured in step 2, correctly included since the dump ran after).
+3. **Restore**: `CREATE DATABASE tsms_restore_drill`, then `mysql tsms_restore_drill < backup_t054-drill_20260813.sql`. Zero errors.
+4. **Restored-copy identity**: `server_id=1` (matches source — same physical server, expected per the environment caveat above), `DATABASE()=tsms_restore_drill` (correctly a distinct database, proving this is genuinely a separate copy, not the live table).
+5. **Restored-copy row counts**: `transactions=119`, `transaction_taxes=44`, `tax_backfill_runs=58`, `tax_backfill_records=132`, `transaction_taxes_orphan_archive=13`, `pre_backfill_snapshot_runs=0`, `pre_backfill_snapshot_records=0`, `pre_run_integrity_captures=1`. **Exact match against step 2's counts on every single table.**
+6. **Restored-copy evidence** (via `transactions:capture-integrity-evidence --from=2026-06-13 --to=2026-08-10 --json`, dry-run since this is a read-only isolated check, not a second persisted baseline):
+   - `duplicate_check_summary`: `total_duplicate_groups=0`, `total_duplicate_rows=0` — **exact match** against step 2.
+   - `txn:pk-integrity`: `transaction_taxes (taxes): total=44 nulls=13 (29.55%) orphans=13 (29.55%)` — **exact match** against step 2. `transaction_adjustments`/`transaction_jobs`/`transaction_validations` correctly report "Skipping missing table" instead of `total=0`, because Mechanism 2's backup scope deliberately excludes those three tables (not part of the 8-table list) — this is the expected, already-documented shape of a partial-scope restore, not a discrepancy. `Total child rows: 44` — exact match.
+
+**Verdict**: restore is usable — connection identity is distinct and correct, every in-scope table's row count matches exactly, and both integrity signals (duplicate-check baseline and `txn:pk-integrity`) reproduce identically between source and restored copy. T054 is closed for the documented Mechanism 2 procedure; a repeat drill against a genuinely separate host remains recommended before this exact tooling is trusted for a real cross-host disaster-recovery scenario, but is not required to close this task per the runbook's own scope ("once per backup-tooling setup," not gated on multi-host topology).
+
+Local artifacts (dump file, raw command output, row-count/identity captures) were written to a scratch directory outside the repository and are not committed — they contain real (if small, local-dev-scale) transaction data, and this section is the durable record the runbook calls for.
+
+**Isolated restore database removed after verification (2026-08-13)**: `tsms_restore_drill` was dropped once the evidence above was recorded. Deliberate operational pattern for every future run of this drill — create the isolated DB, verify it, record evidence here, drop it — so no stale restore clone is ever left behind to be mistaken for a current reference or compared against after it's aged.
 
 ### Restoring for real (not a drill)
 

@@ -34,6 +34,8 @@ Being honest about this now is cheaper than discovering it mid-rehearsal.
 
 **Update 2026-08-12 (Slice 16)**: `CaptureIntegrityEvidence` (T075/T099) is now built, tested, code-reviewed, and architect-revalidated — §5 below is no longer blocked for the pre-run half. It found and fixed a real correctness trap: the T062 duplicate-check query, applied naively, would have let MySQL's NULL-grouping behavior collapse the 3.24M-row orphan population into meaningless phantom "duplicate" groups — `WHERE transaction_pk IS NOT NULL` is now mandatory and regression-tested. T076's post-run half of this evidence (the `post_run` phase) remains unbuilt — the schema already supports it, but nothing writes it yet.
 
+**Update 2026-08-13 (T054 drill)**: executed and passed (local dev environment) — see `rollback.md`'s "Drill executed" section for the full evidence log. Restore into an isolated database (`tsms_restore_drill`, never the working DB) reproduced every table's row count exactly and matched the pre-backup duplicate-check/`txn:pk-integrity` figures exactly. Environment caveat carried forward: source and restore target were two databases on the same local MySQL server, not genuinely separate hosts — a real staging/production drill should repeat this against a separate host before Mechanism 2 is trusted for actual cross-host disaster recovery, though this is not required to close T054 itself (the runbook only requires the drill "once per backup-tooling setup").
+
 ### NOT yet built — this plan's dependencies, not this plan's content
 
 | Missing piece | Blocks | Task(s) |
@@ -41,7 +43,6 @@ Being honest about this now is cheaper than discovering it mid-rehearsal.
 | `transactions:tax-backfill-materiality` command | Producing the reproducible before/after list (SC-006) | Command 3, cli-contract.md |
 | `transactions:tax-backfill-show` command (correction/quarantine inspection) | US3 auditability, reviewing the 216 quarantined rows | Command 4, T042 |
 | T076's post-run comparison logic (reads the `pre_run` capture Slice 16 now produces) | Full pre/post integrity validation | T076 |
-| Backup/restore **verification drill** — the procedure is documented (`rollback.md`), but the drill itself (restore into an isolated DB, confirm via Slice 16's integrity tooling) has not actually been run yet | §6 below | T054 |
 | `tsms:reconcile-intake`'s pause mechanism — no config toggle exists (`transactions-prune`/`transactions-watchdog` both have one); pausing it during a maintenance window requires a temporary code change, documented as an open tradeoff in `containment-plan.md` §2, not built here | §7 below | (no task id — a documented gap, candidate for a future small enhancement) |
 
 **Consequence for sequencing**: the rehearsal in §3 cannot run end-to-end exactly as written until the "not yet built" column is closed. Where a step below depends on a missing command, it says so and names the fallback (a manual query, or "blocked until T0xx lands") rather than pretending the automation exists.
@@ -165,7 +166,7 @@ Per-chunk and per-day duration, peak `SHOW PROCESSLIST` depth, total wall-clock 
 - `SHOW PROCESSLIST` samples during the run, captured to the run record rather than only watched live by a human — built (Slice 17): `IdleTransactionWatchdog::sampleProcesslist()`, taken once before and once after each mutating phase, persisted into `TaxBackfillRun.preflight_checks.operational_safety` for `--apply` runs and into `ArchiveOrphanTaxRows`'s own result output for the three orphan-pipeline phases.
 - Connection identity (`@@server_id`, `DATABASE()`) for the aggregating connection at refresh time — built (Slice 18, 2026-08-13): persisted to `report_refresh_states.server_id`/`database_name` on every successful refresh; on a mismatch the run refuses and both identity tuples are logged instead.
 
-## 6. Backup and restore requirements (T054 — procedure documented 2026-08-12, see [rollback.md](rollback.md); the drill itself not yet run)
+## 6. Backup and restore requirements (T054 — procedure documented 2026-08-12, drill executed and passed 2026-08-13, see [rollback.md](rollback.md))
 
 - A **verified** `transaction_taxes` backup is required before any `--apply` run over the full window — "verified" means a restore of that specific backup has been drilled at least once, not merely that the backup command exited zero. `rollback.md` specifies the exact drill (restore into an isolated database, then cross-check via `transactions:capture-integrity-evidence`, Slice 16) — running that drill for real is still outstanding.
 - Backup scope: all eight tables this feature touches (`transactions`, `transaction_taxes`, `tax_backfill_runs`, `tax_backfill_records`, `transaction_taxes_orphan_archive`, `pre_backfill_snapshot_runs`/`_records`, `pre_run_integrity_captures`), taken together in one `mysqldump` invocation so a restore reconstructs one mutually consistent point in time.
@@ -218,7 +219,7 @@ Two-part rollback, both required, with the exact commands in `rollback.md`:
 - [x] T075/T099 — duplicate-check baseline + `txn:pk-integrity` evidence capture exists and is tested (Slice 16, 2026-08-12)
 - [x] T077 — connection-identity recording (not just assertion) exists (Slice 18, 2026-08-13); scheduler-level failure alerting for the 15-minute cron entry remains an open, non-blocking operational recommendation (not part of this feature's scope)
 - [x] T052 — `rollback.md` written (2026-08-12); its restore-from-archive path is a documented, schema-verified procedure, not yet executed against real data (no rehearsal has run to produce something to roll back)
-- [ ] T054 — backup procedure documented (2026-08-12, in `rollback.md`); the verification drill itself (isolated restore + Slice 16 cross-check) has not yet been run
+- [x] T054 — backup procedure documented (2026-08-12) and verification drill executed and passed (2026-08-13, local dev environment) — see `rollback.md`'s "Drill executed" section; a genuinely separate-host repeat is recommended before real cross-host disaster recovery is trusted, not required to close this item
 - [x] T052a — scheduled-job inventory and pause procedure documented (2026-08-12, `containment-plan.md`); `transactions-prune`/`transactions-watchdog` pause via existing config toggles (not yet drilled live); `tsms:reconcile-intake` has no toggle at all — documented as an accepted tradeoff, not a false claim of a clean pause
 - [x] T100 — idle-transaction watchdog / lock-wait-timeout controls exist and are tested (Slice 17, 2026-08-12) — confirm the DB user's `information_schema` read privileges and connection-multiplexing status in the actual rehearsal/production environment before relying on it (see the Slice 17 update above)
 - [x] T102 — mid-run "zero rows written" note added to the containment runbook (2026-08-12, `containment-plan.md` §4, correctly scoped to the backfill's own insert progress and to `other_tax` specifically — not a broad "reports show zero" claim)
