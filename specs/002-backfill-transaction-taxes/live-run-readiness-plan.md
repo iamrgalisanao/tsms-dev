@@ -36,11 +36,12 @@ Being honest about this now is cheaper than discovering it mid-rehearsal.
 
 **Update 2026-08-13 (T054 drill)**: executed and passed (local dev environment) — see `rollback.md`'s "Drill executed" section for the full evidence log. Restore into an isolated database (`tsms_restore_drill`, never the working DB) reproduced every table's row count exactly and matched the pre-backup duplicate-check/`txn:pk-integrity` figures exactly. Environment caveat carried forward: source and restore target were two databases on the same local MySQL server, not genuinely separate hosts — a real staging/production drill should repeat this against a separate host before Mechanism 2 is trusted for actual cross-host disaster recovery, though this is not required to close T054 itself (the runbook only requires the drill "once per backup-tooling setup").
 
+**Update 2026-08-13 (Slice 19, T047/Command 3 — materiality report)**: `transactions:tax-backfill-materiality` (T046-T051) is now built, tested, code-reviewed, and architect-revalidated — SC-006's "reproducible before/after list" dependency is closed. Compares Slice 15's pinned `before` snapshot against a freshly captured, equally pinned `after` render (same `SalesReportDataService::getCmsrReportData()` path), per (tenant, reporting month), on the `other_tax` component specifically. Threshold evaluation (FR-009a) is read-time only — the pass/fail flag is never persisted, so finance can retune `--threshold-amount`/`--threshold-percent` later against the same immutably-captured deltas without any new report-path call. Per-pair source-mismatch isolation (FR-012a): one tenant's source flip is quarantined (`comparison_status = source_mismatch`) without blocking visibility into every other tenant. Two non-blocking notes from the architect drift-revalidation: (a) a narrow, benign race exists when `--snapshot-run` is omitted — two concurrent default-resolution invocations could pick different (both valid, both correctly labeled) snapshot-run baselines if a new Slice 15 snapshot completes in between; pass `--snapshot-run` explicitly to eliminate it, or accept it as documented; (b) same `CACHE_DRIVER` requirement as Slice 15 (redis/database/memcached for real cross-process locking, not `file`/`array`). T076 (post-run integrity comparison, using Slice 16's `pre_run` capture) and the materiality-list-informed finance handoff note (T063) remain separately scoped, unbuilt work.
+
 ### NOT yet built — this plan's dependencies, not this plan's content
 
 | Missing piece | Blocks | Task(s) |
 |---|---|---|
-| `transactions:tax-backfill-materiality` command | Producing the reproducible before/after list (SC-006) | Command 3, cli-contract.md |
 | `transactions:tax-backfill-show` command (correction/quarantine inspection) | US3 auditability, reviewing the 216 quarantined rows | Command 4, T042 |
 | T076's post-run comparison logic (reads the `pre_run` capture Slice 16 now produces) | Full pre/post integrity validation | T076 |
 | `tsms:reconcile-intake`'s pause mechanism — no config toggle exists (`transactions-prune`/`transactions-watchdog` both have one); pausing it during a maintenance window requires a temporary code change, documented as an open tradeoff in `containment-plan.md` §2, not built here | §7 below | (no task id — a documented gap, candidate for a future small enhancement) |
@@ -153,7 +154,7 @@ Per-chunk and per-day duration, peak `SHOW PROCESSLIST` depth, total wall-clock 
 6. `php artisan transactions:archive-orphan-taxes --phase=archive --apply` (once)
 7. Per day: `transactions:backfill-taxes --day=$D --apply` → `archive-orphan-taxes --phase=reconcile --day=$D --apply` → `archive-orphan-taxes --phase=delete --day=$D` (dry-run, get token) → `archive-orphan-taxes --phase=delete --day=$D --apply --token=$TOKEN`
 8. `php artisan reports:refresh-daily-transaction-summaries --from=... --to=... --tenant=<ID>` (per tenant/day — T077's connection-identity gate runs automatically, built Slice 18)
-9. `php artisan transactions:tax-backfill-materiality --run=<RUN_ID>` *(not yet built)*
+9. `php artisan transactions:tax-backfill-materiality --snapshot-run=<SNAPSHOT_RUN_ID> --apply` (built, Slice 19) — re-run bare (no `--apply`) with different `--threshold-amount`/`--threshold-percent` any time afterward to retune without re-capturing
 10. `php artisan txn:pk-integrity` (post-run, compare against step 1)
 
 ## 5. Pre-run evidence to capture
@@ -205,7 +206,7 @@ Two-part rollback, both required, with the exact commands in `rollback.md`:
 
 - **Per-transaction**: FR-008's oracle must show zero divergence before *any* `--apply`.
 - **Per-day** (structural, already enforced in code): `orphan_content_mismatch` or a failed precondition halts that day and blocks its delete — the loop does not advance.
-- **Whole-run** (SC-001 through SC-006, see spec.md): 100% coverage for taxable transactions in-window; zero duplicates and zero `transaction_pk IS NULL` rows remaining; SC-003's stated tolerance on aggregate exactness (excluding `other_tax` per FR-016); zero measurable live-ingestion disruption (SC-004); a traceable audit entry per correction (SC-005); a reproducible materiality set (SC-006, blocked on the materiality command — the snapshot it needs as input, T073/T074, is now built).
+- **Whole-run** (SC-001 through SC-006, see spec.md): 100% coverage for taxable transactions in-window; zero duplicates and zero `transaction_pk IS NULL` rows remaining; SC-003's stated tolerance on aggregate exactness (excluding `other_tax` per FR-016); zero measurable live-ingestion disruption (SC-004); a traceable audit entry per correction (SC-005); a reproducible materiality set (SC-006 — built, Slice 19, `transactions:tax-backfill-materiality`).
 
 ## 11. Who must authorize what
 

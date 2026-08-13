@@ -54,13 +54,33 @@ Read-only. Runs the reconstruction logic against **post-fix** transactions (2026
 
 ```
 transactions:tax-backfill-materiality
-    {--run= : Backfill run identifier}
+    {--snapshot-run= : pre_backfill_snapshot_runs.id to use as the before baseline.
+                       Defaults to the most recently completed run for the
+                       standard (snapshot_type, report_contract_version) key.}
     {--threshold-amount=500}
     {--threshold-percent=1}
+    {--apply : Capture the after-render and persist deltas. Without this
+               flag: preview only if nothing has been captured yet, or a
+               full read-only display (freshly evaluated thresholds) if a
+               completed run already exists.}
+    {--force : Required to start a new materiality run when a completed one
+               already exists for the identical snapshot run.}
     {--json}
 ```
 
-Read-only. Emits per-(tenant, month) before/after tax totals and flags those crossing either threshold (FR-009a). Sending notifications is **not** part of this command — it produces the defensible list only (SC-006); dispatch is a separate, human-triggered step.
+**Implemented Slice 19 (2026-08-13), see [slice-19-materiality-brief.md](../slice-19-materiality-brief.md).** `--snapshot-run=` replaces this row's originally-drafted `--run=` (written 2026-08-10, before Slice 15's `pre_backfill_snapshot_runs` existed — no other run entity actually enumerates a tenant/month population). Emits per-(tenant, reporting month) before/after `other_tax` totals (the FR-009a-affected component; not a full multi-component "tax total") and flags those crossing either threshold. Sending notifications is **not** part of this command — it produces the defensible list only (SC-006); dispatch is a separate, human-triggered step.
+
+**Contract guarantees**
+
+| Guarantee | Requirement |
+|-----------|-------------|
+| Read-only against source data | Never mutates `transactions`, `transaction_taxes`, `daily_transaction_summaries`, or Slice 15's `pre_backfill_snapshot_*` tables — writes only its own two tables. |
+| Before is the FR-012 snapshot, never zero | Population is defined by a specific completed `pre_backfill_snapshot_runs` row; refuses if none exists or the referenced one isn't completed. |
+| Source-pinning refusal (FR-012a) | Per-pair, not whole-run: a `before`/`after` source mismatch is recorded as `comparison_status = source_mismatch` (delta fields null, excluded from flagging and summary totals) and does not block other pairs. |
+| Threshold evaluation is read-time only | The materiality flag is never persisted — only the raw before/after/delta evidence is (once per snapshot run, idempotent via `--apply`/`--force`). Re-running with different `--threshold-amount`/`--threshold-percent` against an already-completed run re-evaluates flags from stored deltas with zero new report-path calls or writes (SC-006 reproducibility). |
+| Dry-run | Never calls the report path when nothing has been captured yet (preview only: population/pending counts). Re-invoking against a snapshot run with an already-*completed* materiality run is not an error — it is a full read-only display with freshly evaluated thresholds, since that is a pure DB read. |
+| Idempotent | A completed materiality run for a given snapshot run refuses a bare re-`--apply` (`REFUSED`, zero writes) unless `--force`, which creates a new, independent run without touching the prior one's records. |
+| `tax_exempt` caveat (FR-016) | Absolute `other_tax_before`/`other_tax_after` individually include a boolean-summed `transactions.tax_exempt` contribution (a pre-existing, out-of-scope defect) and are reported with an explicit caveat field; the delta between them is unaffected, since this feature never modifies `transactions.tax_exempt`. |
 
 ## Command 4 — Inspect corrections and quarantined rows
 
