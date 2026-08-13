@@ -78,6 +78,7 @@ class CaptureIntegrityEvidence extends Command
         // Both checks are read-only and cheap enough to always run, dry-run
         // included (Design decision 4) — there is no flag that skips them.
         $duplicateCheckSummary = $this->runDuplicateCheck();
+        $nullCount = $this->runNullCountCheck();
 
         // Code-review follow-up: Illuminate\Console\Application keeps a
         // single shared $lastOutput property, overwritten by every nested
@@ -100,6 +101,7 @@ class CaptureIntegrityEvidence extends Command
                 'window_end' => $windowEnd,
                 'phase' => $phase,
                 'duplicate_check_summary' => $duplicateCheckSummary,
+                'transaction_taxes_null_count' => $nullCount,
                 'integrity_report' => $integrityReport,
                 'captured_at' => now(),
             ]);
@@ -113,6 +115,7 @@ class CaptureIntegrityEvidence extends Command
             $windowEnd,
             $phase,
             $duplicateCheckSummary,
+            $nullCount,
             $integrityReport,
             $captureId
         );
@@ -228,6 +231,17 @@ class CaptureIntegrityEvidence extends Command
     }
 
     /**
+     * `transaction_pk IS NULL` count, whole-table, same scope discipline as
+     * runDuplicateCheck() — structured so
+     * transactions:tax-backfill-readiness-verdict (T076, Slice 20) never
+     * has to parse the verbatim integrity_report text to find this number.
+     */
+    protected function runNullCountCheck(): int
+    {
+        return DB::table('transaction_taxes')->whereNull('transaction_pk')->count();
+    }
+
+    /**
      * One result array drives both the human table and --json output — no
      * separate/duplicated formatting logic that could drift between them
      * (this feature's established one-result-object convention).
@@ -240,6 +254,7 @@ class CaptureIntegrityEvidence extends Command
         Carbon $windowEnd,
         string $phase,
         array $duplicateCheckSummary,
+        int $nullCount,
         string $integrityReport,
         ?int $captureId
     ): array {
@@ -248,6 +263,7 @@ class CaptureIntegrityEvidence extends Command
             'window' => ['start' => $windowStart->toDateTimeString(), 'end' => $windowEnd->toDateTimeString()],
             'phase' => $phase,
             'duplicate_check_summary' => $duplicateCheckSummary,
+            'transaction_taxes_null_count' => $nullCount,
             'integrity_report' => $integrityReport,
             'persisted' => $captureId !== null,
             'capture_id' => $captureId,
@@ -271,10 +287,11 @@ class CaptureIntegrityEvidence extends Command
         ));
 
         $this->table(
-            ['Duplicate groups', 'Duplicate rows'],
+            ['Duplicate groups', 'Duplicate rows', 'transaction_pk IS NULL count'],
             [[
                 $result['duplicate_check_summary']['total_duplicate_groups'],
                 $result['duplicate_check_summary']['total_duplicate_rows'],
+                $result['transaction_taxes_null_count'],
             ]]
         );
 

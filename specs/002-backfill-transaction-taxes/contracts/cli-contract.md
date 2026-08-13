@@ -143,6 +143,35 @@ php artisan reporting:refresh <table> --hours=<n>          # hourly/rollup table
 
 Only `daily_transaction_summaries` is genuinely affected (`other_tax`; `sc_vat_exempt_sales` for alias variants). `transactions_hourly` derives tax from `transactions` columns and does not change; `RefreshHourlyWindowJob` is a deprecated no-op (Architect F3). Sequencing requires asserting the aggregating connection is the primary (T077) rather than waiting on replica lag (Architect F4).
 
+## Command 7 — Capture integrity evidence
+
+```
+transactions:capture-integrity-evidence
+    {--from=} {--to=} {--phase=pre_run : pre_run | post_run}
+    {--apply} {--json}
+```
+
+**Documented here retroactively (2026-08-13) — built Slice 16, 2026-08-12; not previously added to this contract.** Read-only against `transaction_taxes`/`transactions`; writes only its own `pre_run_integrity_captures` table, and only with `--apply`. Persists the corrected T062 duplicate-check baseline (whole-table, `WHERE transaction_pk IS NOT NULL` mandatory), the verbatim `txn:pk-integrity` report, and — added Slice 20 (2026-08-13) — a structured `transaction_taxes_null_count` field (`COUNT(*) WHERE transaction_pk IS NULL`), so Command 8 below never has to parse the verbatim report text.
+
+**Required operator sequencing for Command 8**: run this command with `--phase=pre_run --apply` before any mutation, and again with `--phase=post_run --apply` after the backfill/reconcile/delete/refresh sequence completes — Command 8 is a pure reader and never invokes this command itself.
+
+## Command 8 — Readiness verdict (T076)
+
+```
+transactions:tax-backfill-readiness-verdict
+    {--from=} {--to=} {--tenant=}
+    {--snapshot-run=} {--materiality-run=}
+    {--pre-run-capture-id=} {--post-run-capture-id=}
+    {--backup-drill-confirmed}
+    {--json}
+```
+
+**Built Slice 20 (2026-08-13), see [slice-20-readiness-verdict-brief.md](../slice-20-readiness-verdict-brief.md).** The feature's final evidence-gate: a pure reader over already-persisted evidence from Commands 3, 6, and 7 plus one manual attestation (T054's backup drill, which has no database representation). **No `--apply` flag — this command never writes anything, ever.** Produces a `pass`/`warn`/`fail` verdict, one block per evidence source.
+
+**FAIL conditions** (blocking, non-zero exit): missing pre-run or post-run capture (Command 7); post-run `transaction_taxes_null_count` non-zero or absent (predates the field); post-run duplicate rows exceeding the pre-run baseline (Architect F8 — a secondary signal, not an absolute-zero assertion); no connection-identity evidence (`report_refresh_states.server_id`/`database_name`, T077/Command's own gate) for the window/tenant scope.
+
+**WARN conditions** (non-blocking, exit 0 — a human decision point, not a command failure): `--snapshot-run` omitted or its materiality run missing/incomplete; materiality records with `comparison_status = source_mismatch`; `--backup-drill-confirmed` not passed.
+
 ## Non-contracts
 
 - No HTTP endpoint is added.

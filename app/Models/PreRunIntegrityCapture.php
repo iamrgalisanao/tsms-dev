@@ -20,9 +20,12 @@ class PreRunIntegrityCapture extends Model
     use HasFactory;
 
     /**
-     * This slice only ever writes PHASE_PRE_RUN. PHASE_POST_RUN exists so
-     * T076 can record its own post-run capture through this same table
-     * without a schema change — this slice never writes it.
+     * PHASE_POST_RUN is written by a separate, explicit operator invocation
+     * of `transactions:capture-integrity-evidence --phase=post_run --apply`
+     * — run after the backfill/reconcile/delete/refresh sequence, before
+     * `transactions:tax-backfill-readiness-verdict` (T076, Slice 20). T076
+     * itself never captures anything; it only reads rows this command
+     * already persisted, for either phase.
      */
     public const PHASE_PRE_RUN = 'pre_run';
 
@@ -41,6 +44,7 @@ class PreRunIntegrityCapture extends Model
         'window_end',
         'phase',
         'duplicate_check_summary',
+        'transaction_taxes_null_count',
         'integrity_report',
         'captured_at',
     ];
@@ -49,6 +53,7 @@ class PreRunIntegrityCapture extends Model
         'window_start' => 'datetime',
         'window_end' => 'datetime',
         'duplicate_check_summary' => 'array',
+        'transaction_taxes_null_count' => 'integer',
         'captured_at' => 'datetime',
     ];
 }

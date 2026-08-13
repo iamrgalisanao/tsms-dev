@@ -357,8 +357,34 @@ class CaptureBackfillIntegrityEvidenceTest extends TestCase
         // the DB must ignore key order while still requiring identical
         // key/value content.
         $this->assertEquals($result['duplicate_check_summary'], $capture->duplicate_check_summary);
+        $this->assertSame($result['transaction_taxes_null_count'], $capture->transaction_taxes_null_count);
         $this->assertSame($result['integrity_report'], $capture->integrity_report);
         $this->assertNotNull($capture->captured_at);
+    }
+
+    /**
+     * Slice 20 (T076) follow-up: transaction_taxes_null_count is the
+     * structured field the readiness-verdict command reads instead of
+     * parsing integrity_report's verbatim text.
+     */
+    public function test_transaction_taxes_null_count_matches_a_live_oracle_count(): void
+    {
+        $baseline = (int) DB::table('transaction_taxes')->whereNull('transaction_pk')->count();
+
+        $this->insertOrphanRow();
+        $this->insertOrphanRow();
+        $this->insertOrphanRow();
+
+        $result = $this->runCommand([
+            '--from' => '2030-09-01',
+            '--to' => '2030-10-01',
+            '--apply' => true,
+        ]);
+
+        $this->assertSame($baseline + 3, $result['transaction_taxes_null_count']);
+
+        $capture = PreRunIntegrityCapture::find($result['capture_id']);
+        $this->assertSame($baseline + 3, $capture->transaction_taxes_null_count);
     }
 
     public function test_multiple_apply_invocations_for_the_same_window_coexist(): void
