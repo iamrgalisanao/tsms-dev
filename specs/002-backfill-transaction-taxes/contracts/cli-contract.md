@@ -175,6 +175,24 @@ transactions:tax-backfill-readiness-verdict
 
 **WARN conditions** (non-blocking, exit 0 — a human decision point, not a command failure): `--snapshot-run` omitted or its materiality run missing/incomplete; materiality records with `comparison_status = source_mismatch`; `--backup-drill-confirmed` not passed.
 
+## Command 9 — Post-run validation (T058-T061)
+
+```
+transactions:tax-backfill-validate
+    {--from=} {--to=} {--tenant=}
+    {--tax-type-skew-band=5} {--tax-type-skew-floor=30}
+    {--json}
+```
+
+**Built Slice 21 (2026-08-15), see [slice-21-post-run-validation-brief.md](../slice-21-post-run-validation-brief.md).** Four read-only checks bundled into one command, mirroring Command 8's one-result-object/multiple-check-blocks pattern. `--from`/`--to` scope all four; `--to` is exclusive. **No `--apply` flag — this command never writes anything, ever.**
+
+- **`coverage_by_date`** (T058): per day, `with_tax_count` MUST equal `total_count - quarantined_count` exactly (zero tolerance).
+- **`coverage_by_tenant`** (T059): every affected tenant MUST have >=1 backfilled row, unless 100% of its transactions are quarantined (`expected_zero`, not a failure).
+- **`tax_type_distribution`** (T060): compares each `tax_type`'s share of rows in `[--from, --to)` against its share in the fixed post-fix reference period (2026-08-11 00:00:00 onward, not operator-configurable — same oracle period Command 2 uses). Only evaluated for a type with >= `--tax-type-skew-floor` rows in **both** periods; flags a WARN when the share differs by more than `--tax-type-skew-band` percentage points. **WARN-only — never causes the overall verdict to FAIL.**
+- **`vat_reconciliation`** (T061): per tenant/month, `SUM(transaction_taxes.amount)` for VAT-aliased `tax_type` values (`VAT`, `VAT_AMOUNT` — matching `TaxReconstructionService`'s own alias set) vs. `SUM(transactions.vat_amount)`. Passes within FR-009a's threshold verbatim: PHP 500 or 1% of the month's total, whichever is looser.
+
+Overall status = `fail` if any FAIL exists (T058/T059/T061), else `warn` if T060 flagged anything, else `pass`.
+
 ## Non-contracts
 
 - No HTTP endpoint is added.

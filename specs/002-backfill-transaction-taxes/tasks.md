@@ -186,10 +186,10 @@ description: "Task list for Backfill Transaction Taxes"
 
 ### Post-backfill validation
 
-- [ ] T058 Validate coverage by **date**: per-day `with_tax` ≈ `total` across the window, matching the shape of the V1a table (quickstart Step 6)
-- [ ] T059 [P] Validate by **tenant**: all ~87 affected tenants show corrected totals; none left at zero
-- [ ] T060 [P] Validate by **tax type**: the distribution of reconstructed `tax_type` values is consistent with the post-fix period — a skew indicates a reconstruction bug
-- [ ] T061 [P] Validate by **totals**: reconstructed VAT totals reconcile against `transactions.vat_amount` sums per tenant/month (research R3 cross-check applied in aggregate)
+- [x] T058 **Slice 21 (2026-08-15).** Validate coverage by **date**: per-day `with_tax` ≈ `total` across the window, matching the shape of the V1a table (quickstart Step 6). Resolved as an exact (zero-tolerance) check per [slice-21-post-run-validation-brief.md](slice-21-post-run-validation-brief.md): `with_tax_count(day) == total_count(day) - quarantined_count(day)`. Implemented as the `coverage_by_date` block of `transactions:tax-backfill-validate` (Command 9, cli-contract.md).
+- [x] T059 [P] **Slice 21 (2026-08-15).** Validate by **tenant**: all affected tenants show corrected totals; none left at zero, with a named `expected_zero` exception for a tenant whose entire population is quarantined (verified against the quarantine list, not just asserted). Implemented as the `coverage_by_tenant` block.
+- [x] T060 [P] **Slice 21 (2026-08-15).** Validate by **tax type**: the distribution of reconstructed `tax_type` values is consistent with the post-fix period. Threshold confirmed by the user: ±5 percentage-point band, only evaluated for a type with >=30 rows in both periods; WARN-only, never fails the overall verdict. Implemented as the `tax_type_distribution` block.
+- [x] T061 [P] **Slice 21 (2026-08-15).** Validate by **totals**: reconstructed VAT totals reconcile against `transactions.vat_amount` sums per tenant/month (research R3 cross-check applied in aggregate). Reuses FR-009a's threshold verbatim (PHP 500 or 1%, whichever is looser) — the SC-003 "stated, written tolerance" for aggregate exactness, now actually stated. Implemented as the `vat_reconciliation` block.
 - [ ] T062 Confirm zero duplicates post-run: group `transaction_taxes` by `(transaction_pk, tax_type)` having count > 1 returns empty (SC-002)
 
 ### Documentation and handoff
