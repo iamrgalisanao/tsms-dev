@@ -17,7 +17,7 @@ class Authenticate extends Middleware
         }
 
         // Don't store intended URL for API routes
-        if (!$request->is('api/*')) {
+        if (! $request->is('api/*')) {
             $request->session()->put('url.intended', $request->url());
         }
 

@@ -1,14 +1,14 @@
 <?php
 
-if (!defined('STDIN')) {
+if (! defined('STDIN')) {
     define('STDIN', fopen('php://stdin', 'r'));
 }
 
-if (!defined('STDOUT')) {
+if (! defined('STDOUT')) {
     define('STDOUT', fopen('php://stdout', 'w'));
 }
 
-if (!defined('STDERR')) {
+if (! defined('STDERR')) {
     define('STDERR', fopen('php://stderr', 'w'));
 }
 
@@ -18,7 +18,7 @@ use Illuminate\Foundation\Configuration\Middleware;
 
 return Application::configure(basePath: dirname(__DIR__))
     ->withCommands([
-        __DIR__ . '/../app/Console/Commands',
+        __DIR__.'/../app/Console/Commands',
     ])
     ->withRouting(
         web: __DIR__.'/../routes/web.php',
@@ -64,9 +64,9 @@ return Application::configure(basePath: dirname(__DIR__))
         $exceptions->reportable(function (\Throwable $e) {
             // Custom reporting logic
         });
-        
+
         $exceptions->renderable(function (\Throwable $e) {
-            // Custom rendering logic 
+            // Custom rendering logic
         });
     })
     ->create();
