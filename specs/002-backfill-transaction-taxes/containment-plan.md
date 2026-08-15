@@ -43,14 +43,11 @@ Same `config:clear`/`config:cache` requirement. Confirmed via `config/tsms.php:1
 
 **Resume**: set `TX_WATCHDOG_ENABLED=true`, clear/cache config again.
 
-### `tsms:reconcile-intake` (both variants) — **no existing toggle; documented gap, not a false claim of one**
+### `tsms:reconcile-intake` (both variants) — **gap closed 2026-08-15**
 
-Unlike the two jobs above, this command has no config-driven enable flag. Two real options, with an honest tradeoff between them:
+This command now has a config-driven enable flag, mirroring `enable_pruning`/`TX_ENABLE_PRUNING`: `config('tsms.transactions.enable_intake_reconcile')` / `TX_ENABLE_INTAKE_RECONCILE` (default `true`), gating both `Schedule::command('tsms:reconcile-intake'...)` entries in `routes/console.php` via `->when(...)`. To pause both variants for a maintenance window, set `TX_ENABLE_INTAKE_RECONCILE=false` and clear/cache config — no code change or deploy required. Resume by setting it back to `true`.
 
-1. **Temporarily remove or comment out** the two `Schedule::command('tsms:reconcile-intake'...)` entries in `routes/console.php` for the maintenance window — requires a code change and a deploy, and must be reverted (another deploy) once the window ends. This is the only way to guarantee zero invocations during the run.
-2. **Accept the risk and leave it running** — per the inventory above, the per-minute job's ordinary behavior doesn't threaten already-settled historical data, and the daily `--repair-missing` variant's worst case is a narrow evidence-staleness issue, not corruption. If choosing this option, note the exact time `--repair-missing` last ran (23:00 the day before) relative to when pre-run evidence (Slices 15/16) was captured, so a late-arriving row can be explained rather than mistaken for an anomaly.
-
-This gap (no toggle) is a reasonable candidate for a small, separate follow-up enhancement — not something to build as part of this documentation-only slice.
+The pre-toggle fallback (accept the risk and leave it running, since the per-minute job's ordinary behavior doesn't threaten already-settled historical data, and the daily `--repair-missing` variant's worst case is a narrow evidence-staleness issue) remains valid if the toggle is deliberately left enabled.
 
 ## 3. Transaction-count census (pre/post — a genuine correctness signal, not a wellness check)
 

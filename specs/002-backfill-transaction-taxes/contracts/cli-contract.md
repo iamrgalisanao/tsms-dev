@@ -89,12 +89,15 @@ transactions:tax-backfill-show
     {--transaction= : Show correction history for one transaction (by transactions.id)}
     {--run= : Restrict to one backfill run}
     {--quarantined : List quarantined (unreconstructable) rows instead}
+    {--limit= : Max quarantined rows to show (default 100; --quarantined only)}
     {--json}
 ```
 
-Read-only. Serves US3 (auditability) and makes the 216 quarantined rows reviewable rather than buried in a counter. Follows the `IngestionQuarantine{List,Show}` precedent.
+Read-only. Serves US3 (auditability) and makes the (up to 216, per V1a) quarantined rows reviewable rather than buried in a counter. Follows the `IngestionQuarantine{List,Show}` precedent, including its `--limit=` override for the row cap.
 
-**Contract guarantees**: read-only; never mutates tax rows or audit records; returns non-zero only on invalid arguments.
+`--transaction=`, `--run=`, and `--limit=` are each validated as positive integers (`0` and negative-looking values are rejected, not silently coerced). `--limit=` is only valid alongside `--quarantined`.
+
+**Contract guarantees**: read-only; never mutates tax rows or audit records; returns non-zero only on invalid arguments; `run_filter`/`limit` in the response always reflect the filter/cap actually applied to the query.
 
 ## Command 5 — Archive and delete orphan tax rows
 

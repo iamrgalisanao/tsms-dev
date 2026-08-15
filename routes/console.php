@@ -26,7 +26,8 @@ Schedule::command('tsms:reconcile-intake')
     ->everyMinute()
     ->name('tsms-reconcile-intake')
     ->withoutOverlapping()
-    ->onOneServer();
+    ->onOneServer()
+    ->when(fn () => (bool) config('tsms.transactions.enable_intake_reconcile', true));
 
 // --------------------------------------------------------------------------
 // Processed intake repair: recreate transaction rows missing after intake.
@@ -36,7 +37,8 @@ Schedule::command('tsms:reconcile-intake --repair-missing')
     ->dailyAt('23:00')
     ->name('tsms-repair-missing-transactions')
     ->withoutOverlapping()
-    ->onOneServer();
+    ->onOneServer()
+    ->when(fn () => (bool) config('tsms.transactions.enable_intake_reconcile', true));
 
 // Keep derived daily report summaries warm for dashboards/reports. This is
 // intentionally incremental; historical ranges should be refreshed manually.

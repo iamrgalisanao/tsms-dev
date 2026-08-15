@@ -13,6 +13,11 @@ return [
         'prune_failed_after_days' => (int) env('TX_PRUNE_FAILED_AFTER_DAYS', 14),
         'prune_pending_after_minutes' => (int) env('TX_PRUNE_PENDING_AFTER_MIN', 180), // treat as stale
         'enable_pruning' => (bool) env('TX_ENABLE_PRUNING', true),
+        // Pause both scheduled tsms:reconcile-intake invocations (the
+        // every-minute reconciliation and the daily --repair-missing run) —
+        // closes the containment-plan.md-documented gap: this command
+        // previously had no toggle at all, unlike prune/watchdog.
+        'enable_intake_reconcile' => (bool) env('TX_ENABLE_INTAKE_RECONCILE', true),
         'log_channel' => env('TX_PRUNE_LOG_CHANNEL', 'single'),
         // Watchdog settings for stuck / slow transactions
         'watchdog' => [
