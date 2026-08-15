@@ -194,7 +194,7 @@ description: "Task list for Backfill Transaction Taxes"
 
 ### Documentation and handoff
 
-- [ ] T063 [P] Write the finance/compliance handoff note: what was corrected, the window, per-tenant materiality list, and which reports/exports were regenerated. **Must state explicitly that whether to re-file with BIR or any authority is finance/compliance's decision, not this feature's** (FR-010a)
+- [ ] T063 [P] **Template prepared 2026-08-15; final handoff pending real run/materiality output — NOT complete.** `finance-handoff-note-template.md` defines the required structure (what was corrected, window, per-tenant materiality list, reports/exports regenerated) and carries the FR-010a disclaimer verbatim, but every figure is a placeholder — no real `--apply` run exists yet to fill them from. This task remains open until a real run's materiality/verdict output is used to complete an actual note.
 - [ ] T064 [P] Add an operational runbook to `docs/` following the existing runbook conventions (e.g. `docs/INGESTION_QUARANTINE_README.md`), covering all three commands, the rehearsal sequence, and rollback
 - [ ] T065 Run Documentation Sync per `workflow.md` before commit-group prep — reconcile implementation against spec, plan, research, and runbooks
 
