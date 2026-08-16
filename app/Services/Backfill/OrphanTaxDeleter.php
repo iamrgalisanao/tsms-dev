@@ -43,6 +43,16 @@ use Illuminate\Support\Facades\DB;
  * never at risk regardless, so "delete rows matching this predicate,
  * however many remain" is correctly idempotent as written — unlike Stage
  * 2's persist(), this class never asserts an exact affected-row count.
+ *
+ * T085 (decision recorded 2026-08-11): the stakeholder decision on
+ * 2026-06-13's 216 unrecoverable transactions' orphan rows is archive
+ * (durable, verified, `reason_code = 'no_replacement_exists'`) and then
+ * **delete** from the live table, same as every other day — reversing the
+ * original "retain live forever" default (FR-015b, T070a). No special case
+ * for 2026-06-13 exists anywhere in this class: once its rows carry a
+ * non-null `reconciled_status` (residual, per Stage 2's `no_replacement_exists`
+ * classification), `delete()` removes them the same way as any other day's
+ * `reconciled`/`timestamp_out_of_tolerance` rows.
  */
 class OrphanTaxDeleter
 {

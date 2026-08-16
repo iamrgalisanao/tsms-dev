@@ -13,6 +13,15 @@ return new class extends Migration
      * `tax_backfill_records` row belongs to exactly one run. See
      * specs/002-backfill-transaction-taxes/data-model.md, "New entity:
      * backfill run/progress record".
+     *
+     * T084 (DECIDED 2026-08-11, S1): finance/PITX re-sign-off was obtained
+     * against the corrected impact statement (N1). Every run this table
+     * records is a **controlled data remediation**, not an emergency fix —
+     * the corrected impact does not change rollout priority, and tenant
+     * communication is materiality-based only (FR-009a), never a blanket
+     * notice. Recorded here, not only in the spec, so a future reader of a
+     * `tax_backfill_runs` row understands the authorization basis for its
+     * own existence.
      */
     public function up(): void
     {
