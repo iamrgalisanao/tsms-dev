@@ -401,6 +401,63 @@ class BackfillTaxValidateTest extends TestCase
         $this->assertSame('pass', $result['checks']['coverage_by_tenant']['status']);
     }
 
+    // --- T080: tenant isolation ---------------------------------------------
+    //
+    // T059 checks completeness (does a tenant have backfilled data); this is
+    // a distinct property -- that per-tenant/per-pair figures never mix
+    // across tenants (Architect Q6/F10c). Both tests below run WITHOUT
+    // --tenant= (so both tenants are visible in one call) and assert each
+    // tenant's own entry carries exactly its own numbers, not a merged total
+    // -- the only way that could pass is if the underlying queries
+    // genuinely partition by tenant_id rather than aggregating across tenants.
+
+    public function test_coverage_by_tenant_partitions_exactly_across_tenants(): void
+    {
+        $day = Carbon::parse('2028-06-05');
+
+        $tenantA = $this->makeTransaction($day);
+        for ($i = 0; $i < 2; $i++) {
+            $this->makeTransaction($day, $tenantA->tenant_id);
+        }
+        // Tenant A: 3 non-quarantined transactions, all missing tax rows.
+
+        $tenantB = $this->makeTransaction($day);
+        for ($i = 0; $i < 4; $i++) {
+            $this->makeTransaction($day, $tenantB->tenant_id);
+        }
+        // Tenant B: 5 non-quarantined transactions, all missing tax rows.
+
+        $result = $this->decodeJson($this->runJson('2028-06-01', '2028-07-01'));
+
+        $unexpectedZero = collect($result['checks']['coverage_by_tenant']['unexpected_zero'])->keyBy('tenant_id');
+
+        $this->assertCount(2, $unexpectedZero);
+        $this->assertSame(3, $unexpectedZero[$tenantA->tenant_id]['total']);
+        $this->assertSame(5, $unexpectedZero[$tenantB->tenant_id]['total']);
+    }
+
+    public function test_vat_reconciliation_partitions_exactly_across_tenants(): void
+    {
+        $day = Carbon::parse('2028-07-05');
+
+        $tenantA = $this->makeTransaction($day, vatAmount: 1000.00);
+        $tenantB = $this->makeTransaction($day, vatAmount: 2000.00);
+        // Neither tenant has any VAT tax rows, so both fully fail
+        // reconciliation -- the diff itself is what proves isolation.
+
+        $result = $this->decodeJson($this->runJson('2028-07-01', '2028-08-01'));
+
+        $failingPairs = collect($result['checks']['vat_reconciliation']['failing_pairs'])->keyBy('tenant_id');
+
+        $this->assertCount(2, $failingPairs);
+        // assertEquals, not assertSame: json_decode reads a whole-number
+        // float like 1000.0 back as an int (1000), since json_encode omits
+        // the trailing .0 -- a JSON round-trip quirk, not a type this test
+        // is meant to pin down.
+        $this->assertEquals(1000.0, $failingPairs[$tenantA->tenant_id]['vat_amount_sum']);
+        $this->assertEquals(2000.0, $failingPairs[$tenantB->tenant_id]['vat_amount_sum']);
+    }
+
     // --- Zero writes -------------------------------------------------------
 
     public function test_command_never_writes_anything(): void
