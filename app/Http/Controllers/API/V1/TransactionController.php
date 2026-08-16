@@ -128,7 +128,7 @@ class TransactionController extends Controller
         if (isset($transaction['taxes']) && is_array($transaction['taxes'])) {
             foreach ($transaction['taxes'] as $tax) {
                 \App\Models\TransactionTax::create([
-                    'transaction_id' => $transactionModel->transaction_id,
+                    'transaction_pk' => $transactionModel->id,
                     'tax_type' => $tax['tax_type'],
                     'amount' => $tax['amount'],
                 ]);
@@ -1518,7 +1518,7 @@ class TransactionController extends Controller
                         if (isset($transactionData['taxes']) && is_array($transactionData['taxes'])) {
                             foreach ($transactionData['taxes'] as $tax) {
                                 \App\Models\TransactionTax::create([
-                                    'transaction_id' => $transaction->transaction_id,
+                                    'transaction_pk' => $transaction->id,
                                     'tax_type' => $tax['tax_type'],
                                     'amount' => $tax['amount'],
                                 ]);
