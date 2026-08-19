@@ -560,11 +560,19 @@ class TransactionController extends Controller
         }
     }
 
-    public function status($id)
+    public function status(Request $request, $id)
     {
-        $transaction = Transaction::where('transaction_id', $id)
-            ->orWhere('id', $id)
-            ->first();
+        $query = Transaction::where('transaction_id', $id);
+
+        $actor = $request->user();
+        if ($actor instanceof PosTerminal) {
+            $query->where('tenant_id', $actor->tenant_id)
+                ->where('terminal_id', $actor->id);
+        } elseif (isset($actor->tenant_id)) {
+            $query->where('tenant_id', $actor->tenant_id);
+        }
+
+        $transaction = $query->first();
 
         if (!$transaction) {
             return response()->json([

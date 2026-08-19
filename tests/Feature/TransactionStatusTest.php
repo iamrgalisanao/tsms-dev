@@ -116,4 +116,81 @@ class TransactionStatusTest extends TestCase
                 'message' => 'Transaction not found'
             ]);
     }
+
+    public function test_status_does_not_fall_back_to_internal_numeric_id_for_uuid_like_transaction_id()
+    {
+        $otherTenant = Tenant::factory()->create(['status' => 'active']);
+        $otherTerminal = PosTerminal::factory()->create([
+            'tenant_id' => $otherTenant->id,
+            'status' => 'active',
+        ]);
+
+        Transaction::create([
+            'id' => 3,
+            'tenant_id' => $otherTenant->id,
+            'terminal_id' => $otherTerminal->id,
+            'transaction_id' => 'b2222222-d1d5-4f81-8473-5d8f013bdcfe',
+            'hardware_id' => 'HW-OTHER',
+            'transaction_timestamp' => now()->subDay(),
+            'gross_sales' => 200.00,
+            'net_sales' => 180.00,
+            'customer_code' => 'C-TEST',
+            'payload_checksum' => md5('other-transaction'),
+            'job_status' => 'COMPLETED',
+            'validation_status' => 'VALID',
+        ]);
+
+        $transaction = Transaction::create([
+            'tenant_id' => $this->tenant->id,
+            'terminal_id' => $this->terminal->id,
+            'transaction_id' => '3a18510e-d82e-4832-9a97-6f6f291d8c04',
+            'hardware_id' => 'HW-001',
+            'transaction_timestamp' => now(),
+            'gross_sales' => 305.00,
+            'net_sales' => 305.00,
+            'customer_code' => 'CUST-001',
+            'payload_checksum' => md5('tenant-120-like-transaction'),
+            'job_status' => 'COMPLETED',
+            'validation_status' => 'VALID',
+        ]);
+
+        $response = $this->withHeaders([
+            'Authorization' => 'Bearer ' . $this->token,
+            'Accept' => 'application/json'
+        ])->getJson("/api/v1/transactions/{$transaction->transaction_id}/status");
+
+        $response->assertOk()
+            ->assertJsonPath('data.transaction_id', $transaction->transaction_id)
+            ->assertJsonMissing([
+                'transaction_id' => 'b2222222-d1d5-4f81-8473-5d8f013bdcfe',
+            ]);
+    }
+
+    public function test_status_returns_404_instead_of_internal_id_match_for_missing_numeric_prefixed_uuid()
+    {
+        Transaction::create([
+            'id' => 3,
+            'tenant_id' => $this->tenant->id,
+            'terminal_id' => $this->terminal->id,
+            'transaction_id' => 'b2222222-d1d5-4f81-8473-5d8f013bdcfe',
+            'hardware_id' => 'HW-001',
+            'transaction_timestamp' => now(),
+            'gross_sales' => 200.00,
+            'net_sales' => 180.00,
+            'customer_code' => 'C-TEST',
+            'payload_checksum' => md5('internal-id-collision'),
+        ]);
+
+        $response = $this->withHeaders([
+            'Authorization' => 'Bearer ' . $this->token,
+            'Accept' => 'application/json'
+        ])->getJson('/api/v1/transactions/3-not-a-real-transaction-id/status');
+
+        $response->assertNotFound()
+            ->assertJson([
+                'success' => false,
+                'status' => 'error',
+                'message' => 'Transaction not found'
+            ]);
+    }
 }

@@ -90,16 +90,19 @@ class TransactionProcessingTest extends TestCase
         $response = $this->withHeaders([
             'Authorization' => 'Bearer ' . $this->token,
             'Accept' => 'application/json',
-        ])->getJson("/api/v1/transactions/{$transaction->id}/status");
+        ])->getJson("/api/v1/transactions/{$transaction->transaction_id}/status");
 
         $response->assertOk()
                  ->assertJson([
                      'success' => true,
                      'data' => [
-                         'transaction_id' => $transaction->id,
-                         'status' => null,
+                         'transaction_id' => $transaction->transaction_id,
+                         'status' => 'queued',
+                         'processing_status' => 'queued',
+                         'job_status' => 'QUEUED',
+                         'validation_status' => 'PENDING',
                          'completed_at' => null,
-                         'attempts' => null,
+                         'attempts' => $transaction->job_attempts,
                          'error' => null
                      ]
                  ]);
