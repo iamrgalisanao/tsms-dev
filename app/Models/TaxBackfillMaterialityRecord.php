@@ -25,6 +25,8 @@ class TaxBackfillMaterialityRecord extends Model
 
     public const COMPARISON_STATUS_SOURCE_MISMATCH = 'source_mismatch';
 
+    public const COMPARISON_STATUS_CONTRACT_MISMATCH = 'contract_mismatch';
+
     protected $table = 'tax_backfill_materiality_records';
 
     protected $fillable = [

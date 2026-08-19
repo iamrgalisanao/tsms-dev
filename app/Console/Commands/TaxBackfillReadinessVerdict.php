@@ -265,18 +265,20 @@ class TaxBackfillReadinessVerdict extends Command
             $materialityRun = TaxBackfillMaterialityRun::query()
                 ->where('id', (int) $materialityRunOption)
                 ->where('snapshot_run_id', $snapshotRunId)
+                ->where('report_contract_version', TaxBackfillMaterialityRun::REPORT_CONTRACT_VERSION_CMSR_V2)
                 ->first();
 
             if ($materialityRun === null) {
                 return [
                     'status' => 'warn',
-                    'reason' => "Materiality run #{$materialityRunOption} was not found, or does not belong to snapshot run #{$snapshotRunId}.",
+                    'reason' => "Materiality run #{$materialityRunOption} was not found, does not belong to snapshot run #{$snapshotRunId}, or is not on the current CMSR report contract.",
                     'summary' => null,
                 ];
             }
         } else {
             $materialityRun = TaxBackfillMaterialityRun::query()
                 ->where('snapshot_run_id', $snapshotRunId)
+                ->where('report_contract_version', TaxBackfillMaterialityRun::REPORT_CONTRACT_VERSION_CMSR_V2)
                 ->where('status', TaxBackfillMaterialityRun::STATUS_COMPLETED)
                 ->orderByDesc('id')
                 ->first();
@@ -292,6 +294,7 @@ class TaxBackfillReadinessVerdict extends Command
             ->get();
         $compared = $records->where('comparison_status', TaxBackfillMaterialityRecord::COMPARISON_STATUS_COMPARED);
         $mismatched = $records->where('comparison_status', TaxBackfillMaterialityRecord::COMPARISON_STATUS_SOURCE_MISMATCH);
+        $contractMismatched = $records->where('comparison_status', TaxBackfillMaterialityRecord::COMPARISON_STATUS_CONTRACT_MISMATCH);
 
         if ($tenantId !== null && $records->isEmpty()) {
             return [
@@ -306,13 +309,20 @@ class TaxBackfillReadinessVerdict extends Command
             'population' => $records->count(),
             'compared' => $compared->count(),
             'source_mismatch' => $mismatched->count(),
+            'contract_mismatch' => $contractMismatched->count(),
             'total_other_tax_delta' => round((float) $compared->sum('other_tax_delta_amount'), 2),
         ];
 
-        if ($mismatched->count() > 0) {
+        if ($mismatched->count() > 0 || $contractMismatched->count() > 0) {
             return [
                 'status' => 'warn',
-                'reason' => "{$mismatched->count()} of {$records->count()} pairs could not be compared (source mismatch).",
+                'reason' => sprintf(
+                    '%d of %d pairs could not be compared (%d source mismatch, %d contract mismatch).',
+                    $mismatched->count() + $contractMismatched->count(),
+                    $records->count(),
+                    $mismatched->count(),
+                    $contractMismatched->count()
+                ),
                 'summary' => $summary,
             ];
         }

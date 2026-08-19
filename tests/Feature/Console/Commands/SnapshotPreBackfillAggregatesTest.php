@@ -209,7 +209,7 @@ class SnapshotPreBackfillAggregatesTest extends TestCase
         $runRow = DB::table('pre_backfill_snapshot_runs')->where('id', $result['run_id'])->first();
         $this->assertSame('completed', $runRow->status);
         $this->assertSame(PreBackfillSnapshotRun::TYPE_PRE_BACKFILL_RENDERED_AGGREGATE, $runRow->snapshot_type);
-        $this->assertSame(PreBackfillSnapshotRun::REPORT_CONTRACT_VERSION_CMSR_V1, $runRow->report_contract_version);
+        $this->assertSame(PreBackfillSnapshotRun::REPORT_CONTRACT_VERSION_CMSR_V2, $runRow->report_contract_version);
     }
 
     public function test_source_label_reflects_daily_summary_or_raw_transactions_per_pair_without_rederiving(): void
@@ -362,7 +362,7 @@ class SnapshotPreBackfillAggregatesTest extends TestCase
 
         $run = PreBackfillSnapshotRun::create([
             'snapshot_type' => PreBackfillSnapshotRun::TYPE_PRE_BACKFILL_RENDERED_AGGREGATE,
-            'report_contract_version' => PreBackfillSnapshotRun::REPORT_CONTRACT_VERSION_CMSR_V1,
+            'report_contract_version' => PreBackfillSnapshotRun::REPORT_CONTRACT_VERSION_CMSR_V2,
             'window_start' => '2030-07-01 00:00:00',
             'window_end' => '2030-08-01 00:00:00',
             'status' => PreBackfillSnapshotRun::STATUS_FAILED,
@@ -561,7 +561,7 @@ class SnapshotPreBackfillAggregatesTest extends TestCase
             PreBackfillSnapshotRun::TYPE_PRE_BACKFILL_RENDERED_AGGREGATE,
             $windowStart->timestamp,
             $windowEnd->timestamp,
-            PreBackfillSnapshotRun::REPORT_CONTRACT_VERSION_CMSR_V1
+            PreBackfillSnapshotRun::REPORT_CONTRACT_VERSION_CMSR_V2
         );
 
         $lock = Cache::lock($lockKey, 10);
@@ -649,7 +649,7 @@ class SnapshotPreBackfillAggregatesTest extends TestCase
 
         PreBackfillSnapshotRun::create([
             'snapshot_type' => PreBackfillSnapshotRun::TYPE_PRE_BACKFILL_RENDERED_AGGREGATE,
-            'report_contract_version' => PreBackfillSnapshotRun::REPORT_CONTRACT_VERSION_CMSR_V1,
+            'report_contract_version' => PreBackfillSnapshotRun::REPORT_CONTRACT_VERSION_CMSR_V2,
             'window_start' => '2031-04-01 00:00:00',
             'window_end' => '2031-05-01 00:00:00',
             'status' => PreBackfillSnapshotRun::STATUS_FAILED,
@@ -698,7 +698,7 @@ class SnapshotPreBackfillAggregatesTest extends TestCase
 
         PreBackfillSnapshotRun::create([
             'snapshot_type' => PreBackfillSnapshotRun::TYPE_PRE_BACKFILL_RENDERED_AGGREGATE,
-            'report_contract_version' => PreBackfillSnapshotRun::REPORT_CONTRACT_VERSION_CMSR_V1,
+            'report_contract_version' => PreBackfillSnapshotRun::REPORT_CONTRACT_VERSION_CMSR_V2,
             'window_start' => '2031-05-01 00:00:00',
             'window_end' => '2031-06-01 00:00:00',
             'status' => PreBackfillSnapshotRun::STATUS_FAILED,

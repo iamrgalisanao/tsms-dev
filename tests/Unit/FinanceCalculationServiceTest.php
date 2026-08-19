@@ -9,7 +9,7 @@ class FinanceCalculationServiceTest extends TestCase
 {
     public function test_csmr_normalizes_vat_inclusive_vatable_sales(): void
     {
-        $service = new FinanceCalculationService();
+        $service = new FinanceCalculationService;
 
         $metrics = $service->deriveMetrics([
             'vatable_sales' => 14629.00,
@@ -35,9 +35,178 @@ class FinanceCalculationServiceTest extends TestCase
         $this->assertEqualsWithDelta(15311.14, $metrics['gross_sales'], 0.001);
     }
 
+    /**
+     * Regression for docs/DEFECT_FINANCE_VATABLE_NORMALIZATION.md.
+     *
+     * Both fixtures are real staging aggregates for tenant 106 (2026-08-15 and
+     * 2026-08-17) reported on the same VAT-inclusive convention. They are not
+     * proportional to each other, and their accumulated per-receipt rounding
+     * differs by orders of magnitude: the ratio sits 0.0000303 from the inclusive
+     * anchor on 08-15 versus 0.0000000 on 08-17.
+     *
+     * Under the previous absolute "<= 1.00 pesos" gate that difference decided the
+     * outcome -- instrumented against the old implementation, 08-15 was left
+     * VAT-inclusive at 309,611.40 while 08-17 was normalized to 261,636.90. Same
+     * tenant, same convention, two days apart, two different bases.
+     */
+    public function test_vatable_normalization_is_stable_across_differing_rounding_residue(): void
+    {
+        $service = new FinanceCalculationService;
+
+        $highResidue = $service->deriveMetrics($this->components([
+            'vatable_sales' => 309611.40,
+            'vat_amount' => 33182.03,
+            'sc_vat_exempt_sales' => 20000.00,
+            'senior_discount' => 2000.00,
+            'pwd_discount' => 1524.85,
+            'net_sales' => 329611.40,
+            'gross_sales' => 333136.25,
+        ]), ['gross_sales_basis' => 'pre_deduction']);
+
+        $lowResidue = $service->deriveMetrics($this->components([
+            'vatable_sales' => 293033.33,
+            'vat_amount' => 31396.43,
+            'sc_vat_exempt_sales' => 25000.00,
+            'senior_discount' => 2500.00,
+            'pwd_discount' => 1905.98,
+            'net_sales' => 318033.33,
+            'gross_sales' => 322439.31,
+        ]), ['gross_sales_basis' => 'pre_deduction']);
+
+        $this->assertSame(
+            'normalized_from_inclusive',
+            $highResidue['vatable_sales_basis'],
+            'the high-residue day previously fell off the absolute gate and stayed VAT-inclusive'
+        );
+        $this->assertSame('normalized_from_inclusive', $lowResidue['vatable_sales_basis']);
+
+        $this->assertEqualsWithDelta(276438.75, $highResidue['vatable_sales'], 0.001);
+        $this->assertEqualsWithDelta(261636.90, $lowResidue['vatable_sales'], 0.001);
+    }
+
+    /**
+     * The ratio test alone cannot tell a genuinely VAT-inclusive base from a
+     * VAT-exclusive base diluted by exempt or zero-rated content: an exempt share
+     * between roughly 5.7% and 15.7% inside the vatable column produces the same
+     * ratio as a VAT-inclusive base. Without corroboration from gross, such a base
+     * would be silently written down by 10.71%.
+     *
+     * Here 300,000.00 is genuinely VAT-exclusive with 14% exempt content, so VAT is
+     * only 30,960.00. The gross does not show the double-count, so the value must be
+     * left alone.
+     */
+    public function test_csmr_does_not_normalize_vat_inclusive_ratio_without_gross_corroboration(): void
+    {
+        $service = new FinanceCalculationService;
+
+        $metrics = $service->deriveMetrics($this->components([
+            'vatable_sales' => 300000.00,
+            'vat_amount' => 30960.00,
+            'net_sales' => 300000.00,
+            'gross_sales' => 330960.00,
+        ]), ['gross_sales_basis' => 'pre_deduction']);
+
+        $this->assertSame('uncorroborated', $metrics['vatable_sales_basis']);
+        $this->assertEqualsWithDelta(300000.00, $metrics['vatable_sales'], 0.001);
+    }
+
+    public function test_csmr_leaves_already_vat_exclusive_vatable_sales_untouched(): void
+    {
+        $service = new FinanceCalculationService;
+
+        $metrics = $service->deriveMetrics($this->components([
+            'vatable_sales' => 83846.90,
+            'vat_amount' => 10061.63,
+            'net_sales' => 93908.53,
+            'gross_sales' => 93908.53,
+        ]), ['gross_sales_basis' => 'pre_deduction']);
+
+        $this->assertSame('exclusive', $metrics['vatable_sales_basis']);
+        $this->assertEqualsWithDelta(83846.90, $metrics['vatable_sales'], 0.001);
+    }
+
+    public function test_csmr_leaves_vatable_sales_untouched_when_ratio_matches_neither_basis(): void
+    {
+        $service = new FinanceCalculationService;
+
+        $metrics = $service->deriveMetrics($this->components([
+            'vatable_sales' => 1000.00,
+            'vat_amount' => 50.00,
+            'net_sales' => 1050.00,
+            'gross_sales' => 1050.00,
+        ]), ['gross_sales_basis' => 'pre_deduction']);
+
+        $this->assertSame('unmatched', $metrics['vatable_sales_basis']);
+        $this->assertEqualsWithDelta(1000.00, $metrics['vatable_sales'], 0.001);
+    }
+
+    public function test_csmr_does_not_classify_a_taxable_base_reported_without_vat(): void
+    {
+        $service = new FinanceCalculationService;
+
+        $metrics = $service->deriveMetrics($this->components([
+            'vatable_sales' => 5000.00,
+            'vat_amount' => 0.0,
+            'net_sales' => 5000.00,
+            'gross_sales' => 5000.00,
+        ]), ['gross_sales_basis' => 'pre_deduction']);
+
+        $this->assertSame('not_applicable', $metrics['vatable_sales_basis']);
+        $this->assertEqualsWithDelta(5000.00, $metrics['vatable_sales'], 0.001);
+    }
+
+    /**
+     * The VAT-exclusive normalization is scoped to `vatable_sales` only. `net_ex_vat`
+     * feeds `net_subject_to_rent`, which is the percentage-rent basis billed to
+     * tenants (surfaced as `net_sales_percentage_rent` in HourlyReportService and
+     * cell N71 of the finance export), so it must not move as a side effect.
+     *
+     * Values pinned here were captured from the implementation as it stood before
+     * the normalization was introduced.
+     */
+    public function test_vatable_normalization_does_not_move_percentage_rent_basis(): void
+    {
+        $service = new FinanceCalculationService;
+
+        $metrics = $service->deriveMetrics($this->components([
+            'vatable_sales' => 309611.40,
+            'vat_amount' => 33182.03,
+            'sc_vat_exempt_sales' => 20000.00,
+            'senior_discount' => 2000.00,
+            'pwd_discount' => 1524.85,
+            'net_sales' => 329611.40,
+            'gross_sales' => 333136.25,
+        ]), ['gross_sales_basis' => 'pre_deduction']);
+
+        $this->assertSame('normalized_from_inclusive', $metrics['vatable_sales_basis']);
+        $this->assertEqualsWithDelta(276429.37, $metrics['net_ex_vat'], 0.001);
+        $this->assertEqualsWithDelta(296429.37, $metrics['net_subject_to_rent'], 0.001);
+    }
+
+    private function components(array $overrides = []): array
+    {
+        return array_merge([
+            'vatable_sales' => 0.0,
+            'sc_vat_exempt_sales' => 0.0,
+            'vat_amount' => 0.0,
+            'promo_with_approval' => 0.0,
+            'promo_without_approval' => 0.0,
+            'employee_discount' => 0.0,
+            'senior_discount' => 0.0,
+            'pwd_discount' => 0.0,
+            'vip_discount' => 0.0,
+            'other_tax' => 0.0,
+            'service_charge_distributed' => 0.0,
+            'service_charge_retained' => 0.0,
+            'regular_discount' => 0.0,
+            'gross_sales' => 0.0,
+            'net_sales' => 0.0,
+        ], $overrides);
+    }
+
     public function test_csmr_pre_deduction_gross_preserves_raw_pos_gross_and_exposes_reconciliation(): void
     {
-        $service = new FinanceCalculationService();
+        $service = new FinanceCalculationService;
 
         $metrics = $service->deriveMetrics([
             'vatable_sales' => 81133.59,
@@ -65,7 +234,7 @@ class FinanceCalculationServiceTest extends TestCase
 
     public function test_csmr_gross_uses_raw_pos_value_when_component_formula_differs(): void
     {
-        $service = new FinanceCalculationService();
+        $service = new FinanceCalculationService;
 
         $metrics = $service->deriveMetrics([
             'vatable_sales' => 83846.90,
@@ -92,7 +261,7 @@ class FinanceCalculationServiceTest extends TestCase
 
     public function test_csmr_does_not_derive_vat_when_taxable_buckets_are_zero(): void
     {
-        $service = new FinanceCalculationService();
+        $service = new FinanceCalculationService;
 
         $metrics = $service->deriveMetrics([
             'vatable_sales' => 0.0,
@@ -124,7 +293,7 @@ class FinanceCalculationServiceTest extends TestCase
     {
         config(['tsms.reporting.exclude_voids_from_totals' => true]);
 
-        $service = new FinanceCalculationService();
+        $service = new FinanceCalculationService;
         $transactions = collect([
             new FinanceCalculationTransactionFake(
                 [
@@ -180,8 +349,7 @@ class FinanceCalculationTransactionFake
         private array $taxRows,
         private array $adjustmentRows,
         private bool $voided = false,
-    ) {
-    }
+    ) {}
 
     public function __get(string $key): mixed
     {
@@ -212,9 +380,7 @@ class FinanceCalculationRelationFake
 
     private ?string $typeColumn = null;
 
-    public function __construct(private array $rows)
-    {
-    }
+    public function __construct(private array $rows) {}
 
     public function whereIn(string $column, array $types): self
     {

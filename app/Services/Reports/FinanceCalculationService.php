@@ -46,6 +46,39 @@ class FinanceCalculationService
         'vip',
     ];
 
+    /**
+     * Statutory VAT rate. Also the expected ratio of reported VAT to a reported
+     * taxable base that is already VAT-exclusive.
+     */
+    private const VAT_RATE = 0.12;
+
+    /**
+     * The same ratio when the reported taxable base still carries its VAT:
+     * 0.12 / 1.12 = 0.1071428... The two anchors are 10.7% apart in relative
+     * terms, which is what makes the classification in
+     * normalizeVatableToExclusive() scale-free.
+     */
+    private const VAT_RATIO_VAT_INCLUSIVE = self::VAT_RATE / (1 + self::VAT_RATE);
+
+    /**
+     * How far the observed ratio may sit from an anchor and still be classified.
+     * The anchors are 0.01286 apart, so this leaves a dead band between them
+     * rather than letting the two match windows overlap. Observed drift on real
+     * day-level aggregates is under 0.00004, so this is ~150x the worst case
+     * seen while still refusing to classify a genuinely odd split.
+     */
+    private const VAT_RATIO_MATCH_TOLERANCE = 0.006;
+
+    /**
+     * How far the observed gross overshoot may sit from the reported VAT and still
+     * corroborate a VAT-inclusive base. Expressed as a fraction of the VAT itself so
+     * it scales with the aggregate; the floor covers very small buckets. Real
+     * day-level aggregates corroborate to within ~0.03% of VAT.
+     */
+    private const VAT_CORROBORATION_RATE = 0.02;
+
+    private const VAT_CORROBORATION_FLOOR = 1.00;
+
     private const NON_OTHER_TAX_TYPES = [
         'VAT',
         'VAT_AMOUNT',
@@ -322,10 +355,22 @@ class FinanceCalculationService
             $vat = $aggregateVat;
         }
 
+        [$reportedVatableSales, $vatableSalesBasis] = $this->normalizeVatableToExclusive(
+            $reportedVatableSales,
+            $rawVat,
+            $rawComponentSum,
+            $nominalGross
+        );
+
         $netExVAT = round($netSales - $vat, 2);
         if ($capturedSplitIsRoundingOnly) {
-            $reportedVatableSales = round($derivedNetSales - $vat, 2);
-            $netExVAT = $reportedVatableSales;
+            // Deliberately re-derived here rather than reusing $reportedVatableSales.
+            // The two were the same value before the VAT-exclusive normalization was
+            // introduced; keeping them decoupled holds net_ex_vat -- and therefore
+            // net_subject_to_rent, the percentage-rent basis -- byte-identical to the
+            // pre-fix behaviour. Do not collapse these back together without pinning
+            // net_subject_to_rent with tests first.
+            $netExVAT = round($derivedNetSales - $vat, 2);
         }
 
         $netSubjectToRent = round(
@@ -344,6 +389,7 @@ class FinanceCalculationService
             'net_sales' => $netSales,
             'vat_amount' => $vat,
             'vatable_sales' => $reportedVatableSales,
+            'vatable_sales_basis' => $vatableSalesBasis,
             'sc_vat_exempt_sales' => $reportedScVatExempt,
             'gross_sales' => $gross,
             'raw_gross_sales' => $nominalGross,
@@ -421,6 +467,86 @@ class FinanceCalculationService
         }
 
         return $components;
+    }
+
+    /**
+     * Classifies a reported taxable base as VAT-exclusive or VAT-inclusive and
+     * returns it normalized to VAT-exclusive, plus a label describing the decision.
+     *
+     * VAT-exclusive is the authoritative basis for report-facing output: the PITX
+     * CMSR worksheet computes VAT as `Vatable Trans. * 12%` and Gross as `SUM(B:M)`
+     * across both columns, so a VAT-inclusive base makes the worksheet double-count
+     * VAT when it reconstructs Gross.
+     *
+     * Two independent conditions must both hold before anything is rewritten.
+     *
+     * 1. Ratio test. reported_vat / reported_vatable sits at 0.12 when the base is
+     *    already VAT-exclusive and at 0.12/1.12 when it still carries VAT. Unlike an
+     *    absolute peso tolerance this is scale-free: per-receipt rounding moves the
+     *    ratio by parts per million whatever the aggregate's row count, which is what
+     *    made the previous `<= 1.00` gate flip the same tenant between bases on
+     *    adjacent trading days.
+     *
+     * 2. Corroboration. The ratio alone cannot separate a genuinely VAT-inclusive
+     *    base from a VAT-exclusive base diluted by exempt or zero-rated content: an
+     *    exempt share between roughly 5.7% and 15.7% inside the vatable column lands
+     *    on the same ratio. Those two cases are distinguished by whether the
+     *    double-count is actually observable -- if the base really carries VAT, the
+     *    raw component sum overshoots the POS-reported gross by approximately the VAT
+     *    amount. When gross does not corroborate, the value is left untouched.
+     *
+     * This preserves the property that a rewrite only ever happens where it demonstrably
+     * improves reconciliation against the POS-reported gross, and never on the strength
+     * of a two-number coincidence.
+     *
+     * Corroboration is directional evidence, not proof. The overshoot test cannot tell
+     * "vatable double-counts VAT" apart from "gross omits VAT" -- both leave
+     * `rawComponentSum - gross` near the VAT amount. A tenant reporting gross EXCLUDING
+     * VAT *and* carrying 5.7-15.7% exempt or zero-rated content inside the vatable column
+     * would still be written down. That conjunction is unobserved in any fixture or
+     * staging day examined (tenant 106 reports gross including VAT), but anyone extending
+     * this should know the guard is one-sided.
+     *
+     * PRECONDITION: the aggregate must represent a single reporting convention. A bucket
+     * blending tenants that report on different bases yields a weighted-average ratio
+     * that this function cannot detect. See docs/DEFECT_FINANCE_VATABLE_NORMALIZATION.md.
+     *
+     * @return array{0: float, 1: string} normalized amount, basis label
+     */
+    private function normalizeVatableToExclusive(
+        float $vatable,
+        float $vat,
+        float $rawComponentSum,
+        float $nominalGross
+    ): array {
+        if ($vatable <= 0.0 || $vat <= 0.0) {
+            return [$vatable, 'not_applicable'];
+        }
+
+        $ratio = $vat / $vatable;
+
+        if (abs($ratio - self::VAT_RATE) <= self::VAT_RATIO_MATCH_TOLERANCE) {
+            return [$vatable, 'exclusive'];
+        }
+
+        if (abs($ratio - self::VAT_RATIO_VAT_INCLUSIVE) > self::VAT_RATIO_MATCH_TOLERANCE) {
+            // Matches neither basis. Do not guess.
+            return [$vatable, 'unmatched'];
+        }
+
+        // Ratio says VAT-inclusive. Require the gross to show the double-count too.
+        if ($nominalGross <= 0.0) {
+            return [$vatable, 'uncorroborated'];
+        }
+
+        $overshoot = round($rawComponentSum - $nominalGross, 2);
+        $tolerance = max(self::VAT_CORROBORATION_FLOOR, self::VAT_CORROBORATION_RATE * $vat);
+
+        if (abs($overshoot - $vat) > $tolerance) {
+            return [$vatable, 'uncorroborated'];
+        }
+
+        return [round($vatable / (1 + self::VAT_RATE), 2), 'normalized_from_inclusive'];
     }
 
     private function sumRelated(object $tx, string $relation, string $typeColumn, array $types, bool $exclude = false): float

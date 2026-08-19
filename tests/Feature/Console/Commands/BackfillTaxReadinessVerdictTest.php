@@ -72,7 +72,7 @@ class BackfillTaxReadinessVerdictTest extends TestCase
     {
         return PreBackfillSnapshotRun::create([
             'snapshot_type' => PreBackfillSnapshotRun::TYPE_PRE_BACKFILL_RENDERED_AGGREGATE,
-            'report_contract_version' => PreBackfillSnapshotRun::REPORT_CONTRACT_VERSION_CMSR_V1,
+            'report_contract_version' => PreBackfillSnapshotRun::REPORT_CONTRACT_VERSION_CMSR_V2,
             'window_start' => '2032-01-01',
             'window_end' => '2032-02-01',
             'status' => PreBackfillSnapshotRun::STATUS_COMPLETED,
@@ -88,7 +88,7 @@ class BackfillTaxReadinessVerdictTest extends TestCase
     {
         $run = TaxBackfillMaterialityRun::create([
             'snapshot_run_id' => $snapshotRunId,
-            'report_contract_version' => TaxBackfillMaterialityRun::REPORT_CONTRACT_VERSION_CMSR_V1,
+            'report_contract_version' => TaxBackfillMaterialityRun::REPORT_CONTRACT_VERSION_CMSR_V2,
             'status' => TaxBackfillMaterialityRun::STATUS_COMPLETED,
             'tenant_count' => 1,
             'month_count' => 1,

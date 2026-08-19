@@ -100,7 +100,7 @@ class SnapshotPreBackfillAggregates extends Command
             PreBackfillSnapshotRun::TYPE_PRE_BACKFILL_RENDERED_AGGREGATE,
             $windowStart->timestamp,
             $windowEnd->timestamp,
-            PreBackfillSnapshotRun::REPORT_CONTRACT_VERSION_CMSR_V1
+            PreBackfillSnapshotRun::REPORT_CONTRACT_VERSION_CMSR_V2
         );
 
         // TTL is a crash-safety net only (in case a process dies without
@@ -119,7 +119,7 @@ class SnapshotPreBackfillAggregates extends Command
                 PreBackfillSnapshotRun::TYPE_PRE_BACKFILL_RENDERED_AGGREGATE,
                 $windowStart->toDateTimeString(),
                 $windowEnd->toDateTimeString(),
-                PreBackfillSnapshotRun::REPORT_CONTRACT_VERSION_CMSR_V1
+                PreBackfillSnapshotRun::REPORT_CONTRACT_VERSION_CMSR_V2
             ));
 
             return self::FAILURE;
@@ -282,7 +282,7 @@ class SnapshotPreBackfillAggregates extends Command
             ->where('snapshot_type', PreBackfillSnapshotRun::TYPE_PRE_BACKFILL_RENDERED_AGGREGATE)
             ->where('window_start', $windowStart)
             ->where('window_end', $windowEnd)
-            ->where('report_contract_version', PreBackfillSnapshotRun::REPORT_CONTRACT_VERSION_CMSR_V1)
+            ->where('report_contract_version', PreBackfillSnapshotRun::REPORT_CONTRACT_VERSION_CMSR_V2)
             ->orderByDesc('id')
             ->first();
 
@@ -404,7 +404,7 @@ class SnapshotPreBackfillAggregates extends Command
     {
         return PreBackfillSnapshotRun::create([
             'snapshot_type' => PreBackfillSnapshotRun::TYPE_PRE_BACKFILL_RENDERED_AGGREGATE,
-            'report_contract_version' => PreBackfillSnapshotRun::REPORT_CONTRACT_VERSION_CMSR_V1,
+            'report_contract_version' => PreBackfillSnapshotRun::REPORT_CONTRACT_VERSION_CMSR_V2,
             'window_start' => $windowStart,
             'window_end' => $windowEnd,
             'status' => PreBackfillSnapshotRun::STATUS_RUNNING,
@@ -489,7 +489,7 @@ class SnapshotPreBackfillAggregates extends Command
             'mode' => $apply ? 'apply' : 'dry-run',
             'window' => ['start' => $windowStart->toDateTimeString(), 'end' => $windowEnd->toDateTimeString()],
             'snapshot_type' => PreBackfillSnapshotRun::TYPE_PRE_BACKFILL_RENDERED_AGGREGATE,
-            'report_contract_version' => PreBackfillSnapshotRun::REPORT_CONTRACT_VERSION_CMSR_V1,
+            'report_contract_version' => PreBackfillSnapshotRun::REPORT_CONTRACT_VERSION_CMSR_V2,
             'action' => 'refuse',
             'refused' => true,
             'existing_run' => [
@@ -527,7 +527,7 @@ class SnapshotPreBackfillAggregates extends Command
             'mode' => 'dry-run',
             'window' => ['start' => $windowStart->toDateTimeString(), 'end' => $windowEnd->toDateTimeString()],
             'snapshot_type' => PreBackfillSnapshotRun::TYPE_PRE_BACKFILL_RENDERED_AGGREGATE,
-            'report_contract_version' => PreBackfillSnapshotRun::REPORT_CONTRACT_VERSION_CMSR_V1,
+            'report_contract_version' => PreBackfillSnapshotRun::REPORT_CONTRACT_VERSION_CMSR_V2,
             'action' => $decision['action'],
             'refused' => false,
             'existing_run' => $existingRun !== null ? [

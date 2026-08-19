@@ -179,7 +179,7 @@ class BackfillTaxMaterialityReportTest extends TestCase
     {
         $running = PreBackfillSnapshotRun::create([
             'snapshot_type' => PreBackfillSnapshotRun::TYPE_PRE_BACKFILL_RENDERED_AGGREGATE,
-            'report_contract_version' => PreBackfillSnapshotRun::REPORT_CONTRACT_VERSION_CMSR_V1,
+            'report_contract_version' => PreBackfillSnapshotRun::REPORT_CONTRACT_VERSION_CMSR_V2,
             'window_start' => '2031-11-01',
             'window_end' => '2031-12-01',
             'status' => PreBackfillSnapshotRun::STATUS_RUNNING,
@@ -229,6 +229,7 @@ class BackfillTaxMaterialityReportTest extends TestCase
         $this->assertSame(0, $exit, Artisan::output());
         $this->assertSame(1, $result['summary']['compared']);
         $this->assertSame(0, $result['summary']['source_mismatch']);
+        $this->assertSame(0, $result['summary']['contract_mismatch']);
         $this->assertSame(1, $result['summary']['flagged']);
 
         $row = $result['records'][0];
@@ -295,6 +296,7 @@ class BackfillTaxMaterialityReportTest extends TestCase
         $this->assertSame(0, $result['capture_stats']['failed_this_run']);
         $this->assertSame(2, $result['capture_stats']['captured_this_run']);
         $this->assertSame(1, $result['summary']['source_mismatch']);
+        $this->assertSame(0, $result['summary']['contract_mismatch']);
         $this->assertSame(1, $result['summary']['compared']);
 
         $recordA = TaxBackfillMaterialityRecord::query()
@@ -311,6 +313,60 @@ class BackfillTaxMaterialityReportTest extends TestCase
             ->where('tenant_id', $tenantB->id)
             ->first();
         $this->assertSame('compared', $recordB->comparison_status);
+    }
+
+    public function test_v1_snapshot_pair_is_recorded_as_contract_mismatch_not_silently_compared(): void
+    {
+        $tenant = Tenant::factory()->create();
+        $this->makeTransaction($tenant, '2031-12-15 04:00:00');
+
+        $snapshotRun = PreBackfillSnapshotRun::create([
+            'snapshot_type' => PreBackfillSnapshotRun::TYPE_PRE_BACKFILL_RENDERED_AGGREGATE,
+            'report_contract_version' => PreBackfillSnapshotRun::REPORT_CONTRACT_VERSION_CMSR_V1,
+            'window_start' => '2031-12-01',
+            'window_end' => '2032-01-01',
+            'status' => PreBackfillSnapshotRun::STATUS_COMPLETED,
+            'tenant_count' => 1,
+            'month_count' => 1,
+            'forced' => false,
+            'started_at' => now(),
+            'completed_at' => now(),
+        ]);
+
+        PreBackfillSnapshotRecord::create([
+            'run_id' => $snapshotRun->id,
+            'tenant_id' => $tenant->id,
+            'reporting_year' => 2031,
+            'reporting_month' => 12,
+            'source' => 'raw_transactions',
+            'rendered_result' => [
+                'status' => 'success',
+                'totals' => ['other_tax' => 50.0],
+                'source' => 'raw_transactions',
+            ],
+            'captured_at' => now(),
+        ]);
+
+        $exit = Artisan::call(self::COMMAND, [
+            '--snapshot-run' => $snapshotRun->id,
+            '--apply' => true,
+            '--json' => true,
+        ]);
+        $result = $this->decodeJson(Artisan::output());
+
+        $this->assertSame(0, $exit, Artisan::output());
+        $this->assertSame(0, $result['summary']['compared']);
+        $this->assertSame(0, $result['summary']['source_mismatch']);
+        $this->assertSame(1, $result['summary']['contract_mismatch']);
+        $this->assertSame(1, $result['capture_stats']['captured_this_run']);
+
+        $record = TaxBackfillMaterialityRecord::where('run_id', $result['materiality_run_id'])->first();
+        $this->assertSame(TaxBackfillMaterialityRecord::COMPARISON_STATUS_CONTRACT_MISMATCH, $record->comparison_status);
+        $this->assertNull($record->other_tax_before);
+        $this->assertNull($record->other_tax_after);
+        $this->assertNull($record->other_tax_delta_amount);
+        $this->assertNull($record->other_tax_delta_percent);
+        $this->assertIsArray($record->after_rendered_result);
     }
 
     public function test_apply_refuses_without_force_when_completed_run_exists_and_force_creates_independent_run(): void
@@ -473,7 +529,7 @@ class BackfillTaxMaterialityReportTest extends TestCase
         // The final display must include BOTH tenants -- the one captured
         // on the first (failed) attempt AND the one captured on resume --
         // not just the newly captured pair.
-        $this->assertSame(2, $secondResult['summary']['compared'] + $secondResult['summary']['source_mismatch']);
+        $this->assertSame(2, $secondResult['summary']['compared'] + $secondResult['summary']['source_mismatch'] + $secondResult['summary']['contract_mismatch']);
         $this->assertSame(2, TaxBackfillMaterialityRecord::where('run_id', $secondResult['materiality_run_id'])->count());
         $tenantIdsInResult = array_column($secondResult['records'], 'tenant_id');
         $this->assertContains($tenantA->id, $tenantIdsInResult);

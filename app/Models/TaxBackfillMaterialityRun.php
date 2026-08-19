@@ -18,6 +18,8 @@ class TaxBackfillMaterialityRun extends Model
 
     public const REPORT_CONTRACT_VERSION_CMSR_V1 = 'cmsr_v1';
 
+    public const REPORT_CONTRACT_VERSION_CMSR_V2 = 'cmsr_v2';
+
     public const STATUS_RUNNING = 'running';
 
     public const STATUS_COMPLETED = 'completed';

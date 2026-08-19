@@ -107,7 +107,7 @@ class TaxBackfillMaterialityReport extends Command
         $lockKey = sprintf(
             'tax-backfill-materiality:%d:%s',
             $snapshotRun->id,
-            TaxBackfillMaterialityRun::REPORT_CONTRACT_VERSION_CMSR_V1
+            TaxBackfillMaterialityRun::REPORT_CONTRACT_VERSION_CMSR_V2
         );
 
         $lock = Cache::lock($lockKey, 3600);
@@ -192,7 +192,13 @@ class TaxBackfillMaterialityReport extends Command
                 ? $this->createRun($snapshotRun->id, $population, $decision['forced'])
                 : $existingRun;
 
-            [$capturedCount, $failedCount, $failedPairs] = $this->capturePending($service, $run, $pending, $beforeByPairKey);
+            [$capturedCount, $failedCount, $failedPairs] = $this->capturePending(
+                $service,
+                $run,
+                $pending,
+                $beforeByPairKey,
+                $snapshotRun->report_contract_version
+            );
 
             $run->status = $failedCount > 0 ? TaxBackfillMaterialityRun::STATUS_FAILED : TaxBackfillMaterialityRun::STATUS_COMPLETED;
             $run->completed_at = now();
@@ -250,7 +256,7 @@ class TaxBackfillMaterialityReport extends Command
 
         return PreBackfillSnapshotRun::query()
             ->where('snapshot_type', PreBackfillSnapshotRun::TYPE_PRE_BACKFILL_RENDERED_AGGREGATE)
-            ->where('report_contract_version', PreBackfillSnapshotRun::REPORT_CONTRACT_VERSION_CMSR_V1)
+            ->where('report_contract_version', PreBackfillSnapshotRun::REPORT_CONTRACT_VERSION_CMSR_V2)
             ->where('status', PreBackfillSnapshotRun::STATUS_COMPLETED)
             ->orderByDesc('id')
             ->first();
@@ -263,7 +269,7 @@ class TaxBackfillMaterialityReport extends Command
     {
         $existing = TaxBackfillMaterialityRun::query()
             ->where('snapshot_run_id', $snapshotRunId)
-            ->where('report_contract_version', TaxBackfillMaterialityRun::REPORT_CONTRACT_VERSION_CMSR_V1)
+            ->where('report_contract_version', TaxBackfillMaterialityRun::REPORT_CONTRACT_VERSION_CMSR_V2)
             ->orderByDesc('id')
             ->first();
 
@@ -294,7 +300,7 @@ class TaxBackfillMaterialityReport extends Command
     {
         return TaxBackfillMaterialityRun::create([
             'snapshot_run_id' => $snapshotRunId,
-            'report_contract_version' => TaxBackfillMaterialityRun::REPORT_CONTRACT_VERSION_CMSR_V1,
+            'report_contract_version' => TaxBackfillMaterialityRun::REPORT_CONTRACT_VERSION_CMSR_V2,
             'status' => TaxBackfillMaterialityRun::STATUS_RUNNING,
             'tenant_count' => $population->pluck('tenant_id')->unique()->count(),
             'month_count' => $population->map(fn (PreBackfillSnapshotRecord $r) => "{$r->reporting_year}-{$r->reporting_month}")->unique()->count(),
@@ -307,17 +313,22 @@ class TaxBackfillMaterialityReport extends Command
      * Attempts every pending (tenant, month) pair, catching exceptions
      * per-pair so one tenant's report call never aborts the whole run —
      * mirrors SnapshotPreBackfillAggregates::capturePending(). A source
-     * mismatch (FR-012a) is NOT an exception: it is a legitimate, distinctly
-     * recorded outcome (comparison_status = source_mismatch), not a
-     * failure — one tenant's source flip must not block visibility into
-     * every other tenant's materiality determination.
+     * mismatch (FR-012a) or report-contract mismatch is NOT an exception:
+     * each is a legitimate, distinctly recorded outcome, not a failure — one
+     * tenant's source flip or a v1/v2 evidence boundary must not block
+     * visibility into every other tenant's materiality determination.
      *
      * @param  \Illuminate\Support\Collection<string, bool>  $pending
      * @param  \Illuminate\Support\Collection<string, PreBackfillSnapshotRecord>  $beforeByPairKey
      * @return array{0: int, 1: int, 2: list<array{tenant_id: int, year: int, month: int}>}
      */
-    protected function capturePending(SalesReportDataService $service, TaxBackfillMaterialityRun $run, $pending, $beforeByPairKey): array
-    {
+    protected function capturePending(
+        SalesReportDataService $service,
+        TaxBackfillMaterialityRun $run,
+        $pending,
+        $beforeByPairKey,
+        string $beforeReportContractVersion
+    ): array {
         $captured = 0;
         $failed = 0;
         $failedPairs = [];
@@ -330,6 +341,28 @@ class TaxBackfillMaterialityReport extends Command
             try {
                 $filter = SalesReportFilter::forTenantYearMonth($tenantId, $year, $month);
                 $afterResult = $service->getCmsrReportData($filter);
+
+                if ($beforeReportContractVersion !== PreBackfillSnapshotRun::REPORT_CONTRACT_VERSION_CMSR_V2) {
+                    TaxBackfillMaterialityRecord::create([
+                        'run_id' => $run->id,
+                        'tenant_id' => $tenantId,
+                        'reporting_year' => $year,
+                        'reporting_month' => $month,
+                        'before_source' => $before->source,
+                        'after_source' => $afterResult->source,
+                        'after_rendered_result' => $afterResult->toArray(),
+                        'comparison_status' => TaxBackfillMaterialityRecord::COMPARISON_STATUS_CONTRACT_MISMATCH,
+                        'other_tax_before' => null,
+                        'other_tax_after' => null,
+                        'other_tax_delta_amount' => null,
+                        'other_tax_delta_percent' => null,
+                        'captured_at' => now(),
+                    ]);
+
+                    $captured++;
+
+                    continue;
+                }
 
                 if ($afterResult->source !== $before->source) {
                     TaxBackfillMaterialityRecord::create([
@@ -446,7 +479,8 @@ class TaxBackfillMaterialityReport extends Command
 
         $rows = [];
         $comparedCount = 0;
-        $mismatchCount = 0;
+        $sourceMismatchCount = 0;
+        $contractMismatchCount = 0;
         $flaggedCount = 0;
         $totalBefore = 0.0;
         $totalAfter = 0.0;
@@ -463,8 +497,10 @@ class TaxBackfillMaterialityReport extends Command
                 if ($flag) {
                     $flaggedCount++;
                 }
+            } elseif ($record->comparison_status === TaxBackfillMaterialityRecord::COMPARISON_STATUS_CONTRACT_MISMATCH) {
+                $contractMismatchCount++;
             } else {
-                $mismatchCount++;
+                $sourceMismatchCount++;
             }
 
             $rows[] = [
@@ -494,7 +530,8 @@ class TaxBackfillMaterialityReport extends Command
             'summary' => [
                 'population' => $records->count(),
                 'compared' => $comparedCount,
-                'source_mismatch' => $mismatchCount,
+                'source_mismatch' => $sourceMismatchCount,
+                'contract_mismatch' => $contractMismatchCount,
                 'flagged' => $flaggedCount,
                 'total_other_tax_before' => round($totalBefore, 2),
                 'total_other_tax_after' => round($totalAfter, 2),
@@ -531,11 +568,12 @@ class TaxBackfillMaterialityReport extends Command
 
         $summary = $result['summary'];
         $this->table(
-            ['Population', 'Compared', 'Source mismatch', 'Flagged', 'Total before', 'Total after', 'Total delta'],
+            ['Population', 'Compared', 'Source mismatch', 'Contract mismatch', 'Flagged', 'Total before', 'Total after', 'Total delta'],
             [[
                 $summary['population'],
                 $summary['compared'],
                 $summary['source_mismatch'],
+                $summary['contract_mismatch'],
                 $summary['flagged'],
                 $summary['total_other_tax_before'],
                 $summary['total_other_tax_after'],

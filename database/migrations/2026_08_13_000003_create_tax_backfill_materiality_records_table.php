@@ -35,8 +35,9 @@ return new class extends Migration
             $table->string('before_source');
             $table->string('after_source');
             $table->json('after_rendered_result');
-            // 'compared' | 'source_mismatch' (FR-012a) — the latter leaves
-            // every column below null and is excluded from summary totals.
+            // 'compared' | 'source_mismatch' (FR-012a) | 'contract_mismatch'
+            // — mismatch statuses leave every column below null and are
+            // excluded from summary totals.
             $table->string('comparison_status');
             $table->decimal('other_tax_before', 15, 2)->nullable();
             $table->decimal('other_tax_after', 15, 2)->nullable();
