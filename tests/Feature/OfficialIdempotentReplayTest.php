@@ -2,24 +2,33 @@
 
 namespace Tests\Feature;
 
-use Tests\TestCase;
-use Illuminate\Foundation\Testing\RefreshDatabase;
-use App\Models\Tenant;
 use App\Models\PosTerminal;
-use Illuminate\Support\Str;
-use Illuminate\Support\Carbon;
+use App\Models\Tenant;
 use App\Services\PayloadChecksumService;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Redis;
+use Illuminate\Support\Str;
+use Mockery;
+use Tests\TestCase;
 
 class OfficialIdempotentReplayTest extends TestCase
 {
     use RefreshDatabase;
 
-    private function buildOfficialPayloadWithTx(string $txId, int $tenantId, int $terminalId, string $submissionUuid): array
-    {
-        $service = new PayloadChecksumService();
+    private function buildOfficialPayloadWithTx(
+        string $txId,
+        int $tenantId,
+        int $terminalId,
+        string $submissionUuid,
+        string $hardwareId
+    ): array {
+        $service = new PayloadChecksumService;
         $now = Carbon::now('UTC');
         $txnScalars = [
             'transaction_id' => $txId,
+            'hardware_id' => $hardwareId,
+            'receipt_no' => 'REPLAY-'.Str::upper(Str::random(8)),
             'transaction_timestamp' => $now->copy()->subMinute()->format('Y-m-d\\TH:i:s\\Z'),
             'gross_sales' => 100.0,
             'net_sales' => 100.0,
@@ -63,6 +72,7 @@ class OfficialIdempotentReplayTest extends TestCase
             'transaction' => $transaction,
         ];
         $submissionChecksum = $service->computeChecksum($submissionForChecksum);
+
         return [
             'submission_uuid' => $submissionUuid,
             'tenant_id' => $tenantId,
@@ -74,34 +84,44 @@ class OfficialIdempotentReplayTest extends TestCase
         ];
     }
 
-    public function test_replay_same_transaction_id_is_idempotent_across_submissions(): void
+    public function test_same_transaction_id_across_distinct_async_submissions_is_accepted_for_processing(): void
     {
         $tenant = Tenant::factory()->create();
         $terminal = PosTerminal::factory()->create(['tenant_id' => $tenant->id]);
         $token = $terminal->generateAccessToken();
         $headers = [
             'Content-Type' => 'application/json',
-            'Authorization' => 'Bearer ' . $token,
+            'Authorization' => 'Bearer '.$token,
         ];
 
-    $txId = (string) Str::uuid();
+        $txId = (string) Str::uuid();
+        $this->mockRedisForAdmissionMiddleware();
 
         // First submission
-        $payload1 = $this->buildOfficialPayloadWithTx($txId, $tenant->id, $terminal->id, (string) Str::uuid());
+        $payload1 = $this->buildOfficialPayloadWithTx($txId, $tenant->id, $terminal->id, (string) Str::uuid(), $terminal->serial_number);
         $this->postJson('/api/v1/transactions/official', $payload1, $headers)
-            ->assertStatus(200)
-            ->assertJson(['success' => true]);
+            ->assertStatus(202)
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('status', 'PENDING')
+            ->assertJsonPath('code', 'ACCEPTED');
 
-        // Second submission with a different submission_uuid but same transaction_id should be treated idempotently
-        $payload2 = $this->buildOfficialPayloadWithTx($txId, $tenant->id, $terminal->id, (string) Str::uuid());
-        $res2 = $this->postJson('/api/v1/transactions/official', $payload2, $headers);
-        $res2->assertStatus(200);
-        $res2->assertJson(['success' => true]);
-        // Ensure response transactions array contains a message indicating already processed or queued
-        $json = $res2->json();
-        $this->assertArrayHasKey('data', $json);
-        $this->assertArrayHasKey('transactions', $json['data']);
-        $messages = collect($json['data']['transactions'])->pluck('message')->implode('|');
-        $this->assertTrue(str_contains($messages, 'already processed') || str_contains($messages, 'queued'));
+        // The async intake layer accepts the second durable submission; duplicate
+        // transaction detection happens during downstream processing.
+        $payload2 = $this->buildOfficialPayloadWithTx($txId, $tenant->id, $terminal->id, (string) Str::uuid(), $terminal->serial_number);
+        $this->postJson('/api/v1/transactions/official', $payload2, $headers)
+            ->assertStatus(202)
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('status', 'PENDING')
+            ->assertJsonPath('code', 'ACCEPTED')
+            ->assertJsonPath('data.transactions.0.status', 'PENDING');
+    }
+
+    private function mockRedisForAdmissionMiddleware(): void
+    {
+        $redis = Mockery::mock();
+        $redis->shouldReceive('eval')->zeroOrMoreTimes()->andReturn(1);
+        $redis->shouldReceive('llen')->zeroOrMoreTimes()->andReturn(0);
+
+        Redis::shouldReceive('connection')->with('default')->zeroOrMoreTimes()->andReturn($redis);
     }
 }

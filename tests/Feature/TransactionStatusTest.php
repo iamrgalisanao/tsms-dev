@@ -57,10 +57,10 @@ class TransactionStatusTest extends TestCase
                 'message' => 'Status lookup succeeded',
                 'data' => [
                     'transaction_id' => $transaction->transaction_id,
-                    'status' => 'queued',
-                    'processing_status' => 'queued',
-                    'job_status' => 'QUEUED',
-                    'validation_status' => $transaction->validation_status ?? 'PENDING',
+                    'status' => 'pending',
+                    'processing_status' => 'pending',
+                    'job_status' => 'PENDING',
+                    'validation_status' => 'VALID',
                 ]
             ]);
     }

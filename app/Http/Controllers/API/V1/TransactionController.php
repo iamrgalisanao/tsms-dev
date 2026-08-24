@@ -574,7 +574,13 @@ class TransactionController extends Controller
             ], 404);
         }
 
-        $processingStatus = strtolower((string) ($transaction->job_status ?: 'QUEUED'));
+        $jobStatus = $transaction->job_status ?: Transaction::JOB_STATUS_QUEUED;
+        $externalJobStatus = $this->externalJobStatus($jobStatus);
+        $externalValidationStatus = $this->externalValidationStatus(
+            $transaction->validation_status ?: Transaction::VALIDATION_STATUS_PENDING,
+            $externalJobStatus
+        );
+        $processingStatus = strtolower($externalJobStatus);
 
         return response()->json([
             'success' => true,
@@ -588,8 +594,8 @@ class TransactionController extends Controller
                 // Backward-compatible alias for the transaction processing state.
                 'status' => $processingStatus,
                 'processing_status' => $processingStatus,
-                'job_status' => $transaction->job_status ?: 'QUEUED',
-                'validation_status' => $transaction->validation_status ?: 'PENDING',
+                'job_status' => $externalJobStatus,
+                'validation_status' => $externalValidationStatus,
                 'completed_at' => optional($transaction->completed_at)->toISOString(),
                 'attempts' => $transaction->job_attempts,
                 'error' => $transaction->last_error,
@@ -597,6 +603,30 @@ class TransactionController extends Controller
                 'updated_at' => $transaction->updated_at->toISOString()
             ]
         ]);
+    }
+
+    private function externalJobStatus(string $jobStatus): string
+    {
+        return match (strtoupper($jobStatus)) {
+            Transaction::JOB_STATUS_QUEUED => 'PENDING',
+            default => strtoupper($jobStatus),
+        };
+    }
+
+    private function externalValidationStatus(string $validationStatus, string $externalJobStatus): string
+    {
+        $validationStatus = strtoupper($validationStatus);
+
+        if ($validationStatus === Transaction::VALIDATION_STATUS_PENDING
+            && in_array($externalJobStatus, ['PENDING', 'PROCESSING'], true)) {
+            return Transaction::VALIDATION_STATUS_VALID;
+        }
+
+        if ($validationStatus === Transaction::VALIDATION_STATUS_FAILED || $validationStatus === 'ERROR') {
+            return 'INVALID';
+        }
+
+        return $validationStatus;
     }
 
     /**

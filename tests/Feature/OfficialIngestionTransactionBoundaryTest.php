@@ -46,13 +46,8 @@ class OfficialIngestionTransactionBoundaryTest extends TestCase
         $observations = [];
         $durableDurationsMs = [];
         $submissionUuids = [];
-        $service = new class(
-            app(PayloadChecksumService::class),
-            app(IngestionQueueRouter::class),
-            app(IngestionBackpressureService::class),
-            $observations,
-            $durableDurationsMs
-        ) extends TransactionIntakeService {
+        $service = new class(app(PayloadChecksumService::class), app(IngestionQueueRouter::class), app(IngestionBackpressureService::class), $observations, $durableDurationsMs) extends TransactionIntakeService
+        {
             public function __construct(
                 PayloadChecksumService $checksumService,
                 IngestionQueueRouter $queueRouter,
@@ -145,12 +140,8 @@ class OfficialIngestionTransactionBoundaryTest extends TestCase
         $this->mockRedisDepth($queue, $processingQueue, 1, 0);
 
         $statusBeforeDispatch = null;
-        $service = new class(
-            app(PayloadChecksumService::class),
-            app(IngestionQueueRouter::class),
-            app(IngestionBackpressureService::class),
-            $statusBeforeDispatch
-        ) extends TransactionIntakeService {
+        $service = new class(app(PayloadChecksumService::class), app(IngestionQueueRouter::class), app(IngestionBackpressureService::class), $statusBeforeDispatch) extends TransactionIntakeService
+        {
             public function __construct(
                 PayloadChecksumService $checksumService,
                 IngestionQueueRouter $queueRouter,
@@ -172,7 +163,8 @@ class OfficialIngestionTransactionBoundaryTest extends TestCase
         $result = $service->handleOfficialIntake($this->requestFor($payload, $terminal));
 
         $this->assertTrue($result['success']);
-        $this->assertSame('queued', $result['status']);
+        $this->assertSame('PENDING', $result['status']);
+        $this->assertSame('ACCEPTED', $result['code']);
         $this->assertSame(TransactionIntake::INTAKE_STATUS_QUEUED, $statusBeforeDispatch);
         Queue::assertPushed(ProcessTransactionIntakeJob::class, 1);
     }
@@ -215,15 +207,15 @@ class OfficialIngestionTransactionBoundaryTest extends TestCase
         ]);
 
         $levels = [];
-        $ingestService = new class(app(DeadlockRetryService::class), app(ProviderTimestampNormalizer::class), $levels) extends TransactionIngestService {
+        $ingestService = new class(app(DeadlockRetryService::class), app(ProviderTimestampNormalizer::class), $levels) extends TransactionIngestService
+        {
             private int $nextId = 1000;
 
             public function __construct(
                 DeadlockRetryService $retryService,
                 ProviderTimestampNormalizer $timestampNormalizer,
                 private array &$levels
-            )
-            {
+            ) {
                 parent::__construct($retryService, $timestampNormalizer);
             }
 
@@ -256,8 +248,8 @@ class OfficialIngestionTransactionBoundaryTest extends TestCase
         // both the intake queue and the processing queue fresh on every
         // call — both need mocking, not just intake.
         $redis = Mockery::mock();
-        $redis->shouldReceive('llen')->times($times)->with('queues:' . $intakeQueue)->andReturn($depth);
-        $redis->shouldReceive('llen')->times($times)->with('queues:' . $processingQueue)->andReturn($depth);
+        $redis->shouldReceive('llen')->times($times)->with('queues:'.$intakeQueue)->andReturn($depth);
+        $redis->shouldReceive('llen')->times($times)->with('queues:'.$processingQueue)->andReturn($depth);
 
         // WU4 (T053 remainder): every accepted intake (all $times of them,
         // since $depth=0 here never triggers a rejection) also records
@@ -289,12 +281,12 @@ class OfficialIngestionTransactionBoundaryTest extends TestCase
 
     private function officialPayload(int $tenantId, int $terminalId, string $submissionUuid, string $hardwareId): array
     {
-        $service = new PayloadChecksumService();
+        $service = new PayloadChecksumService;
         $now = Carbon::now('UTC');
         $transaction = [
             'transaction_id' => (string) Str::uuid(),
             'hardware_id' => $hardwareId,
-            'receipt_no' => 'BOUND-' . Str::upper(Str::random(8)),
+            'receipt_no' => 'BOUND-'.Str::upper(Str::random(8)),
             'transaction_timestamp' => $now->copy()->subMinute()->format('Y-m-d\TH:i:s\Z'),
             'gross_sales' => 100.0,
             'net_sales' => 100.0,

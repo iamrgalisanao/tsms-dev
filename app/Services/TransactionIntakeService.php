@@ -266,16 +266,12 @@ class TransactionIntakeService
             $this->skewRanking->recordTenant($intake->tenant_id);
             $this->skewRanking->recordTerminal($intake->terminal_id);
 
-            return [
-                'success' => true,
-                'status' => 'queued',
-                'http_status' => 202,
-                'message' => 'Submission accepted',
-                'submission_uuid' => $intake->submission_uuid,
-                'intake_id' => $intake->id,
-                'correlation_id' => $traceId,
-                'retryable' => false,
-            ];
+            return $this->acceptedIntakeResponse(
+                $intake,
+                $payload,
+                $traceId,
+                'Official submission accepted: '.(int) $payload['transaction_count'].' pending, 0 failed'
+            );
         } catch (UniqueConstraintViolationException $e) {
             $existing = TransactionIntake::where('submission_uuid', $payload['submission_uuid'])->first();
             if ($existing) {
@@ -543,8 +539,8 @@ class TransactionIntakeService
         $data = [
             'submission_uuid' => $existing->submission_uuid,
             'intake_id' => $existing->id,
-            'intake_status' => $existing->intake_status,
-            'processing_status' => $existing->processing_status,
+            'intake_status' => $this->externalIntakeStatus($existing->intake_status),
+            'processing_status' => $this->externalProcessingStatus($existing->processing_status, $existing->intake_status),
             'last_error_code' => $existing->last_error_code,
             'payload_checksum' => $existing->payload_checksum,
             'received_at' => optional($existing->received_at)->toISOString(),
@@ -572,17 +568,175 @@ class TransactionIntakeService
             ];
         }
 
+        if ($this->isTerminalProcessedIntake($existing)) {
+            return $this->intakeReplayResponse(
+                intake: $existing,
+                payload: $payload,
+                traceId: $traceId,
+                message: 'Submission already processed (idempotent)',
+                success: true,
+                status: 'COMPLETED',
+                code: 'COMPLETED',
+                httpStatus: 200,
+                itemStatus: 'COMPLETED',
+                itemValidationStatus: 'VALID',
+                itemJobStatus: 'COMPLETED',
+                itemMessage: 'Transaction already processed.',
+                checksumValidation: 'matched_stored_checksum',
+                additionalData: $data
+            );
+        }
+
+        if ($this->isTerminalFailedIntake($existing)) {
+            return $this->intakeReplayResponse(
+                intake: $existing,
+                payload: $payload,
+                traceId: $traceId,
+                message: 'Submission failed permanently. Correct the payload and resend with a new submission_uuid.',
+                success: false,
+                status: 'FAILED',
+                code: 'FAILED',
+                httpStatus: 200,
+                itemStatus: 'FAILED',
+                itemValidationStatus: 'INVALID',
+                itemJobStatus: 'FAILED',
+                itemMessage: 'Transaction failed permanently. Correct the payload and resend with a new submission_uuid.',
+                checksumValidation: 'matched_stored_checksum',
+                additionalData: $data
+            );
+        }
+
+        return $this->acceptedIntakeResponse(
+            $existing,
+            $payload,
+            $traceId,
+            'Submission already accepted',
+            $data,
+            'matched_stored_checksum'
+        );
+    }
+
+    protected function acceptedIntakeResponse(
+        TransactionIntake $intake,
+        array $payload,
+        string $traceId,
+        string $message,
+        array $additionalData = [],
+        string $checksumValidation = 'passed'
+    ): array {
+        return $this->intakeReplayResponse(
+            intake: $intake,
+            payload: $payload,
+            traceId: $traceId,
+            message: $message,
+            success: true,
+            status: 'PENDING',
+            code: 'ACCEPTED',
+            httpStatus: 202,
+            itemStatus: 'PENDING',
+            itemValidationStatus: 'VALID',
+            itemJobStatus: 'PENDING',
+            itemMessage: 'Transaction accepted and pending processing. Poll status after 5 seconds.',
+            checksumValidation: $checksumValidation,
+            additionalData: $additionalData
+        );
+    }
+
+    protected function intakeReplayResponse(
+        TransactionIntake $intake,
+        array $payload,
+        string $traceId,
+        string $message,
+        bool $success,
+        string $status,
+        string $code,
+        int $httpStatus,
+        string $itemStatus,
+        string $itemValidationStatus,
+        string $itemJobStatus,
+        string $itemMessage,
+        string $checksumValidation,
+        array $additionalData = []
+    ): array {
+        [$transactions] = $this->submittedTransactions($payload);
+        $transactionResponses = array_map(static function (array $transaction) use ($itemStatus, $itemValidationStatus, $itemJobStatus, $itemMessage): array {
+            return [
+                'transaction_id' => $transaction['transaction_id'] ?? null,
+                'status' => $itemStatus,
+                'validation_status' => $itemValidationStatus,
+                'job_status' => $itemJobStatus,
+                'message' => $itemMessage,
+            ];
+        }, array_values(array_filter($transactions, 'is_array')));
+
+        $transactionCount = count($transactionResponses);
+        $processedCount = $itemJobStatus === 'COMPLETED' ? $transactionCount : 0;
+        $failedCount = $itemJobStatus === 'FAILED' ? $transactionCount : 0;
+        $pendingCount = $itemJobStatus === 'PENDING' ? $transactionCount : 0;
+
         return [
-            'success' => true,
-            'status' => strtolower($existing->intake_status),
-            'http_status' => 202,
-            'message' => 'Submission already accepted',
-            'submission_uuid' => $existing->submission_uuid,
-            'intake_id' => $existing->id,
+            'success' => $success,
+            'status' => $status,
+            'code' => $code,
+            'http_status' => $httpStatus,
+            'message' => $message,
+            'submission_uuid' => $intake->submission_uuid,
+            'intake_id' => $intake->id,
             'correlation_id' => $traceId,
             'retryable' => false,
-            'data' => $data,
+            'data' => array_merge([
+                'submission_uuid' => $intake->submission_uuid,
+                'intake_id' => $intake->id,
+                'processed_count' => $processedCount,
+                'pending_count' => $pendingCount,
+                'failed_count' => $failedCount,
+                'checksum_validation' => $checksumValidation,
+                'transactions' => $transactionResponses,
+            ], $additionalData),
         ];
+    }
+
+    private function isTerminalProcessedIntake(TransactionIntake $intake): bool
+    {
+        return in_array(strtoupper((string) $intake->processing_status), [
+            TransactionIntake::PROCESSING_STATUS_PROCESSED,
+            TransactionIntake::PROCESSING_STATUS_DUPLICATE,
+        ], true);
+    }
+
+    private function isTerminalFailedIntake(TransactionIntake $intake): bool
+    {
+        return in_array(strtoupper((string) $intake->processing_status), [
+            TransactionIntake::PROCESSING_STATUS_FAILED_PERMANENT,
+            TransactionIntake::PROCESSING_STATUS_DEAD_LETTERED,
+        ], true);
+    }
+
+    private function externalIntakeStatus(?string $intakeStatus): ?string
+    {
+        return match (strtoupper((string) $intakeStatus)) {
+            TransactionIntake::INTAKE_STATUS_REJECTED => 'REJECTED',
+            TransactionIntake::INTAKE_STATUS_RECEIVED,
+            TransactionIntake::INTAKE_STATUS_ACCEPTED,
+            TransactionIntake::INTAKE_STATUS_QUEUED => 'PENDING',
+            '' => null,
+            default => strtoupper((string) $intakeStatus),
+        };
+    }
+
+    private function externalProcessingStatus(?string $processingStatus, ?string $intakeStatus = null): ?string
+    {
+        return match (strtoupper((string) $processingStatus)) {
+            TransactionIntake::PROCESSING_STATUS_PROCESSING => 'PROCESSING',
+            TransactionIntake::PROCESSING_STATUS_PROCESSED,
+            TransactionIntake::PROCESSING_STATUS_DUPLICATE => 'COMPLETED',
+            TransactionIntake::PROCESSING_STATUS_FAILED_PERMANENT,
+            TransactionIntake::PROCESSING_STATUS_DEAD_LETTERED => 'FAILED',
+            TransactionIntake::PROCESSING_STATUS_FAILED_RETRYABLE,
+            'PENDING' => 'PENDING',
+            '' => $this->externalIntakeStatus($intakeStatus),
+            default => strtoupper((string) $processingStatus),
+        };
     }
 
     protected function existingLegacySubmissionResponse(TransactionSubmission $existing, array $payload, string $traceId, mixed $terminal): array

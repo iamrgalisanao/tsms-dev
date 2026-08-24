@@ -58,9 +58,19 @@ class OfficialAsyncIntakeTest extends TestCase
         $response
             ->assertStatus(202)
             ->assertJsonPath('success', true)
-            ->assertJsonPath('status', 'queued')
+            ->assertJsonPath('status', 'PENDING')
+            ->assertJsonPath('code', 'ACCEPTED')
             ->assertJsonPath('submission_uuid', $payload['submission_uuid'])
-            ->assertJsonPath('retryable', false);
+            ->assertJsonPath('retryable', false)
+            ->assertJsonPath('data.submission_uuid', $payload['submission_uuid'])
+            ->assertJsonPath('data.processed_count', 0)
+            ->assertJsonPath('data.pending_count', 1)
+            ->assertJsonPath('data.failed_count', 0)
+            ->assertJsonPath('data.checksum_validation', 'passed')
+            ->assertJsonPath('data.transactions.0.transaction_id', $payload['transaction']['transaction_id'])
+            ->assertJsonPath('data.transactions.0.status', 'PENDING')
+            ->assertJsonPath('data.transactions.0.validation_status', 'VALID')
+            ->assertJsonPath('data.transactions.0.job_status', 'PENDING');
 
         $this->assertDatabaseHas('transaction_intake', [
             'submission_uuid' => $payload['submission_uuid'],
@@ -82,11 +92,104 @@ class OfficialAsyncIntakeTest extends TestCase
 
         Sanctum::actingAs($terminal, ['transaction:read', 'provider:testing']);
 
-        $this->getJson('/api/v1/submissions/' . $payload['submission_uuid'])
+        $this->getJson('/api/v1/submissions/'.$payload['submission_uuid'])
             ->assertStatus(200)
             ->assertJsonPath('data.submission_uuid', $payload['submission_uuid'])
             ->assertJsonPath('data.provider_status', 'queued')
             ->assertJsonPath('data.intake_status', TransactionIntake::INTAKE_STATUS_QUEUED);
+    }
+
+    public function test_official_endpoint_replay_reports_completed_intake_truthfully(): void
+    {
+        [$tenant, $terminal] = $this->seedTenantAndTerminal();
+        $payload = $this->officialPayload($tenant->id, $terminal->id, (string) Str::uuid(), $terminal->serial_number);
+
+        $this->seedExistingIntake($payload, $terminal, TransactionIntake::PROCESSING_STATUS_PROCESSED);
+        $this->mockRedisForAdmissionMiddleware();
+
+        $response = $this->postJson('/api/v1/transactions/official', $payload, $this->headersFor($terminal));
+
+        $response
+            ->assertStatus(200)
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('status', 'COMPLETED')
+            ->assertJsonPath('code', 'COMPLETED')
+            ->assertJsonPath('data.intake_status', 'PENDING')
+            ->assertJsonPath('data.processing_status', 'COMPLETED')
+            ->assertJsonPath('data.processed_count', 1)
+            ->assertJsonPath('data.pending_count', 0)
+            ->assertJsonPath('data.failed_count', 0)
+            ->assertJsonPath('data.checksum_validation', 'matched_stored_checksum')
+            ->assertJsonPath('data.transactions.0.status', 'COMPLETED')
+            ->assertJsonPath('data.transactions.0.validation_status', 'VALID')
+            ->assertJsonPath('data.transactions.0.job_status', 'COMPLETED');
+
+        $this->assertStringNotContainsString('QUEUED', json_encode($response->json(), JSON_THROW_ON_ERROR));
+    }
+
+    public function test_official_endpoint_replay_reports_permanent_failure_truthfully(): void
+    {
+        [$tenant, $terminal] = $this->seedTenantAndTerminal();
+        $payload = $this->officialPayload($tenant->id, $terminal->id, (string) Str::uuid(), $terminal->serial_number);
+
+        $this->seedExistingIntake(
+            $payload,
+            $terminal,
+            TransactionIntake::PROCESSING_STATUS_FAILED_PERMANENT,
+            'CRYPTOGRAPHIC_INTEGRITY_FAILURE'
+        );
+        $this->mockRedisForAdmissionMiddleware();
+
+        $response = $this->postJson('/api/v1/transactions/official', $payload, $this->headersFor($terminal));
+
+        $response
+            ->assertStatus(200)
+            ->assertJsonPath('success', false)
+            ->assertJsonPath('status', 'FAILED')
+            ->assertJsonPath('code', 'FAILED')
+            ->assertJsonPath('data.intake_status', 'PENDING')
+            ->assertJsonPath('data.processing_status', 'FAILED')
+            ->assertJsonPath('data.last_error_code', 'CRYPTOGRAPHIC_INTEGRITY_FAILURE')
+            ->assertJsonPath('data.processed_count', 0)
+            ->assertJsonPath('data.pending_count', 0)
+            ->assertJsonPath('data.failed_count', 1)
+            ->assertJsonPath('data.checksum_validation', 'matched_stored_checksum')
+            ->assertJsonPath('data.transactions.0.status', 'FAILED')
+            ->assertJsonPath('data.transactions.0.validation_status', 'INVALID')
+            ->assertJsonPath('data.transactions.0.job_status', 'FAILED');
+
+        $this->assertStringNotContainsString('QUEUED', json_encode($response->json(), JSON_THROW_ON_ERROR));
+    }
+
+    public function test_official_endpoint_replay_keeps_retryable_failure_pending(): void
+    {
+        [$tenant, $terminal] = $this->seedTenantAndTerminal();
+        $payload = $this->officialPayload($tenant->id, $terminal->id, (string) Str::uuid(), $terminal->serial_number);
+
+        $this->seedExistingIntake(
+            $payload,
+            $terminal,
+            TransactionIntake::PROCESSING_STATUS_FAILED_RETRYABLE,
+            'TEMPORARY_WORKER_FAILURE'
+        );
+        $this->mockRedisForAdmissionMiddleware();
+
+        $response = $this->postJson('/api/v1/transactions/official', $payload, $this->headersFor($terminal));
+
+        $response
+            ->assertStatus(202)
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('status', 'PENDING')
+            ->assertJsonPath('code', 'ACCEPTED')
+            ->assertJsonPath('data.intake_status', 'PENDING')
+            ->assertJsonPath('data.processing_status', 'PENDING')
+            ->assertJsonPath('data.pending_count', 1)
+            ->assertJsonPath('data.checksum_validation', 'matched_stored_checksum')
+            ->assertJsonPath('data.transactions.0.status', 'PENDING')
+            ->assertJsonPath('data.transactions.0.validation_status', 'VALID')
+            ->assertJsonPath('data.transactions.0.job_status', 'PENDING');
+
+        $this->assertStringNotContainsString('QUEUED', json_encode($response->json(), JSON_THROW_ON_ERROR));
     }
 
     public function test_official_endpoint_rejects_malformed_adjustment_and_tax_rows_before_queueing(): void
@@ -198,7 +301,7 @@ class OfficialAsyncIntakeTest extends TestCase
     {
         return [
             'Content-Type' => 'application/json',
-            'Authorization' => 'Bearer ' . $terminal->generateAccessToken(),
+            'Authorization' => 'Bearer '.$terminal->generateAccessToken(),
         ];
     }
 
@@ -206,7 +309,7 @@ class OfficialAsyncIntakeTest extends TestCase
     {
         $redis = Mockery::mock();
         foreach ($depths as $queue => $depth) {
-            $redis->shouldReceive('llen')->once()->with('queues:' . $queue)->andReturn($depth);
+            $redis->shouldReceive('llen')->once()->with('queues:'.$queue)->andReturn($depth);
         }
 
         // T045 wired IngestionFairnessMiddleware onto this route, which
@@ -228,14 +331,47 @@ class OfficialAsyncIntakeTest extends TestCase
         Redis::shouldReceive('connection')->with('default')->andReturn($redis);
     }
 
+    private function mockRedisForAdmissionMiddleware(): void
+    {
+        $redis = Mockery::mock();
+        $redis->shouldReceive('eval')->zeroOrMoreTimes()->andReturn(1);
+
+        Redis::shouldReceive('connection')->with('default')->andReturn($redis);
+    }
+
+    private function seedExistingIntake(
+        array $payload,
+        PosTerminal $terminal,
+        string $processingStatus,
+        ?string $lastErrorCode = null
+    ): TransactionIntake {
+        return TransactionIntake::create([
+            'submission_uuid' => $payload['submission_uuid'],
+            'tenant_id' => $terminal->tenant_id,
+            'terminal_id' => $terminal->id,
+            'payload_checksum' => $payload['payload_checksum'],
+            'payload' => $payload,
+            'payload_size_bytes' => strlen(json_encode($payload, JSON_THROW_ON_ERROR)),
+            'source_ip' => '127.0.0.1',
+            'intake_status' => TransactionIntake::INTAKE_STATUS_QUEUED,
+            'processing_status' => $processingStatus,
+            'attempt_count' => 1,
+            'last_error_code' => $lastErrorCode,
+            'trace_id' => (string) Str::uuid(),
+            'received_at' => now(),
+            'queued_at' => now(),
+            'processed_at' => now(),
+        ]);
+    }
+
     private function officialPayload(int $tenantId, int $terminalId, string $submissionUuid, string $hardwareId): array
     {
-        $service = new PayloadChecksumService();
+        $service = new PayloadChecksumService;
         $now = Carbon::now('UTC');
         $transaction = [
             'transaction_id' => (string) Str::uuid(),
             'hardware_id' => $hardwareId,
-            'receipt_no' => 'ASYNC-' . Str::upper(Str::random(8)),
+            'receipt_no' => 'ASYNC-'.Str::upper(Str::random(8)),
             'transaction_timestamp' => $now->copy()->subMinute()->format('Y-m-d\TH:i:s\Z'),
             'gross_sales' => 100.0,
             'net_sales' => 100.0,
@@ -261,7 +397,7 @@ class OfficialAsyncIntakeTest extends TestCase
 
     private function refreshChecksums(array $payload): array
     {
-        $service = new PayloadChecksumService();
+        $service = new PayloadChecksumService;
 
         if (isset($payload['transaction']) && is_array($payload['transaction'])) {
             $transaction = $payload['transaction'];

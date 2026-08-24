@@ -177,7 +177,9 @@ class OfficialTransactionTimestampNoMutationTest extends TestCase
         $response
             ->assertStatus(202)
             ->assertJsonPath('success', true)
-            ->assertJsonPath('status', 'queued');
+            ->assertJsonPath('status', 'PENDING')
+            ->assertJsonPath('code', 'ACCEPTED')
+            ->assertJsonPath('data.transactions.0.status', 'PENDING');
 
         $intake = TransactionIntake::where('submission_uuid', $payload['submission_uuid'])->firstOrFail();
 
