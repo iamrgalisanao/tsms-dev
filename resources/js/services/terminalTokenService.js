@@ -72,6 +72,15 @@ export const terminalTokenService = {
     },
 
     /**
+     * Reactivate a revoked terminal (no token is issued; regenerate afterwards)
+     * @param {string|number} terminalId
+     */
+    reactivateTerminal: async (terminalId) => {
+        const response = await axios.post(`${API_BASE}/terminals/tokens/${terminalId}/reactivate`);
+        return response.data;
+    },
+
+    /**
      * Get list of terminals for filter dropdown
      */
     getTerminals: async () => {

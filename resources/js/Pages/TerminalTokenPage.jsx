@@ -244,6 +244,36 @@ const TerminalTokenPage = () => {
         });
     };
 
+    const handleReactivate = (terminal) => {
+        setConfirmDialog({
+            open: true,
+            title: 'REACTIVATE TERMINAL',
+            message: `Reactivate ${terminal.serial_number}? No credential is issued by this step; regenerate a token afterwards to restore access.`,
+            actionType: 'reactivate',
+            targetTerminal: terminal
+        });
+    };
+
+    const executeReactivate = async (terminal) => {
+        try {
+            const response = await terminalTokenService.reactivateTerminal(terminal.id);
+            if (response.success) {
+                setNotification({
+                    open: true,
+                    message: response.message || 'Terminal reactivated.',
+                    severity: 'success'
+                });
+                fetchData();
+            }
+        } catch (error) {
+            setNotification({
+                open: true,
+                message: error.response?.data?.message || 'Reactivation failed.',
+                severity: 'error'
+            });
+        }
+    };
+
     const executeRevoke = async (terminal) => {
         try {
             const response = await terminalTokenService.revokeTokens(terminal.id);
@@ -276,6 +306,8 @@ const TerminalTokenPage = () => {
             await executeRegenerate(targetTerminal);
         } else if (actionType === 'revoke') {
             await executeRevoke(targetTerminal);
+        } else if (actionType === 'reactivate') {
+            await executeReactivate(targetTerminal);
         }
     };
 
@@ -528,6 +560,7 @@ const TerminalTokenPage = () => {
                     onEdit={handleOpenEdit}
                     onRegenerate={handleRegenerate}
                     onRevoke={handleRevoke}
+                    onReactivate={handleReactivate}
                     onExtendExpiry={handleExtendExpiry}
                 />
                         {/* Extend Expiry Dialog */}

@@ -22,6 +22,7 @@ import BlockIcon from '@mui/icons-material/Block';
 import RefreshIcon from '@mui/icons-material/Refresh';
 import EditCalendarIcon from '@mui/icons-material/EditCalendar';
 import EditIcon from '@mui/icons-material/Edit';
+import RestoreIcon from '@mui/icons-material/Restore';
 
 const TokenTable = ({
     terminals,
@@ -34,6 +35,7 @@ const TokenTable = ({
     onEdit,
     onRegenerate,
     onRevoke,
+    onReactivate,
     onExtendExpiry
 }) => {
 
@@ -257,9 +259,11 @@ const TokenTable = ({
                                                     <EditIcon fontSize="small" />
                                                 </Button>
                                             </Tooltip>
-                                            <Tooltip title="Regenerate Identity">
+                                            <Tooltip title={terminal.status_id === 3 ? 'Reactivate the terminal before regenerating' : 'Regenerate Identity'}>
+                                                <span>
                                                 <Button
                                                     size="small"
+                                                    disabled={terminal.status_id === 3}
                                                     onClick={() => onRegenerate(terminal)}
                                                     sx={{
                                                         minWidth: 36,
@@ -272,23 +276,43 @@ const TokenTable = ({
                                                 >
                                                     <RefreshIcon fontSize="small" />
                                                 </Button>
+                                                </span>
                                             </Tooltip>
-                                            <Tooltip title="Revoke Authorization">
-                                                <Button
-                                                    size="small"
-                                                    onClick={() => onRevoke(terminal)}
-                                                    sx={{
-                                                        minWidth: 36,
-                                                        height: 36,
-                                                        borderRadius: 2,
-                                                        bgcolor: 'error.50',
-                                                        color: 'error.main',
-                                                        '&:hover': { bgcolor: 'error.100' }
-                                                    }}
-                                                >
-                                                    <BlockIcon fontSize="small" />
-                                                </Button>
-                                            </Tooltip>
+                                            {terminal.status_id === 3 ? (
+                                                <Tooltip title="Reactivate Terminal (no token issued)">
+                                                    <Button
+                                                        size="small"
+                                                        onClick={() => onReactivate(terminal)}
+                                                        sx={{
+                                                            minWidth: 36,
+                                                            height: 36,
+                                                            borderRadius: 2,
+                                                            bgcolor: 'success.50',
+                                                            color: 'success.main',
+                                                            '&:hover': { bgcolor: 'success.100' }
+                                                        }}
+                                                    >
+                                                        <RestoreIcon fontSize="small" />
+                                                    </Button>
+                                                </Tooltip>
+                                            ) : (
+                                                <Tooltip title="Revoke Authorization">
+                                                    <Button
+                                                        size="small"
+                                                        onClick={() => onRevoke(terminal)}
+                                                        sx={{
+                                                            minWidth: 36,
+                                                            height: 36,
+                                                            borderRadius: 2,
+                                                            bgcolor: 'error.50',
+                                                            color: 'error.main',
+                                                            '&:hover': { bgcolor: 'error.100' }
+                                                        }}
+                                                    >
+                                                        <BlockIcon fontSize="small" />
+                                                    </Button>
+                                                </Tooltip>
+                                            )}
                                             <Tooltip title="Extend Expiry">
                                                 <Button
                                                     size="small"

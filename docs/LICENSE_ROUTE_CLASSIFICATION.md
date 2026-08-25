@@ -105,7 +105,7 @@ Attach after first observe pass confirms no route/runtime issues.
 | `POST /api/terminals/tokens/{terminalId}/regenerate` | license-protected | Terminal credential lifecycle. |
 | `POST /api/terminals/tokens/{terminalId}/revoke` | license-protected | Terminal credential lifecycle. |
 | `POST /api/v1/terminals/{terminalId}/generate-token` | license-protected | Terminal credential lifecycle. |
-| `POST /api/v1/terminals/generate-all-tokens` | license-protected | Bulk terminal credential lifecycle. |
+| `POST /api/terminals/tokens/{terminalId}/reactivate` | license-protected | Terminal lifecycle management (exit from revoked state; no credential issued). Planned attachment: currently `auth:sanctum` + `role:admin` only, same as the sibling regenerate/revoke routes; `license.valid` is not yet applied to this group. |
 
 ### License-Protected: Reports, Logs, Exports
 
