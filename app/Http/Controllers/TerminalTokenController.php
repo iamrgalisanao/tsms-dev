@@ -2,24 +2,25 @@
 
 namespace App\Http\Controllers;
 
+use App\Exceptions\TerminalNotEligibleException;
 use App\Exceptions\TerminalStateConflictException;
 use App\Models\PosTerminal;
-use App\Services\Terminals\TerminalCredentialAuditor;
+use App\Services\Terminals\TerminalCredentialService;
 use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Schema;
 use Laravel\Sanctum\PersonalAccessToken;
 
+/**
+ * Admin-facing HTTP surface for the POS terminal credential lifecycle.
+ *
+ * All state changes (issue / rotate / revoke / reactivate / expiry) are owned by
+ * TerminalCredentialService; this controller only validates input and maps
+ * service outcomes to HTTP responses.
+ */
 class TerminalTokenController extends Controller
 {
-    /** terminal_statuses.id values used by the credential lifecycle. */
-    private const STATUS_ACTIVE = 1;
-
-    private const STATUS_REVOKED = 3;
-
-    public function __construct(private readonly TerminalCredentialAuditor $auditor) {}
+    public function __construct(private readonly TerminalCredentialService $credentials) {}
 
     /**
      * Update expiry date for a terminal (API)
@@ -27,26 +28,11 @@ class TerminalTokenController extends Controller
     public function updateExpiry($terminalId, Request $request)
     {
         try {
-            $terminal = PosTerminal::findOrFail($terminalId);
             $validated = $request->validate([
                 'expires_at' => ['required', 'date'],
             ]);
 
-            DB::transaction(function () use ($terminal, $validated) {
-                $previous = optional($terminal->expires_at)->toISOString();
-
-                $terminal->expires_at = $validated['expires_at'];
-                $terminal->save();
-
-                $this->auditor->record(
-                    TerminalCredentialAuditor::ACTION_EXPIRY_UPDATED,
-                    $terminal,
-                    [],
-                    ['expires_at' => $previous],
-                    ['expires_at' => optional($terminal->expires_at)->toISOString()],
-                    'Terminal expiry updated by admin'
-                );
-            });
+            $terminal = $this->credentials->updateExpiry($terminalId, $validated['expires_at']);
 
             return response()->json([
                 'success' => true,
@@ -77,35 +63,7 @@ class TerminalTokenController extends Controller
     public function reactivate($terminalId)
     {
         try {
-            $terminal = DB::transaction(function () use ($terminalId) {
-                $terminal = PosTerminal::lockForUpdate()->findOrFail($terminalId);
-
-                if ((int) $terminal->status_id !== self::STATUS_REVOKED) {
-                    throw new TerminalStateConflictException('Terminal is not revoked; nothing to reactivate.');
-                }
-
-                $previous = [
-                    'status_id' => (int) $terminal->status_id,
-                    'is_active' => (bool) $terminal->is_active,
-                    'revoked_at' => optional($terminal->revoked_at)->toISOString(),
-                ];
-
-                $terminal->status_id = self::STATUS_ACTIVE;
-                $terminal->is_active = true;
-                $terminal->revoked_at = null;
-                $terminal->save();
-
-                $this->auditor->record(
-                    TerminalCredentialAuditor::ACTION_REACTIVATED,
-                    $terminal,
-                    ['tokens_issued' => 0],
-                    $previous,
-                    ['status_id' => self::STATUS_ACTIVE, 'is_active' => true, 'revoked_at' => null],
-                    'Revoked terminal reactivated by admin (no credential issued)'
-                );
-
-                return $terminal;
-            });
+            $terminal = $this->credentials->reactivate($terminalId);
 
             return response()->json([
                 'success' => true,
@@ -158,22 +116,13 @@ class TerminalTokenController extends Controller
                 'errors' => $e->errors(),
             ], 422);
         } catch (\Exception $e) {
-            Log::error('Error updating POS terminal details via admin UI', [
-                'terminal_id' => $terminal->id,
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
-            ]);
-
-            return response()->json([
-                'success' => false,
-                'message' => 'Unable to update terminal details.',
-            ], 500);
+            return $this->failureResponse($e, 'Error updating POS terminal details via admin UI', ['terminal_id' => $terminal->id], 'Unable to update terminal details.');
         }
     }
 
     /**
-     * API endpoint to register a new POS terminal and optionally
-     * provision an initial Bearer token for it.
+     * API endpoint to register a new POS terminal and provision its initial
+     * Bearer token.
      */
     public function apiStore(Request $request)
     {
@@ -188,32 +137,12 @@ class TerminalTokenController extends Controller
                 'tenant_id.exists' => 'Selected tenant does not exist.',
             ]);
 
-            $payload = array_merge($validated, [
-                'status_id' => 1, // Active
-                'is_active' => true,
+            $credential = $this->credentials->register(array_merge($validated, [
                 'registered_at' => now(),
                 'heartbeat_threshold' => config('tsms.terminals.default_heartbeat_threshold', 300),
                 'notifications_enabled' => true,
-            ]);
-
-            [$terminal, $token] = DB::transaction(function () use ($payload) {
-                $terminal = PosTerminal::create($payload);
-                $token = $this->generateBearerToken($terminal);
-
-                $this->auditor->record(
-                    TerminalCredentialAuditor::ACTION_REGISTERED,
-                    $terminal,
-                    [
-                        'tokens_issued' => 1,
-                        'abilities' => $this->tokenAbilities(),
-                    ],
-                    [],
-                    ['status_id' => self::STATUS_ACTIVE, 'is_active' => true],
-                    'Terminal registered by admin with initial credential'
-                );
-
-                return [$terminal, $token];
-            });
+            ]));
+            $terminal = $credential->terminal;
 
             Log::info('POS terminal registered via API', [
                 'terminal_id' => $terminal->id,
@@ -227,7 +156,7 @@ class TerminalTokenController extends Controller
                 'message' => 'Terminal registered successfully',
                 'data' => [
                     'terminal' => $terminal->load('tenant:id,trade_name'),
-                    'access_token' => $token,
+                    'access_token' => $credential->plainTextToken,
                 ],
             ], 201);
         } catch (\Illuminate\Validation\ValidationException $e) {
@@ -251,10 +180,14 @@ class TerminalTokenController extends Controller
         }
     }
 
+    /**
+     * Web (session/redirect) revoke.
+     */
     public function revoke($terminalId)
     {
         try {
-            [$terminal, $tokenCount] = $this->performRevocation($terminalId);
+            [$terminal, $tokenCount] = $this->credentials->revokeAll($terminalId);
+            $this->logRevocation($terminal, $tokenCount);
 
             return redirect()
                 ->route('terminal-tokens')
@@ -263,6 +196,10 @@ class TerminalTokenController extends Controller
             return redirect()
                 ->route('terminal-tokens')
                 ->with('error', $e->getMessage());
+        } catch (ModelNotFoundException $e) {
+            return redirect()
+                ->route('terminal-tokens')
+                ->with('error', 'Terminal not found.');
         } catch (\Exception $e) {
             Log::error('Error revoking terminal Bearer tokens', [
                 'terminal_id' => $terminalId,
@@ -392,20 +329,27 @@ class TerminalTokenController extends Controller
         }
     }
 
+    /**
+     * Web (session/redirect) regenerate.
+     */
     public function regenerate($terminalId)
     {
         try {
-            $bearerToken = $this->performRegeneration($terminalId);
+            $credential = $this->credentials->rotate($terminalId, 'admin.web.regenerate');
 
             return redirect()
                 ->route('terminal-tokens')
                 ->with('success', 'Bearer token regenerated successfully')
-                ->with('bearer_token', $bearerToken);
+                ->with('bearer_token', $credential->plainTextToken);
 
         } catch (TerminalStateConflictException $e) {
             return redirect()
                 ->route('terminal-tokens')
                 ->with('error', $e->getMessage());
+        } catch (ModelNotFoundException $e) {
+            return redirect()
+                ->route('terminal-tokens')
+                ->with('error', 'Terminal not found.');
         } catch (\Exception $e) {
             Log::error('Error regenerating terminal Bearer token', [
                 'terminal_id' => $terminalId,
@@ -425,13 +369,13 @@ class TerminalTokenController extends Controller
     public function apiRegenerate($terminalId)
     {
         try {
-            $bearerToken = $this->performRegeneration($terminalId);
+            $credential = $this->credentials->rotate($terminalId, 'admin.regenerate');
 
             return response()->json([
                 'success' => true,
                 'message' => 'Bearer token regenerated successfully',
                 'data' => [
-                    'access_token' => $bearerToken,
+                    'access_token' => $credential->plainTextToken,
                 ],
             ]);
         } catch (TerminalStateConflictException $e) {
@@ -444,137 +388,13 @@ class TerminalTokenController extends Controller
     }
 
     /**
-     * Rotate a terminal's credential: snapshot existing tokens for the audit
-     * ledger, mark the terminal active, delete the old tokens and issue one new
-     * token — all in a single transaction so a failure leaves the previous
-     * credential state intact and explainable.
-     *
-     * Revoked terminals are refused; use reactivate() first.
-     *
-     * @throws TerminalStateConflictException
-     * @throws ModelNotFoundException
-     */
-    private function performRegeneration($terminalId): string
-    {
-        return DB::transaction(function () use ($terminalId) {
-            // Row lock so a concurrent revoke cannot interleave between the state check and the mutation.
-            $terminal = PosTerminal::lockForUpdate()->findOrFail($terminalId);
-
-            if ((int) $terminal->status_id === self::STATUS_REVOKED) {
-                throw new TerminalStateConflictException(
-                    'Terminal is revoked. Reactivate it before regenerating a token.'
-                );
-            }
-
-            $previousTokens = $this->auditor->snapshotTokens($terminal);
-            $previousState = [
-                'status_id' => (int) $terminal->status_id,
-                'is_active' => (bool) $terminal->is_active,
-                'expires_at' => optional($terminal->expires_at)->toISOString(),
-            ];
-
-            $updateData = [
-                'status_id' => self::STATUS_ACTIVE,
-                'is_active' => true,
-            ];
-            if (Schema::hasColumn('pos_terminals', 'expires_at')) {
-                $updateData['expires_at'] = now()->addDays(30);
-            }
-
-            $terminal->update($updateData);
-            $terminal->tokens()->delete();
-
-            $plainText = $this->generateBearerToken($terminal);
-
-            $this->auditor->record(
-                TerminalCredentialAuditor::ACTION_TOKEN_ROTATED,
-                $terminal,
-                [
-                    'tokens_deleted_count' => count($previousTokens),
-                    'tokens_deleted' => $previousTokens,
-                    'tokens_issued' => 1,
-                    'abilities' => $this->tokenAbilities(),
-                ],
-                $previousState,
-                [
-                    'status_id' => self::STATUS_ACTIVE,
-                    'is_active' => true,
-                    'expires_at' => optional($terminal->expires_at)->toISOString(),
-                ],
-                'Terminal credential rotated by admin'
-            );
-
-            return $plainText;
-        });
-    }
-
-    /**
-     * Revoke a terminal: snapshot tokens for the audit ledger, mark the terminal
-     * revoked and delete every token, in one transaction.
-     *
-     * @return array{0: PosTerminal, 1: int}
-     *
-     * @throws ModelNotFoundException
-     */
-    private function performRevocation($terminalId): array
-    {
-        [$terminal, $tokenCount] = DB::transaction(function () use ($terminalId) {
-            $terminal = PosTerminal::lockForUpdate()->findOrFail($terminalId);
-
-            if ((int) $terminal->status_id === self::STATUS_REVOKED) {
-                throw new TerminalStateConflictException('Terminal is already revoked.');
-            }
-
-            $previousTokens = $this->auditor->snapshotTokens($terminal);
-            $previousState = [
-                'status_id' => (int) $terminal->status_id,
-                'is_active' => (bool) $terminal->is_active,
-                'revoked_at' => optional($terminal->revoked_at)->toISOString(),
-            ];
-
-            $terminal->status_id = self::STATUS_REVOKED;
-            $terminal->is_active = false;
-            $terminal->revoked_at = now();
-            $terminal->save();
-
-            $terminal->tokens()->delete();
-
-            $this->auditor->record(
-                TerminalCredentialAuditor::ACTION_TOKEN_REVOKED,
-                $terminal,
-                [
-                    'tokens_deleted_count' => count($previousTokens),
-                    'tokens_deleted' => $previousTokens,
-                ],
-                $previousState,
-                [
-                    'status_id' => self::STATUS_REVOKED,
-                    'is_active' => false,
-                    'revoked_at' => optional($terminal->revoked_at)->toISOString(),
-                ],
-                'Terminal credentials revoked by admin'
-            );
-
-            return [$terminal, count($previousTokens)];
-        });
-
-        Log::info('Terminal Bearer tokens revoked', [
-            'terminal_id' => $terminal->id,
-            'terminal_uid' => $terminal->terminal_uid ?? $terminal->serial_number,
-            'tokens_revoked' => $tokenCount,
-            'user_id' => auth()->id(),
-        ]);
-
-        return [$terminal, $tokenCount];
-    }
-
-    /**
      * API version of revoke
      */
     public function apiRevoke($terminalId)
     {
         try {
-            [$terminal, $tokenCount] = $this->performRevocation($terminalId);
+            [$terminal, $tokenCount] = $this->credentials->revokeAll($terminalId);
+            $this->logRevocation($terminal, $tokenCount);
 
             return response()->json([
                 'success' => true,
@@ -590,118 +410,14 @@ class TerminalTokenController extends Controller
     }
 
     /**
-     * Abilities granted to admin-issued terminal credentials.
-     *
-     * NOTE: intentionally unchanged in this hardening slice. Unifying this with
-     * PosTerminal::getTokenAbilities() is deferred to the credential-service
-     * extraction so POS-facing behaviour is not altered here.
-     *
-     * @return list<string>
-     */
-    private function tokenAbilities(): array
-    {
-        return [
-            'transaction:create',
-            'transaction:read',
-            'heartbeat:send',
-        ];
-    }
-
-    /**
-     * Generate Bearer token for a terminal using Sanctum
-     */
-    private function generateBearerToken(PosTerminal $terminal): string
-    {
-        // Generate token name
-        $tokenName = 'terminal-'.($terminal->serial_number ?? $terminal->terminal_uid ?? $terminal->id);
-
-        // Create Sanctum token
-        $token = $terminal->createToken($tokenName, $this->tokenAbilities());
-
-        return $token->plainTextToken;
-    }
-
-    private function conflictResponse(string $message)
-    {
-        return response()->json([
-            'success' => false,
-            'message' => $message,
-        ], 409);
-    }
-
-    private function notFoundResponse()
-    {
-        return response()->json([
-            'success' => false,
-            'message' => 'Terminal not found.',
-        ], 404);
-    }
-
-    /**
-     * Log the real exception server-side and return a generic, non-leaking 500.
-     *
-     * @param  array<string, mixed>  $context
-     */
-    private function failureResponse(\Throwable $e, string $logMessage, array $context, string $publicMessage)
-    {
-        Log::error($logMessage, array_merge($context, [
-            'error' => $e->getMessage(),
-            'trace' => $e->getTraceAsString(),
-        ]));
-
-        return response()->json([
-            'success' => false,
-            'message' => $publicMessage,
-        ], 500);
-    }
-
-    /**
-     * Generate Bearer token via API endpoint (for programmatic access)
+     * Generate Bearer token via the v1 admin API (abilities:admin:manage).
+     * The terminal must already be active; 403 otherwise.
      */
     public function generateToken($terminalId)
     {
         try {
-            $terminal = PosTerminal::findOrFail($terminalId);
-
-            // Check if terminal is active and not revoked
-            if ((int) $terminal->status_id === self::STATUS_REVOKED) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Cannot generate token for revoked terminal',
-                ], 403);
-            }
-
-            // Check if terminal is active (status_id = 1 and is_active = true)
-            if ((int) $terminal->status_id !== self::STATUS_ACTIVE || ! $terminal->is_active) {
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Cannot generate token for inactive terminal',
-                ], 403);
-            }
-
-            $bearerToken = DB::transaction(function () use ($terminal) {
-                $previousTokens = $this->auditor->snapshotTokens($terminal);
-
-                $terminal->tokens()->delete();
-                $plainText = $this->generateBearerToken($terminal);
-
-                $this->auditor->record(
-                    TerminalCredentialAuditor::ACTION_TOKEN_ROTATED,
-                    $terminal,
-                    [
-                        'tokens_deleted_count' => count($previousTokens),
-                        'tokens_deleted' => $previousTokens,
-                        'tokens_issued' => 1,
-                        'abilities' => $this->tokenAbilities(),
-                        'via' => 'v1.generate-token',
-                    ],
-                    [],
-                    [],
-                    'Terminal credential issued via v1 admin API'
-                );
-
-                return $plainText;
-            });
+            $credential = $this->credentials->issueForActiveTerminal($terminalId, 'v1.generate-token');
+            $terminal = $credential->terminal;
 
             Log::info('Bearer token generated via API', [
                 'terminal_uid' => $terminal->terminal_uid ?? $terminal->serial_number,
@@ -711,14 +427,18 @@ class TerminalTokenController extends Controller
             return response()->json([
                 'success' => true,
                 'data' => [
-                    'access_token' => $bearerToken,
+                    'access_token' => $credential->plainTextToken,
                     'token_type' => 'Bearer',
                     'terminal_id' => $terminal->id,
                     'terminal_uid' => $terminal->terminal_uid ?? $terminal->serial_number,
                     'expires_in' => config('sanctum.expiration', 1440) * 60, // Convert minutes to seconds
                 ],
             ]);
-
+        } catch (TerminalNotEligibleException $e) {
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage(),
+            ], 403);
         } catch (ModelNotFoundException $e) {
             return $this->notFoundResponse();
         } catch (\Exception $e) {
@@ -932,6 +652,52 @@ class TerminalTokenController extends Controller
         } catch (\Exception $e) {
             return $this->failureResponse($e, 'Error exporting terminal tokens', [], 'Unable to export terminal tokens.');
         }
+    }
+
+    // ------------------------------------------------------------ response helpers
+
+    private function logRevocation(PosTerminal $terminal, int $tokenCount): void
+    {
+        Log::info('Terminal Bearer tokens revoked', [
+            'terminal_id' => $terminal->id,
+            'terminal_uid' => $terminal->terminal_uid ?? $terminal->serial_number,
+            'tokens_revoked' => $tokenCount,
+            'user_id' => auth()->id(),
+        ]);
+    }
+
+    private function conflictResponse(string $message)
+    {
+        return response()->json([
+            'success' => false,
+            'message' => $message,
+        ], 409);
+    }
+
+    private function notFoundResponse()
+    {
+        return response()->json([
+            'success' => false,
+            'message' => 'Terminal not found.',
+        ], 404);
+    }
+
+    /**
+     * Log the real exception server-side and return a generic, non-leaking 500.
+     *
+     * @param  array<string, mixed>  $context
+     */
+    private function failureResponse(\Throwable $e, string $logMessage, array $context, string $publicMessage)
+    {
+        Log::error($logMessage, array_merge($context, [
+            'error' => $e->getMessage(),
+            'trace' => $e->getTraceAsString(),
+        ]));
+
+        return response()->json([
+            'success' => false,
+            'message' => $publicMessage,
+        ], 500);
     }
 
     private function invalidTokenResponse(string $reason)
