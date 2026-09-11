@@ -39,8 +39,8 @@ const TerminalTokenPage = () => {
 
     const handleExpirySubmit = async () => {
         try {
-            await terminalTokenService.updateExpiry(expiryDialog.terminal.id, expiryDialog.newDate);
-            setNotification({ open: true, message: 'Expiry date updated.', severity: 'success' });
+            const response = await terminalTokenService.updateExpiry(expiryDialog.terminal.id, expiryDialog.newDate);
+            setNotification({ open: true, message: response.data?.message || 'Token expiration update request received.', severity: 'success' });
             setExpiryDialog({ open: false, terminal: null, newDate: '' });
             fetchData();
         } catch (error) {
@@ -66,6 +66,7 @@ const TerminalTokenPage = () => {
 
     // Dialog & Notification state
     const [newToken, setNewToken] = useState(null);
+    const [tokenMessage, setTokenMessage] = useState(null);
     const [selectedTerminal, setSelectedTerminal] = useState(null);
     const [notification, setNotification] = useState({ open: false, message: '', severity: 'success' });
 
@@ -216,12 +217,13 @@ const TerminalTokenPage = () => {
         try {
             const response = await terminalTokenService.regenerateToken(terminal.id);
             if (response.success) {
-                setNewToken(response.data.access_token);
+                setNewToken(response.data?.access_token || null);
+                setTokenMessage(response.data?.token_message || response.message || null);
                 setSelectedTerminal(terminal);
                 fetchData();
                 setNotification({
                     open: true,
-                    message: `New identity provisioned for node: ${terminal.serial_number}`,
+                    message: response.message || `New identity provisioned for node: ${terminal.serial_number}`,
                     severity: 'success'
                 });
             }
@@ -417,9 +419,11 @@ const TerminalTokenPage = () => {
             if (response.success) {
                 const terminal = response.data?.terminal;
                 const token = response.data?.access_token;
+                const message = response.data?.token_message || response.message || null;
 
-                if (token) {
+                if (token || message) {
                     setNewToken(token);
+                    setTokenMessage(message);
                     setSelectedTerminal(terminal);
                 }
 
@@ -584,9 +588,13 @@ const TerminalTokenPage = () => {
             </Box>
 
             <NewTokenDialog
-                open={!!newToken}
+                open={!!newToken || !!tokenMessage}
                 token={newToken}
-                onClose={() => setNewToken(null)}
+                message={tokenMessage}
+                onClose={() => {
+                    setNewToken(null);
+                    setTokenMessage(null);
+                }}
                 terminalName={selectedTerminal ? `${selectedTerminal.serial_number} (${selectedTerminal.tenant?.trade_name})` : ''}
             />
 

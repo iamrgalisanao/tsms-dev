@@ -18,12 +18,14 @@ import VisibilityIcon from '@mui/icons-material/Visibility';
 import VisibilityOffIcon from '@mui/icons-material/VisibilityOff';
 import KeyIcon from '@mui/icons-material/Key';
 
-const NewTokenDialog = ({ open, token, onClose, terminalName }) => {
+const NewTokenDialog = ({ open, token, message, onClose, terminalName }) => {
     const [showToken, setShowToken] = useState(false);
     const [copied, setCopied] = useState(false);
+    const hasToken = Boolean(token);
+    const displayValue = hasToken ? token : (message || '');
 
     const handleCopy = () => {
-        navigator.clipboard.writeText(token);
+        navigator.clipboard.writeText(displayValue);
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);
     };
@@ -35,10 +37,18 @@ const NewTokenDialog = ({ open, token, onClose, terminalName }) => {
                 New API Bearer Token
             </DialogTitle>
             <DialogContent dividers>
-                <Alert severity="warning" sx={{ mb: 3, borderRadius: 2 }}>
-                    <AlertTitle sx={{ fontWeight: 700 }}>Important Security Notice</AlertTitle>
-                    Copy this token now. For security reasons, <strong>it will not be shown again</strong>.
-                    Anyone with this token can authenticate as this terminal.
+                <Alert severity={hasToken ? 'warning' : 'info'} sx={{ mb: 3, borderRadius: 2 }}>
+                    <AlertTitle sx={{ fontWeight: 700 }}>
+                        {hasToken ? 'Important Security Notice' : 'Token Request Required'}
+                    </AlertTitle>
+                    {hasToken ? (
+                        <>
+                            Copy this token now. For security reasons, <strong>it will not be shown again</strong>.
+                            Anyone with this token can authenticate as this terminal.
+                        </>
+                    ) : (
+                        message
+                    )}
                 </Alert>
 
                 <Typography variant="subtitle2" sx={{ mb: 1, color: 'text.secondary', fontWeight: 600 }}>
@@ -48,9 +58,9 @@ const NewTokenDialog = ({ open, token, onClose, terminalName }) => {
                 <Box sx={{ mt: 2 }}>
                     <TextField
                         fullWidth
-                        label="API Bearer Token"
-                        value={token || ''}
-                        type={showToken ? 'text' : 'password'}
+                        label={hasToken ? 'API Bearer Token' : 'Message'}
+                        value={displayValue}
+                        type={hasToken && !showToken ? 'password' : 'text'}
                         variant="outlined"
                         InputProps={{
                             readOnly: true,
@@ -62,9 +72,11 @@ const NewTokenDialog = ({ open, token, onClose, terminalName }) => {
                             },
                             endAdornment: (
                                 <InputAdornment position="end">
-                                    <IconButton onClick={() => setShowToken(!showToken)} edge="end" size="small">
-                                        {showToken ? <VisibilityOffIcon /> : <VisibilityIcon />}
-                                    </IconButton>
+                                    {hasToken && (
+                                        <IconButton onClick={() => setShowToken(!showToken)} edge="end" size="small">
+                                            {showToken ? <VisibilityOffIcon /> : <VisibilityIcon />}
+                                        </IconButton>
+                                    )}
                                     <IconButton onClick={handleCopy} edge="end" size="small" color={copied ? "success" : "primary"}>
                                         <ContentCopyIcon />
                                     </IconButton>
@@ -81,7 +93,7 @@ const NewTokenDialog = ({ open, token, onClose, terminalName }) => {
             </DialogContent>
             <DialogActions sx={{ p: 2.5 }}>
                 <Button onClick={onClose} variant="contained" sx={{ borderRadius: 2, px: 4, fontWeight: 700 }}>
-                    I have saved the token
+                    {hasToken ? 'I have saved the token' : 'Close'}
                 </Button>
             </DialogActions>
         </Dialog>

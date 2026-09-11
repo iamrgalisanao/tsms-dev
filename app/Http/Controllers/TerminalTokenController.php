@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers;
 
-use App\Exceptions\TerminalNotEligibleException;
 use App\Exceptions\TerminalStateConflictException;
 use App\Models\PosTerminal;
 use App\Services\Terminals\TerminalCredentialService;
@@ -14,16 +13,26 @@ use Laravel\Sanctum\PersonalAccessToken;
 /**
  * Admin-facing HTTP surface for the POS terminal credential lifecycle.
  *
- * All state changes (issue / rotate / revoke / reactivate / expiry) are owned by
- * TerminalCredentialService; this controller only validates input and maps
- * service outcomes to HTTP responses.
+ * Token issuance/rotation is disabled in this branch for the admin surfaces;
+ * those routes keep their UI/API response contracts with an advisory message.
+ * Revoke and reactivate state changes still delegate to
+ * TerminalCredentialService. Expiry updates are also disabled and only return
+ * an advisory response.
  */
 class TerminalTokenController extends Controller
 {
+    private const TOKEN_ADMINISTRATOR_MESSAGE = 'Contact you token administrator for new token';
+
+    private const TOKEN_EXPIRY_ADMINISTRATOR_MESSAGE = 'Contact you token administrator to update token expiration';
+
     public function __construct(private readonly TerminalCredentialService $credentials) {}
 
     /**
-     * Update expiry date for a terminal (API)
+     * Update expiry date for a terminal (API).
+     *
+     * Expiry updates are intentionally disabled in this branch. The request is
+     * still validated and the terminal must exist so the UI flow remains stable,
+     * but no terminal state or audit record is changed.
      */
     public function updateExpiry($terminalId, Request $request)
     {
@@ -32,11 +41,18 @@ class TerminalTokenController extends Controller
                 'expires_at' => ['required', 'date'],
             ]);
 
-            $terminal = $this->credentials->updateExpiry($terminalId, $validated['expires_at']);
+            $terminal = PosTerminal::findOrFail($terminalId);
+
+            Log::info('Terminal expiry update skipped for UI-only administrator message branch', [
+                'terminal_id' => $terminal->id,
+                'serial_number' => $terminal->serial_number,
+                'requested_expires_at' => $validated['expires_at'],
+                'user_id' => auth()->id(),
+            ]);
 
             return response()->json([
                 'success' => true,
-                'message' => 'Expiry date updated.',
+                'message' => self::TOKEN_EXPIRY_ADMINISTRATOR_MESSAGE,
                 'terminal' => $terminal,
             ]);
         } catch (\Illuminate\Validation\ValidationException $e) {
@@ -121,8 +137,11 @@ class TerminalTokenController extends Controller
     }
 
     /**
-     * API endpoint to register a new POS terminal and provision its initial
-     * Bearer token.
+     * API endpoint to register a new POS terminal.
+     *
+     * Token provisioning is intentionally disabled in this branch. The response
+     * keeps the existing UI contract and returns an advisory message so the
+     * frontend modal can continue to render without creating credentials.
      */
     public function apiStore(Request $request)
     {
@@ -137,18 +156,20 @@ class TerminalTokenController extends Controller
                 'tenant_id.exists' => 'Selected tenant does not exist.',
             ]);
 
-            $credential = $this->credentials->register(array_merge($validated, [
+            $terminal = PosTerminal::create(array_merge($validated, [
+                'status_id' => TerminalCredentialService::STATUS_ACTIVE,
+                'is_active' => true,
                 'registered_at' => now(),
                 'heartbeat_threshold' => config('tsms.terminals.default_heartbeat_threshold', 300),
                 'notifications_enabled' => true,
             ]));
-            $terminal = $credential->terminal;
 
             Log::info('POS terminal registered via API', [
                 'terminal_id' => $terminal->id,
                 'serial_number' => $terminal->serial_number,
                 'tenant_id' => $terminal->tenant_id,
                 'user_id' => auth()->id(),
+                'token_provisioning' => 'disabled-administrator-message',
             ]);
 
             return response()->json([
@@ -156,7 +177,8 @@ class TerminalTokenController extends Controller
                 'message' => 'Terminal registered successfully',
                 'data' => [
                     'terminal' => $terminal->load('tenant:id,trade_name'),
-                    'access_token' => $credential->plainTextToken,
+                    'access_token' => null,
+                    'token_message' => self::TOKEN_ADMINISTRATOR_MESSAGE,
                 ],
             ], 201);
         } catch (\Illuminate\Validation\ValidationException $e) {
@@ -335,17 +357,19 @@ class TerminalTokenController extends Controller
     public function regenerate($terminalId)
     {
         try {
-            $credential = $this->credentials->rotate($terminalId, 'admin.web.regenerate');
+            $terminal = PosTerminal::findOrFail($terminalId);
+
+            Log::info('Terminal Bearer token regeneration skipped for UI-only administrator message branch', [
+                'terminal_id' => $terminal->id,
+                'serial_number' => $terminal->serial_number,
+                'user_id' => auth()->id(),
+            ]);
 
             return redirect()
                 ->route('terminal-tokens')
-                ->with('success', 'Bearer token regenerated successfully')
-                ->with('bearer_token', $credential->plainTextToken);
+                ->with('success', self::TOKEN_ADMINISTRATOR_MESSAGE)
+                ->with('bearer_token_message', self::TOKEN_ADMINISTRATOR_MESSAGE);
 
-        } catch (TerminalStateConflictException $e) {
-            return redirect()
-                ->route('terminal-tokens')
-                ->with('error', $e->getMessage());
         } catch (ModelNotFoundException $e) {
             return redirect()
                 ->route('terminal-tokens')
@@ -369,17 +393,22 @@ class TerminalTokenController extends Controller
     public function apiRegenerate($terminalId)
     {
         try {
-            $credential = $this->credentials->rotate($terminalId, 'admin.regenerate');
+            $terminal = PosTerminal::findOrFail($terminalId);
+
+            Log::info('Terminal Bearer token regeneration skipped for UI-only administrator message branch', [
+                'terminal_id' => $terminal->id,
+                'serial_number' => $terminal->serial_number,
+                'user_id' => auth()->id(),
+            ]);
 
             return response()->json([
                 'success' => true,
-                'message' => 'Bearer token regenerated successfully',
+                'message' => self::TOKEN_ADMINISTRATOR_MESSAGE,
                 'data' => [
-                    'access_token' => $credential->plainTextToken,
+                    'access_token' => null,
+                    'token_message' => self::TOKEN_ADMINISTRATOR_MESSAGE,
                 ],
             ]);
-        } catch (TerminalStateConflictException $e) {
-            return $this->conflictResponse($e->getMessage());
         } catch (ModelNotFoundException $e) {
             return $this->notFoundResponse();
         } catch (\Exception $e) {
@@ -411,15 +440,16 @@ class TerminalTokenController extends Controller
 
     /**
      * Generate Bearer token via the v1 admin API (abilities:admin:manage).
-     * The terminal must already be active; 403 otherwise.
+     *
+     * Token issuance is intentionally disabled in this branch. The response
+     * shape is preserved for UI/API consumers, but no credential is created.
      */
     public function generateToken($terminalId)
     {
         try {
-            $credential = $this->credentials->issueForActiveTerminal($terminalId, 'v1.generate-token');
-            $terminal = $credential->terminal;
+            $terminal = PosTerminal::findOrFail($terminalId);
 
-            Log::info('Bearer token generated via API', [
+            Log::info('Bearer token generation skipped for UI-only administrator message branch', [
                 'terminal_uid' => $terminal->terminal_uid ?? $terminal->serial_number,
                 'user_id' => auth()->id(),
             ]);
@@ -427,18 +457,14 @@ class TerminalTokenController extends Controller
             return response()->json([
                 'success' => true,
                 'data' => [
-                    'access_token' => $credential->plainTextToken,
+                    'access_token' => null,
+                    'token_message' => self::TOKEN_ADMINISTRATOR_MESSAGE,
                     'token_type' => 'Bearer',
                     'terminal_id' => $terminal->id,
                     'terminal_uid' => $terminal->terminal_uid ?? $terminal->serial_number,
                     'expires_in' => config('sanctum.expiration', 1440) * 60, // Convert minutes to seconds
                 ],
             ]);
-        } catch (TerminalNotEligibleException $e) {
-            return response()->json([
-                'success' => false,
-                'message' => $e->getMessage(),
-            ], 403);
         } catch (ModelNotFoundException $e) {
             return $this->notFoundResponse();
         } catch (\Exception $e) {

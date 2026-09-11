@@ -24,6 +24,10 @@ class TerminalTokenAdminTest extends TestCase
 {
     use RefreshDatabase;
 
+    private const TOKEN_ADMINISTRATOR_MESSAGE = 'Contact you token administrator for new token';
+
+    private const TOKEN_EXPIRY_ADMINISTRATOR_MESSAGE = 'Contact you token administrator to update token expiration';
+
     private const STATUS_ACTIVE = 1;
 
     private const STATUS_REVOKED = 3;
@@ -79,7 +83,7 @@ class TerminalTokenAdminTest extends TestCase
 
     // ------------------------------------------------------------------ rotate
 
-    public function test_admin_regenerate_rotates_token_and_records_audit_snapshot(): void
+    public function test_admin_regenerate_returns_administrator_message_without_rotating_token(): void
     {
         $terminal = $this->makeTerminal();
         $old = $this->issueToken($terminal);
@@ -88,11 +92,13 @@ class TerminalTokenAdminTest extends TestCase
             ->postJson("/api/terminals/tokens/{$terminal->id}/regenerate");
 
         $response->assertOk()->assertJsonPath('success', true);
-        $plain = $response->json('data.access_token');
-        $this->assertNotEmpty($plain);
+        $this->assertNull($response->json('data.access_token'));
+        $this->assertSame(self::TOKEN_ADMINISTRATOR_MESSAGE, $response->json('data.token_message'));
+        $this->assertSame(self::TOKEN_ADMINISTRATOR_MESSAGE, $response->json('message'));
 
-        // Old token gone, exactly one new token remains.
-        $this->assertDatabaseMissing('personal_access_tokens', ['id' => $old->id]);
+        // Existing credentials are untouched; this branch only keeps the UI
+        // contract alive with an administrator message.
+        $this->assertDatabaseHas('personal_access_tokens', ['id' => $old->id]);
         $this->assertSame(1, $terminal->tokens()->count());
 
         $terminal->refresh();
@@ -100,30 +106,22 @@ class TerminalTokenAdminTest extends TestCase
         $this->assertTrue((bool) $terminal->is_active);
 
         $audit = $this->auditRowsFor($terminal, TerminalCredentialAuditor::ACTION_TOKEN_ROTATED);
-        $this->assertCount(1, $audit);
-        $row = $audit->first();
-        $this->assertSame($this->admin->id, $row->user_id);
-        $this->assertSame(1, $row->metadata['tokens_deleted_count']);
-        $this->assertSame($old->id, $row->metadata['tokens_deleted'][0]['id']);
-        $this->assertSame($old->name, $row->metadata['tokens_deleted'][0]['name']);
-        $this->assertSame($terminal->tenant_id, $row->metadata['tenant_id']);
-        $this->assertSame(1, $row->metadata['tokens_issued']);
-        $this->assertSame('User', $row->metadata['actor_type']);
-        $this->assertNotEmpty($row->metadata['actor_guard']);
-
-        // The plaintext credential must never land in the ledger.
-        $this->assertStringNotContainsString(explode('|', $plain, 2)[1], json_encode($row->toArray()));
+        $this->assertCount(0, $audit);
     }
 
-    public function test_regenerate_refuses_revoked_terminal_and_does_not_reactivate_it(): void
+    public function test_regenerate_revoked_terminal_returns_administrator_message_and_does_not_reactivate_it(): void
     {
         $terminal = $this->makeTerminal(self::STATUS_REVOKED, false);
 
         $response = $this->actingAs($this->admin)
             ->postJson("/api/terminals/tokens/{$terminal->id}/regenerate");
 
-        $response->assertStatus(409)->assertJsonPath('success', false);
-        $this->assertArrayNotHasKey('data', $response->json());
+        $response
+            ->assertOk()
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('data.access_token', null)
+            ->assertJsonPath('data.token_message', self::TOKEN_ADMINISTRATOR_MESSAGE)
+            ->assertJsonPath('message', self::TOKEN_ADMINISTRATOR_MESSAGE);
 
         $terminal->refresh();
         $this->assertSame(self::STATUS_REVOKED, (int) $terminal->status_id);
@@ -204,11 +202,11 @@ class TerminalTokenAdminTest extends TestCase
         $this->assertCount(1, $reactivated);
         $this->assertSame(0, $reactivated->first()->metadata['tokens_issued']);
 
-        // Sanctioned recovery path: reactivate, then regenerate.
+        // The regenerate path is now UI-only and must not issue credentials.
         $this->actingAs($this->admin)
             ->postJson("/api/terminals/tokens/{$terminal->id}/regenerate")
             ->assertOk();
-        $this->assertSame(1, $terminal->tokens()->count());
+        $this->assertSame(0, $terminal->tokens()->count());
     }
 
     public function test_reactivate_refuses_terminal_that_is_not_revoked(): void
@@ -224,7 +222,7 @@ class TerminalTokenAdminTest extends TestCase
 
     // ------------------------------------------------------------------ expiry
 
-    public function test_update_expiry_writes_audit_row_with_old_and_new_values(): void
+    public function test_update_expiry_returns_administrator_message_without_changing_expiry(): void
     {
         $terminal = $this->makeTerminal();
         $terminal->forceFill(['expires_at' => now()->addDays(5)])->save();
@@ -234,17 +232,17 @@ class TerminalTokenAdminTest extends TestCase
         $this->actingAs($this->admin)
             ->putJson("/api/terminals/{$terminal->id}/expiry", ['expires_at' => $newDate->toDateTimeString()])
             ->assertOk()
-            ->assertJsonPath('success', true);
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('message', self::TOKEN_EXPIRY_ADMINISTRATOR_MESSAGE);
 
         $audit = $this->auditRowsFor($terminal, TerminalCredentialAuditor::ACTION_EXPIRY_UPDATED);
-        $this->assertCount(1, $audit);
-        $this->assertSame($previous, $audit->first()->old_values['expires_at']);
-        $this->assertSame($newDate->toISOString(), $audit->first()->new_values['expires_at']);
+        $this->assertCount(0, $audit);
+        $this->assertSame($previous, $terminal->fresh()->expires_at->toISOString());
     }
 
     // ---------------------------------------------------------------- register
 
-    public function test_registration_issues_initial_token_and_audits(): void
+    public function test_registration_returns_administrator_message_without_issuing_credential(): void
     {
         $tenant = \App\Models\Tenant::factory()->create();
 
@@ -254,13 +252,13 @@ class TerminalTokenAdminTest extends TestCase
         ]);
 
         $response->assertCreated()->assertJsonPath('success', true);
-        $this->assertNotEmpty($response->json('data.access_token'));
+        $this->assertNull($response->json('data.access_token'));
+        $this->assertSame(self::TOKEN_ADMINISTRATOR_MESSAGE, $response->json('data.token_message'));
 
         $terminal = PosTerminal::findOrFail($response->json('data.terminal.id'));
-        $this->assertSame(1, $terminal->tokens()->count());
+        $this->assertSame(0, $terminal->tokens()->count());
         $registered = $this->auditRowsFor($terminal, TerminalCredentialAuditor::ACTION_REGISTERED);
-        $this->assertCount(1, $registered);
-        $this->assertSame(1, $registered->first()->metadata['tokens_issued']);
+        $this->assertCount(0, $registered);
     }
 
     public function test_registration_validation_failure_does_not_log_request_headers(): void
