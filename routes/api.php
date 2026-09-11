@@ -76,6 +76,7 @@ Route::middleware(['auth:sanctum'])->group(function () {
             Route::get('/export', [TerminalTokenController::class, 'export']);
             Route::post('/{terminalId}/regenerate', [TerminalTokenController::class, 'apiRegenerate']);
             Route::post('/{terminalId}/revoke', [TerminalTokenController::class, 'apiRevoke']);
+            Route::post('/{terminalId}/reactivate', [TerminalTokenController::class, 'reactivate']);
         });
 
         Route::post('terminals', [TerminalTokenController::class, 'apiStore']);
@@ -223,7 +224,7 @@ Route::prefix('v1')->middleware(['auth:sanctum', 'capture.terminal.ip', AttachCo
     Route::middleware('abilities:admin:manage')->group(function () {
         Route::post('/terminals/{terminalId}/generate-token', [TerminalTokenController::class, 'generateToken']);
         Route::get('/terminals/{terminalId}/tokens', [TerminalTokenController::class, 'listTokens']);
-        Route::post('/terminals/generate-all-tokens', [TerminalTokenController::class, 'generateTokensForAllTerminals']);
+        // POST /terminals/generate-all-tokens intentionally removed (bulk rotation, high blast radius).
 
         // Dead-Letter Queue (DLQ) management — admin only
         Route::prefix('admin/failed-jobs')->group(function () {
