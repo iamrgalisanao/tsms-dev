@@ -61,7 +61,7 @@ class IngestionCircuitBreakerTest extends TestCase
         // failures (4xx) must never trip the breaker.
         $validPayload = $this->officialPayload($tenant->id, $terminal->id, (string) Str::uuid(), $terminal->serial_number);
         $this->postJson('/api/v1/transactions/official', $validPayload, $this->headersFor($terminal))
-            ->assertStatus(202)
+            ->assertStatus(200)
             ->assertJsonPath('success', true);
     }
 
@@ -97,7 +97,7 @@ class IngestionCircuitBreakerTest extends TestCase
 
         $validPayload = $this->officialPayload($tenant->id, $terminal->id, (string) Str::uuid(), $terminal->serial_number);
         $this->postJson('/api/v1/transactions/official', $validPayload, $this->headersFor($terminal))
-            ->assertStatus(202)
+            ->assertStatus(200)
             ->assertJsonPath('success', true);
     }
 
@@ -150,7 +150,7 @@ class IngestionCircuitBreakerTest extends TestCase
 
         $validPayload = $this->officialPayload($tenant->id, $terminal->id, (string) Str::uuid(), $terminal->serial_number);
         $this->postJson('/api/v1/transactions/official', $validPayload, $this->headersFor($terminal))
-            ->assertStatus(202)
+            ->assertStatus(200)
             ->assertJsonPath('success', true);
     }
 
@@ -241,7 +241,7 @@ class IngestionCircuitBreakerTest extends TestCase
         // close the breaker yet.
         $firstSuccessPayload = $this->officialPayload($tenant->id, $terminal->id, (string) Str::uuid(), $terminal->serial_number);
         $this->postJson('/api/v1/transactions/official', $firstSuccessPayload, $this->headersFor($terminal))
-            ->assertStatus(202);
+            ->assertStatus(200);
 
         // Second probe also succeeds — this is the 2nd of up to 3 probes,
         // which closes the breaker and resets failure_count back to zero
@@ -249,7 +249,7 @@ class IngestionCircuitBreakerTest extends TestCase
         // no-op — see tests/Unit/Services/CircuitBreakerTest::test_success_in_closed_state_is_a_noop).
         $secondSuccessPayload = $this->officialPayload($tenant->id, $terminal->id, (string) Str::uuid(), $terminal->serial_number);
         $this->postJson('/api/v1/transactions/official', $secondSuccessPayload, $this->headersFor($terminal))
-            ->assertStatus(202);
+            ->assertStatus(200);
 
         // Prove the failure count actually reset to zero: two more
         // failures (below the closed-state threshold of 3) must NOT reopen

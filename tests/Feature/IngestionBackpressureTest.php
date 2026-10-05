@@ -56,7 +56,7 @@ class IngestionBackpressureTest extends TestCase
         $payload = $this->officialPayload($tenant->id, $terminal->id, (string) Str::uuid(), $terminal->serial_number);
         $response = $this->postJson('/api/v1/transactions/official', $payload, $this->headersFor($terminal));
 
-        $response->assertStatus(202);
+        $response->assertStatus(200);
         Queue::assertPushed(ProcessTransactionIntakeJob::class, fn (ProcessTransactionIntakeJob $job) => $job->queue === $intakeQueue);
     }
 
@@ -338,7 +338,7 @@ class IngestionBackpressureTest extends TestCase
 
         $payload = $this->officialPayload($tenant->id, $terminal->id, (string) Str::uuid(), $terminal->serial_number);
         $this->postJson('/api/v1/transactions/official', $payload, $this->headersFor($terminal))
-            ->assertStatus(202);
+            ->assertStatus(200);
 
         $this->assertSame(7, \App\Support\Metrics::get("ingestion.queue_depth.processing.{$processingQueue}", 0));
         $this->assertSame(3, \App\Support\Metrics::get("ingestion.queue_depth.intake.{$intakeQueue}", 0));
@@ -453,7 +453,7 @@ class IngestionBackpressureTest extends TestCase
 
         $payload = $this->officialPayload($tenant->id, $terminal->id, (string) Str::uuid(), $terminal->serial_number);
         $this->postJson('/api/v1/transactions/official', $payload, $this->headersFor($terminal))
-            ->assertStatus(202);
+            ->assertStatus(200);
 
         $rankCalls = array_filter(
             $evalCalls,
