@@ -175,7 +175,7 @@ class OfficialTransactionTimestampNoMutationTest extends TestCase
             ->postJson('/api/v1/transactions/official', $payload);
 
         $response
-            ->assertStatus(202)
+            ->assertStatus(200)
             ->assertJsonPath('success', true)
             ->assertJsonPath('status', 'PENDING')
             ->assertJsonPath('code', 'ACCEPTED')

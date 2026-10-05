@@ -60,7 +60,7 @@ class TransactionStatusTest extends TestCase
                     'status' => 'pending',
                     'processing_status' => 'pending',
                     'job_status' => 'PENDING',
-                    'validation_status' => 'VALID',
+                    'validation_status' => 'PENDING',
                 ]
             ]);
     }
@@ -100,6 +100,56 @@ class TransactionStatusTest extends TestCase
                     'attempts' => 1,
                 ]
             ]);
+    }
+
+    public function test_status_keeps_validation_pending_while_job_is_processing()
+    {
+        $transaction = Transaction::create([
+            'tenant_id' => $this->tenant->id,
+            'terminal_id' => $this->terminal->id,
+            'transaction_id' => 'TXN-PROCESSING-'.time(),
+            'hardware_id' => 'HW-001',
+            'transaction_timestamp' => now(),
+            'base_amount' => 1000.00,
+            'customer_code' => 'CUST-001',
+            'payload_checksum' => md5('test-processing'),
+            'job_status' => Transaction::JOB_STATUS_PROCESSING,
+            'validation_status' => Transaction::VALIDATION_STATUS_PENDING,
+        ]);
+
+        $this->withHeaders([
+            'Authorization' => 'Bearer '.$this->token,
+            'Accept' => 'application/json',
+        ])->getJson("/api/v1/transactions/{$transaction->transaction_id}/status")
+            ->assertOk()
+            ->assertJsonPath('data.job_status', 'PROCESSING')
+            ->assertJsonPath('data.validation_status', 'PENDING');
+    }
+
+    public function test_status_maps_error_validation_to_invalid()
+    {
+        $transaction = Transaction::create([
+            'tenant_id' => $this->tenant->id,
+            'terminal_id' => $this->terminal->id,
+            'transaction_id' => 'TXN-INVALID-'.time(),
+            'hardware_id' => 'HW-001',
+            'transaction_timestamp' => now(),
+            'base_amount' => 1000.00,
+            'customer_code' => 'CUST-001',
+            'payload_checksum' => md5('test-invalid'),
+            'job_status' => Transaction::JOB_STATUS_FAILED,
+            // The transactions.validation_status column enum stores ERROR/INVALID;
+            // ERROR exercises the FAILED/ERROR -> INVALID external mapping.
+            'validation_status' => 'ERROR',
+        ]);
+
+        $this->withHeaders([
+            'Authorization' => 'Bearer '.$this->token,
+            'Accept' => 'application/json',
+        ])->getJson("/api/v1/transactions/{$transaction->transaction_id}/status")
+            ->assertOk()
+            ->assertJsonPath('data.job_status', 'FAILED')
+            ->assertJsonPath('data.validation_status', 'INVALID');
     }
 
     public function test_returns_404_for_nonexistent_transaction()

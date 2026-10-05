@@ -119,7 +119,7 @@ class CircuitBreakerTestIsolationTest extends TestCase
         // entirely rather than merely resetting it.
         $unrelatedPayload = $this->officialPayload($tenant->id, $terminal->id, (string) Str::uuid(), $terminal->serial_number);
         $this->postJson('/api/v1/transactions/official', $unrelatedPayload, $this->headersFor($terminal))
-            ->assertStatus(202)
+            ->assertStatus(200)
             ->assertJsonPath('success', true);
     }
 

@@ -123,12 +123,16 @@ paths:
         serial_number. Rate-limited per authenticated terminal and tenant, not by
         shared public IP. The submission_uuid must be globally unique; only
         identical retries from the same terminal are treated as idempotent.
-        A successful intake response means TSMS accepted the payload for
-        asynchronous processing; transaction items return status=PENDING until
-        the status endpoint reports validation_status=VALID and
-        job_status=COMPLETED. Idempotent replay of a terminal intake returns
-        the latest provider-facing state instead of resetting the response to
-        PENDING.
+        Accepted submissions return HTTP 200 with success=true, status=PENDING
+        and code=ACCEPTED: TSMS has durably accepted the payload and queued it
+        for asynchronous processing. Do not resend; poll the status endpoint
+        until it reports job_status=COMPLETED (validation_status=VALID) or
+        job_status=FAILED (validation_status=INVALID). Transaction items carry
+        validation_status=PENDING until validation has actually run.
+        Idempotent replay of a terminal intake returns the latest
+        provider-facing state instead of resetting the response to PENDING:
+        still in flight returns 200/PENDING, completed returns 200/COMPLETED,
+        and permanently failed or dead-lettered returns 422/FAILED.
       security:
         - bearerAuth: ['transaction:create']
       requestBody:
@@ -138,8 +142,15 @@ paths:
             schema:
               $ref: '#/components/schemas/OfficialSubmission'
       responses:
-        '202':
-          description: Submission accepted for asynchronous processing. Response success describes request acceptance; item status=PENDING means poll the status endpoint for final completion.
+        '200':
+          description: >
+            Submission accepted (fresh or in-flight idempotent replay) or
+            idempotent replay of a completed submission. HTTP 200 with
+            status=PENDING and code=ACCEPTED means the submission is queued for
+            asynchronous processing; do not resend, poll the status endpoint
+            for the final outcome. status=COMPLETED means the submission was
+            already processed. Legacy TransactionSubmission replay may also
+            return 200 and is deprecated.
           content:
             application/json:
               schema:
@@ -166,16 +177,9 @@ paths:
                       transactions:
                         - transaction_id: 3515e696-c35b-4a2c-8c75-70f0644ed99c
                           status: PENDING
-                          validation_status: VALID
+                          validation_status: PENDING
                           job_status: PENDING
                           message: Transaction accepted and pending processing. Poll status after 5 seconds.
-        '200':
-          description: Idempotent replay of an existing submission. Terminal states use final JSON status/code values; legacy TransactionSubmission replay may also return 200 and is deprecated.
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/OfficialSubmissionResponse'
-              examples:
                 replayCompleted:
                   summary: Existing submission has already completed.
                   value:
@@ -202,33 +206,6 @@ paths:
                           validation_status: VALID
                           job_status: COMPLETED
                           message: Transaction already processed.
-                replayFailed:
-                  summary: Existing submission has failed permanently.
-                  value:
-                    success: false
-                    status: FAILED
-                    code: FAILED
-                    message: Submission failed permanently. Correct the payload and resend with a new submission_uuid.
-                    submission_uuid: 3515e696-c35b-4a2c-8c75-70f0644ed99c
-                    intake_id: 12345
-                    correlation_id: 23250d7c-3ba3-4dc5-8680-94275a5ce5e1
-                    retryable: false
-                    data:
-                      submission_uuid: 3515e696-c35b-4a2c-8c75-70f0644ed99c
-                      intake_id: 12345
-                      processed_count: 0
-                      pending_count: 0
-                      failed_count: 1
-                      checksum_validation: matched_stored_checksum
-                      intake_status: PENDING
-                      processing_status: FAILED
-                      last_error_code: CRYPTOGRAPHIC_INTEGRITY_FAILURE
-                      transactions:
-                        - transaction_id: 3515e696-c35b-4a2c-8c75-70f0644ed99c
-                          status: FAILED
-                          validation_status: INVALID
-                          job_status: FAILED
-                          message: Transaction failed permanently. Correct the payload and resend with a new submission_uuid.
         '401':
           $ref: '#/components/responses/Unauthenticated'
         '403':
@@ -282,7 +259,47 @@ paths:
                       submission_uuid: dbb79529-c5b5-47a0-8863-add7af13b18c
                       terminal_id: 87
         '422':
-          $ref: '#/components/responses/ValidationError'
+          description: >
+            Payload validation failed, the submission was already rejected, or
+            an idempotent replay found the submission failed permanently or was
+            dead-lettered (status=FAILED, code=FAILED, error_code set to the
+            stored failure code or SUBMISSION_FAILED_PERMANENTLY). Correct the
+            payload and resend with a new submission_uuid.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/ValidationErrorResponse'
+                  - $ref: '#/components/schemas/OfficialSubmissionResponse'
+              examples:
+                replayFailed:
+                  summary: Existing submission has failed permanently.
+                  value:
+                    success: false
+                    status: FAILED
+                    code: FAILED
+                    error_code: CRYPTOGRAPHIC_INTEGRITY_FAILURE
+                    message: Submission failed permanently. Correct the payload and resend with a new submission_uuid.
+                    submission_uuid: 3515e696-c35b-4a2c-8c75-70f0644ed99c
+                    intake_id: 12345
+                    correlation_id: 23250d7c-3ba3-4dc5-8680-94275a5ce5e1
+                    retryable: false
+                    data:
+                      submission_uuid: 3515e696-c35b-4a2c-8c75-70f0644ed99c
+                      intake_id: 12345
+                      processed_count: 0
+                      pending_count: 0
+                      failed_count: 1
+                      checksum_validation: matched_stored_checksum
+                      intake_status: PENDING
+                      processing_status: FAILED
+                      last_error_code: CRYPTOGRAPHIC_INTEGRITY_FAILURE
+                      transactions:
+                        - transaction_id: 3515e696-c35b-4a2c-8c75-70f0644ed99c
+                          status: FAILED
+                          validation_status: INVALID
+                          job_status: FAILED
+                          message: Transaction failed permanently. Correct the payload and resend with a new submission_uuid.
         '429':
           $ref: '#/components/responses/RateLimited'
   /submissions/{submission_uuid}:
@@ -366,7 +383,7 @@ paths:
                       status: pending
                       processing_status: pending
                       job_status: PENDING
-                      validation_status: VALID
+                      validation_status: PENDING
                       completed_at: null
                       attempts: 0
                       error: null
@@ -827,6 +844,17 @@ components:
       properties:
         success:
           type: boolean
+        status:
+          type: string
+          description: PENDING (accepted, queued), COMPLETED, or FAILED. Deprecated legacy replay may return other values.
+          example: PENDING
+        code:
+          type: string
+          description: ACCEPTED, COMPLETED, or FAILED.
+          example: ACCEPTED
+        error_code:
+          type: string
+          description: Present on permanently failed or dead-lettered replay (HTTP 422).
         message:
           type: string
         data:
@@ -874,8 +902,12 @@ components:
               example: PENDING
             validation_status:
               type: string
-              description: POS-facing validation status. Pending accepted work is presented as VALID per the 2.1.1 status mapping.
-              example: VALID
+              description: >
+                POS-facing validation status. PENDING means validation has not
+                run yet (job_status PENDING or PROCESSING); VALID means
+                validation passed; INVALID means validation failed.
+              enum: [PENDING, VALID, INVALID]
+              example: PENDING
             completed_at:
               type: string
               nullable: true

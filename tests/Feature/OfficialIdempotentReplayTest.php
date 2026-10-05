@@ -100,7 +100,7 @@ class OfficialIdempotentReplayTest extends TestCase
         // First submission
         $payload1 = $this->buildOfficialPayloadWithTx($txId, $tenant->id, $terminal->id, (string) Str::uuid(), $terminal->serial_number);
         $this->postJson('/api/v1/transactions/official', $payload1, $headers)
-            ->assertStatus(202)
+            ->assertStatus(200)
             ->assertJsonPath('success', true)
             ->assertJsonPath('status', 'PENDING')
             ->assertJsonPath('code', 'ACCEPTED');
@@ -109,7 +109,7 @@ class OfficialIdempotentReplayTest extends TestCase
         // transaction detection happens during downstream processing.
         $payload2 = $this->buildOfficialPayloadWithTx($txId, $tenant->id, $terminal->id, (string) Str::uuid(), $terminal->serial_number);
         $this->postJson('/api/v1/transactions/official', $payload2, $headers)
-            ->assertStatus(202)
+            ->assertStatus(200)
             ->assertJsonPath('success', true)
             ->assertJsonPath('status', 'PENDING')
             ->assertJsonPath('code', 'ACCEPTED')

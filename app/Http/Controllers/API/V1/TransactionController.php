@@ -577,8 +577,7 @@ class TransactionController extends Controller
         $jobStatus = $transaction->job_status ?: Transaction::JOB_STATUS_QUEUED;
         $externalJobStatus = $this->externalJobStatus($jobStatus);
         $externalValidationStatus = $this->externalValidationStatus(
-            $transaction->validation_status ?: Transaction::VALIDATION_STATUS_PENDING,
-            $externalJobStatus
+            $transaction->validation_status ?: Transaction::VALIDATION_STATUS_PENDING
         );
         $processingStatus = strtolower($externalJobStatus);
 
@@ -613,14 +612,11 @@ class TransactionController extends Controller
         };
     }
 
-    private function externalValidationStatus(string $validationStatus, string $externalJobStatus): string
+    private function externalValidationStatus(string $validationStatus): string
     {
+        // PENDING stays PENDING until validation has actually run; never
+        // report VALID ahead of the async validation outcome.
         $validationStatus = strtoupper($validationStatus);
-
-        if ($validationStatus === Transaction::VALIDATION_STATUS_PENDING
-            && in_array($externalJobStatus, ['PENDING', 'PROCESSING'], true)) {
-            return Transaction::VALIDATION_STATUS_VALID;
-        }
 
         if ($validationStatus === Transaction::VALIDATION_STATUS_FAILED || $validationStatus === 'ERROR') {
             return 'INVALID';
@@ -878,7 +874,7 @@ class TransactionController extends Controller
     public function storeOfficial(Request $request)
     {
         $result = $this->transactionIntakeService->handleOfficialIntake($request);
-        $httpStatus = $result['http_status'] ?? 202;
+        $httpStatus = $result['http_status'] ?? 200;
         unset($result['http_status']);
 
         $response = response()->json($result, $httpStatus);

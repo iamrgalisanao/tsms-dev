@@ -596,13 +596,14 @@ class TransactionIntakeService
                 success: false,
                 status: 'FAILED',
                 code: 'FAILED',
-                httpStatus: 200,
+                httpStatus: 422,
                 itemStatus: 'FAILED',
                 itemValidationStatus: 'INVALID',
                 itemJobStatus: 'FAILED',
                 itemMessage: 'Transaction failed permanently. Correct the payload and resend with a new submission_uuid.',
                 checksumValidation: 'matched_stored_checksum',
-                additionalData: $data
+                additionalData: $data,
+                errorCode: $existing->last_error_code ?: 'SUBMISSION_FAILED_PERMANENTLY'
             );
         }
 
@@ -632,9 +633,9 @@ class TransactionIntakeService
             success: true,
             status: 'PENDING',
             code: 'ACCEPTED',
-            httpStatus: 202,
+            httpStatus: 200,
             itemStatus: 'PENDING',
-            itemValidationStatus: 'VALID',
+            itemValidationStatus: 'PENDING',
             itemJobStatus: 'PENDING',
             itemMessage: 'Transaction accepted and pending processing. Poll status after 5 seconds.',
             checksumValidation: $checksumValidation,
@@ -656,7 +657,8 @@ class TransactionIntakeService
         string $itemJobStatus,
         string $itemMessage,
         string $checksumValidation,
-        array $additionalData = []
+        array $additionalData = [],
+        ?string $errorCode = null
     ): array {
         [$transactions] = $this->submittedTransactions($payload);
         $transactionResponses = array_map(static function (array $transaction) use ($itemStatus, $itemValidationStatus, $itemJobStatus, $itemMessage): array {
@@ -674,12 +676,19 @@ class TransactionIntakeService
         $failedCount = $itemJobStatus === 'FAILED' ? $transactionCount : 0;
         $pendingCount = $itemJobStatus === 'PENDING' ? $transactionCount : 0;
 
-        return [
+        $response = [
             'success' => $success,
             'status' => $status,
             'code' => $code,
             'http_status' => $httpStatus,
             'message' => $message,
+        ];
+
+        if ($errorCode !== null) {
+            $response['error_code'] = $errorCode;
+        }
+
+        return $response + [
             'submission_uuid' => $intake->submission_uuid,
             'intake_id' => $intake->id,
             'correlation_id' => $traceId,

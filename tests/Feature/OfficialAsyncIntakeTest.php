@@ -56,7 +56,7 @@ class OfficialAsyncIntakeTest extends TestCase
         $response = $this->postJson('/api/v1/transactions/official', $payload, $this->headersFor($terminal));
 
         $response
-            ->assertStatus(202)
+            ->assertStatus(200)
             ->assertJsonPath('success', true)
             ->assertJsonPath('status', 'PENDING')
             ->assertJsonPath('code', 'ACCEPTED')
@@ -69,7 +69,7 @@ class OfficialAsyncIntakeTest extends TestCase
             ->assertJsonPath('data.checksum_validation', 'passed')
             ->assertJsonPath('data.transactions.0.transaction_id', $payload['transaction']['transaction_id'])
             ->assertJsonPath('data.transactions.0.status', 'PENDING')
-            ->assertJsonPath('data.transactions.0.validation_status', 'VALID')
+            ->assertJsonPath('data.transactions.0.validation_status', 'PENDING')
             ->assertJsonPath('data.transactions.0.job_status', 'PENDING');
 
         $this->assertDatabaseHas('transaction_intake', [
@@ -143,10 +143,11 @@ class OfficialAsyncIntakeTest extends TestCase
         $response = $this->postJson('/api/v1/transactions/official', $payload, $this->headersFor($terminal));
 
         $response
-            ->assertStatus(200)
+            ->assertStatus(422)
             ->assertJsonPath('success', false)
             ->assertJsonPath('status', 'FAILED')
             ->assertJsonPath('code', 'FAILED')
+            ->assertJsonPath('error_code', 'CRYPTOGRAPHIC_INTEGRITY_FAILURE')
             ->assertJsonPath('data.intake_status', 'PENDING')
             ->assertJsonPath('data.processing_status', 'FAILED')
             ->assertJsonPath('data.last_error_code', 'CRYPTOGRAPHIC_INTEGRITY_FAILURE')
@@ -159,6 +160,26 @@ class OfficialAsyncIntakeTest extends TestCase
             ->assertJsonPath('data.transactions.0.job_status', 'FAILED');
 
         $this->assertStringNotContainsString('QUEUED', json_encode($response->json(), JSON_THROW_ON_ERROR));
+    }
+
+    public function test_official_endpoint_replay_of_dead_lettered_intake_returns_422_with_fallback_error_code(): void
+    {
+        [$tenant, $terminal] = $this->seedTenantAndTerminal();
+        $payload = $this->officialPayload($tenant->id, $terminal->id, (string) Str::uuid(), $terminal->serial_number);
+
+        $this->seedExistingIntake($payload, $terminal, TransactionIntake::PROCESSING_STATUS_DEAD_LETTERED);
+        $this->mockRedisForAdmissionMiddleware();
+
+        $this->postJson('/api/v1/transactions/official', $payload, $this->headersFor($terminal))
+            ->assertStatus(422)
+            ->assertJsonPath('success', false)
+            ->assertJsonPath('status', 'FAILED')
+            ->assertJsonPath('code', 'FAILED')
+            ->assertJsonPath('error_code', 'SUBMISSION_FAILED_PERMANENTLY')
+            ->assertJsonPath('data.failed_count', 1)
+            ->assertJsonPath('data.transactions.0.status', 'FAILED')
+            ->assertJsonPath('data.transactions.0.validation_status', 'INVALID')
+            ->assertJsonPath('data.transactions.0.job_status', 'FAILED');
     }
 
     public function test_official_endpoint_replay_keeps_retryable_failure_pending(): void
@@ -177,7 +198,7 @@ class OfficialAsyncIntakeTest extends TestCase
         $response = $this->postJson('/api/v1/transactions/official', $payload, $this->headersFor($terminal));
 
         $response
-            ->assertStatus(202)
+            ->assertStatus(200)
             ->assertJsonPath('success', true)
             ->assertJsonPath('status', 'PENDING')
             ->assertJsonPath('code', 'ACCEPTED')
@@ -186,7 +207,7 @@ class OfficialAsyncIntakeTest extends TestCase
             ->assertJsonPath('data.pending_count', 1)
             ->assertJsonPath('data.checksum_validation', 'matched_stored_checksum')
             ->assertJsonPath('data.transactions.0.status', 'PENDING')
-            ->assertJsonPath('data.transactions.0.validation_status', 'VALID')
+            ->assertJsonPath('data.transactions.0.validation_status', 'PENDING')
             ->assertJsonPath('data.transactions.0.job_status', 'PENDING');
 
         $this->assertStringNotContainsString('QUEUED', json_encode($response->json(), JSON_THROW_ON_ERROR));
