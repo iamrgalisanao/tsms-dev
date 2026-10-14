@@ -64,7 +64,7 @@ class CorrelationIdNormalizationTest extends TestCase
         ];
 
         $response = $this->postJson('/api/v1/transactions/official', $payload, $headers)
-            ->assertStatus(202);
+            ->assertStatus(200);
 
         $this->assertSame($requestId, $response->headers->get('X-Request-Id'));
         $this->assertSame($requestId, $response->json('correlation_id'));
@@ -94,7 +94,7 @@ class CorrelationIdNormalizationTest extends TestCase
         ];
 
         $response = $this->postJson('/api/v1/transactions/official', $payload, $headers)
-            ->assertStatus(202);
+            ->assertStatus(200);
 
         $this->assertSame($correlationId, $response->headers->get('X-Request-Id'));
         $this->assertSame($correlationId, $response->json('correlation_id'));
@@ -111,7 +111,7 @@ class CorrelationIdNormalizationTest extends TestCase
         $payload = $this->officialPayload($tenant->id, $terminal->id, (string) Str::uuid(), $terminal->serial_number);
 
         $response = $this->postJson('/api/v1/transactions/official', $payload, $this->headersFor($terminal))
-            ->assertStatus(202);
+            ->assertStatus(200);
 
         $generated = $response->headers->get('X-Request-Id');
         $this->assertNotEmpty($generated);

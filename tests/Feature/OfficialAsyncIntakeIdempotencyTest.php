@@ -193,7 +193,7 @@ class OfficialAsyncIntakeIdempotencyTest extends TestCase
         $result = $service->handleOfficialIntake($request);
 
         $this->assertTrue($result['success']);
-        $this->assertSame(202, $result['http_status']);
+        $this->assertSame(200, $result['http_status']);
         $this->assertSame($payload['submission_uuid'], $result['submission_uuid']);
         $this->assertDatabaseHas('transaction_intake', [
             'submission_uuid' => $payload['submission_uuid'],

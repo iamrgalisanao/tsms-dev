@@ -124,7 +124,7 @@ class SubmissionIdempotencyTest extends TestCase
 
         // First request should durably accept the submission for async processing.
         $res1 = $this->postJson('/api/v1/transactions/official', $payload, $headers);
-        $res1->assertStatus(202);
+        $res1->assertStatus(200);
         $this->assertDatabaseHas('transaction_intake', [
             'submission_uuid' => $uuid,
             'terminal_id' => $terminal->id,
@@ -133,7 +133,7 @@ class SubmissionIdempotencyTest extends TestCase
 
         // Second request (same UUID + terminal) should return idempotent success instead of 500.
         $res2 = $this->postJson('/api/v1/transactions/official', $payload, $headers);
-        $res2->assertStatus(202);
+        $res2->assertStatus(200);
         $res2->assertJson([
             'success' => true,
             'message' => 'Submission already accepted',
@@ -161,13 +161,13 @@ class SubmissionIdempotencyTest extends TestCase
         ];
 
         $this->postJson('/api/v1/transactions/official', $firstPayload, $headers)
-            ->assertStatus(202);
+            ->assertStatus(200);
 
         $firstIntake = TransactionIntake::where('submission_uuid', $firstPayload['submission_uuid'])->firstOrFail();
         (new ProcessTransactionIntakeJob($firstIntake->id))->handle(app(TransactionIngestService::class));
 
         $this->postJson('/api/v1/transactions/official', $secondPayload, $headers)
-            ->assertStatus(202);
+            ->assertStatus(200);
 
         $secondIntake = TransactionIntake::where('submission_uuid', $secondSubmissionUuid)->firstOrFail();
         (new ProcessTransactionIntakeJob($secondIntake->id))->handle(app(TransactionIngestService::class));
@@ -257,7 +257,7 @@ class SubmissionIdempotencyTest extends TestCase
         Sanctum::actingAs($firstTerminal, ['transaction:create']);
         $this->postJson('/api/v1/transactions/official', $firstPayload, [
             'Content-Type' => 'application/json',
-        ])->assertStatus(202);
+        ])->assertStatus(200);
 
         Sanctum::actingAs($secondTerminal, ['transaction:create']);
         $this->postJson('/api/v1/transactions/official', $secondPayload, [

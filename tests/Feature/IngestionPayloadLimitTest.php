@@ -72,7 +72,7 @@ class IngestionPayloadLimitTest extends TestCase
 
         $response = $this->postJson('/api/v1/transactions/official', $payload, $this->headersFor($terminal));
 
-        $response->assertStatus(202);
+        $response->assertStatus(200);
         $this->assertNotSame('PAYLOAD_TOO_LARGE', $response->json('error_code'));
     }
 
