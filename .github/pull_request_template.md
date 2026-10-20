@@ -1,6 +1,6 @@
 ## Work item
 
-- Work ID:
+- Work ID: TSMS-NNN <!-- replace NNN with the actual ticket number, e.g. TSMS-042 -->
 - Related issue:
 - Type: feature | fix | chore | docs | refactor | test | deploy
 
