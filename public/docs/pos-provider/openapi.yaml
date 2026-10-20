@@ -123,9 +123,16 @@ paths:
         serial_number. Rate-limited per authenticated terminal and tenant, not by
         shared public IP. The submission_uuid must be globally unique; only
         identical retries from the same terminal are treated as idempotent.
-        A successful intake response means TSMS accepted the payload and queued
-        asynchronous processing; transaction items may therefore return
-        status=queued even when the response success flag is true.
+        Accepted submissions return HTTP 200 with success=true, status=PENDING
+        and code=ACCEPTED: TSMS has durably accepted the payload and queued it
+        for asynchronous processing. Do not resend; poll the status endpoint
+        until it reports job_status=COMPLETED (validation_status=VALID) or
+        job_status=FAILED (validation_status=INVALID). Transaction items carry
+        validation_status=PENDING until validation has actually run.
+        Idempotent replay of a terminal intake returns the latest
+        provider-facing state instead of resetting the response to PENDING:
+        still in flight returns 200/PENDING, completed returns 200/COMPLETED,
+        and permanently failed or dead-lettered returns 422/FAILED.
       security:
         - bearerAuth: ['transaction:create']
       requestBody:
@@ -136,26 +143,69 @@ paths:
               $ref: '#/components/schemas/OfficialSubmission'
       responses:
         '200':
-          description: Submission accepted, processed idempotently, or queued. Response success describes request acceptance; item status describes asynchronous transaction processing.
+          description: >
+            Submission accepted (fresh or in-flight idempotent replay) or
+            idempotent replay of a completed submission. HTTP 200 with
+            status=PENDING and code=ACCEPTED means the submission is queued for
+            asynchronous processing; do not resend, poll the status endpoint
+            for the final outcome. status=COMPLETED means the submission was
+            already processed. Legacy TransactionSubmission replay may also
+            return 200 and is deprecated.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/OfficialSubmissionResponse'
               examples:
-                acceptedQueued:
-                  summary: Accepted and queued for asynchronous processing.
+                acceptedPending:
+                  summary: Accepted and pending asynchronous processing.
                   value:
                     success: true
-                    message: "Official submission processed: 1 successful, 0 failed"
+                    status: PENDING
+                    code: ACCEPTED
+                    message: "Official submission accepted: 1 pending, 0 failed"
+                    submission_uuid: 3515e696-c35b-4a2c-8c75-70f0644ed99c
+                    intake_id: 12345
+                    correlation_id: 23250d7c-3ba3-4dc5-8680-94275a5ce5e1
+                    retryable: false
                     data:
                       submission_uuid: 3515e696-c35b-4a2c-8c75-70f0644ed99c
-                      processed_count: 1
+                      intake_id: 12345
+                      processed_count: 0
+                      pending_count: 1
                       failed_count: 0
                       checksum_validation: passed
                       transactions:
                         - transaction_id: 3515e696-c35b-4a2c-8c75-70f0644ed99c
-                          status: queued
-                          message: Transaction queued for processing
+                          status: PENDING
+                          validation_status: PENDING
+                          job_status: PENDING
+                          message: Transaction accepted and pending processing. Poll status after 5 seconds.
+                replayCompleted:
+                  summary: Existing submission has already completed.
+                  value:
+                    success: true
+                    status: COMPLETED
+                    code: COMPLETED
+                    message: Submission already processed (idempotent)
+                    submission_uuid: 3515e696-c35b-4a2c-8c75-70f0644ed99c
+                    intake_id: 12345
+                    correlation_id: 23250d7c-3ba3-4dc5-8680-94275a5ce5e1
+                    retryable: false
+                    data:
+                      submission_uuid: 3515e696-c35b-4a2c-8c75-70f0644ed99c
+                      intake_id: 12345
+                      processed_count: 1
+                      pending_count: 0
+                      failed_count: 0
+                      checksum_validation: matched_stored_checksum
+                      intake_status: PENDING
+                      processing_status: COMPLETED
+                      transactions:
+                        - transaction_id: 3515e696-c35b-4a2c-8c75-70f0644ed99c
+                          status: COMPLETED
+                          validation_status: VALID
+                          job_status: COMPLETED
+                          message: Transaction already processed.
         '401':
           $ref: '#/components/responses/Unauthenticated'
         '403':
@@ -209,14 +259,58 @@ paths:
                       submission_uuid: dbb79529-c5b5-47a0-8863-add7af13b18c
                       terminal_id: 87
         '422':
-          $ref: '#/components/responses/ValidationError'
+          description: >
+            Payload validation failed, the submission was already rejected, or
+            an idempotent replay found the submission failed permanently or was
+            dead-lettered (status=FAILED, code=FAILED, error_code set to the
+            stored failure code or SUBMISSION_FAILED_PERMANENTLY). Correct the
+            payload and resend with a new submission_uuid.
+          content:
+            application/json:
+              schema:
+                anyOf:
+                  - $ref: '#/components/schemas/ValidationErrorResponse'
+                  - $ref: '#/components/schemas/OfficialSubmissionResponse'
+              examples:
+                replayFailed:
+                  summary: Existing submission has failed permanently.
+                  value:
+                    success: false
+                    status: FAILED
+                    code: FAILED
+                    error_code: CRYPTOGRAPHIC_INTEGRITY_FAILURE
+                    message: Submission failed permanently. Correct the payload and resend with a new submission_uuid.
+                    submission_uuid: 3515e696-c35b-4a2c-8c75-70f0644ed99c
+                    intake_id: 12345
+                    correlation_id: 23250d7c-3ba3-4dc5-8680-94275a5ce5e1
+                    retryable: false
+                    data:
+                      submission_uuid: 3515e696-c35b-4a2c-8c75-70f0644ed99c
+                      intake_id: 12345
+                      processed_count: 0
+                      pending_count: 0
+                      failed_count: 1
+                      checksum_validation: matched_stored_checksum
+                      intake_status: PENDING
+                      processing_status: FAILED
+                      last_error_code: CRYPTOGRAPHIC_INTEGRITY_FAILURE
+                      transactions:
+                        - transaction_id: 3515e696-c35b-4a2c-8c75-70f0644ed99c
+                          status: FAILED
+                          validation_status: INVALID
+                          job_status: FAILED
+                          message: Transaction failed permanently. Correct the payload and resend with a new submission_uuid.
         '429':
           $ref: '#/components/responses/RateLimited'
   /submissions/{submission_uuid}:
     get:
       tags: [Status]
       summary: Look up submission status
-      description: Read-only provider testing/support lookup. Rate-limited per authenticated terminal and tenant.
+      description: >
+        Read-only provider testing/support lookup. This route requires the
+        provider:testing ability, which standard POS terminal tokens do not
+        include, and may expose internal intake vocabulary for diagnostics.
+        Rate-limited per authenticated terminal and tenant.
       security:
         - bearerAuth: ['transaction:read', 'provider:testing']
       parameters:
@@ -256,8 +350,8 @@ paths:
         Returns processing status for a submitted transaction. Top-level
         status=success, or success=true, means the lookup request succeeded.
         data.status and data.processing_status describe the transaction's
-        asynchronous processing state, such as queued, processing, completed, or
-        failed. Rate-limited per authenticated terminal and tenant.
+        asynchronous processing state, such as pending, processing, completed,
+        or failed. Rate-limited per authenticated terminal and tenant.
       security:
         - bearerAuth: ['transaction:read']
       parameters:
@@ -275,8 +369,8 @@ paths:
               schema:
                 $ref: '#/components/schemas/TransactionStatusResponse'
               examples:
-                queued:
-                  summary: Lookup succeeded; transaction is still queued.
+                pending:
+                  summary: Lookup succeeded; transaction is still pending.
                   value:
                     success: true
                     status: success
@@ -286,9 +380,9 @@ paths:
                       customer_code: C-Z1013
                       gross_sales: "265.00"
                       net_sales: "265.00"
-                      status: queued
-                      processing_status: queued
-                      job_status: QUEUED
+                      status: pending
+                      processing_status: pending
+                      job_status: PENDING
                       validation_status: PENDING
                       completed_at: null
                       attempts: 0
@@ -742,9 +836,25 @@ components:
           type: object
     OfficialSubmissionResponse:
       type: object
+      description: >
+        Official submission response envelope. checksum_validation=passed
+        means the submitted body was freshly canonicalized and validated;
+        checksum_validation=matched_stored_checksum means an idempotent replay
+        matched the checksum already stored for the submission.
       properties:
         success:
           type: boolean
+        status:
+          type: string
+          description: PENDING (accepted, queued), COMPLETED, or FAILED. Deprecated legacy replay may return other values.
+          example: PENDING
+        code:
+          type: string
+          description: ACCEPTED, COMPLETED, or FAILED.
+          example: ACCEPTED
+        error_code:
+          type: string
+          description: Present on permanently failed or dead-lettered replay (HTTP 422).
         message:
           type: string
         data:
@@ -780,19 +890,23 @@ components:
             status:
               type: string
               description: Backward-compatible transaction processing status alias.
-              example: queued
+              example: pending
             processing_status:
               type: string
               description: Transaction processing state.
-              enum: [queued, processing, completed, failed]
-              example: queued
+              enum: [pending, processing, completed, failed]
+              example: pending
             job_status:
               type: string
-              description: Raw TSMS job status.
-              example: QUEUED
+              description: POS-facing job status. Internal QUEUED records are presented as PENDING.
+              example: PENDING
             validation_status:
               type: string
-              description: Raw TSMS validation status.
+              description: >
+                POS-facing validation status. PENDING means validation has not
+                run yet (job_status PENDING or PROCESSING); VALID means
+                validation passed; INVALID means validation failed.
+              enum: [PENDING, VALID, INVALID]
               example: PENDING
             completed_at:
               type: string

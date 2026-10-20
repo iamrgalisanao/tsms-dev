@@ -59,7 +59,7 @@ class OfficialAsyncIntakeAfterCommitTest extends TestCase
             $result = app(TransactionIntakeService::class)->handleOfficialIntake($request);
 
             $this->assertTrue($result['success']);
-            $this->assertSame(202, $result['http_status']);
+            $this->assertSame(200, $result['http_status']);
             $this->assertSame(0, DB::table('jobs')->count());
 
             DB::commit();
