@@ -53,14 +53,17 @@ Scheduled command `intake-rejection-monitor` (`routes/console.php`): every 15 mi
 | `INGESTION_REJECTION_ALERT_WINDOW_MINUTES` | `60` | Spike window |
 | `INGESTION_REJECTION_ALERT_THRESHOLD` | `100` | Rejections per terminal + code in the window |
 | `INGESTION_REJECTION_ALERT_NO_ACCEPT_HOURS` | `24` | "Submitting but nothing accepted" window |
+| `INGESTION_REJECTION_ALERT_NO_ACCEPT_MIN_REJECTIONS` | `10` | Minimum rejected intakes in that window before a terminal can raise "no accepted sales" (clamped to at least 1) |
 | `INGESTION_REJECTION_ALERT_COOLDOWN_MINUTES` | `360` | Minimum gap between alerts per terminal + reason |
 
 Checks:
 1. **Rejection spike:** a terminal with at least `threshold` rejected intakes for one error code within the window.
-2. **No accepted sales:** a terminal with rejected intakes and zero non-rejected intakes in the last `no_accept_hours`. This is the pattern behind the Aug–Oct 2026 French Baker rejections. It complements the tenant-inactivity monitor, which only alerts when submissions stop.
+2. **No accepted sales:** a terminal with at least `no_accept_min_rejections` rejected intakes and zero non-rejected intakes (RECEIVED, ACCEPTED or QUEUED) in the last `no_accept_hours`. This is the pattern behind the Aug–Oct 2026 French Baker rejections. It complements the tenant-inactivity monitor, which only alerts when submissions stop.
 
 Behavior:
-- Both queries read `transaction_intake` only (indexes `idx_intake_status_received`, `transaction_intake_received_at_index`) with a 5-second `MAX_EXECUTION_TIME` cap on MySQL.
+- Both checks read `transaction_intake` only (indexes `idx_intake_status_received`, `idx_intake_tenant_terminal_status_received`, `transaction_intake_received_at_index`) with a 5-second `MAX_EXECUTION_TIME` cap on every MySQL query.
+- The no-accepted-sales check uses two indexed reads (research A8a): (1) terminals with at least `no_accept_min_rejections` REJECTED intakes in the window, via `idx_intake_status_received`; (2) for those candidates only, in chunks of 200 terminals per query, which have any non-rejected intake in the window, via `idx_intake_tenant_terminal_status_received`. A query that hits the cap fails with MySQL error 3024 and is logged as `IntakeRejectionMonitor check failed` (check `no_accepted_sales`); no alert is raised for that run.
+- Timing: the scheduler runs closure tasks sequentially, so the monitor can start several minutes after the quarter-hour (observed 9 minutes on staging). Judge "did it run" by its log lines, not by the exact minute.
 - Delivery: admin users via `NotificationService::notifyAdmins()` (same recipients and channels as other operational alerts), plus a `SystemLog` row (type `intake_rejection`) and a `Log::warning` with references only.
 - The cooldown is spent only after a successful send; one failed alert does not block the others or silence itself for the cooldown.
 - Every failure inside the check is caught and logged; the scheduler never receives an exception.

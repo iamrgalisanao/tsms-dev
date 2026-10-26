@@ -3,6 +3,7 @@
 namespace App\Services\Monitoring;
 
 use App\Models\SystemLog;
+use App\Models\TransactionIntake;
 use App\Notifications\IntakeRejectionAlert;
 use App\Services\NotificationService;
 use Illuminate\Support\Facades\DB;
@@ -19,6 +20,21 @@ use Illuminate\Support\Facades\RateLimiter;
 class IntakeRejectionMonitor
 {
     private const MYSQL_MAX_EXECUTION_MS = 5000;
+
+    /**
+     * Every intake status other than REJECTED; listed explicitly (not `<>`)
+     * so the composite index range scan continues onto received_at.
+     */
+    private const NON_REJECTED_INTAKE_STATUSES = [
+        TransactionIntake::INTAKE_STATUS_RECEIVED,
+        TransactionIntake::INTAKE_STATUS_ACCEPTED,
+        TransactionIntake::INTAKE_STATUS_QUEUED,
+    ];
+
+    /**
+     * Candidate (tenant, terminal) pairs per accepted-intake lookup query.
+     */
+    protected int $noAcceptChunkSize = 200;
 
     public function __construct(private NotificationService $notifications) {}
 
@@ -61,21 +77,56 @@ class IntakeRejectionMonitor
     private function checkNoAcceptedSales(): void
     {
         $hours = max(1, (int) config('ingestion.rejection_alerts.no_accept_hours', 24));
+        $minRejections = max(1, (int) config('ingestion.rejection_alerts.no_accept_min_rejections', 10));
+        $since = now()->subHours($hours)->toDateTimeString();
 
-        // A8: one range scan on received_at; "accepted" means any intake row
-        // that was not rejected at intake, regardless of processing outcome.
-        $rows = $this->query(
-            'SELECT '.$this->hint().'tenant_id, terminal_id,
-                    SUM(CASE WHEN intake_status = ? THEN 1 ELSE 0 END) AS rejected_count,
-                    SUM(CASE WHEN intake_status <> ? THEN 1 ELSE 0 END) AS accepted_count
+        // A8: "accepted" means any intake row that was not rejected at intake,
+        // regardless of processing outcome. Two indexed steps instead of one
+        // full-window GROUP BY (which exceeded the execution cap on staging):
+        // 1) candidate terminals with at least no_accept_min_rejections
+        // rejections, via idx_intake_status_received;
+        $candidates = $this->query(
+            'SELECT '.$this->hint().'tenant_id, terminal_id, COUNT(*) AS rejected_count
                FROM transaction_intake
-              WHERE received_at >= ?
-              GROUP BY tenant_id, terminal_id',
-            ['REJECTED', 'REJECTED', now()->subHours($hours)->toDateTimeString()]
+              WHERE intake_status = ? AND received_at >= ?
+              GROUP BY tenant_id, terminal_id
+             HAVING COUNT(*) >= ?',
+            [TransactionIntake::INTAKE_STATUS_REJECTED, $since, $minRejections]
         );
 
-        foreach ($rows as $row) {
-            if ((int) $row->rejected_count > 0 && (int) $row->accepted_count === 0) {
+        if ($candidates === []) {
+            return;
+        }
+
+        // 2) which candidates also have a non-rejected intake, chunked, via
+        // idx_intake_tenant_terminal_status_received.
+        $accepted = [];
+        foreach (array_chunk($candidates, max(1, $this->noAcceptChunkSize)) as $chunk) {
+            $bindings = [];
+            foreach ($chunk as $row) {
+                $bindings[] = (int) $row->tenant_id;
+                $bindings[] = (int) $row->terminal_id;
+            }
+            $statusPlaceholders = implode(', ', array_fill(0, count(self::NON_REJECTED_INTAKE_STATUSES), '?'));
+            array_push($bindings, ...self::NON_REJECTED_INTAKE_STATUSES);
+            $bindings[] = $since;
+
+            $rows = $this->query(
+                'SELECT '.$this->hint().'DISTINCT tenant_id, terminal_id
+                   FROM transaction_intake
+                  WHERE (tenant_id, terminal_id) IN ('.implode(', ', array_fill(0, count($chunk), '(?, ?)')).')
+                    AND intake_status IN ('.$statusPlaceholders.')
+                    AND received_at >= ?',
+                $bindings
+            );
+
+            foreach ($rows as $row) {
+                $accepted[(int) $row->tenant_id.':'.(int) $row->terminal_id] = true;
+            }
+        }
+
+        foreach ($candidates as $row) {
+            if (! isset($accepted[(int) $row->tenant_id.':'.(int) $row->terminal_id])) {
                 $this->alert(new IntakeRejectionAlert(
                     IntakeRejectionAlert::TYPE_NO_ACCEPTED_SALES,
                     (int) $row->tenant_id,

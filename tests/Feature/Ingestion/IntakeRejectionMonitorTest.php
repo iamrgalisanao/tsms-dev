@@ -14,11 +14,13 @@ use App\Support\Metrics;
 use Illuminate\Database\QueryException;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\Str;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Spatie\Permission\Models\Role;
 use Tests\TestCase;
 
@@ -48,6 +50,9 @@ class IntakeRejectionMonitorTest extends TestCase
         config()->set('ingestion.rejection_alerts.window_minutes', 60);
         config()->set('ingestion.rejection_alerts.threshold', 3);
         config()->set('ingestion.rejection_alerts.no_accept_hours', 24);
+        // Existing no-accept tests seed only a few rejections; tests of the
+        // minimum itself set it explicitly.
+        config()->set('ingestion.rejection_alerts.no_accept_min_rejections', 1);
         config()->set('ingestion.rejection_alerts.cooldown_minutes', 360);
 
         Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
@@ -273,25 +278,176 @@ class IntakeRejectionMonitorTest extends TestCase
         $this->assertCount(0, $this->sentAlerts(IntakeRejectionAlert::TYPE_REJECTION_SPIKE));
     }
 
+    #[DataProvider('nonRejectedIntakeStatuses')]
+    public function test_rejections_plus_any_non_rejected_status_in_window_raise_no_no_accepted_sales_alert(string $status): void
+    {
+        $this->seedIntakes(4, 'REJECTED', 'STRUCTURAL_VALIDATION_FAILURE', now()->subHours(2));
+        $this->seedIntakes(1, $status, null, now()->subHours(23));
+
+        $this->monitor()->check();
+
+        $this->assertCount(0, $this->sentAlerts(IntakeRejectionAlert::TYPE_NO_ACCEPTED_SALES));
+    }
+
+    public static function nonRejectedIntakeStatuses(): array
+    {
+        return [
+            'queued' => [TransactionIntake::INTAKE_STATUS_QUEUED],
+            'accepted' => [TransactionIntake::INTAKE_STATUS_ACCEPTED],
+            'received' => [TransactionIntake::INTAKE_STATUS_RECEIVED],
+        ];
+    }
+
+    public function test_accepted_intake_outside_the_window_does_not_suppress_the_alert(): void
+    {
+        $this->seedIntakes(2, 'REJECTED', 'STRUCTURAL_VALIDATION_FAILURE', now()->subHours(2));
+        $this->seedIntakes(1, 'QUEUED', null, now()->subHours(25));
+
+        $this->monitor()->check();
+
+        $sent = $this->sentAlerts(IntakeRejectionAlert::TYPE_NO_ACCEPTED_SALES);
+        $this->assertCount(1, $sent);
+        $this->assertSame(2, $sent->first()->count);
+    }
+
+    public function test_rejections_outside_the_24h_window_are_ignored_by_no_accepted_sales(): void
+    {
+        $this->seedIntakes(3, 'REJECTED', 'STRUCTURAL_VALIDATION_FAILURE', now()->subHours(25));
+
+        $this->monitor()->check();
+
+        $this->assertCount(0, $this->sentAlerts(IntakeRejectionAlert::TYPE_NO_ACCEPTED_SALES));
+    }
+
+    public function test_no_accepted_sales_alerts_are_correct_across_candidate_chunks(): void
+    {
+        $monitor = new class(app(NotificationService::class)) extends IntakeRejectionMonitor
+        {
+            protected int $noAcceptChunkSize = 2;
+        };
+
+        // 7 terminals with rejections (> chunk size 2, so several chunks);
+        // odd-indexed ones also have an accepted intake in the window.
+        $terminals = [];
+        for ($i = 0; $i < 7; $i++) {
+            $terminal = PosTerminal::factory()->create(['tenant_id' => $this->tenant->id]);
+            $this->clearCooldowns($terminal->id);
+            $terminals[] = $terminal;
+            $this->seedIntakes($i + 1, 'REJECTED', 'STRUCTURAL_VALIDATION_FAILURE', now()->subHours(3), $terminal);
+            if ($i % 2 === 1) {
+                $this->seedIntakes(1, $i === 3 ? 'ACCEPTED' : 'QUEUED', null, now()->subHours(1), $terminal);
+            }
+        }
+
+        try {
+            $monitor->check();
+
+            foreach ($terminals as $i => $terminal) {
+                $sent = $this->sentAlerts(IntakeRejectionAlert::TYPE_NO_ACCEPTED_SALES, $terminal->id);
+                if ($i % 2 === 1) {
+                    $this->assertCount(0, $sent, "terminal index {$i}");
+                } else {
+                    $this->assertCount(1, $sent, "terminal index {$i}");
+                    $this->assertSame($i + 1, $sent->first()->count);
+                    $this->assertSame($this->tenant->id, $sent->first()->tenantId);
+                }
+            }
+        } finally {
+            foreach ($terminals as $terminal) {
+                $this->clearCooldowns($terminal->id);
+            }
+        }
+    }
+
+    public function test_no_accepted_sales_query_count_is_independent_of_intake_row_count(): void
+    {
+        $captured = [];
+        DB::listen(function ($query) use (&$captured) {
+            if (str_contains($query->sql, 'FROM transaction_intake')) {
+                $captured[] = $query->sql;
+            }
+        });
+
+        $this->seedIntakes(2, 'REJECTED', 'STRUCTURAL_VALIDATION_FAILURE', now()->subHours(2));
+        $this->monitor()->check();
+        $small = $captured;
+
+        $captured = [];
+        $this->seedIntakes(300, 'REJECTED', 'STRUCTURAL_VALIDATION_FAILURE', now()->subHours(2));
+        $this->monitor()->check();
+        $large = $captured;
+
+        $this->assertNotEmpty($small);
+        $this->assertCount(count($small), $large);
+        // spike check (1) + candidate scan (1) + at least one accepted lookup.
+        $this->assertGreaterThanOrEqual(3, count($large));
+        if (DB::connection()->getDriverName() === 'mysql') {
+            foreach ($large as $sql) {
+                $this->assertStringContainsString('MAX_EXECUTION_TIME(5000)', $sql);
+            }
+        }
+    }
+
+    public function test_fewer_than_min_rejections_raise_no_no_accepted_sales_alert(): void
+    {
+        config()->set('ingestion.rejection_alerts.no_accept_min_rejections', 10);
+        $this->seedIntakes(9, 'REJECTED', 'STRUCTURAL_VALIDATION_FAILURE', now()->subHours(2));
+
+        $this->monitor()->check();
+
+        $this->assertCount(0, $this->sentAlerts(IntakeRejectionAlert::TYPE_NO_ACCEPTED_SALES));
+    }
+
+    public function test_min_rejections_reached_raises_no_accepted_sales_alert(): void
+    {
+        config()->set('ingestion.rejection_alerts.no_accept_min_rejections', 10);
+        $this->seedIntakes(10, 'REJECTED', 'STRUCTURAL_VALIDATION_FAILURE', now()->subHours(2));
+
+        $this->monitor()->check();
+
+        $sent = $this->sentAlerts(IntakeRejectionAlert::TYPE_NO_ACCEPTED_SALES);
+        $this->assertCount(1, $sent);
+        $this->assertSame(10, $sent->first()->count);
+    }
+
+    public function test_non_rejected_status_list_covers_every_intake_status_except_rejected(): void
+    {
+        $constants = (new \ReflectionClass(TransactionIntake::class))->getConstants();
+        $intakeStatuses = array_values(array_filter(
+            $constants,
+            fn ($value, $name) => str_starts_with($name, 'INTAKE_STATUS_'),
+            ARRAY_FILTER_USE_BOTH
+        ));
+        $expected = array_values(array_diff($intakeStatuses, [TransactionIntake::INTAKE_STATUS_REJECTED]));
+
+        $actual = (new \ReflectionClassConstant(IntakeRejectionMonitor::class, 'NON_REJECTED_INTAKE_STATUSES'))->getValue();
+
+        $this->assertEqualsCanonicalizing($expected, $actual);
+        $this->assertNotContains(TransactionIntake::INTAKE_STATUS_REJECTED, $actual);
+    }
+
     private function monitor(): IntakeRejectionMonitor
     {
         return app(IntakeRejectionMonitor::class);
     }
 
-    private function sentAlerts(string $type)
+    private function sentAlerts(string $type, ?int $terminalId = null)
     {
+        $terminalId ??= $this->terminal->id;
+
         return Notification::sent($this->admin, IntakeRejectionAlert::class)
-            ->filter(fn (IntakeRejectionAlert $n) => $n->alertType === $type && $n->terminalId === $this->terminal->id)
+            ->filter(fn (IntakeRejectionAlert $n) => $n->alertType === $type && $n->terminalId === $terminalId)
             ->values();
     }
 
-    private function seedIntakes(int $count, string $status, ?string $code, Carbon $receivedAt): void
+    private function seedIntakes(int $count, string $status, ?string $code, Carbon $receivedAt, ?PosTerminal $terminal = null): void
     {
+        $terminal ??= $this->terminal;
         for ($i = 0; $i < $count; $i++) {
             TransactionIntake::create([
                 'submission_uuid' => (string) Str::uuid(),
-                'tenant_id' => $this->tenant->id,
-                'terminal_id' => $this->terminal->id,
+                'tenant_id' => $terminal->tenant_id,
+                'terminal_id' => $terminal->id,
                 'payload_checksum' => 'NONE',
                 'payload' => ['seed' => true],
                 'payload_size_bytes' => 15,

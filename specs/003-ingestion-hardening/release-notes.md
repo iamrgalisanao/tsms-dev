@@ -18,6 +18,10 @@ US1–US7 complete and validated locally (each slice REVIEW_PASS and ARCHITECTUR
 | US5 | TSMS-08, new 3 | Timestamp checks (impossible / far-future dates), observe mode by default; late sales flagged. |
 | US3 | TSMS-03 | Per-tenant/terminal/code rejection counters; `intake-rejection-monitor` alerts on spikes and "submitting but nothing accepted". |
 
+### Fix: no-accepted-sales check timeout (2026-10-26)
+
+On staging the no-accepted-sales check failed with MySQL 3024: its single 24h scan of all intake rows exceeded the 5 s cap, so no alert was raised for terminals with only rejections (for example tenant 9 / terminal 46, 14,592 rejected and 0 accepted). The check now uses two indexed reads (rejected candidates, then a chunked lookup of non-rejected intakes for those candidates only; research A8a). The 5 s cap is unchanged. New env key `INGESTION_REJECTION_ALERT_NO_ACCEPT_MIN_REJECTIONS` (default `10`, minimum 1): a terminal needs at least this many rejections in the window before "no accepted sales" can fire. Run `php artisan config:cache` after deploy.
+
 ## Behavior changes operators will see
 
 - Any client still calling `/transactions/batch` gets 410 (staging shows no such traffic since June 2026).
@@ -35,6 +39,9 @@ US1–US7 complete and validated locally (each slice REVIEW_PASS and ARCHITECTUR
 5. Keep `INGESTION_TS_MODE=observe`; review `intake.timestamp_would_reject.*` for at least a week before enforcing.
 
 ## Deferred and follow-ups
+
+- Covering index `(intake_status, received_at, tenant_id, terminal_id)` on `transaction_intake` if the no-accepted-sales candidate query exceeds 2.5 s or any MySQL 3024 is logged for it.
+- Move `intake-rejection-monitor` from a scheduler closure to its own artisan command with `runInBackground()`, so sequential closure tasks no longer delay it.
 
 - TSMS-01/02: French Baker terminal 46 identity and terminal change audit (business confirmation first).
 - Reclassify the 6,572 historical "insert ignored" FAILED_PERMANENT rows (read-only report, then approved backfill).
