@@ -40,7 +40,7 @@ class IngestionBackpressureFailureModeTest extends TestCase
         $processingQueue = app(IngestionQueueRouter::class)->processingQueueForTenant($tenant->id);
         $this->mockRedisThrows($processingQueue);
 
-        $response = $this->postJson('/api/v1/transactions/batch', $this->batchPayload($terminal), $this->headersFor($terminal));
+        $response = $this->postJson('/api/v1/transactions/official', $this->officialPayload($tenant->id, $terminal->id, (string) Str::uuid(), $terminal->serial_number), $this->headersFor($terminal));
 
         $response
             ->assertStatus(503)
@@ -63,11 +63,13 @@ class IngestionBackpressureFailureModeTest extends TestCase
         $processingQueue = app(IngestionQueueRouter::class)->processingQueueForTenant($tenant->id);
         $this->mockRedisThrows($processingQueue);
 
-        $response = $this->postJson('/api/v1/transactions/batch', $this->batchPayload($terminal), $this->headersFor($terminal));
+        $response = $this->postJson('/api/v1/transactions/official', $this->officialPayload($tenant->id, $terminal->id, (string) Str::uuid(), $terminal->serial_number), $this->headersFor($terminal));
 
         // Observe mode never enforces, even when the health check itself is
         // unevaluable — the request must reach the controller normally.
-        $response->assertStatus(200)->assertJsonPath('success', true);
+        // (Retargeted from the retired /transactions/batch route, which
+        // answered 200; /official accepts with 202.)
+        $response->assertStatus(202)->assertJsonPath('success', true);
     }
 
     public function test_official_endpoint_returns_503_ingestion_degraded_when_intake_redis_check_throws_in_enforce_mode(): void
@@ -161,7 +163,7 @@ class IngestionBackpressureFailureModeTest extends TestCase
         $processingQueue = app(IngestionQueueRouter::class)->processingQueueForTenant($tenant->id);
         $this->mockRedisThrows($processingQueue);
 
-        $response = $this->postJson('/api/v1/transactions/batch', $this->batchPayload($terminal), $this->headersFor($terminal));
+        $response = $this->postJson('/api/v1/transactions/official', $this->officialPayload($tenant->id, $terminal->id, (string) Str::uuid(), $terminal->serial_number), $this->headersFor($terminal));
 
         $response
             ->assertStatus(503)
@@ -188,7 +190,7 @@ class IngestionBackpressureFailureModeTest extends TestCase
         $headers = $this->headersFor($terminal);
         $headers['X-Request-Id'] = 'test-correlation-id-123';
 
-        $response = $this->postJson('/api/v1/transactions/batch', $this->batchPayload($terminal), $headers);
+        $response = $this->postJson('/api/v1/transactions/official', $this->officialPayload($tenant->id, $terminal->id, (string) Str::uuid(), $terminal->serial_number), $headers);
 
         $response
             ->assertStatus(503)
@@ -247,28 +249,6 @@ class IngestionBackpressureFailureModeTest extends TestCase
         $payload['payload_checksum'] = $service->computeChecksum($payload);
 
         return $payload;
-    }
-
-    private function batchPayload(PosTerminal $terminal): array
-    {
-        return [
-            'batch_id' => (string) Str::uuid(),
-            'customer_code' => 'C-TEST',
-            'terminal_id' => $terminal->id,
-            'transactions' => [
-                [
-                    'transaction_id' => (string) Str::uuid(),
-                    'hardware_id' => $terminal->serial_number,
-                    'gross_sales' => 100.0,
-                    'net_sales' => 100.0,
-                    'transaction_timestamp' => now()->subMinute()->toIso8601String(),
-                    'payload_checksum' => hash('sha256', (string) Str::uuid()),
-                    'items' => [
-                        ['id' => 1, 'name' => 'Item', 'price' => 100.0, 'quantity' => 1],
-                    ],
-                ],
-            ],
-        ];
     }
 
     private function adjustments(): array

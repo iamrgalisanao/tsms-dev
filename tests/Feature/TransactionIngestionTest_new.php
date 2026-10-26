@@ -170,54 +170,6 @@ class TransactionIngestionTest extends TestCase
     }
     
     /** @test */
-    public function batch_endpoint_accepts_multiple_transactions()
-    {
-        // Arrange
-        $payload = $this->getValidBatchPayload();
-        
-        // Act
-        $response = $this->withHeaders([
-            'Authorization' => 'Bearer ' . $this->token,
-            'Accept' => 'application/json',
-        ])->postJson('/api/v1/transactions/batch', $payload);
-        
-        // Assert
-        if ($response->status() == 200 || $response->status() == 201) {
-            $response->assertJsonStructure([
-                'success',
-                'message',
-                'data' => [
-                    'batch_id',
-                    'processed_count',
-                    'failed_count'
-                ]
-            ]);
-            
-            $transactionExists = false;
-            $tables = ['transactions', 'pos_transactions', 'sales_transactions'];
-            
-            foreach ($tables as $table) {
-                if (Schema::hasTable($table)) {
-                    $transactionExists = DB::table($table)
-                        ->where('transaction_id', $payload['transactions'][0]['transaction_id'])
-                        ->exists();
-                    
-                    if ($transactionExists) {
-                        break;
-                    }
-                }
-            }
-            
-            $this->assertTrue(
-                $transactionExists,
-                'Batch transaction was not stored'
-            );
-        } else {
-            $this->assertTrue($response->status() !== 404, 'Batch endpoint should exist');
-        }
-    }
-
-    /** @test */
     public function official_endpoint_accepts_single_transaction_format()
     {
         // Arrange
@@ -500,37 +452,6 @@ class TransactionIngestionTest extends TestCase
                     'name' => 'Item 2',
                     'quantity' => 1,
                     'price' => 50.50
-                ]
-            ]
-        ];
-    }
-    
-    /**
-     * Helper function to get a valid batch payload according to current API implementation
-     */
-    private function getValidBatchPayload()
-    {
-        $transactionId = 'txn-' . Str::uuid();
-        $batchId = 'batch-' . Str::uuid();
-        
-        return [
-            'batch_id' => $batchId,
-            'customer_code' => 'CUST-001',
-            'terminal_id' => $this->terminal->id,
-            'transactions' => [
-                [
-                    'transaction_id' => $transactionId,
-                    'hardware_id' => 'HW-' . $this->faker->unique()->regexify('[A-Z0-9]{8}'),
-                    'base_amount' => $this->faker->randomFloat(2, 100, 1000),
-                    'transaction_timestamp' => now()->toISOString(),
-                    'items' => [
-                        [
-                            'id' => 1,
-                            'name' => 'Test Item 1',
-                            'quantity' => 2,
-                            'price' => 25.00
-                        ]
-                    ]
                 ]
             ]
         ];

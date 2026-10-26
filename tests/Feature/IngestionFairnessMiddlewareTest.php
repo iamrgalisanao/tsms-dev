@@ -18,9 +18,9 @@ use Tests\Traits\FakesIngestionFairnessRedis;
 
 /**
  * T045: HTTP-level tests for App\Http\Middleware\IngestionFairnessMiddleware,
- * wired onto `/api/v1/transactions/official` and `/api/v1/transactions/batch`
- * as the `ingestion.fairness` alias, positioned last in the ingestion
- * middleware chain (after ingestion.payload_size,
+ * wired onto `/api/v1/transactions/official` as the `ingestion.fairness`
+ * alias (the retired `/api/v1/transactions/batch` route no longer carries
+ * it), positioned last in the ingestion middleware chain (after ingestion.payload_size,
  * ingestion.backpressure:processing, circuit.breaker:transaction-intake).
  *
  * These are deliberately separate from tests/Feature/IngestionFairnessTest.php
@@ -96,7 +96,9 @@ class IngestionFairnessMiddlewareTest extends TestCase
         $this->assertSame(1, \App\Support\Metrics::get('ingestion.rejected.fairness', 0));
     }
 
-    public function test_batch_endpoint_enforces_fairness(): void
+    // Retargeted from the retired /transactions/batch route: a multi-transaction
+    // submission now goes to /official as a `transactions` array.
+    public function test_official_endpoint_enforces_fairness_for_multi_transaction_submission(): void
     {
         Queue::fake();
         $this->fakeFairnessRedis();
@@ -104,8 +106,8 @@ class IngestionFairnessMiddlewareTest extends TestCase
         [$tenant, $terminal] = $this->seedTenantAndTerminal();
         $this->seedFairnessCount($this->fairnessKey('tenant', $tenant->id), $this->tenantLimit());
 
-        $payload = $this->batchStorePayload($terminal, 1);
-        $response = $this->postJson('/api/v1/transactions/batch', $payload, $this->headersFor($terminal));
+        $payload = $this->officialBatchPayload($tenant->id, $terminal->id, $terminal->serial_number, 2);
+        $response = $this->postJson('/api/v1/transactions/official', $payload, $this->headersFor($terminal));
 
         $response->assertStatus(429)
             ->assertJsonPath('success', false)
@@ -500,23 +502,24 @@ class IngestionFairnessMiddlewareTest extends TestCase
         ];
     }
 
-    private function batchStorePayload(PosTerminal $terminal, int $count): array
+    private function officialBatchPayload(int $tenantId, int $terminalId, string $hardwareId, int $count): array
     {
-        return [
-            'batch_id' => (string) Str::uuid(),
-            'customer_code' => 'C-TEST',
-            'terminal_id' => $terminal->id,
-            'transactions' => array_map(fn () => [
-                'transaction_id' => (string) Str::uuid(),
-                'hardware_id' => $terminal->serial_number,
-                'gross_sales' => 100.0,
-                'net_sales' => 100.0,
-                'transaction_timestamp' => now()->subMinute()->toIso8601String(),
-                'payload_checksum' => hash('sha256', (string) Str::uuid()),
-                'items' => [
-                    ['id' => 1, 'name' => 'Item', 'price' => 100.0, 'quantity' => 1],
-                ],
-            ], range(1, $count)),
+        $service = new PayloadChecksumService;
+        $transactions = array_map(
+            fn () => $this->officialPayload($tenantId, $terminalId, (string) Str::uuid(), $hardwareId)['transaction'],
+            range(1, $count)
+        );
+
+        $payload = [
+            'submission_uuid' => (string) Str::uuid(),
+            'tenant_id' => $tenantId,
+            'terminal_id' => $terminalId,
+            'submission_timestamp' => Carbon::now('UTC')->format('Y-m-d\TH:i:s\Z'),
+            'transaction_count' => $count,
+            'transactions' => $transactions,
         ];
+        $payload['payload_checksum'] = $service->computeChecksum($payload);
+
+        return $payload;
     }
 }

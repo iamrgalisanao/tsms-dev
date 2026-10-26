@@ -32,12 +32,11 @@ use Tests\Traits\FakesIngestionFairnessRedis;
  * boundaries and retry-after/reset-at arithmetic are fully deterministic —
  * no sleep(), no real wall-clock timing.
  *
- * Batch vs. official HTTP parity (mentioned in T038's task text) is
- * explicitly NOT covered here: fairness is not wired into any middleware or
- * route yet, so there is no real HTTP-level batch-vs-official distinction
- * to exercise at this level. That parity check belongs to T045, once the
- * fairness middleware is actually applied to both
- * `/api/v1/transactions/official` and `/api/v1/transactions/batch`.
+ * HTTP-level coverage is explicitly NOT here: it lives in
+ * IngestionFairnessMiddlewareTest (T045) against
+ * `/api/v1/transactions/official`. The `/api/v1/transactions/batch` route
+ * was retired (410) in 003-ingestion-hardening and no longer carries the
+ * fairness middleware.
  */
 class IngestionFairnessTest extends TestCase
 {

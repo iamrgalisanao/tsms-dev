@@ -101,58 +101,6 @@ class TransactionIngestionTest extends TestCase
     }
 
     /** @test */
-    public function can_receive_batch_transactions_successfully()
-    {
-        $payload = [
-            'batch_id' => 'BATCH-' . uniqid(),
-            'customer_code' => $this->company->customer_code,
-            'terminal_id' => $this->terminal->id,
-            'transactions' => [
-                [
-                    'transaction_id' => 'TXN-' . uniqid(),
-                    'hardware_id' => 'HW-12345',
-                    'machine_number' => $this->terminal->machine_number,
-                    'transaction_timestamp' => now()->toISOString(),
-                    'base_amount' => 100.00,
-                    'items' => [
-                        ['id' => 1, 'name' => 'Bus Ticket', 'price' => 100.00, 'quantity' => 1]
-                    ]
-                ],
-                [
-                    'transaction_id' => 'TXN-' . uniqid(),
-                    'hardware_id' => 'HW-12345',
-                    'machine_number' => $this->terminal->machine_number,
-                    'transaction_timestamp' => now()->toISOString(),
-                    'base_amount' => 200.00,
-                    'items' => [
-                        ['id' => 2, 'name' => 'Premium Ticket', 'price' => 200.00, 'quantity' => 1]
-                    ]
-                ]
-            ]
-        ];
-
-        $response = $this->withHeaders([
-            'Authorization' => 'Bearer ' . $this->token,
-            'Accept' => 'application/json'
-        ])->postJson('/api/v1/transactions/batch', $payload);
-
-        $response->assertStatus(200)
-                ->assertJsonStructure([
-                    'success',
-                    'message',
-                    'data' => [
-                        'batch_id',
-                        'processed_count',
-                        'failed_count',
-                        'transactions'
-                    ]
-                ]);
-
-        // Verify both transactions were created
-        $this->assertDatabaseCount('transactions', 2);
-    }
-
-    /** @test */
     public function rejects_invalid_authentication()
     {
         $payload = [

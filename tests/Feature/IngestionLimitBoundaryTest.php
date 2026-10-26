@@ -82,39 +82,6 @@ class IngestionLimitBoundaryTest extends TestCase
             ->assertJsonPath('max_batch_count', 5);
     }
 
-    public function test_batch_endpoint_exactly_at_max_count_is_not_rejected_for_count(): void
-    {
-        Queue::fake();
-        config()->set('tsms.intake.max_payload_bytes', 2097152);
-        config()->set('tsms.intake.max_batch_count', 3);
-        config()->set('tsms.intake.backpressure.enabled', false);
-
-        [, $terminal] = $this->seedTenantAndTerminal();
-        $payload = $this->batchStorePayload($terminal, 3);
-
-        $response = $this->postJson('/api/v1/transactions/batch', $payload, $this->headersFor($terminal));
-
-        $this->assertNotSame('BATCH_LIMIT_EXCEEDED', $response->json('error_code'));
-        $this->assertNotSame('PAYLOAD_TOO_LARGE', $response->json('error_code'));
-    }
-
-    public function test_batch_endpoint_one_over_max_count_is_rejected_for_count(): void
-    {
-        Queue::fake();
-        config()->set('tsms.intake.max_payload_bytes', 2097152);
-        config()->set('tsms.intake.max_batch_count', 3);
-
-        [, $terminal] = $this->seedTenantAndTerminal();
-        $payload = $this->batchStorePayload($terminal, 4);
-
-        $response = $this->postJson('/api/v1/transactions/batch', $payload, $this->headersFor($terminal));
-
-        $response
-            ->assertStatus(422)
-            ->assertJsonPath('error_code', 'BATCH_LIMIT_EXCEEDED')
-            ->assertJsonPath('max_batch_count', 3);
-    }
-
     private function seedTenantAndTerminal(): array
     {
         $tenant = Tenant::factory()->create();
@@ -183,25 +150,6 @@ class IngestionLimitBoundaryTest extends TestCase
         ];
     }
 
-    private function batchStorePayload(PosTerminal $terminal, int $count): array
-    {
-        return [
-            'batch_id' => (string) Str::uuid(),
-            'customer_code' => 'C-TEST',
-            'terminal_id' => $terminal->id,
-            'transactions' => array_map(fn () => [
-                'transaction_id' => (string) Str::uuid(),
-                'hardware_id' => $terminal->serial_number,
-                'gross_sales' => 100.0,
-                'net_sales' => 100.0,
-                'transaction_timestamp' => now()->subMinute()->toIso8601String(),
-                'payload_checksum' => hash('sha256', (string) Str::uuid()),
-                'items' => [
-                    ['id' => 1, 'name' => 'Item', 'price' => 100.0, 'quantity' => 1],
-                ],
-            ], range(1, $count)),
-        ];
-    }
 
     private function adjustments(): array
     {

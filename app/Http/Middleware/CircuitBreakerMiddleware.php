@@ -91,8 +91,8 @@ class CircuitBreakerMiddleware
         // before that point (validation rejection, backpressure rejection,
         // a degraded health check) prove nothing about the breaker's
         // protected resource and must not be recorded either way. Default
-        // is true so any code path that doesn't set this attribute (e.g.
-        // batchStore()) preserves today's behavior.
+        // is true so any code path that doesn't set this attribute
+        // preserves today's behavior.
         if ($request->attributes->get('circuit_breaker.downstream_attempted', true)) {
             $generation = $request->attributes->get('circuit_breaker.half_open_generation');
             if ($response->getStatusCode() >= 500) {
