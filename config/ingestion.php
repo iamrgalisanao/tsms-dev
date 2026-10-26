@@ -22,6 +22,7 @@ return [
         'window_minutes' => (int) env('INGESTION_REJECTION_ALERT_WINDOW_MINUTES', 60),
         'threshold' => (int) env('INGESTION_REJECTION_ALERT_THRESHOLD', 100),
         'no_accept_hours' => (int) env('INGESTION_REJECTION_ALERT_NO_ACCEPT_HOURS', 24),
+        'no_accept_min_rejections' => max(1, (int) env('INGESTION_REJECTION_ALERT_NO_ACCEPT_MIN_REJECTIONS', 10)),
         'cooldown_minutes' => (int) env('INGESTION_REJECTION_ALERT_COOLDOWN_MINUTES', 360),
     ],
 ];
