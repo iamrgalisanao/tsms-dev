@@ -39,6 +39,7 @@ Configured by `ingestion.timestamps.*` (`config/ingestion.php`).
 - Metrics: `intake.timestamp_would_reject.{code}` (observe), `intake.late_count`, `intake.arrival_lag_seconds`, `intake.timestamp_check_error`.
 - **Fail-open:** if the check hits an infrastructure error (e.g. the provider lookup fails on the database), the sale is accepted, a warning is logged with the exception class, and `intake.timestamp_check_error` increments. Only genuine parse failures count as invalid.
 - Observe-mode metrics count again when the same submission is resent.
+- Enforce-mode precedence: the timestamp check runs during structural validation, before the idempotency lookup. After switching to `enforce`, resending a submission that was accepted in observe mode with a bad date returns 422 instead of its stored outcome (no rejection row or counter is added, because the submission_uuid already exists).
 - Staging evidence (60 days to 2026-10-26): 0 of 385,258 sales before 2020; 21 more than 24h after arrival; 90,208 (23%) more than one day late. **Review `intake.timestamp_would_reject.*` on staging for at least a week before switching to `enforce`.**
 - In observe mode a zero-date payload is still accepted at intake, but the ingest job now ends it `FAILED_PERMANENT` / `ingest_failed` instead of storing coerced values.
 

@@ -265,7 +265,7 @@ class OfficialIntakeContractTest extends TestCase
         $this->assertSame(0, Transaction::where('tenant_id', $tenant->id)->count());
     }
 
-    public function test_resubmitting_an_accepted_submission_uuid_returns_202_already_accepted_without_new_work(): void
+    public function test_resubmitting_an_accepted_submission_uuid_returns_200_already_accepted_without_new_work(): void
     {
         Queue::fake();
         [$tenant, $terminal] = $this->seedTenantAndTerminal();

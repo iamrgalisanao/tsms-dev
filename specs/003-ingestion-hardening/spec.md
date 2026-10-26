@@ -176,7 +176,7 @@ As the system owner, I need ingestion logs to identify a sale by references (IDs
 - **FR-021**: Ingest-path log entries MUST NOT include the full submitted payload, the full row being inserted, or the original payload; they MUST include reference fields (tenant, terminal, transaction ID, receipt reference, correlation ID, reason).
 
 **Preservation (all stories)**
-- **FR-022**: For valid official submissions, HTTP status codes, response bodies, intake statuses and the recorded transaction values MUST be unchanged.
+- **FR-022**: For valid official submissions, HTTP status codes, response bodies, intake statuses and the recorded transaction values MUST be unchanged relative to main's TSMS-004 contract (200 `PENDING`/`ACCEPTED`; per-item processed replay). Only with `INGESTION_TS_MODE=enforce` may timestamp-invalid submissions receive 422.
 - **FR-023**: No change in this feature may rewrite existing production rows; any schema change MUST be additive only.
 
 ### Key Entities

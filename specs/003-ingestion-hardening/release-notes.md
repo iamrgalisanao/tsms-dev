@@ -24,11 +24,11 @@ US1–US7 complete and validated locally (each slice REVIEW_PASS and ARCHITECTUR
 - Intakes that used to end FAILED_PERMANENT "insert ignored but no existing transaction found" now end PROCESSED (already processed), DUPLICATE, or FAILED_PERMANENT with a specific code.
 - In observe mode, a zero-date payload is still accepted at intake but now ends FAILED_PERMANENT/`ingest_failed` instead of being stored with coerced values.
 - New admin notifications from `intake-rejection-monitor`.
-- No HTTP response changes for valid `/official` submissions; no migrations.
+- No HTTP response changes for valid `/official` submissions (baseline: main's 200 `PENDING`/`ACCEPTED` contract from TSMS-004, PR #18); no migrations.
 
 ## Pre-deploy checks
 
-1. **Production unique indexes on `transactions`.** Migrations and staging differ: staging has a global unique on `transaction_id` (created outside migrations) and a non-unique `submission_uuid`; migrations create `(terminal_id, transaction_id)` unique and a unique `submission_uuid`. Confirm production. Without an index starting with `transaction_id`, the cross-tenant lookup scans the table (duplicate path only). If production has a unique `submission_uuid`, multi-transaction submissions currently record only the first item; that is a pre-existing defect to raise separately.
+1. **Production unique indexes on `transactions`.** Migrations and staging differ: staging has a global unique on `transaction_id` (created outside migrations) and a non-unique `submission_uuid`; migrations create `(terminal_id, transaction_id)` unique and a unique `submission_uuid`. Confirm production. Without an index starting with `transaction_id`, the cross-tenant lookup scans the table (duplicate path only). If production has a unique `submission_uuid`, multi-transaction submissions record only the first item: later items now fail as `unique_constraint_violation` (before 003 they were silently ignored), and since TSMS-004 a replay shows them to the POS as 422 `PARTIAL_FAILURE` with resend guidance. That is a pre-existing defect, now visible to clients; raise it separately.
 2. Confirm with POS providers that none still use `/transactions/batch`.
 3. Pause the scheduler during the deploy's DDL window (no DDL in this feature, but other pending migrations).
 4. After deploy: `php artisan config:cache`, PHP-FPM reload, `php artisan horizon:terminate`; confirm `intake-rejection-monitor` in `schedule:list`.
@@ -44,3 +44,6 @@ US1–US7 complete and validated locally (each slice REVIEW_PASS and ARCHITECTUR
 - TTL or retention for per-terminal metric keys.
 - Schema drift between migrations and staging/production `transactions` indexes.
 - `tsms:reconcile` reads `submission_events`, which the live path never writes.
+- Replay resend guidance: `cross_tenant_transaction_id_collision` (and possibly `unique_constraint_violation`) items are reported under `PARTIAL_BATCH_FAILURE` as resendable with a new `submission_uuid`, but the same `transaction_id` would collide again. Map them to a non-resendable item code (or "resend with a new transaction_id") and surface the specific code. Not a regression: before 003 these were the opaque "insert ignored" failure with the same hint.
+- Replay of a FAILED_PERMANENT intake returns `error_code: cross_tenant_transaction_id_collision` to the POS, revealing that another tenant uses that transaction_id (also exposed before via `data.last_error_code`); consider a generic external code.
+- `transactions.validation_status` enum lacks `FAILED`, which `ProcessTransactionJob` writes; non-strict MySQL stores it as blank.
