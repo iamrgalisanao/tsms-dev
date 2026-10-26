@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\PosTerminal;
+use App\Models\Transaction;
 use App\Models\TransactionIntake;
 use App\Models\TransactionSubmission;
 use App\Rules\ReceiptNumber;
@@ -266,16 +267,12 @@ class TransactionIntakeService
             $this->skewRanking->recordTenant($intake->tenant_id);
             $this->skewRanking->recordTerminal($intake->terminal_id);
 
-            return [
-                'success' => true,
-                'status' => 'queued',
-                'http_status' => 202,
-                'message' => 'Submission accepted',
-                'submission_uuid' => $intake->submission_uuid,
-                'intake_id' => $intake->id,
-                'correlation_id' => $traceId,
-                'retryable' => false,
-            ];
+            return $this->acceptedIntakeResponse(
+                $intake,
+                $payload,
+                $traceId,
+                'Official submission accepted: '.(int) $payload['transaction_count'].' pending, 0 failed'
+            );
         } catch (UniqueConstraintViolationException $e) {
             $existing = TransactionIntake::where('submission_uuid', $payload['submission_uuid'])->first();
             if ($existing) {
@@ -543,8 +540,8 @@ class TransactionIntakeService
         $data = [
             'submission_uuid' => $existing->submission_uuid,
             'intake_id' => $existing->id,
-            'intake_status' => $existing->intake_status,
-            'processing_status' => $existing->processing_status,
+            'intake_status' => $this->externalIntakeStatus($existing->intake_status),
+            'processing_status' => $this->externalProcessingStatus($existing->processing_status, $existing->intake_status),
             'last_error_code' => $existing->last_error_code,
             'payload_checksum' => $existing->payload_checksum,
             'received_at' => optional($existing->received_at)->toISOString(),
@@ -572,17 +569,481 @@ class TransactionIntakeService
             ];
         }
 
-        return [
-            'success' => true,
-            'status' => strtolower($existing->intake_status),
-            'http_status' => 202,
-            'message' => 'Submission already accepted',
-            'submission_uuid' => $existing->submission_uuid,
-            'intake_id' => $existing->id,
+        if ($this->isTerminalProcessedIntake($existing)) {
+            return $this->processedIntakeReplayResponse($existing, $payload, $traceId, $data);
+        }
+
+        if ($this->isTerminalFailedIntake($existing)) {
+            return $this->intakeReplayResponse(
+                intake: $existing,
+                payload: $payload,
+                traceId: $traceId,
+                message: 'Submission failed permanently. Correct the payload and resend with a new submission_uuid.',
+                success: false,
+                status: 'FAILED',
+                code: 'FAILED',
+                httpStatus: 422,
+                itemStatus: 'FAILED',
+                itemValidationStatus: 'INVALID',
+                itemJobStatus: 'FAILED',
+                itemMessage: 'Transaction failed permanently. Correct the payload and resend with a new submission_uuid.',
+                checksumValidation: 'matched_stored_checksum',
+                additionalData: $data,
+                errorCode: $existing->last_error_code ?: 'SUBMISSION_FAILED_PERMANENTLY'
+            );
+        }
+
+        return $this->acceptedIntakeResponse(
+            $existing,
+            $payload,
+            $traceId,
+            'Submission already accepted',
+            $data,
+            'matched_stored_checksum'
+        );
+    }
+
+    protected function acceptedIntakeResponse(
+        TransactionIntake $intake,
+        array $payload,
+        string $traceId,
+        string $message,
+        array $additionalData = [],
+        string $checksumValidation = 'passed'
+    ): array {
+        return $this->intakeReplayResponse(
+            intake: $intake,
+            payload: $payload,
+            traceId: $traceId,
+            message: $message,
+            success: true,
+            status: 'PENDING',
+            code: 'ACCEPTED',
+            httpStatus: 200,
+            itemStatus: 'PENDING',
+            itemValidationStatus: 'PENDING',
+            itemJobStatus: 'PENDING',
+            itemMessage: 'Transaction accepted and pending processing. Poll status after 5 seconds.',
+            checksumValidation: $checksumValidation,
+            additionalData: $additionalData
+        );
+    }
+
+    protected function intakeReplayResponse(
+        TransactionIntake $intake,
+        array $payload,
+        string $traceId,
+        string $message,
+        bool $success,
+        string $status,
+        string $code,
+        int $httpStatus,
+        string $itemStatus,
+        string $itemValidationStatus,
+        string $itemJobStatus,
+        string $itemMessage,
+        string $checksumValidation,
+        array $additionalData = [],
+        ?string $errorCode = null,
+        ?array $transactionResponses = null
+    ): array {
+        if ($transactionResponses === null) {
+            [$transactions] = $this->submittedTransactions($payload);
+            $transactionResponses = array_map(static function (array $transaction) use ($itemStatus, $itemValidationStatus, $itemJobStatus, $itemMessage): array {
+                return [
+                    'transaction_id' => $transaction['transaction_id'] ?? null,
+                    'status' => $itemStatus,
+                    'validation_status' => $itemValidationStatus,
+                    'job_status' => $itemJobStatus,
+                    'message' => $itemMessage,
+                ];
+            }, array_values(array_filter($transactions, 'is_array')));
+        }
+
+        $itemJobStatuses = array_column($transactionResponses, 'job_status');
+        $processedCount = count(array_keys($itemJobStatuses, 'COMPLETED', true));
+        $failedCount = count(array_keys($itemJobStatuses, 'FAILED', true));
+        $pendingCount = count(array_keys($itemJobStatuses, 'PENDING', true));
+
+        $response = [
+            'success' => $success,
+            'status' => $status,
+            'code' => $code,
+            'http_status' => $httpStatus,
+            'message' => $message,
+        ];
+
+        if ($errorCode !== null) {
+            $response['error_code'] = $errorCode;
+        }
+
+        return $response + [
+            'submission_uuid' => $intake->submission_uuid,
+            'intake_id' => $intake->id,
             'correlation_id' => $traceId,
             'retryable' => false,
-            'data' => $data,
+            'data' => array_merge([
+                'submission_uuid' => $intake->submission_uuid,
+                'intake_id' => $intake->id,
+                'processed_count' => $processedCount,
+                'pending_count' => $pendingCount,
+                'failed_count' => $failedCount,
+                'checksum_validation' => $checksumValidation,
+                'transactions' => $transactionResponses,
+            ], $additionalData),
         ];
+    }
+
+    /**
+     * Replay response for an intake whose processing_status is PROCESSED or
+     * DUPLICATE. PROCESSED only means the intake job inserted rows and
+     * dispatched downstream validation, so each item is reported from its
+     * stored outcome instead of assuming VALID/COMPLETED.
+     */
+    protected function processedIntakeReplayResponse(
+        TransactionIntake $intake,
+        array $payload,
+        string $traceId,
+        array $additionalData
+    ): array {
+        [$transactions] = $this->submittedTransactions($payload);
+        $transactions = array_values(array_filter($transactions, 'is_array'));
+
+        if (strtoupper((string) $intake->processing_status) === TransactionIntake::PROCESSING_STATUS_DUPLICATE) {
+            $itemMessage = 'Receipt number already used by a recorded transaction; do not resend this receipt under any submission_uuid.';
+
+            return $this->intakeReplayResponse(
+                intake: $intake,
+                payload: $payload,
+                traceId: $traceId,
+                message: 'Receipt number already used by a recorded transaction; do not resend this receipt under any submission_uuid.',
+                success: false,
+                status: 'FAILED',
+                code: 'FAILED',
+                httpStatus: 422,
+                itemStatus: 'FAILED',
+                itemValidationStatus: 'INVALID',
+                itemJobStatus: 'FAILED',
+                itemMessage: $itemMessage,
+                checksumValidation: 'matched_stored_checksum',
+                additionalData: $additionalData,
+                errorCode: 'duplicate_receipt_conflict',
+                transactionResponses: array_map(static fn (array $transaction): array => [
+                    'transaction_id' => $transaction['transaction_id'] ?? null,
+                    'status' => 'FAILED',
+                    'validation_status' => 'INVALID',
+                    'job_status' => 'FAILED',
+                    'error_code' => 'duplicate_receipt_conflict',
+                    'message' => $itemMessage,
+                ], $transactions)
+            );
+        }
+
+        $isPartialBatchFailure = $intake->last_error_code === 'PARTIAL_BATCH_FAILURE';
+        $failedItems = [];
+
+        if ($isPartialBatchFailure) {
+            foreach ((array) ($this->decodeStoredErrors($intake->last_error_message)['failed_items'] ?? []) as $failedItem) {
+                if (is_array($failedItem) && isset($failedItem['transaction_id'])) {
+                    $failedItems[(string) $failedItem['transaction_id']] = $failedItem;
+                }
+            }
+        }
+
+        $transactionIds = array_values(array_filter(array_map(
+            static fn (array $transaction) => isset($transaction['transaction_id']) ? (string) $transaction['transaction_id'] : null,
+            $transactions
+        ), static fn (?string $id) => $id !== null && $id !== ''));
+
+        // Same key as TransactionIngestService's primary dedupe; tenant comes
+        // from the stored intake, never from the replayed payload.
+        $storedStatuses = $transactionIds === []
+            ? []
+            : DB::table('transactions')
+                ->where('tenant_id', $intake->tenant_id)
+                ->whereIn('transaction_id', $transactionIds)
+                ->pluck('validation_status', 'transaction_id')
+                ->all();
+
+        $receiptConflicts = $this->replayReceiptConflicts(
+            $intake,
+            array_values(array_filter($transactions, static function (array $transaction) use ($failedItems, $storedStatuses): bool {
+                $transactionId = isset($transaction['transaction_id']) ? (string) $transaction['transaction_id'] : null;
+
+                return $transactionId !== null
+                    && ! isset($failedItems[$transactionId])
+                    && ! array_key_exists($transactionId, $storedStatuses);
+            }))
+        );
+
+        $transactionResponses = [];
+
+        foreach ($transactions as $transaction) {
+            $transactionId = isset($transaction['transaction_id']) ? (string) $transaction['transaction_id'] : null;
+
+            if ($transactionId !== null && isset($failedItems[$transactionId])) {
+                $failureMessage = (string) ($failedItems[$transactionId]['message'] ?? 'INGEST_FAILED');
+                $transactionResponses[] = [
+                    'transaction_id' => $transactionId,
+                    'status' => 'FAILED',
+                    'validation_status' => 'INVALID',
+                    'job_status' => 'FAILED',
+                    'error_code' => 'PARTIAL_BATCH_FAILURE',
+                    'message' => $failureMessage,
+                ];
+
+                continue;
+            }
+
+            if ($transactionId !== null && isset($receiptConflicts[$transactionId])) {
+                $transactionResponses[] = [
+                    'transaction_id' => $transactionId,
+                    'status' => 'FAILED',
+                    'validation_status' => 'INVALID',
+                    'job_status' => 'FAILED',
+                    'error_code' => 'duplicate_receipt_conflict',
+                    'message' => 'Receipt number already used by a recorded transaction; do not resend.',
+                ];
+
+                continue;
+            }
+
+            if ($transactionId === null || ! array_key_exists($transactionId, $storedStatuses)) {
+                $transactionResponses[] = [
+                    'transaction_id' => $transactionId,
+                    'status' => 'FAILED',
+                    'validation_status' => 'INVALID',
+                    'job_status' => 'FAILED',
+                    'error_code' => 'TRANSACTION_NOT_RECORDED',
+                    'message' => 'Transaction was not recorded for this tenant.',
+                ];
+
+                continue;
+            }
+
+            $transactionResponses[] = match (strtoupper((string) $storedStatuses[$transactionId])) {
+                Transaction::VALIDATION_STATUS_VALID => [
+                    'transaction_id' => $transactionId,
+                    'status' => 'COMPLETED',
+                    'validation_status' => 'VALID',
+                    'job_status' => 'COMPLETED',
+                    'message' => 'Transaction already processed.',
+                ],
+                // Pre-existing enum mismatch (out of scope here): transactions.validation_status
+                // is ENUM('PENDING','VALID','ERROR','INVALID') but ProcessTransactionJob writes
+                // 'FAILED', which non-strict MySQL stores as ''. Treat FAILED/ERROR/INVALID and
+                // an empty/NULL status on an existing row as failed, never as pending.
+                Transaction::VALIDATION_STATUS_FAILED, 'ERROR', 'INVALID', '' => [
+                    'transaction_id' => $transactionId,
+                    'status' => 'FAILED',
+                    'validation_status' => 'INVALID',
+                    'job_status' => 'FAILED',
+                    'error_code' => 'TRANSACTION_VALIDATION_FAILED',
+                    'message' => 'Transaction failed validation.',
+                ],
+                default => [
+                    'transaction_id' => $transactionId,
+                    'status' => 'PENDING',
+                    'validation_status' => 'PENDING',
+                    'job_status' => 'PENDING',
+                    'message' => 'Transaction recorded and pending validation. Poll status after 5 seconds.',
+                ],
+            };
+        }
+
+        $itemStatuses = array_column($transactionResponses, 'status');
+        $failedResponses = array_values(array_filter($transactionResponses, static fn (array $item) => $item['status'] === 'FAILED'));
+
+        if ($failedResponses !== []) {
+            $failedCodes = array_values(array_unique(array_column($failedResponses, 'error_code')));
+            $errorCode = ! $isPartialBatchFailure && count($failedCodes) === 1
+                ? $failedCodes[0]
+                : 'PARTIAL_BATCH_FAILURE';
+            $resendableFailures = array_filter(
+                $failedResponses,
+                static fn (array $item) => ($item['error_code'] ?? null) !== 'duplicate_receipt_conflict'
+            );
+            $failureMessage = match (true) {
+                $resendableFailures === [] => 'Submission already processed; the failed transactions reuse receipt numbers already used by recorded transactions. Do not resend them under any submission_uuid.',
+                count($resendableFailures) < count($failedResponses) => 'Submission already processed with failed transactions. See data.transactions for per-transaction results; correct and resend only the failed transactions whose error_code is not duplicate_receipt_conflict, with a new submission_uuid. Do not resend transactions marked duplicate_receipt_conflict.',
+                default => 'Submission already processed with failed transactions. See data.transactions for per-transaction results; correct only the failed transactions and send them with a new submission_uuid.',
+            };
+
+            return $this->intakeReplayResponse(
+                intake: $intake,
+                payload: $payload,
+                traceId: $traceId,
+                message: $failureMessage,
+                success: false,
+                status: 'FAILED',
+                code: 'PARTIAL_FAILURE',
+                httpStatus: 422,
+                itemStatus: 'FAILED',
+                itemValidationStatus: 'INVALID',
+                itemJobStatus: 'FAILED',
+                itemMessage: '',
+                checksumValidation: 'matched_stored_checksum',
+                additionalData: $additionalData,
+                errorCode: $errorCode,
+                transactionResponses: $transactionResponses
+            );
+        }
+
+        if (in_array('PENDING', $itemStatuses, true)) {
+            return $this->intakeReplayResponse(
+                intake: $intake,
+                payload: $payload,
+                traceId: $traceId,
+                message: 'Submission already accepted; transactions are pending validation',
+                success: true,
+                status: 'PENDING',
+                code: 'ACCEPTED',
+                httpStatus: 200,
+                itemStatus: 'PENDING',
+                itemValidationStatus: 'PENDING',
+                itemJobStatus: 'PENDING',
+                itemMessage: '',
+                checksumValidation: 'matched_stored_checksum',
+                additionalData: $additionalData,
+                transactionResponses: $transactionResponses
+            );
+        }
+
+        return $this->intakeReplayResponse(
+            intake: $intake,
+            payload: $payload,
+            traceId: $traceId,
+            message: 'Submission already processed (idempotent)',
+            success: true,
+            status: 'COMPLETED',
+            code: 'COMPLETED',
+            httpStatus: 200,
+            itemStatus: 'COMPLETED',
+            itemValidationStatus: 'VALID',
+            itemJobStatus: 'COMPLETED',
+            itemMessage: '',
+            checksumValidation: 'matched_stored_checksum',
+            additionalData: $additionalData,
+            transactionResponses: $transactionResponses
+        );
+    }
+
+    /**
+     * For submitted items with no recorded row, find ones whose receipt_no was
+     * already used by a recorded transaction on the same tenant + terminal within
+     * ±24h, mirroring TransactionIngestService::findReceiptConflict(). Those were
+     * skipped by the intake job as duplicate_receipt_conflict (not failed_items),
+     * so they must not be reported as resendable TRANSACTION_NOT_RECORDED.
+     *
+     * @return array<string, true> keyed by transaction_id
+     */
+    protected function replayReceiptConflicts(TransactionIntake $intake, array $transactions): array
+    {
+        $receiptsByTransaction = [];
+
+        foreach ($transactions as $transaction) {
+            $receiptNo = trim((string) ($transaction['receipt_no'] ?? ''));
+
+            if ($receiptNo !== '' && isset($transaction['transaction_id'])) {
+                $receiptsByTransaction[(string) $transaction['transaction_id']] = [$receiptNo, $transaction];
+            }
+        }
+
+        if ($receiptsByTransaction === []) {
+            return [];
+        }
+
+        $receiptNos = array_values(array_unique(array_column($receiptsByTransaction, 0)));
+        $rows = DB::table('transactions')
+            ->where('tenant_id', $intake->tenant_id)
+            ->where('terminal_id', $intake->terminal_id)
+            ->whereIn(DB::raw('TRIM(receipt_no)'), $receiptNos)
+            ->get(['receipt_no', 'transaction_timestamp']);
+
+        $conflicts = [];
+
+        foreach ($receiptsByTransaction as $transactionId => [$receiptNo, $transaction]) {
+            $incomingTs = strtotime($this->replayNormalizedTimestamp($intake, (string) ($transaction['transaction_timestamp'] ?? '')));
+
+            if ($incomingTs === false) {
+                continue;
+            }
+
+            foreach ($rows as $row) {
+                $existingTs = strtotime((string) $row->transaction_timestamp);
+
+                if (trim((string) $row->receipt_no) === $receiptNo
+                    && $existingTs !== false
+                    && abs($existingTs - $incomingTs) <= 86400) {
+                    $conflicts[$transactionId] = true;
+
+                    break;
+                }
+            }
+        }
+
+        return $conflicts;
+    }
+
+    /**
+     * Normalize like TransactionIngestService::normalizePayload() so the ±24h
+     * window compares against the same stored representation; falls back to
+     * the raw submitted value if normalization is not possible.
+     */
+    private function replayNormalizedTimestamp(TransactionIntake $intake, string $timestamp): string
+    {
+        if ($timestamp === '') {
+            return '';
+        }
+
+        try {
+            return app(ProviderTimestampNormalizer::class)->normalize($timestamp, (int) $intake->terminal_id);
+        } catch (\Throwable) {
+            return $timestamp;
+        }
+    }
+
+    private function isTerminalProcessedIntake(TransactionIntake $intake): bool
+    {
+        return in_array(strtoupper((string) $intake->processing_status), [
+            TransactionIntake::PROCESSING_STATUS_PROCESSED,
+            TransactionIntake::PROCESSING_STATUS_DUPLICATE,
+        ], true);
+    }
+
+    private function isTerminalFailedIntake(TransactionIntake $intake): bool
+    {
+        return in_array(strtoupper((string) $intake->processing_status), [
+            TransactionIntake::PROCESSING_STATUS_FAILED_PERMANENT,
+            TransactionIntake::PROCESSING_STATUS_DEAD_LETTERED,
+        ], true);
+    }
+
+    private function externalIntakeStatus(?string $intakeStatus): ?string
+    {
+        return match (strtoupper((string) $intakeStatus)) {
+            TransactionIntake::INTAKE_STATUS_REJECTED => 'REJECTED',
+            TransactionIntake::INTAKE_STATUS_RECEIVED,
+            TransactionIntake::INTAKE_STATUS_ACCEPTED,
+            TransactionIntake::INTAKE_STATUS_QUEUED => 'PENDING',
+            '' => null,
+            default => strtoupper((string) $intakeStatus),
+        };
+    }
+
+    private function externalProcessingStatus(?string $processingStatus, ?string $intakeStatus = null): ?string
+    {
+        return match (strtoupper((string) $processingStatus)) {
+            TransactionIntake::PROCESSING_STATUS_PROCESSING => 'PROCESSING',
+            TransactionIntake::PROCESSING_STATUS_PROCESSED,
+            TransactionIntake::PROCESSING_STATUS_DUPLICATE => 'COMPLETED',
+            TransactionIntake::PROCESSING_STATUS_FAILED_PERMANENT,
+            TransactionIntake::PROCESSING_STATUS_DEAD_LETTERED => 'FAILED',
+            TransactionIntake::PROCESSING_STATUS_FAILED_RETRYABLE,
+            'PENDING' => 'PENDING',
+            '' => $this->externalIntakeStatus($intakeStatus),
+            default => strtoupper((string) $processingStatus),
+        };
     }
 
     protected function existingLegacySubmissionResponse(TransactionSubmission $existing, array $payload, string $traceId, mixed $terminal): array

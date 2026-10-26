@@ -140,7 +140,7 @@ class TenantThrottleOverrideMiddlewareTest extends TestCase
         // budget of 1 and succeeds.
         $firstPayload = $this->officialPayload($hotTenant->id, $hotTerminal->id, (string) Str::uuid(), $hotTerminal->serial_number);
         $this->postJson('/api/v1/transactions/official', $firstPayload, $this->headersFor($hotTerminal))
-            ->assertStatus(202);
+            ->assertStatus(200);
 
         $this->app['auth']->forgetGuards();
 
@@ -162,7 +162,7 @@ class TenantThrottleOverrideMiddlewareTest extends TestCase
         for ($i = 0; $i < 3; $i++) {
             $normalPayload = $this->officialPayload($normalTenant->id, $normalTerminal->id, (string) Str::uuid(), $normalTerminal->serial_number);
             $this->postJson('/api/v1/transactions/official', $normalPayload, $this->headersFor($normalTerminal))
-                ->assertStatus(202);
+                ->assertStatus(200);
             $this->app['auth']->forgetGuards();
         }
     }
@@ -189,7 +189,7 @@ class TenantThrottleOverrideMiddlewareTest extends TestCase
         $response = $this->postJson('/api/v1/transactions/official', $payload, $this->headersFor($terminal));
 
         $this->assertNotSame('TENANT_THROTTLE_BLOCKED', $response->json('error_code'));
-        $response->assertStatus(202)->assertJsonPath('success', true);
+        $response->assertStatus(200)->assertJsonPath('success', true);
     }
 
     // ------------------------------------------------------------------

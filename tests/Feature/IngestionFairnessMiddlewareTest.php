@@ -191,7 +191,7 @@ class IngestionFairnessMiddlewareTest extends TestCase
 
         $coldPayload = $this->officialPayload($coldTenant->id, $coldTerminal->id, (string) Str::uuid(), $coldTerminal->serial_number);
         $this->postJson('/api/v1/transactions/official', $coldPayload, $this->headersFor($coldTerminal))
-            ->assertStatus(202)
+            ->assertStatus(200)
             ->assertJsonPath('success', true);
     }
 
@@ -210,7 +210,7 @@ class IngestionFairnessMiddlewareTest extends TestCase
         // First request consumes the single global slot and succeeds.
         $first = $this->officialPayload($tenant->id, $terminal->id, (string) Str::uuid(), $terminal->serial_number);
         $this->postJson('/api/v1/transactions/official', $first, $this->headersFor($terminal))
-            ->assertStatus(202);
+            ->assertStatus(200);
 
         // Second request (different terminal/tenant, irrelevant to the
         // global scope) exceeds the exhausted global counter.
@@ -289,7 +289,7 @@ class IngestionFairnessMiddlewareTest extends TestCase
         $response = $this->postJson('/api/v1/transactions/official', $payload, $this->headersFor($terminal));
 
         $this->assertNotSame('FAIRNESS_LIMIT_EXCEEDED', $response->json('error_code'));
-        $response->assertStatus(202)->assertJsonPath('success', true);
+        $response->assertStatus(200)->assertJsonPath('success', true);
     }
 
     // ------------------------------------------------------------------
