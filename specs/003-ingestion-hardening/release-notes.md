@@ -1,10 +1,10 @@
 # Release Notes: 003 Ingestion Hardening
 
-Source findings: TSMS Defect Revalidation & Remediation Report (2026-10-26). Operator detail: `docs/INGESTION_HARDENING_RUNBOOK.md`.
+Source findings: TSMS Defect Revalidation & Remediation Report (2026-10-26). Operator detail: `specs/003-ingestion-hardening/runbook.md`.
 
 ## Delivery status
 
-US1–US7 complete and validated locally (each slice REVIEW_PASS and ARCHITECTURE_CONSISTENT; full suite 575 passed / 104 failed with zero new failures against the 107-failure baseline). Not yet committed, pushed, or deployed. Terminal identity (TSMS-01/02), historical reclassification, rejected-intake replay and reconciliation (TSMS-09) are deferred.
+US1–US7 complete and validated locally (each slice REVIEW_PASS and ARCHITECTURE_CONSISTENT; full suite 575 passed / 104 failed with zero new failures against the 107-failure baseline). Committed locally on branch 003-ingestion-hardening (TSMS-000); not pushed or deployed. Terminal identity (TSMS-01/02), historical reclassification, rejected-intake replay and reconciliation (TSMS-09) are deferred.
 
 ## Changes
 
