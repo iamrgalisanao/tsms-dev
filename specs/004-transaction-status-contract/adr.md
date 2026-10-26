@@ -200,3 +200,29 @@ Sales sums in `app/Services/Reports/*` and the dashboard gross sales **don't fil
 - No hard deletes of transactions.
 - Watchdog retry cap of 3, then one summary admin alert per run.
 - `job_tries` of 5.
+
+## 10. Slice 3 design (architect-approved 2026-10-26)
+
+**Legacy `''` rows until slice 4** are treated as "processing failed / needs attention". They are never RECONCILED and never INVALID. Sales sums count them like PENDING (unvalidated recorded sales).
+
+**Readers.**
+- Every reader in 1.4 moves to D1.
+- `VALIDATION_STATUS_FAILED` is removed. `scopeProcessingFailed` is added, and `scopeFailed` stays as a deprecated alias of `invalid()`.
+- New `PROCESSING_FAILED` pseudo-status for the transaction-log filters and export, meaning `job_status=FAILED AND validation_status IN ('PENDING','')`.
+- `NotificationService` gets a separate processing-failure alert type. `TenantIngestionAuditService` splits its count into `invalid_count` and `processing_failed_count`, and keeps `invalid_or_failed_count` as their sum.
+- Blade views and the React views (`TransactionTable`, `TransactionDetailPanel`, `FilterBar`) show INVALID, "PROCESSING FAILED" and PENDING, never RECONCILED for `''`.
+
+**D8 replay.** `''` still maps to FAILED until slice 4. The watchdog only retries PENDING, so telling a POS PENDING for a `''` row would leave it waiting forever. Slice 4 changes `''` to PENDING together with the remediation. ERROR also maps to FAILED.
+
+**D10.**
+- New shared helper `App\Support\Reporting\CountableSales`. `apply()` adds the existing config-gated void filter plus `validation_status <> 'INVALID'`. `sumExpr()` gives conditional sums where status counts must stay visible.
+- Applied to: SalesReportDataService, HourlyReportService, CommercialReportsController, FinanceCalculationService, the TransactionLogController totals, DashboardService and DashboardController KPI/chart sums, and the summary builders RefreshDailyTransactionSummaries and ReportingRefreshCommand. ReportingRefreshCommand's `issues_*` columns are repurposed to INVALID.
+- **No backfill:** staging has 0 INVALID rows (checked 2026-10-26).
+
+**Deploy:** slices 1, 2 and 3 ship together.
+
+**Recommended scope limits (to confirm with the product owner):**
+1. Dashboard KPIs and `transactions_hourly`/`transactions_daily` don't exclude voids today. Add only the INVALID exclusion now; align voids in a separate ticket.
+2. VALID-only sums (top tenants, revenue composition, commercial month/YTD) also exclude PENDING. Leave them and record the gap.
+3. `Tenant::getDailySalesTotal`, used by the ingestion daily-limit check, stays unchanged.
+4. Approve the `PROCESSING_FAILED` filter and the new processing-failure alert type.
