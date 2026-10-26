@@ -47,117 +47,72 @@ Schedule::command('reports:refresh-daily-transaction-summaries --days=2')
     ->onOneServer();
 
 // --------------------------------------------------------------------------
-// Transaction pruning: remove stale PENDING (stuck) & aged FAILED transactions
-// Runs every hour; uses configurable retention in config('tsms.transactions').
+// Transaction prune guard (ADR-004 slice 2). Runs hourly and NEVER deletes:
+//  - PENDING rows are never deletable (they are unvalidated sales);
+//  - hard deletion sits behind tsms.transactions.prune_delete_enabled
+//    (TX_PRUNE_DELETE_ENABLED, default false) and, even when enabled, this
+//    slice deletes nothing: deletable categories require a retention ADR.
+// It logs an extended inventory snapshot only. Note: the old `= 'FAILED'`
+// filter is not an enum value; through the validation_status index MySQL maps
+// it to the '' error value, so the old COUNT could see blank rows that the
+// DELETE (different access path) never matched.
 // --------------------------------------------------------------------------
 Schedule::call(function () {
     $cfg = config('tsms.transactions');
-    if (!($cfg['enable_pruning'] ?? true)) {
+    if (! ($cfg['enable_pruning'] ?? true)) {
         return; // disabled
     }
 
-    $failedDays = $cfg['prune_failed_after_days'] ?? 14;
-    $pendingMinutes = $cfg['prune_pending_after_minutes'] ?? 180;
-
-    $failedCutoff = now()->subDays($failedDays);
-    $pendingCutoff = now()->subMinutes($pendingMinutes);
-
-    $failedQuery = \App\Models\Transaction::where('validation_status', 'FAILED')
-        ->where('created_at', '<', $failedCutoff);
-    $stalePendingQuery = \App\Models\Transaction::where('validation_status', 'PENDING')
-        ->where('created_at', '<', $pendingCutoff);
-
-    $failedCount = (clone $failedQuery)->count();
-    $pendingCount = (clone $stalePendingQuery)->count();
-
-    $deletedFailed = 0; $deletedPending = 0;
-    if ($failedCount > 0) { $deletedFailed = $failedQuery->delete(); }
-    if ($pendingCount > 0) { $deletedPending = $stalePendingQuery->delete(); }
-
-    if ($deletedFailed > 0 || $deletedPending > 0) {
-        Log::info('[Prune] Transactions pruned', [
-            'deleted_failed' => $deletedFailed,
-            'deleted_stale_pending' => $deletedPending,
-            'failed_cutoff' => $failedCutoff->toDateTimeString(),
-            'pending_cutoff' => $pendingCutoff->toDateTimeString(),
-        ]);
+    if ($cfg['prune_delete_enabled'] ?? false) {
+        // Intentionally no delete here: categories and retention need their own ADR.
+        Log::warning('[Prune] TX_PRUNE_DELETE_ENABLED is set but transaction deletion is not implemented (retention ADR required); nothing deleted');
     }
 
-    // Metric-style log (counts post-prune) with breakdown
-    $pendingNow = \App\Models\Transaction::where('validation_status','PENDING')->count();
-    $failedNow = \App\Models\Transaction::where('validation_status','FAILED')->count();
+    // One grouped count plus one small PENDING+job FAILED count, each capped at 10s on
+    // MySQL so a slow inventory never blocks or fails the scheduler.
+    $hint = \Illuminate\Support\Facades\DB::connection()->getDriverName() === 'mysql'
+        ? '/*+ MAX_EXECUTION_TIME(10000) */ ' : '';
+    try {
+        $byStatus = collect(\Illuminate\Support\Facades\DB::select(
+            "SELECT {$hint}validation_status AS status, COUNT(*) AS c FROM transactions GROUP BY validation_status"
+        ))->mapWithKeys(fn ($r) => [(string) $r->status => (int) $r->c]);
+        $pendingJobFailed = (int) \Illuminate\Support\Facades\DB::selectOne(
+            "SELECT {$hint}COUNT(*) AS c FROM transactions WHERE validation_status = 'PENDING' AND job_status = 'FAILED'"
+        )->c;
+    } catch (\Throwable $e) {
+        Log::warning('[Prune] Transaction inventory snapshot failed', ['error' => $e->getMessage()]);
 
-    $validNow = \App\Models\Transaction::where('validation_status', 'VALID')->count();
+        return;
+    }
 
-    Log::info('[Prune] Transaction inventory snapshot', [
-        'pending_remaining'       => $pendingNow,            // validation_status=PENDING
-        'failed_remaining'        => $failedNow,             // validation_status=FAILED
-        'valid_remaining'         => $validNow,              // validation_status=VALID
-    ]);
+    $snapshot = [
+        'valid' => $byStatus->get('VALID', 0),
+        'invalid' => $byStatus->get('INVALID', 0),
+        'pending' => $byStatus->get('PENDING', 0),
+        'pending_job_failed' => $pendingJobFailed,
+        // Legacy rows where an invalid enum write was stored as '' (ADR-004 section 3).
+        'legacy_blank' => $byStatus->get('', 0),
+        'error' => $byStatus->get('ERROR', 0),
+        'deleted' => 0,
+        'delete_enabled' => (bool) ($cfg['prune_delete_enabled'] ?? false),
+    ];
+    // transaction_prune.deleted is never incremented: nothing is deleted.
+
+    Log::info('[Prune] Transaction inventory snapshot', $snapshot);
 })->hourly()->name('transactions-prune')->withoutOverlapping()->onOneServer();
 
 // --------------------------------------------------------------------------
-// Transaction Watchdog: requeue or fail stuck PENDING transactions
-// Runs every 5 minutes. Logic:
-//  - Re-dispatch PENDING + QUEUED older than requeue_after_minutes (but younger than max_pending)
-//  - If PENDING older than max_pending_minutes -> mark FAILED (timeout) & log
-//  - Respects max_requeue_attempts using job_attempts counter
+// Transaction Watchdog (ADR-004 D7): App\Console\Commands\TransactionWatchdogCommand.
+// Re-dispatches stale PENDING+QUEUED rows only when the job's unique lock is free,
+// retries PENDING+FAILED rows with backoff up to a cap (then alerts admins), and
+// sets job_status=FAILED on PENDING rows past max_pending. Never writes
+// validation_status or job_attempts.
 // --------------------------------------------------------------------------
-Schedule::call(function () {
-    $cfg = config('tsms.transactions.watchdog');
-    if (!$cfg || !($cfg['enabled'] ?? false)) { return; }
-
-    $now = now();
-    $requeueCutoff = $now->clone()->subMinutes($cfg['requeue_after_minutes'] ?? 10);
-    $maxPendingCutoff = $now->clone()->subMinutes($cfg['max_pending_minutes'] ?? 60);
-    $maxRequeues = $cfg['max_requeue_attempts'] ?? 2;
-
-    $requeued = 0; $failed = 0; $skipped = 0;
-
-    // Re-dispatch candidates: still PENDING and queued, older than requeue cutoff but not past max pending cutoff
-    $candidates = \App\Models\Transaction::where('validation_status', 'PENDING')
-        ->where('job_status', 'QUEUED')
-        ->whereBetween('created_at', [$maxPendingCutoff, $requeueCutoff]) // between window
-        ->limit(200)
-        ->get();
-
-    foreach ($candidates as $txn) {
-        if (($txn->job_attempts ?? 0) >= $maxRequeues) { $skipped++; continue; }
-        $tenantId = $txn->tenant_id ?? optional($txn->terminal)->tenant_id ?? 0;
-        $shard = $tenantId % 8;
-        \App\Jobs\ProcessTransactionJob::dispatch($txn->id)
-            ->afterCommit()
-            ->onQueue('transaction-processing:s' . $shard);
-        $txn->job_attempts = ($txn->job_attempts ?? 0) + 1;
-        $txn->save();
-        $requeued++;
-    }
-
-    // Fail hard-timeout stale pending beyond maxPendingCutoff (older than threshold)
-    $stale = \App\Models\Transaction::where('validation_status','PENDING')
-        ->where('created_at','<',$maxPendingCutoff)
-        ->limit(200)
-        ->get();
-
-    foreach ($stale as $txn) {
-        $txn->validation_status = 'FAILED';
-        $txn->job_status = 'FAILED';
-        $txn->last_error = 'Watchdog timeout exceeded';
-        $txn->completed_at = now();
-        $txn->save();
-        $failed++;
-    }
-
-    if ($requeued || $failed) {
-        Log::warning('[Watchdog] Transaction watchdog actions', [
-            'requeued' => $requeued,
-            'failed_stale' => $failed,
-            'skipped_due_to_attempts' => $skipped,
-            'requeue_cutoff' => $requeueCutoff->toDateTimeString(),
-            'max_pending_cutoff' => $maxPendingCutoff->toDateTimeString(),
-        ]);
-    }
-})->everyFiveMinutes()->name('transactions-watchdog')->withoutOverlapping()->onOneServer();
+Schedule::command('tsms:transactions-watchdog')
+    ->everyFiveMinutes()
+    ->name('transactions-watchdog')
+    ->withoutOverlapping()
+    ->onOneServer();
 
 // --------------------------------------------------------------------------
 // Tenant inactivity alerts: notify admins/finance when monitored tenants or

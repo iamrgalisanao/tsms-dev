@@ -179,3 +179,24 @@ Sales sums in `app/Services/Reports/*` and the dashboard gross sales **don't fil
 - `retryUntil` window of 15 minutes.
 
 **Prune "38 counted, none deleted":** to be reproduced on the test database and the result recorded here.
+
+### 9.1 Slice 2 implementation notes (revalidated 2026-10-26)
+
+**Prune "counted but none deleted", reproduced on the test DB.** `'FAILED'` is not a `validation_status` enum value.
+- A SELECT that uses an index ref on `idx_tx_logs_status_id` coerces the literal to enum index 0 and matches legacy `''` rows (4 counted).
+- The DELETE used a range on `idx_tx_logs_created_id` with string comparison and matched 0.
+- So the result depends on the query plan: H1 confirmed, H2 (cutoff or timezone) rejected. The prune no longer filters on `'FAILED'` and never deletes.
+
+**Accepted refinements.**
+- `handleError` returns `failed|terminal|missing|error`, and treats a 0-row update as a late failure only when the re-read row is terminal (MySQL reports changed rows, not matched rows).
+- Branch 2 leaves `job_status=FAILED` while re-dispatching.
+- Watchdog cap alerts are collected per run into one summary `TransactionRetryCapReachedAlert` (count plus up to 20 refs, error categories only), with a per-row cache flag lasting 7 days.
+- Branch 2 scans through a rotating cache cursor, up to `max_failed_scan` (default 1000), so capped rows can't starve higher ids.
+- The prune snapshot is one hinted `GROUP BY validation_status` plus a PENDING+job FAILED count. With `TX_PRUNE_DELETE_ENABLED=true` it only logs a warning.
+
+**Review change to D6.** `retryUntil()` is replaced by `$tries = 5` (`TX_JOB_TRIES`). A dispatch-time deadline would fail jobs unrun during a processing backlog; with `WithoutOverlapping` removed, a try only counts real pickups and timeouts. Worst-case lifetime is 1030 s, under `uniqueFor` 1800 s.
+
+**Defaults to confirm with the product owner before deploying:**
+- No hard deletes of transactions.
+- Watchdog retry cap of 3, then one summary admin alert per run.
+- `job_tries` of 5.

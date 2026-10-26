@@ -9,6 +9,8 @@ use App\Support\Metrics;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\QueryException;
 use Illuminate\Queue\MaxAttemptsExceededException;
+use Illuminate\Queue\Middleware\WithoutOverlapping;
+use Illuminate\Queue\TimeoutExceededException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Notification;
 use Mockery;
@@ -25,6 +27,8 @@ use Tests\TestCase;
 class TransactionStatusContractTest extends TestCase
 {
     private const LATE_FAILURE_METRIC = 'transaction_job.late_failure_ignored';
+
+    private const FAILED_INFRA_METRIC = 'transaction_job.failed_infra';
 
     protected function setUp(): void
     {
@@ -443,5 +447,105 @@ class TransactionStatusContractTest extends TestCase
             DB::statement('SET SESSION sql_mode = ?', [$previous]);
         }
         $this->assertSame('PENDING', $tx->fresh()->validation_status);
+    }
+
+    /**
+     * ADR-004 slice 2 (D6): retry policy is time/exception bounded, with no
+     * WithoutOverlapping release loop.
+     */
+    public function test_job_retry_policy_configuration(): void
+    {
+        config(['tsms.transactions.job_tries' => 5]);
+        $job = new ProcessTransactionJob(1);
+
+        foreach ($job->middleware() as $middleware) {
+            $this->assertNotInstanceOf(WithoutOverlapping::class, $middleware);
+        }
+        $this->assertSame([], $job->middleware());
+        $this->assertInstanceOf(\Illuminate\Contracts\Queue\ShouldBeUnique::class, $job);
+        $this->assertSame('txn:1', $job->uniqueId());
+        $this->assertSame(5, $job->tries);
+        $this->assertFalse(method_exists($job, 'retryUntil'), 'a dispatch-time deadline would fail backlogged jobs unrun');
+        $this->assertSame(3, $job->maxExceptions);
+        $this->assertSame([10, 60, 180], $job->backoff);
+        $this->assertSame(120, $job->timeout);
+        $this->assertTrue($job->failOnTimeout);
+        $this->assertSame(1800, $job->uniqueFor);
+
+        // The unique lock must outlive the job's worst-case active lifetime:
+        // tries x timeout + backoff between tries (the last delay repeats).
+        $delays = array_map(fn ($i) => $job->backoff[min($i, count($job->backoff) - 1)], range(0, $job->tries - 2));
+        $lifetime = $job->tries * $job->timeout + array_sum($delays);
+        $this->assertSame(1030, $lifetime);
+        $this->assertLessThan($job->uniqueFor, $lifetime);
+
+        config(['tsms.transactions.job_tries' => 7]);
+        $this->assertSame(7, (new ProcessTransactionJob(2))->tries, 'tries is config-driven (TX_JOB_TRIES)');
+    }
+
+    #[DataProvider('sqlModes')]
+    public function test_timeout_leaves_pending_and_marks_job_failed(bool $strict): void
+    {
+        $this->inSqlMode($strict, function () {
+            $tx = Transaction::factory()->create([
+                'validation_status' => Transaction::VALIDATION_STATUS_PENDING,
+                'job_status' => Transaction::JOB_STATUS_PROCESSING, // the worker was killed mid-run
+                'job_attempts' => 1,
+            ]);
+            $metricBefore = (int) Metrics::get(self::FAILED_INFRA_METRIC, 0);
+
+            (new ProcessTransactionJob($tx->id))->failed(
+                new TimeoutExceededException('App\Jobs\ProcessTransactionJob has timed out.')
+            );
+
+            $tx->refresh();
+            $this->assertSame('PENDING', $tx->validation_status);
+            $this->assertSame('FAILED', $tx->job_status);
+            $this->assertStringContainsString('timed out', (string) $tx->last_error);
+            $this->assertSame(1, (int) $tx->job_attempts);
+            $this->assertSame($metricBefore + 1, (int) Metrics::get(self::FAILED_INFRA_METRIC, 0));
+        });
+    }
+
+    #[DataProvider('sqlModes')]
+    public function test_final_failure_after_handle_exception_counts_infra_failure_once(bool $strict): void
+    {
+        $this->inSqlMode($strict, function () {
+            $tx = $this->pendingTransaction();
+            $error = new \RuntimeException('DB connection lost');
+            $job = new ProcessTransactionJob($tx->id);
+            $infraBefore = (int) Metrics::get(self::FAILED_INFRA_METRIC, 0);
+            $lateBefore = (int) Metrics::get(self::LATE_FAILURE_METRIC, 0);
+
+            try {
+                $job->handle($this->serviceThrowing($error));
+            } catch (\RuntimeException) {
+            }
+            $this->assertSame($infraBefore, (int) Metrics::get(self::FAILED_INFRA_METRIC, 0), 'a retryable attempt is not a final failure');
+
+            // Same exception again: the FAILED write changes no column (0 changed rows),
+            // which must not be mistaken for a late failure on a terminal row.
+            $job->failed($error);
+
+            $this->assertSame($infraBefore + 1, (int) Metrics::get(self::FAILED_INFRA_METRIC, 0));
+            $this->assertSame($lateBefore, (int) Metrics::get(self::LATE_FAILURE_METRIC, 0));
+            $tx->refresh();
+            $this->assertSame('PENDING', $tx->validation_status);
+            $this->assertSame('FAILED', $tx->job_status);
+        });
+    }
+
+    public function test_late_failure_on_terminal_row_is_not_an_infra_failure(): void
+    {
+        $tx = $this->pendingTransaction();
+        $job = new ProcessTransactionJob($tx->id);
+        $job->handle($this->serviceReturning(['valid' => true]));
+        $infraBefore = (int) Metrics::get(self::FAILED_INFRA_METRIC, 0);
+
+        $job->failed(new TimeoutExceededException('timed out'));
+
+        $this->assertSame($infraBefore, (int) Metrics::get(self::FAILED_INFRA_METRIC, 0));
+        $this->assertSame('VALID', $tx->fresh()->validation_status);
+        $this->assertSame('COMPLETED', $tx->fresh()->job_status);
     }
 }
