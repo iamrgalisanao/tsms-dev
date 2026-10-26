@@ -84,7 +84,7 @@ Attach `license.valid` here first, with `LICENSE_ENFORCEMENT_MODE=observe`.
 | Route Surface | Classification | Reason |
 |---|---|---|
 | `POST /api/v1/transactions/official` | license-protected | Main POS intake path; observe first to measure production impact. |
-| `POST /api/v1/transactions/batch` | license-protected | POS batch intake; observe first. |
+| `POST /api/v1/transactions/batch` | deprecated-or-remove | Retired (003-ingestion-hardening): returns `410 ENDPOINT_RETIRED` pointing to `/transactions/official`. Still behind auth/ability/throttle/`license.valid`, so `license.valid` runs before the 410. |
 | `POST /api/v1/transactions/{transaction_id}/refund` | license-protected | POS mutation tied to licensed terminal/deployment. |
 | `POST /api/v1/transactions/{transaction_id}/void` | license-protected | POS mutation tied to licensed terminal/deployment. |
 
@@ -228,7 +228,7 @@ Applied first observe-ready attachment:
 
 ```text
 POST /api/v1/transactions/official
-POST /api/v1/transactions/batch
+POST /api/v1/transactions/batch   (retired: 410)
 POST /api/v1/transactions/{transaction_id}/refund
 POST /api/v1/transactions/{transaction_id}/void
 ```
