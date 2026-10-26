@@ -222,7 +222,7 @@ Sales sums in `app/Services/Reports/*` and the dashboard gross sales **don't fil
 **Deploy:** slices 1, 2 and 3 ship together.
 
 **Recommended scope limits (to confirm with the product owner):**
-1. Dashboard KPIs and `transactions_hourly`/`transactions_daily` don't exclude voids today. Add only the INVALID exclusion now; align voids in a separate ticket.
+1. Dashboard KPIs and `transactions_hourly`/`transactions_daily` don't exclude voids today. Add only the INVALID exclusion now. **Void handling is PARKED** (product owner, 2026-10-27): out of scope, not to be implemented for now, and no ticket is planned. Slice 3 must not add or change any void filtering.
 2. VALID-only sums (top tenants, revenue composition, commercial month/YTD) also exclude PENDING. Leave them and record the gap.
 3. `Tenant::getDailySalesTotal`, used by the ingestion daily-limit check, stays unchanged.
 4. Approve the `PROCESSING_FAILED` filter and the new processing-failure alert type.
