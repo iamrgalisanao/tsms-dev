@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Jobs\ProcessTransactionIntakeJob;
 use App\Models\PosTerminal;
 use App\Models\Tenant;
+use App\Models\Transaction;
 use App\Models\TransactionIntake;
 use App\Services\IngestionQueueRouter;
 use App\Services\PayloadChecksumService;
@@ -105,6 +106,14 @@ class OfficialAsyncIntakeTest extends TestCase
         $payload = $this->officialPayload($tenant->id, $terminal->id, (string) Str::uuid(), $terminal->serial_number);
 
         $this->seedExistingIntake($payload, $terminal, TransactionIntake::PROCESSING_STATUS_PROCESSED);
+        // A PROCESSED intake replays as COMPLETED only once the recorded
+        // transaction row has passed validation.
+        Transaction::factory()->create([
+            'tenant_id' => $terminal->tenant_id,
+            'terminal_id' => $terminal->id,
+            'transaction_id' => $payload['transaction']['transaction_id'],
+            'validation_status' => Transaction::VALIDATION_STATUS_VALID,
+        ]);
         $this->mockRedisForAdmissionMiddleware();
 
         $response = $this->postJson('/api/v1/transactions/official', $payload, $this->headersFor($terminal));

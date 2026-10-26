@@ -130,9 +130,18 @@ paths:
         job_status=FAILED (validation_status=INVALID). Transaction items carry
         validation_status=PENDING until validation has actually run.
         Idempotent replay of a terminal intake returns the latest
-        provider-facing state instead of resetting the response to PENDING:
-        still in flight returns 200/PENDING, completed returns 200/COMPLETED,
-        and permanently failed or dead-lettered returns 422/FAILED.
+        provider-facing state instead of resetting the response to PENDING.
+        Still in flight returns 200/PENDING. Once intake processing has
+        finished, each transaction is reported from its recorded outcome:
+        200/COMPLETED only when every transaction has validation_status=VALID;
+        200/PENDING (code=ACCEPTED) while any recorded transaction is still
+        awaiting validation; 422/FAILED (code=PARTIAL_FAILURE) when any
+        transaction failed validation, was not recorded, or reused a receipt
+        number already recorded (per-item error_code identifies which; items
+        marked duplicate_receipt_conflict must not be resent). A replay of a submission whose receipt was already
+        recorded under an earlier submission returns 422/FAILED with
+        error_code=duplicate_receipt_conflict; that receipt must not be resent.
+        Permanently failed or dead-lettered returns 422/FAILED.
       security:
         - bearerAuth: ['transaction:create']
       requestBody:
@@ -145,12 +154,16 @@ paths:
         '200':
           description: >
             Submission accepted (fresh or in-flight idempotent replay) or
-            idempotent replay of a completed submission. HTTP 200 with
-            status=PENDING and code=ACCEPTED means the submission is queued for
-            asynchronous processing; do not resend, poll the status endpoint
-            for the final outcome. status=COMPLETED means the submission was
-            already processed. Legacy TransactionSubmission replay may also
-            return 200 and is deprecated.
+            idempotent replay of a processed submission with no failed
+            transactions. HTTP 200 with status=PENDING and code=ACCEPTED means
+            the submission is queued or its recorded transactions are still
+            awaiting validation; do not resend, poll the status endpoint for
+            the final outcome. A pending replay may report
+            data.processing_status=COMPLETED (intake processed) while status is
+            PENDING (transaction validation not finished). status=COMPLETED
+            means every transaction in the
+            submission has validation_status=VALID. Legacy
+            TransactionSubmission replay may also return 200 and is deprecated.
           content:
             application/json:
               schema:
@@ -181,7 +194,7 @@ paths:
                           job_status: PENDING
                           message: Transaction accepted and pending processing. Poll status after 5 seconds.
                 replayCompleted:
-                  summary: Existing submission has already completed.
+                  summary: Existing submission processed and every transaction validated (VALID).
                   value:
                     success: true
                     status: COMPLETED
@@ -206,6 +219,32 @@ paths:
                           validation_status: VALID
                           job_status: COMPLETED
                           message: Transaction already processed.
+                replayPending:
+                  summary: Existing submission processed; recorded transaction still awaiting validation.
+                  value:
+                    success: true
+                    status: PENDING
+                    code: ACCEPTED
+                    message: Submission already accepted; transactions are pending validation
+                    submission_uuid: 3515e696-c35b-4a2c-8c75-70f0644ed99c
+                    intake_id: 12345
+                    correlation_id: 23250d7c-3ba3-4dc5-8680-94275a5ce5e1
+                    retryable: false
+                    data:
+                      submission_uuid: 3515e696-c35b-4a2c-8c75-70f0644ed99c
+                      intake_id: 12345
+                      processed_count: 0
+                      pending_count: 1
+                      failed_count: 0
+                      checksum_validation: matched_stored_checksum
+                      intake_status: PENDING
+                      processing_status: COMPLETED
+                      transactions:
+                        - transaction_id: 3515e696-c35b-4a2c-8c75-70f0644ed99c
+                          status: PENDING
+                          validation_status: PENDING
+                          job_status: PENDING
+                          message: Transaction recorded and pending validation. Poll status after 5 seconds.
         '401':
           $ref: '#/components/responses/Unauthenticated'
         '403':
@@ -263,8 +302,15 @@ paths:
             Payload validation failed, the submission was already rejected, or
             an idempotent replay found the submission failed permanently or was
             dead-lettered (status=FAILED, code=FAILED, error_code set to the
-            stored failure code or SUBMISSION_FAILED_PERMANENTLY). Correct the
-            payload and resend with a new submission_uuid.
+            stored failure code or SUBMISSION_FAILED_PERMANENTLY); correct the
+            payload and resend with a new submission_uuid. A replay of a
+            processed submission with one or more failed transactions returns
+            status=FAILED, code=PARTIAL_FAILURE, with per-transaction results in
+            data.transactions; resend only the failed transactions, corrected,
+            under a new submission_uuid. A replay whose receipt is already
+            recorded under an earlier submission returns error_code
+            duplicate_receipt_conflict: no new transaction was created and the
+            receipt must not be resent under any submission_uuid.
           content:
             application/json:
               schema:
@@ -300,6 +346,69 @@ paths:
                           validation_status: INVALID
                           job_status: FAILED
                           message: Transaction failed permanently. Correct the payload and resend with a new submission_uuid.
+                replayPartialFailure:
+                  summary: Existing multi-transaction submission processed with one failed transaction.
+                  value:
+                    success: false
+                    status: FAILED
+                    code: PARTIAL_FAILURE
+                    error_code: PARTIAL_BATCH_FAILURE
+                    message: Submission already processed with failed transactions. See data.transactions for per-transaction results; correct only the failed transactions and send them with a new submission_uuid.
+                    submission_uuid: 3515e696-c35b-4a2c-8c75-70f0644ed99c
+                    intake_id: 12345
+                    correlation_id: 23250d7c-3ba3-4dc5-8680-94275a5ce5e1
+                    retryable: false
+                    data:
+                      submission_uuid: 3515e696-c35b-4a2c-8c75-70f0644ed99c
+                      intake_id: 12345
+                      processed_count: 1
+                      pending_count: 0
+                      failed_count: 1
+                      checksum_validation: matched_stored_checksum
+                      intake_status: PENDING
+                      processing_status: COMPLETED
+                      last_error_code: PARTIAL_BATCH_FAILURE
+                      transactions:
+                        - transaction_id: 7c1f8f0e-5b4e-4f43-9a51-1c2d3e4f5a6b
+                          status: COMPLETED
+                          validation_status: VALID
+                          job_status: COMPLETED
+                          message: Transaction already processed.
+                        - transaction_id: 9d2e7a1b-6c5f-4e32-8b41-2d3e4f5a6b7c
+                          status: FAILED
+                          validation_status: INVALID
+                          job_status: FAILED
+                          error_code: PARTIAL_BATCH_FAILURE
+                          message: VAT_MISMATCH
+                replayDuplicate:
+                  summary: Receipt already recorded under an earlier submission; do not resend.
+                  value:
+                    success: false
+                    status: FAILED
+                    code: FAILED
+                    error_code: duplicate_receipt_conflict
+                    message: Receipt number already used by a recorded transaction; do not resend this receipt under any submission_uuid.
+                    submission_uuid: 3515e696-c35b-4a2c-8c75-70f0644ed99c
+                    intake_id: 12345
+                    correlation_id: 23250d7c-3ba3-4dc5-8680-94275a5ce5e1
+                    retryable: false
+                    data:
+                      submission_uuid: 3515e696-c35b-4a2c-8c75-70f0644ed99c
+                      intake_id: 12345
+                      processed_count: 0
+                      pending_count: 0
+                      failed_count: 1
+                      checksum_validation: matched_stored_checksum
+                      intake_status: PENDING
+                      processing_status: COMPLETED
+                      last_error_code: duplicate_receipt_conflict
+                      transactions:
+                        - transaction_id: 3515e696-c35b-4a2c-8c75-70f0644ed99c
+                          status: FAILED
+                          validation_status: INVALID
+                          job_status: FAILED
+                          error_code: duplicate_receipt_conflict
+                          message: Receipt number already used by a recorded transaction; do not resend this receipt under any submission_uuid.
         '429':
           $ref: '#/components/responses/RateLimited'
   /submissions/{submission_uuid}:
@@ -850,11 +959,17 @@ components:
           example: PENDING
         code:
           type: string
-          description: ACCEPTED, COMPLETED, or FAILED.
+          description: ACCEPTED, COMPLETED, FAILED, or PARTIAL_FAILURE (replay of a processed submission with failed transactions).
           example: ACCEPTED
         error_code:
           type: string
-          description: Present on permanently failed or dead-lettered replay (HTTP 422).
+          description: >
+            Present on HTTP 422 replays: the stored failure code for
+            permanently failed or dead-lettered submissions,
+            PARTIAL_BATCH_FAILURE / TRANSACTION_VALIDATION_FAILED /
+            TRANSACTION_NOT_RECORDED for processed submissions with failed
+            transactions, or duplicate_receipt_conflict for a receipt already
+            recorded under an earlier submission.
         message:
           type: string
         data:
