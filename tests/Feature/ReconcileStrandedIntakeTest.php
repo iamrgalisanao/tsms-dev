@@ -7,7 +7,10 @@ use App\Jobs\ProcessTransactionIntakeJob;
 use App\Models\PosTerminal;
 use App\Models\Tenant;
 use App\Models\TransactionIntake;
+use App\Services\DeadlockRetryService;
 use App\Services\IngestionQueueRouter;
+use App\Services\ProviderTimestampNormalizer;
+use App\Services\TransactionIngestService;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Str;
 use Tests\TestCase;
@@ -202,4 +205,60 @@ class ReconcileStrandedIntakeTest extends TestCase
         Queue::assertPushed(ProcessTransactionJob::class, fn (ProcessTransactionJob $job) => $job->queue === $queue);
     }
 
+    public function test_repair_missing_passes_intake_trace_id_to_ingest(): void
+    {
+        Queue::fake();
+
+        $tenant = Tenant::factory()->create();
+        $terminal = PosTerminal::factory()->create(['tenant_id' => $tenant->id]);
+        $submissionUuid = (string) Str::uuid();
+        $traceId = (string) Str::uuid();
+
+        TransactionIntake::create([
+            'submission_uuid' => $submissionUuid,
+            'tenant_id' => $tenant->id,
+            'terminal_id' => $terminal->id,
+            'payload_checksum' => str_repeat('a', 64),
+            'payload' => [
+                'submission_uuid' => $submissionUuid,
+                'submission_timestamp' => '2026-06-14T08:00:00Z',
+                'payload_checksum' => str_repeat('a', 64),
+                'transaction' => [
+                    'transaction_id' => (string) Str::uuid(),
+                    'hardware_id' => $terminal->serial_number,
+                    'receipt_no' => 'RCPT-TRACE-001',
+                    'transaction_timestamp' => '2026-06-14T07:59:00Z',
+                ],
+            ],
+            'payload_size_bytes' => 256,
+            'source_ip' => '127.0.0.1',
+            'intake_status' => TransactionIntake::INTAKE_STATUS_QUEUED,
+            'processing_status' => TransactionIntake::PROCESSING_STATUS_PROCESSED,
+            'trace_id' => $traceId,
+            'received_at' => now()->subMinutes(10),
+            'queued_at' => now()->subMinutes(9),
+            'processed_at' => now()->subMinutes(8),
+        ]);
+
+        $spy = new class(app(DeadlockRetryService::class), app(ProviderTimestampNormalizer::class)) extends TransactionIngestService
+        {
+            public array $correlationIds = [];
+
+            public function ingest(array $payload, ?string $correlationId = null): array
+            {
+                $this->correlationIds[] = $correlationId;
+
+                return ['status' => 'failed', 'id' => null, 'message' => 'spy'];
+            }
+        };
+        $this->app->instance(TransactionIngestService::class, $spy);
+
+        $this->artisan('tsms:reconcile-intake', [
+            '--repair-missing' => true,
+            '--limit' => 10,
+            '--tenant' => $tenant->id,
+        ]);
+
+        $this->assertSame([$traceId], $spy->correlationIds);
+    }
 }

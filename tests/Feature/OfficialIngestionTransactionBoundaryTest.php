@@ -219,7 +219,7 @@ class OfficialIngestionTransactionBoundaryTest extends TestCase
                 parent::__construct($retryService, $timestampNormalizer);
             }
 
-            public function ingest(array $payload): array
+            public function ingest(array $payload, ?string $correlationId = null): array
             {
                 $this->levels[] = DB::transactionLevel();
 

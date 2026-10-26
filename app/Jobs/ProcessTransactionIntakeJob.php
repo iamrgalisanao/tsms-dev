@@ -119,7 +119,7 @@ class ProcessTransactionIntakeJob implements ShouldQueue
 
                 if ($isShadowMode) {
                     \Illuminate\Support\Facades\DB::beginTransaction();
-                    $result = $ingestService->ingest($payload);
+                    $result = $ingestService->ingest($payload, $traceId);
 
                     Log::channel('shadow_audit')->info('SHADOW_MODE_RESULT', [
                         'intake_id' => $this->intakeId,
@@ -129,7 +129,7 @@ class ProcessTransactionIntakeJob implements ShouldQueue
 
                     \Illuminate\Support\Facades\DB::rollBack();
                 } else {
-                    $result = $ingestService->ingest($payload);
+                    $result = $ingestService->ingest($payload, $traceId);
                 }
 
                 $results[] = $result;
