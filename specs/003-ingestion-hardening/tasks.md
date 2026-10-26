@@ -100,7 +100,7 @@ All test commands run against MySQL: `DB_DATABASE=tsms_db_test php artisan test 
 
 - [x] T037 Full suite run to tmp/after/junit.xml; diff failures against tmp/baseline/failing.txt; every difference must be a test removed in T009 or a pre-existing failure now passing; record the result in specs/003-ingestion-hardening/baseline.md
 - [x] T038 [P] Documentation sync: docs/CIRCUIT_BREAKER_BACKPRESSURE_RUNBOOK.md (job no longer records success), docs/LICENSE_ROUTE_CLASSIFICATION.md (batch → deprecated-or-remove, 410), docs/INGESTION_QUARANTINE_README.md if it references batch, provider-facing docs under resources/js that mention /transactions/batch, and a new rejection-alert section in docs/REPORTING_RUNBOOK.md or the circuit-breaker runbook; .env.example gains the new keys (commented defaults); runbook note: switching `INGESTION_TS_MODE` or alert settings needs `php artisan config:cache` plus a PHP-FPM reload and `php artisan horizon:terminate` when config is cached; release note: in observe mode a zero-date payload is still accepted at intake but now ends FAILED_PERMANENT/ingest_failed instead of being stored with coerced values
-- [ ] T039 `./vendor/bin/pint --test` clean on changed files; prepare commit groups (one per phase) for Git Workflow Master
+- [x] T039 `./vendor/bin/pint --test` clean on changed files; prepare commit groups (one per phase) for Git Workflow Master
 
 ## Dependencies
 

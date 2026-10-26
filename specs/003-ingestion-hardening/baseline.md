@@ -73,3 +73,9 @@ Clean isolated run after all slices (test DB re-migrated, no concurrent runs), 2
 - Note: one earlier full run was invalid because two test runs shared `tsms_db_test` concurrently; it was discarded and rerun in isolation.
 
 Status: all slices REVIEW_PASS and ARCHITECTURE_CONSISTENT.
+
+## After rebase onto main 721577c9 (PR #18 / TSMS-004 merged)
+
+- Rebased cleanly (no conflicts); alignment commit ea7c05a8 updates 003 tests/docs to the 200 PENDING/ACCEPTED contract.
+- Full suite (isolated, test DB re-migrated): 591 passed, 103 failed, 5 skipped (`tmp/after-rebase/`). Newly failing vs baseline: none. Newly passing vs pre-rebase: `OfficialIdempotentReplayTest::test_replay_same_transaction_id_is_idempotent_across_submissions` (fixed by PR #18).
+- Note: intermediate commits df8a3c56..b2731b93 assert 202 and fail against main's 200 contract until ea7c05a8 (history not rewritten); use `git bisect skip` for them.
