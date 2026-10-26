@@ -5,6 +5,7 @@ namespace Tests;
 use Illuminate\Foundation\Testing\TestCase as BaseTestCase;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Testing\Fluent\AssertableJson;
+use Tests\Support\TestDatabaseGuard;
 
 abstract class TestCase extends BaseTestCase
 {
@@ -26,7 +27,17 @@ abstract class TestCase extends BaseTestCase
     {
         $app = require __DIR__.'/../bootstrap/app.php';
         $app->make(\Illuminate\Contracts\Console\Kernel::class)->bootstrap();
-        
+
+        // Fail fast before RefreshDatabase (run later in setUpTraits) can migrate a non-test DB.
+        // Only the default connection at boot is checked; tests that switch connections at
+        // runtime must themselves point at a *_test database or sqlite :memory:.
+        $config = $app['config'];
+        $connection = $config->get('database.default');
+        TestDatabaseGuard::assertSafe(
+            (string) $config->get("database.connections.{$connection}.driver"),
+            $config->get("database.connections.{$connection}.database")
+        );
+
         return $app;
     }
 
