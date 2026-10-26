@@ -196,7 +196,7 @@ Sales sums in `app/Services/Reports/*` and the dashboard gross sales **don't fil
 
 **Review change to D6.** `retryUntil()` is replaced by `$tries = 5` (`TX_JOB_TRIES`). A dispatch-time deadline would fail jobs unrun during a processing backlog; with `WithoutOverlapping` removed, a try only counts real pickups and timeouts. Worst-case lifetime is 1030 s, under `uniqueFor` 1800 s.
 
-**Defaults to confirm with the product owner before deploying:**
+**Defaults confirmed by the product owner (2026-10-26):**
 - No hard deletes of transactions.
 - Watchdog retry cap of 3, then one summary admin alert per run.
 - `job_tries` of 5.
