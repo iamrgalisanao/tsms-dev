@@ -109,7 +109,9 @@ class IngestionBackpressureTest extends TestCase
         Queue::assertNothingPushed();
     }
 
-    public function test_batch_endpoint_returns_429_when_backpressure_is_enforced(): void
+    // Retargeted from /transactions/batch (retired, 003-ingestion-hardening US1):
+    // route-level backpressure with a minimal threshold of 1.
+    public function test_official_endpoint_returns_429_when_backpressure_threshold_is_one(): void
     {
         Queue::fake();
         config()->set('tsms.intake.backpressure.enabled', true);
@@ -120,7 +122,8 @@ class IngestionBackpressureTest extends TestCase
         $queue = app(IngestionQueueRouter::class)->processingQueueForTenant($tenant->id);
         $this->mockRedisDepth($queue, 1);
 
-        $response = $this->postJson('/api/v1/transactions/batch', $this->batchPayload($terminal), $this->headersFor($terminal));
+        $payload = $this->officialPayload($tenant->id, $terminal->id, (string) Str::uuid(), $terminal->serial_number);
+        $response = $this->postJson('/api/v1/transactions/official', $payload, $this->headersFor($terminal));
 
         $response
             ->assertStatus(429)
@@ -541,28 +544,6 @@ class IngestionBackpressureTest extends TestCase
         $payload['payload_checksum'] = $service->computeChecksum($payload);
 
         return $payload;
-    }
-
-    private function batchPayload(PosTerminal $terminal): array
-    {
-        return [
-            'batch_id' => (string) Str::uuid(),
-            'customer_code' => 'C-TEST',
-            'terminal_id' => $terminal->id,
-            'transactions' => [
-                [
-                    'transaction_id' => (string) Str::uuid(),
-                    'hardware_id' => $terminal->serial_number,
-                    'gross_sales' => 100.0,
-                    'net_sales' => 100.0,
-                    'transaction_timestamp' => now()->subMinute()->toIso8601String(),
-                    'payload_checksum' => hash('sha256', (string) Str::uuid()),
-                    'items' => [
-                        ['id' => 1, 'name' => 'Item', 'price' => 100.0, 'quantity' => 1],
-                    ],
-                ],
-            ],
-        ];
     }
 
     private function intakePayload(): array

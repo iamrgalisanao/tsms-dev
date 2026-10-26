@@ -7,7 +7,6 @@ use App\Models\IngestionQuarantine;
 use App\Models\Transaction;
 use App\Models\PosTerminal;
 use Illuminate\Http\Request;
-use App\Support\Metrics;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
@@ -316,248 +315,32 @@ class TransactionController extends Controller
     //     // Original full implementation preserved in VCS history.
     // }
 
-    public function batchStore(Request $request)
+    /**
+     * POST /api/v1/transactions/batch has been retired
+     * (specs/003-ingestion-hardening/contracts/batch-retirement.md).
+     *
+     * It recorded sales outside the official intake pipeline (no intake row,
+     * no checksum validation, no hardware binding). The route stays
+     * registered behind auth so unauthenticated probes still get 401, and
+     * every authenticated request gets this fixed 410 without reading the
+     * body.
+     */
+    public function retiredBatch(Request $request)
     {
-        // Cheap batch-count guard, ahead of DB::beginTransaction(), ahead of
-        // $request->validate() (which runs a DB-backed `exists` check on
-        // terminal_id), and ahead of the per-item loop below. Runs first so an
-        // oversized batch cannot pay for any DB work at all. There is nothing
-        // to roll back here since no transaction has been opened yet.
-        //
-        // Defensive: count() on a non-array throws TypeError on PHP 8+, so a
-        // missing or malformed `transactions` field must never reach count()
-        // here. If it's missing/malformed, skip this guard and let
-        // $request->validate() below report the correct structural error
-        // ('transactions' => 'required|array|min:1').
-        $rawTransactions = $request->input('transactions');
-        $transactionCount = is_array($rawTransactions) ? count($rawTransactions) : 0;
+        $terminal = $request->user();
 
-        Log::info('Batch transaction API request received', [
-            'payload_size' => strlen(json_encode($request->all())),
-            'batch_id' => $request->batch_id ?? 'missing',
-            'transaction_count' => $transactionCount,
+        Log::warning('batch endpoint retired: request refused', [
+            'terminal_id' => $terminal instanceof PosTerminal ? $terminal->id : null,
+            'tenant_id' => $terminal instanceof PosTerminal ? $terminal->tenant_id : null,
+            'correlation_id' => $request->attributes->get('correlation_id'),
         ]);
 
-        $maxBatchCount = (int) config('tsms.intake.max_batch_count');
-        if ($maxBatchCount > 0 && is_array($rawTransactions) && $transactionCount > $maxBatchCount) {
-            Log::warning('batchStore: Batch transaction count exceeds maximum allowed', [
-                'batch_id' => $request->batch_id ?? 'missing',
-                'transaction_count' => $transactionCount,
-                'max_batch_count' => $maxBatchCount,
-            ]);
-
-            // WU4 (T053 remainder): rejection-reason counter, closing the
-            // "batch-size" reason plan.md's WU4 prose names alongside
-            // payload-size/fairness/backpressure/circuit breaker.
-            // Metrics::incr() swallows its own failures, so this can never
-            // affect the 422 response below.
-            Metrics::incr('ingestion.rejected.batch_size');
-
-            return response()->json([
-                'success' => false,
-                'error_code' => 'BATCH_LIMIT_EXCEEDED',
-                'message' => 'Batch transaction count exceeds the maximum allowed.',
-                'max_batch_count' => $maxBatchCount,
-                'correlation_id' => $request->attributes->get('correlation_id') ?: $request->header('X-Request-Id'),
-            ], 422);
-        }
-
-        try {
-            DB::beginTransaction();
-
-            // Validate batch request structure
-            $request->validate([
-                'batch_id' => 'required|string',
-                'customer_code' => 'required|string',
-                'terminal_id' => 'required|exists:pos_terminals,id',
-                'transactions' => 'required|array|min:1',
-                // Enforce UUID format for each transaction in batch
-                'transactions.*.transaction_id' => 'required|string|uuid',
-                'transactions.*.gross_sales' => 'required|numeric|min:0',
-                'transactions.*.transaction_timestamp' => 'required|date',
-                'transactions.*.items' => 'required|array|min:1',
-                'transactions.*.items.*.id' => 'required',
-                'transactions.*.items.*.name' => 'required|string',
-                'transactions.*.items.*.price' => 'required|numeric|min:0',
-                'transactions.*.items.*.quantity' => 'required|integer|min:1'
-            ]);
-
-            $terminal = PosTerminal::findOrFail($request->terminal_id);
-
-            // Enforce authenticated-terminal binding: the Sanctum token used for this
-            // request must belong to the exact terminal declared in the payload,
-            // otherwise a valid token for one terminal could attribute transactions
-            // to a different terminal/tenant (mirrors the check in storeOfficial()).
-            $authenticatedTerminal = $request->user();
-            if (!$authenticatedTerminal instanceof PosTerminal || (int) $authenticatedTerminal->id !== (int) $terminal->id) {
-                Log::warning('batchStore: Token does not belong to the declared terminal', [
-                    'authenticated_terminal_id' => optional($authenticatedTerminal)->id,
-                    'declared_terminal_id' => $terminal->id,
-                ]);
-                DB::rollBack();
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Forbidden - token does not match terminal'
-                ], 403);
-            }
-
-            $processedTransactions = [];
-            $failedTransactions = [];
-            $processedCount = 0;
-            $failedCount = 0;
-
-            foreach ($request->transactions as $transactionData) {
-                try {
-                    // Check for duplicate transaction
-                    $existingTransaction = Transaction::where('transaction_id', $transactionData['transaction_id'])
-                        ->where('terminal_id', $terminal->id)
-                        ->first();
-
-                    if ($existingTransaction) {
-                        $processedTransactions[] = [
-                            'transaction_id' => $existingTransaction->transaction_id,
-                            'status' => 'duplicate',
-                            'message' => 'Transaction already exists'
-                        ];
-                        // Update terminal activity on duplicate to reflect recent sales interaction
-                        try {
-                            $terminal->last_seen_at = now();
-                            if (Schema::hasColumn('pos_terminals', 'last_sale_at')) {
-                                $terminal->last_sale_at = now();
-                            }
-                            $terminal->save();
-                        } catch (\Throwable $te) {
-                            Log::warning('Failed to update terminal last_seen_at on duplicate transaction', [
-                                'terminal_id' => $terminal->id,
-                                'error' => $te->getMessage(),
-                            ]);
-                        }
-                        continue;
-                    }
-
-                    // Create transaction record. Keep the submitted timestamp untouched;
-                    // original_payload preserves the exact provider value for audit.
-                    $txPayload = [
-                        'tenant_id' => $terminal->tenant_id,
-                        'terminal_id' => $terminal->id,
-                        'transaction_id' => $transactionData['transaction_id'],
-                        'hardware_id' => $transactionData['hardware_id'] ?? null,
-                        'transaction_timestamp' => $transactionData['transaction_timestamp'],
-                        'gross_sales' => $transactionData['gross_sales'],
-                        'net_sales' => $transactionData['net_sales'] ?? 0,
-                        'customer_code' => $request->customer_code,
-                        'payload_checksum' => $transactionData['payload_checksum'] ?? md5(json_encode($transactionData)),
-                        'validation_status' => 'PENDING',
-                    ];
-                    if (Schema::hasColumn('transactions', 'receipt_no')) {
-                        $txPayload['receipt_no'] = $transactionData['receipt_no'] ?? null;
-                    }
-                    if (Schema::hasColumn('transactions', 'original_payload')) {
-                        $txPayload['original_payload'] = json_encode($transactionData, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
-                    }
-
-                    $transaction = Transaction::create($txPayload);
-
-                    // Queue the transaction for processing
-                    ProcessTransactionJob::dispatch($transaction->id)
-                        ->onQueue($this->queueRouter->processingQueueForTenant($terminal->tenant_id))
-                        ->afterCommit();
-
-                    // Log system activity
-                    \App\Models\SystemLog::create([
-                        'type' => 'transaction',
-                        'severity' => 'info',
-                        'terminal_uid' => $terminal->serial_number,
-                        'transaction_id' => $transaction->transaction_id,
-                        'message' => 'Batch transaction queued for processing',
-                        'context' => json_encode([
-                            'batch_id' => $request->batch_id,
-                            'transaction_id' => $transaction->transaction_id,
-                            'gross_sales' => $transaction->gross_sales,
-                            'net_sales' => $transaction->net_sales
-                        ])
-                    ]);
-
-                    $processedTransactions[] = [
-                        'transaction_id' => $transaction->transaction_id,
-                        'status' => 'queued',
-                        'message' => 'Transaction queued for processing'
-                    ];
-                    $processedCount++;
-
-                    // Update terminal activity on successful creation
-                    try {
-                        $terminal->last_seen_at = now();
-                        if (Schema::hasColumn('pos_terminals', 'last_sale_at')) {
-                            $terminal->last_sale_at = now();
-                        }
-                        $terminal->save();
-                    } catch (\Throwable $te) {
-                        Log::warning('Failed to update terminal last_seen_at after transaction creation', [
-                            'terminal_id' => $terminal->id,
-                            'transaction_id' => $transaction->transaction_id,
-                            'error' => $te->getMessage(),
-                        ]);
-                    }
-
-                } catch (\Exception $e) {
-                    Log::error('Failed to process transaction in batch', [
-                        'batch_id' => $request->batch_id,
-                        'transaction_id' => $transactionData['transaction_id'] ?? 'unknown',
-                        'error' => $e->getMessage()
-                    ]);
-
-                    $failedTransactions[] = [
-                        'transaction_id' => $transactionData['transaction_id'] ?? 'unknown',
-                        'status' => 'failed',
-                        'message' => $e->getMessage()
-                    ];
-                    $failedCount++;
-                }
-            }
-
-            DB::commit();
-
-            Log::info('Batch transaction processing completed', [
-                'batch_id' => $request->batch_id,
-                'processed_count' => $processedCount,
-                'failed_count' => $failedCount
-            ]);
-
-            // Send notification if there are batch failures
-            if ($failedCount > 0) {
-                $this->notificationService->notifyBatchProcessingFailure(
-                    $request->batch_id,
-                    count($request->transactions),
-                    $failedTransactions
-                );
-            }
-
-            return response()->json([
-                'success' => true,
-                'message' => "Batch processed: {$processedCount} successful, {$failedCount} failed",
-                'data' => [
-                    'batch_id' => $request->batch_id,
-                    'processed_count' => $processedCount,
-                    'failed_count' => $failedCount,
-                    'transactions' => array_merge($processedTransactions, $failedTransactions)
-                ]
-            ], 200);
-
-        } catch (\Exception $e) {
-            DB::rollBack();
-            Log::error('Batch transaction API error', [
-                'error' => $e->getMessage(),
-                'trace' => $e->getTraceAsString(),
-                'request' => $request->except(['password', 'token'])
-            ]);
-
-            return response()->json([
-                'success' => false,
-                'message' => 'Failed to process batch transactions: ' . $e->getMessage(),
-                'timestamp' => now()->toISOString()
-            ], 500);
-        }
+        return response()->json([
+            'success' => false,
+            'error_code' => 'ENDPOINT_RETIRED',
+            'message' => 'The batch endpoint has been retired. Submit transactions to /api/v1/transactions/official.',
+            'replacement' => '/api/v1/transactions/official',
+        ], 410);
     }
 
     public function status($id)

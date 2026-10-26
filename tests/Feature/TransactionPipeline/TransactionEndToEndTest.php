@@ -163,65 +163,6 @@ class TransactionEndToEndTest extends TestCase
     }
 
     /** @test */
-    public function processes_batch_transactions_end_to_end()
-    {
-        Event::fake();
-        
-        // Submit batch of transactions
-        $batchPayload = [
-            'batch_id' => 'E2E-BATCH-' . uniqid(),
-            'customer_code' => $this->tenant->customer_code,
-            'terminal_id' => $this->terminal->id,
-            'transactions' => []
-        ];
-
-        // Create 3 transactions in batch
-        for ($i = 1; $i <= 3; $i++) {
-            $batchPayload['transactions'][] = [
-                'transaction_id' => 'E2E-BATCH-TXN-' . $i . '-' . uniqid(),
-                'hardware_id' => 'HW-12345',
-                'machine_number' => $this->terminal->machine_number,
-                'transaction_timestamp' => now()->toISOString(),
-                'base_amount' => 100.00 * $i,
-                'items' => [
-                    [
-                        'id' => $i,
-                        'name' => "Ticket $i",
-                        'price' => 100.00 * $i,
-                        'quantity' => 1
-                    ]
-                ]
-            ];
-        }
-
-        $response = $this->withHeaders([
-            'Authorization' => 'Bearer ' . $this->token,
-            'Accept' => 'application/json'
-        ])->postJson('/api/v1/transactions/batch', $batchPayload);
-
-        $response->assertStatus(200);
-
-        // Process all transactions
-        $transactions = Transaction::where('customer_code', $this->tenant->customer_code)
-                                 ->where('validation_status', 'PENDING')
-                                 ->get();
-
-        $this->assertCount(3, $transactions);
-
-        foreach ($transactions as $transaction) {
-            $job = new ProcessTransactionJob($transaction);
-            $validationService = app(\App\Services\TransactionValidationService::class);
-            $job->handle($validationService);
-        }
-
-        // Verify all transactions were processed
-        foreach ($transactions as $transaction) {
-            $transaction->refresh();
-            $this->assertNotEquals('PENDING', $transaction->validation_status);
-        }
-    }
-
-    /** @test */
     public function maintains_data_integrity_during_concurrent_processing()
     {
         Event::fake();

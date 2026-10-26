@@ -273,7 +273,7 @@ class ReconcileStrandedIntake extends Command
                 'payload_checksum' => $intake->payload_checksum,
             ]);
 
-            $result = $ingestService->ingest($payload);
+            $result = $ingestService->ingest($payload, $intake->trace_id);
             $status = $result['status'] ?? 'failed';
 
             if (in_array($status, ['accepted', 'success', 'already_processed'], true) && isset($result['id'])) {

@@ -192,6 +192,15 @@ class NotificationService
     }
 
     /**
+     * Public entry point to the admin recipient path, for monitors that
+     * build their own notification (e.g. IntakeRejectionMonitor).
+     */
+    public function notifyAdmins(\Illuminate\Notifications\Notification $notification): void
+    {
+        $this->sendToAdmins($notification);
+    }
+
+    /**
      * Send notification to admin users
      */
     private function sendToAdmins($notification): void

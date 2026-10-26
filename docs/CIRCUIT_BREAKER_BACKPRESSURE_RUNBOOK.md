@@ -2,7 +2,7 @@
 
 ## 1. Purpose and Scope
 
-This runbook covers the two independent overload-protection mechanisms guarding official and batch transaction ingestion (`POST /api/v1/transactions/official`, `POST /api/v1/transactions/batch`):
+This runbook covers the two independent overload-protection mechanisms guarding official transaction ingestion (`POST /api/v1/transactions/official`; `POST /api/v1/transactions/batch` was retired in 003-ingestion-hardening and returns 410 without these middlewares):
 
 - **Circuit breaker** (`App\Services\CircuitBreaker`, applied via `circuit.breaker:transaction-intake` middleware) protects against a **failing downstream dependency** — it tracks consecutive failures reaching the protected resource and stops sending traffic to it once it appears broken, giving it time to recover.
 - **Backpressure** (`App\Services\IngestionBackpressureService`, applied via `ingestion.backpressure:processing` middleware and internally by `TransactionIntakeService::handleOfficialIntake()` for the intake queue) protects against **queue depth overload** — it rejects new work when a Redis-backed queue is already carrying more jobs than it can drain in a reasonable time, regardless of whether the downstream dependency itself is healthy.
@@ -81,7 +81,7 @@ All fields are safe to `HGETALL`/`HGET` — read-only inspection never mutates s
 
 ## 7. Operational Diagnosis
 
-**Symptoms**: elevated 503s from `/transactions/official`/`/transactions/batch` (circuit breaker or backpressure-degraded), elevated 429s (backpressure rejection), or client reports of "Circuit is open due to multiple failures" / `INGESTION_BACKPRESSURE` / `INGESTION_DEGRADED` error codes/messages.
+**Symptoms**: elevated 503s from `/transactions/official` (circuit breaker or backpressure-degraded), elevated 429s (backpressure rejection), or client reports of "Circuit is open due to multiple failures" / `INGESTION_BACKPRESSURE` / `INGESTION_DEGRADED` error codes/messages.
 
 **Logs to check** (all via standard Laravel log channel):
 - `CircuitBreaker: opened` (warning) — breaker just tripped.
@@ -151,6 +151,7 @@ redis-cli HGETALL tsms:circuit-breaker:transaction-intake
 - **T028**: implementation and tests for the above, including the later-added `HALF_OPEN_TRANSITION_SCRIPT` fix for a transition race found during review.
 - **T028b**: `Retry-After` header on circuit-breaker `OPEN`/over-cap `HALF_OPEN` rejections.
 - **T035**: `Retry-After` header on the official-intake-overload rejection path (`TransactionController::storeOfficial()`), closing the last header/body inconsistency gap.
+- **003-ingestion-hardening (TSMS-06)**: the background ingest path (`ProcessTransactionIntakeJob` → `TransactionIngestService`) no longer calls `recordSuccess()`. It was never admitted through `isAvailable()`, so `recordSuccess(null)` force-reset an open/half-open breaker and bypassed half-open probing. Recovery is now decided only by `CircuitBreakerMiddleware`'s generation-tracked probes on `/official`. `recordFailure()` for infrastructure failures is unchanged. New metrics: `ingest.data_failure_count` (data-level failures: invalid payloads, constraint/data exceptions, classified unique violations) and `ingest.cross_tenant_collision_count`. Known pre-existing gap (not changed): `failure_count` is not reset while the breaker stays closed; it clears only on close-from-half-open, `reset()`, or key TTL expiry (3600s), so sparse infrastructure failures can accumulate within the TTL. See also `specs/003-ingestion-hardening/runbook.md`.
 - This runbook documents the **final, shipped state** of all of the above — it was deliberately written last (after T028/T028a/T028b/T035 landed) specifically so it would not need a rewrite mid-implementation.
 
 ## 12. Rolling Back This Feature (General Procedure)

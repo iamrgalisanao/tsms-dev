@@ -76,15 +76,17 @@ class IngestionPayloadLimitTest extends TestCase
         $this->assertNotSame('PAYLOAD_TOO_LARGE', $response->json('error_code'));
     }
 
-    public function test_batch_endpoint_rejects_payload_over_byte_limit_with_413(): void
+    // Retargeted from the retired /transactions/batch route: a multi-transaction
+    // submission now goes to /official as a `transactions` array.
+    public function test_official_multi_transaction_submission_rejects_payload_over_byte_limit_with_413(): void
     {
         Queue::fake();
         config()->set('tsms.intake.max_payload_bytes', 50);
 
-        [, $terminal] = $this->seedTenantAndTerminal();
-        $payload = $this->batchPayload($terminal);
+        [$tenant, $terminal] = $this->seedTenantAndTerminal();
+        $payload = $this->officialBatchPayload($tenant->id, $terminal->id, $terminal->serial_number, 2);
 
-        $response = $this->postJson('/api/v1/transactions/batch', $payload, $this->headersFor($terminal));
+        $response = $this->postJson('/api/v1/transactions/official', $payload, $this->headersFor($terminal));
 
         $response
             ->assertStatus(413)
@@ -98,16 +100,17 @@ class IngestionPayloadLimitTest extends TestCase
         ]);
     }
 
-    public function test_batch_endpoint_accepts_payload_within_byte_limit(): void
+    // Retargeted from the retired /transactions/batch route (see above).
+    public function test_official_multi_transaction_submission_accepts_payload_within_byte_limit(): void
     {
         Queue::fake();
         config()->set('tsms.intake.max_payload_bytes', 2097152);
         config()->set('tsms.intake.backpressure.enabled', false);
 
-        [, $terminal] = $this->seedTenantAndTerminal();
-        $payload = $this->batchPayload($terminal);
+        [$tenant, $terminal] = $this->seedTenantAndTerminal();
+        $payload = $this->officialBatchPayload($tenant->id, $terminal->id, $terminal->serial_number, 2);
 
-        $response = $this->postJson('/api/v1/transactions/batch', $payload, $this->headersFor($terminal));
+        $response = $this->postJson('/api/v1/transactions/official', $payload, $this->headersFor($terminal));
 
         $this->assertNotSame(413, $response->getStatusCode());
         $this->assertNotSame('PAYLOAD_TOO_LARGE', $response->json('error_code'));
@@ -115,7 +118,7 @@ class IngestionPayloadLimitTest extends TestCase
 
     /**
      * Ordering lock: the payload-size middleware must be registered ahead of
-     * ingestion.backpressure on both routes. Configure backpressure to
+     * ingestion.backpressure on the official route. Configure backpressure to
      * enforce on every request (max_queue_depth 0) and assert that an
      * oversized request still gets rejected as PAYLOAD_TOO_LARGE -- and that
      * the backpressure service's Redis dependency is never even consulted --
@@ -191,26 +194,25 @@ class IngestionPayloadLimitTest extends TestCase
         return $payload;
     }
 
-    private function batchPayload(PosTerminal $terminal): array
+    private function officialBatchPayload(int $tenantId, int $terminalId, string $hardwareId, int $count): array
     {
-        return [
-            'batch_id' => (string) Str::uuid(),
-            'customer_code' => 'C-TEST',
-            'terminal_id' => $terminal->id,
-            'transactions' => [
-                [
-                    'transaction_id' => (string) Str::uuid(),
-                    'hardware_id' => $terminal->serial_number,
-                    'gross_sales' => 100.0,
-                    'net_sales' => 100.0,
-                    'transaction_timestamp' => now()->subMinute()->toIso8601String(),
-                    'payload_checksum' => hash('sha256', (string) Str::uuid()),
-                    'items' => [
-                        ['id' => 1, 'name' => 'Item', 'price' => 100.0, 'quantity' => 1],
-                    ],
-                ],
-            ],
+        $service = new PayloadChecksumService;
+        $transactions = array_map(
+            fn () => $this->officialPayload($tenantId, $terminalId, (string) Str::uuid(), $hardwareId)['transaction'],
+            range(1, $count)
+        );
+
+        $payload = [
+            'submission_uuid' => (string) Str::uuid(),
+            'tenant_id' => $tenantId,
+            'terminal_id' => $terminalId,
+            'submission_timestamp' => Carbon::now('UTC')->format('Y-m-d\TH:i:s\Z'),
+            'transaction_count' => $count,
+            'transactions' => $transactions,
         ];
+        $payload['payload_checksum'] = $service->computeChecksum($payload);
+
+        return $payload;
     }
 
     private function adjustments(): array

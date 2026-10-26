@@ -13,8 +13,9 @@ use Symfony\Component\HttpFoundation\Response;
  *
  * This is intentionally a pure Content-Length check with zero I/O so it can
  * run ahead of (and cheaper than) IngestionBackpressureMiddleware's Redis
- * lookup. It must stay first in the ingestion middleware chain on both
- * /transactions/batch and /transactions/official.
+ * lookup. It must stay first in the ingestion middleware chain on
+ * /transactions/official (the retired /transactions/batch route no longer
+ * carries ingestion middleware).
  */
 class IngestionPayloadSizeMiddleware
 {

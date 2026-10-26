@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\Services;
 
 use App\Models\PosTerminal;
+use App\Support\Metrics;
+use Illuminate\Database\QueryException;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
@@ -12,6 +14,8 @@ use Illuminate\Support\Str;
 
 class TransactionIngestService
 {
+    private const UNIQUE_VIOLATION_MARKER = '__unique_violation';
+
     public function __construct(
         protected DeadlockRetryService $retryService,
         private readonly ProviderTimestampNormalizer $timestampNormalizer
@@ -20,18 +24,32 @@ class TransactionIngestService
 
     /**
      * Ingest a transaction payload atomically with duplicate protection and deadlock retry.
+     *
+     * Circuit breaker (research R3): this runs inside a queue job that was
+     * never admitted through CircuitBreaker::isAvailable(), so it holds no
+     * half-open probe generation. recordSuccess(null) would reset() an open
+     * or half-open breaker, force-closing it and bypassing the probes, so
+     * ingest never records success. Recovery is decided only by
+     * CircuitBreakerMiddleware's generation-tracked probes. Infrastructure
+     * failures still call recordFailure(); data-level and classified
+     * failures only increment ingest.data_failure_count.
+     *
+     * @param  string|null  $correlationId  Submission trace id, logged as
+     *                                      correlation_id (research R6).
      */
-    public function ingest(array $payload): array
+    public function ingest(array $payload, ?string $correlationId = null): array
     {
         try {
             $parent = $this->normalizePayload($payload);
         } catch (\InvalidArgumentException $e) {
             // Client data-quality issue, not an infrastructure failure — must
             // not count against the ingestion circuit breaker.
-            Log::warning('TransactionIngestService: invalid payload', [
-                'error' => $e->getMessage(),
-                'payload' => $payload,
-            ]);
+            // ingest.data_failure_count includes invalid payloads.
+            Metrics::incr('ingest.data_failure_count');
+            Log::warning('TransactionIngestService: invalid payload', array_merge(
+                $this->logRef($payload, $correlationId),
+                ['error' => $e->getMessage()]
+            ));
 
             return [
                 'status' => 'failed',
@@ -48,18 +66,28 @@ class TransactionIngestService
         try {
             $receiptConflict = $this->findReceiptConflict($parent);
             if ($receiptConflict) {
-                $circuitBreaker->recordSuccess();
-                return $this->receiptConflictResult($receiptConflict, $parent);
+                return $this->receiptConflictResult($receiptConflict, $parent, $correlationId);
             }
 
-            $result = $this->retryService->withDeadlockRetry(function () use ($payload, $parent) {
-                return DB::transaction(function () use ($payload, $parent) {
+            $result = $this->retryService->withDeadlockRetry(function () use ($payload, $parent, $correlationId) {
+                return DB::transaction(function () use ($payload, $parent, $correlationId) {
                     $receiptConflict = $this->findReceiptConflict($parent);
                     if ($receiptConflict) {
-                        return $this->receiptConflictResult($receiptConflict, $parent);
+                        return $this->receiptConflictResult($receiptConflict, $parent, $correlationId);
                     }
 
-                    $inserted = $this->insertTransactionParent($parent);
+                    try {
+                        $inserted = $this->insertTransactionParent($parent);
+                    } catch (QueryException $e) {
+                        if (($e->errorInfo[1] ?? null) !== 1062) {
+                            throw $e;
+                        }
+
+                        // Duplicate key: classify after the transaction
+                        // closure returns, so the lookups see rows committed
+                        // by a concurrent transaction (research A2).
+                        return [self::UNIQUE_VIOLATION_MARKER => self::uniqueIndexFromErrorInfo($e->errorInfo)];
+                    }
 
                     if ($inserted === 1) {
                         $transaction = DB::table('transactions')
@@ -68,7 +96,7 @@ class TransactionIngestService
                             ->first();
 
                         if (! $transaction) {
-                            Log::error('TransactionIngestService: Inserted but not found', $parent);
+                            Log::error('TransactionIngestService: Inserted but not found', $this->logRef($parent, $correlationId));
 
                             return [
                                 'status' => 'failed',
@@ -79,8 +107,8 @@ class TransactionIngestService
                             ];
                         }
 
-                        $this->insertAdjustments($transaction->id, $payload['adjustments'] ?? []);
-                        $this->insertTaxes($transaction->id, $payload['taxes'] ?? []);
+                        $this->insertAdjustments($transaction->id, $payload['adjustments'] ?? [], $correlationId);
+                        $this->insertTaxes($transaction->id, $payload['taxes'] ?? [], $correlationId);
 
                         return [
                             'status' => 'accepted',
@@ -91,63 +119,33 @@ class TransactionIngestService
                         ];
                     }
 
-                    $existing = DB::table('transactions')
-                        ->where('tenant_id', $parent['tenant_id'])
-                        ->where('transaction_id', $parent['transaction_id'])
-                        ->first();
-
-                    if ($existing) {
-                        return [
-                            'status' => 'already_processed',
-                            'id' => $existing->id,
-                            'transaction_id' => $parent['transaction_id'],
-                            'terminal_id' => $parent['terminal_id'],
-                            'message' => 'already_processed',
-                        ];
-                    }
-
-                    $receiptConflict = $this->findReceiptConflict($parent);
-                    if ($receiptConflict) {
-                        Log::warning('TransactionIngestService: duplicate receipt conflict identified after insert race', [
-                            'receipt_no' => $parent['receipt_no'],
-                            'incoming_tx_id' => $parent['transaction_id'],
-                            'existing_tx_id' => $receiptConflict->transaction_id,
-                            'existing_tenant' => $receiptConflict->tenant_id,
-                            'incoming_tenant' => $parent['tenant_id'],
-                        ]);
-
-                        return [
-                            'status' => 'duplicate',
-                            'id' => $receiptConflict->id,
-                            'transaction_id' => $parent['transaction_id'],
-                            'terminal_id' => $parent['terminal_id'],
-                            'message' => 'duplicate_receipt_conflict',
-                            'details' => 'Receipt already exists on this terminal within a 24-hour window',
-                        ];
-                    }
-
-                    Log::warning('TransactionIngestService: insertOrIgnore returned 0 but no existing transaction found', $parent);
-
-                    return [
-                        'status' => 'failed',
-                        'transaction_id' => $parent['transaction_id'],
-                        'terminal_id' => $parent['terminal_id'],
-                        'message' => 'insert ignored but no existing transaction found',
-                    ];
+                    // Test seams may return 0 to simulate an ignored insert;
+                    // treat it as a duplicate with no index name (research A3).
+                    return [self::UNIQUE_VIOLATION_MARKER => null];
                 }, 1);
             }, wrapInTransaction: false);
 
-            $circuitBreaker->recordSuccess();
+            if (array_key_exists(self::UNIQUE_VIOLATION_MARKER, $result)) {
+                $result = $this->classifyUniqueViolation($result[self::UNIQUE_VIOLATION_MARKER], $parent, $correlationId);
+            }
+
+            if (in_array($result['message'] ?? null, ['cross_tenant_transaction_id_collision', 'unique_constraint_violation'], true)) {
+                Metrics::incr('ingest.data_failure_count');
+            }
 
             return $result;
         } catch (\Throwable $e) {
             $reference = (string) Str::uuid();
 
-            Log::error('TransactionIngestService: ingest failed', [
-                'error' => $e->getMessage(),
-                'reference' => $reference,
-                'payload' => $payload,
-            ]);
+            // Never log getMessage() or the payload: a QueryException
+            // message carries the SQL bindings (research A4).
+            $exceptionContext = self::exceptionLogContext($e);
+
+            Log::error('TransactionIngestService: ingest failed', array_merge(
+                $exceptionContext,
+                ['reference' => $reference],
+                $this->logRef($payload, $correlationId)
+            ));
 
             // Only a genuine infrastructure-level failure (DB unreachable,
             // timed out, or deadlock-exhausted after retry) should trip the
@@ -159,10 +157,12 @@ class TransactionIngestService
             if (self::isInfrastructureFailure($e)) {
                 $circuitBreaker->recordFailure();
             } else {
-                Log::error('TransactionIngestService: data/constraint-level exception reached the DB despite passing validation — check for a validation gap', [
-                    'error' => $e->getMessage(),
-                    'reference' => $reference,
-                ]);
+                Metrics::incr('ingest.data_failure_count');
+                Log::error('TransactionIngestService: data/constraint-level exception reached the DB despite passing validation — check for a validation gap', array_merge(
+                    $exceptionContext,
+                    ['reference' => $reference],
+                    $this->logRef($payload, $correlationId)
+                ));
             }
 
             return [
@@ -224,7 +224,23 @@ class TransactionIngestService
         return true;
     }
 
-    protected function receiptConflictResult(object $receiptConflict, array $parent): array
+    /**
+     * Reference-only log context (research R7): never the payload, the row
+     * being inserted, or original_payload.
+     */
+    private function logRef(array $data, ?string $correlationId): array
+    {
+        return [
+            'tenant_id' => $data['tenant_id'] ?? null,
+            'terminal_id' => $data['terminal_id'] ?? null,
+            'transaction_id' => $data['transaction_id'] ?? null,
+            'receipt_no' => $data['receipt_no'] ?? null,
+            'submission_uuid' => $data['submission_uuid'] ?? null,
+            'correlation_id' => $correlationId,
+        ];
+    }
+
+    protected function receiptConflictResult(object $receiptConflict, array $parent, ?string $correlationId = null): array
     {
         if (hash_equals(
             (string) ($receiptConflict->payload_checksum ?? ''),
@@ -239,13 +255,15 @@ class TransactionIngestService
             ];
         }
 
-        Log::warning('TransactionIngestService: duplicate receipt conflict identified', [
-            'receipt_no' => $parent['receipt_no'],
-            'incoming_tx_id' => $parent['transaction_id'],
-            'existing_tx_id' => $receiptConflict->transaction_id,
-            'existing_tenant' => $receiptConflict->tenant_id,
-            'incoming_tenant' => $parent['tenant_id'],
-        ]);
+        Log::warning('TransactionIngestService: duplicate receipt conflict identified', array_merge(
+            $this->logRef($parent, $correlationId),
+            [
+                'incoming_tx_id' => $parent['transaction_id'],
+                'existing_tx_id' => $receiptConflict->transaction_id,
+                'existing_tenant' => $receiptConflict->tenant_id,
+                'incoming_tenant' => $parent['tenant_id'],
+            ]
+        ));
 
         return [
             'status' => 'duplicate',
@@ -259,7 +277,115 @@ class TransactionIngestService
 
     protected function insertTransactionParent(array $parent): int
     {
-        return DB::table('transactions')->insertOrIgnore($parent);
+        DB::table('transactions')->insert($parent);
+
+        return 1;
+    }
+
+    /**
+     * Classify a duplicate-key outcome with ordered, schema-independent
+     * lookups (research A1). Runs outside the transaction closure (A2).
+     * The index name is used only for details and logs.
+     */
+    protected function classifyUniqueViolation(?string $index, array $parent, ?string $correlationId = null): array
+    {
+        // (1a) Same tenant already holds this transaction_id.
+        $existing = DB::table('transactions')
+            ->where('tenant_id', $parent['tenant_id'])
+            ->where('transaction_id', $parent['transaction_id'])
+            ->first();
+
+        if ($existing) {
+            return [
+                'status' => 'already_processed',
+                'id' => $existing->id,
+                'transaction_id' => $parent['transaction_id'],
+                'terminal_id' => $parent['terminal_id'],
+                'message' => 'already_processed',
+            ];
+        }
+
+        // (1b) Another tenant holds this transaction_id. Never return the
+        // other tenant's row id.
+        $foreign = DB::table('transactions')
+            ->select('id', 'tenant_id')
+            ->where('transaction_id', $parent['transaction_id'])
+            ->first();
+
+        if ($foreign) {
+            Log::warning('TransactionIngestService: cross-tenant transaction_id collision', array_merge(
+                $this->logRef($parent, $correlationId),
+                [
+                    'incoming_tenant_id' => $parent['tenant_id'],
+                    'existing_tenant_id' => $foreign->tenant_id,
+                    'index' => $index,
+                ]
+            ));
+            Metrics::incr('ingest.cross_tenant_collision_count');
+
+            return [
+                'status' => 'failed',
+                'id' => null,
+                'transaction_id' => $parent['transaction_id'],
+                'terminal_id' => $parent['terminal_id'],
+                'message' => 'cross_tenant_transaction_id_collision',
+                'details' => 'transaction_id is already registered to another tenant',
+            ];
+        }
+
+        // (2) Receipt rule (keeps same-checksum -> already_processed).
+        $receiptConflict = $this->findReceiptConflict($parent);
+        if ($receiptConflict) {
+            return $this->receiptConflictResult($receiptConflict, $parent, $correlationId);
+        }
+
+        // (3) Some other unique index.
+        Log::warning('TransactionIngestService: unique constraint violation not matched by lookups', array_merge(
+            $this->logRef($parent, $correlationId),
+            ['index' => $index ?? 'unknown']
+        ));
+
+        return [
+            'status' => 'failed',
+            'id' => null,
+            'transaction_id' => $parent['transaction_id'],
+            'terminal_id' => $parent['terminal_id'],
+            'message' => 'unique_constraint_violation',
+            'details' => $index ?? 'unknown',
+        ];
+    }
+
+    /**
+     * Extract the index name from a MySQL 1062 driver message
+     * ("Duplicate entry '...' for key 'table.index'"). Reads errorInfo[2]
+     * only, never getMessage() (which carries SQL bindings).
+     */
+    protected static function uniqueIndexFromErrorInfo(?array $errorInfo): ?string
+    {
+        $driverMessage = (string) ($errorInfo[2] ?? '');
+
+        if (! preg_match("/for key '([^']+)'\\s*$/", $driverMessage, $matches)) {
+            return null;
+        }
+
+        $key = $matches[1];
+        $dot = strrpos($key, '.');
+
+        return $dot === false ? $key : substr($key, $dot + 1);
+    }
+
+    /**
+     * Log-safe exception context: class, SQLSTATE and driver code only.
+     */
+    protected static function exceptionLogContext(\Throwable $e): array
+    {
+        $errorInfo = $e instanceof QueryException && is_array($e->errorInfo) ? $e->errorInfo : [];
+
+        return [
+            'exception_class' => $e::class,
+            'sqlstate' => isset($errorInfo[0]) ? (string) $errorInfo[0] : (string) $e->getCode(),
+            'driver_code' => $errorInfo[1] ?? null,
+        ];
     }
 
     /**
@@ -278,6 +404,7 @@ class TransactionIngestService
             'hardware_id',
             'transaction_timestamp',
             'gross_sales',
+            'net_sales',
             'customer_code',
             'payload_checksum',
         ] as $field) {
@@ -306,7 +433,7 @@ class TransactionIngestService
             'hardware_id' => $payload['hardware_id'],
             'transaction_timestamp' => $normalizedTransactionTimestamp,
             'gross_sales' => (float) $payload['gross_sales'],
-            'net_sales' => (float) ($payload['net_sales'] ?? 0.0),
+            'net_sales' => (float) $payload['net_sales'],
             'customer_code' => $payload['customer_code'],
             'promo_status' => $payload['promo_status'] ?? 'NONE',
             'payload_checksum' => $payload['payload_checksum'],
@@ -400,13 +527,14 @@ class TransactionIngestService
         }
     }
 
-    protected function insertAdjustments(int $transactionPk, array $adjustments): void
+    protected function insertAdjustments(int $transactionPk, array $adjustments, ?string $correlationId = null): void
     {
-        foreach ($adjustments as $adjustment) {
+        foreach ($adjustments as $index => $adjustment) {
             if (! isset($adjustment['adjustment_type'], $adjustment['amount']) || $adjustment['adjustment_type'] === '' || $adjustment['amount'] === null) {
                 Log::warning('TransactionIngestService: Skipping malformed adjustment row', [
                     'transaction_pk' => $transactionPk,
-                    'row' => $adjustment,
+                    'row_index' => $index,
+                    'correlation_id' => $correlationId,
                 ]);
                 continue;
             }
@@ -429,13 +557,14 @@ class TransactionIngestService
         }
     }
 
-    protected function insertTaxes(int $transactionPk, array $taxes): void
+    protected function insertTaxes(int $transactionPk, array $taxes, ?string $correlationId = null): void
     {
-        foreach ($taxes as $tax) {
+        foreach ($taxes as $index => $tax) {
             if (! isset($tax['tax_type'], $tax['amount']) || $tax['tax_type'] === '' || $tax['amount'] === null) {
                 Log::warning('TransactionIngestService: Skipping malformed tax row', [
                     'transaction_pk' => $transactionPk,
-                    'row' => $tax,
+                    'row_index' => $index,
+                    'correlation_id' => $correlationId,
                 ]);
                 continue;
             }

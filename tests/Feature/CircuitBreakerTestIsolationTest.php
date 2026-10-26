@@ -20,7 +20,7 @@ use Tests\Traits\FakesCircuitBreakerRedis;
  * (state_ttl_seconds defaults to 3600s). Before this fix, the breaker
  * defaulted to enabled=true in every environment including testing, so any
  * single test that drove enough genuine 5xx responses through
- * /transactions/official or /transactions/batch (e.g.
+ * /transactions/official (or the since-retired /transactions/batch) (e.g.
  * StoreOfficialResilienceTest, which deliberately throws mid-persist) could
  * trip the breaker open in the *real, shared* Redis instance — and that
  * "open" state then leaked into every subsequent test in the same run that

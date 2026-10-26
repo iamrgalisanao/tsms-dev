@@ -197,8 +197,9 @@ Route::prefix('v1')->middleware(['auth:sanctum', 'capture.terminal.ip', AttachCo
     Route::middleware(['abilities:transaction:create', 'throttle:pos-ingestion', 'license.valid'])->group(function () {
         // Legacy basic ingestion endpoint disabled (use /v1/transactions/official)
         // Route::post('/transactions', [TransactionController::class, 'store']);
-        Route::post('/transactions/batch', [TransactionController::class, 'batchStore'])
-            ->middleware(['ingestion.payload_size', 'ingestion.backpressure:processing', 'circuit.breaker:transaction-intake', 'ingestion.fairness']);
+        // Retired (003-ingestion-hardening US1): fixed 410 pointing to /official.
+        // Kept behind auth so unauthenticated probes still get 401; no ingestion middleware.
+        Route::post('/transactions/batch', [TransactionController::class, 'retiredBatch']);
         Route::post('/transactions/official', [TransactionController::class, 'storeOfficial'])
             ->middleware(['ingestion.payload_size', 'ingestion.backpressure:processing', 'circuit.breaker:transaction-intake', 'ingestion.fairness']);
         Route::post('/transactions/{transaction_id}/refund', [TransactionController::class, 'refund']);
@@ -289,7 +290,8 @@ if (env('TSMS_ENABLE_LEGACY_API', false)) {
     Route::prefix('v1')->middleware(['rate.limit'])->group(function () {
         // Legacy basic ingestion endpoint disabled
         // Route::post('/transactions', [TransactionController::class, 'store']);
-        Route::post('/transactions/batch', [TransactionController::class, 'batchStore']);
+        // Retired: same 410 as the authenticated route (003-ingestion-hardening US1).
+        Route::post('/transactions/batch', [TransactionController::class, 'retiredBatch']);
         Route::get('/transactions/{id}/status', [TransactionController::class, 'status']);
     });
 }

@@ -172,6 +172,19 @@ Schedule::call(function () {
     ->onOneServer();
 
 // --------------------------------------------------------------------------
+// Intake rejection monitor (003 US3): alert admins on rejection spikes per
+// terminal/code and on terminals whose every recent submission was rejected.
+// --------------------------------------------------------------------------
+Schedule::call(function () {
+    app(\App\Services\Monitoring\IntakeRejectionMonitor::class)->check();
+})
+    ->everyFifteenMinutes()
+    ->name('intake-rejection-monitor')
+    ->withoutOverlapping()
+    ->onOneServer()
+    ->when(fn () => (bool) config('ingestion.rejection_alerts.enabled', true));
+
+// --------------------------------------------------------------------------
 // SystemLog pruning: scheduled safe prune (uses systemlogs:prune command)
 // Default: keep 90 days of logs; scheduled daily at 02:00. Can be toggled
 // via config key `tsms.logs.enable_prune`.

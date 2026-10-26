@@ -27,7 +27,13 @@ class RouteProviderCharacterizationTest extends TestCase
         }
     }
 
-    public function test_pos_batch_route_keeps_terminal_auth_license_and_intake_guards(): void
+    /**
+     * The batch route was retired in 003-ingestion-hardening (US1): it now
+     * points at the fixed-410 retiredBatch() handler, keeps terminal auth,
+     * ability, throttle and license middleware, and no longer carries the
+     * ingestion guards (payload size, backpressure, circuit breaker, fairness).
+     */
+    public function test_pos_batch_route_is_retired_behind_terminal_auth_and_license_without_intake_guards(): void
     {
         $routes = $this->routesForUri('api/v1/transactions/batch');
 
@@ -35,7 +41,7 @@ class RouteProviderCharacterizationTest extends TestCase
 
         $route = $routes->first();
         $this->assertSame(['POST'], $route->methods());
-        $this->assertSame('App\Http\Controllers\API\V1\TransactionController@batchStore', $route->getActionName());
+        $this->assertSame('App\Http\Controllers\API\V1\TransactionController@retiredBatch', $route->getActionName());
 
         $middleware = $this->expandedMiddleware($route);
 
@@ -45,8 +51,10 @@ class RouteProviderCharacterizationTest extends TestCase
         $this->assertContains(\Laravel\Sanctum\Http\Middleware\CheckAbilities::class . ':transaction:create', $middleware);
         $this->assertContains(\Illuminate\Routing\Middleware\ThrottleRequests::class . ':pos-ingestion', $middleware);
         $this->assertContains(\App\Http\Middleware\LicenseMiddleware::class, $middleware);
-        $this->assertContains(\App\Http\Middleware\IngestionBackpressureMiddleware::class . ':processing', $middleware);
-        $this->assertContains(\App\Http\Middleware\CircuitBreakerMiddleware::class . ':transaction-intake', $middleware);
+        $this->assertNotContains(\App\Http\Middleware\IngestionPayloadSizeMiddleware::class, $middleware);
+        $this->assertNotContains(\App\Http\Middleware\IngestionBackpressureMiddleware::class.':processing', $middleware);
+        $this->assertNotContains(\App\Http\Middleware\CircuitBreakerMiddleware::class.':transaction-intake', $middleware);
+        $this->assertNotContains(\App\Http\Middleware\IngestionFairnessMiddleware::class, $middleware);
     }
 
     public function test_dashboard_license_and_pos_route_duplicate_counts_stay_zero(): void
