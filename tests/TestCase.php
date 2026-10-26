@@ -69,7 +69,10 @@ abstract class TestCase extends BaseTestCase
             ['code' => 'PENDING', 'description' => 'Pending'],
             ['code' => 'VALID', 'description' => 'Valid'],
             ['code' => 'INVALID', 'description' => 'Invalid'],
-            ['code' => 'FAILED', 'description' => 'Failed'],
+            // Mirror ValidationStatusSeeder / production: there is NO 'FAILED' validation
+            // status (ADR-004). Seeding it here used to hide invalid FK writes in tests.
+            ['code' => 'REVIEW_REQUIRED', 'description' => 'Review required'],
+            ['code' => 'ERROR', 'description' => 'Error'],
         ];
         foreach ($validationStatuses as $vs) {
             \Illuminate\Support\Facades\DB::table('validation_statuses')->updateOrInsert(['code' => $vs['code']], ['description' => $vs['description']]);

@@ -26,9 +26,21 @@ class Transaction extends Model
         return $query->where('validation_status', self::VALIDATION_STATUS_PENDING);
     }
 
+    /**
+     * Business-invalid transactions (ADR-004 D1/D2).
+     */
+    public function scopeInvalid($query)
+    {
+        return $query->where('validation_status', self::VALIDATION_STATUS_INVALID);
+    }
+
+    /**
+     * @deprecated ADR-004: 'FAILED' is not a validation status. Kept as an alias of
+     *             scopeInvalid() for compatibility; use invalid() instead.
+     */
     public function scopeFailed($query)
     {
-        return $query->where('validation_status', self::VALIDATION_STATUS_FAILED);
+        return $this->scopeInvalid($query);
     }
 
     public function scopeQueued($query)
@@ -93,6 +105,12 @@ class Transaction extends Model
     // Validation statuses
     public const VALIDATION_STATUS_VALID   = 'VALID';
     public const VALIDATION_STATUS_PENDING = 'PENDING';
+    public const VALIDATION_STATUS_INVALID = 'INVALID';
+    /**
+     * @deprecated ADR-004 D5: 'FAILED' is not in the transactions.validation_status enum
+     *             nor in validation_statuses. No writer may use it; remaining readers are
+     *             migrated in ADR-004 slice 3, after which this constant is removed.
+     */
     public const VALIDATION_STATUS_FAILED  = 'FAILED';
     // Add more as needed
     use HasFactory, BelongsToTenant;
