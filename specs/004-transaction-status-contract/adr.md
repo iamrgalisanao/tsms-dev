@@ -223,6 +223,13 @@ Sales sums in `app/Services/Reports/*` and the dashboard gross sales **don't fil
 
 **Recommended scope limits (to confirm with the product owner):**
 1. Dashboard KPIs and `transactions_hourly`/`transactions_daily` don't exclude voids today. Add only the INVALID exclusion now. **Void handling is PARKED** (product owner, 2026-10-27): out of scope, not to be implemented for now, and no ticket is planned. Slice 3 must not add or change any void filtering.
-2. VALID-only sums (top tenants, revenue composition, commercial month/YTD) also exclude PENDING. Leave them and record the gap.
+2. VALID-only sums (top tenants, revenue composition, commercial month/YTD) also exclude PENDING. **Decision (product owner, 2026-10-27): option A.** Every sales figure follows D10 (VALID + PENDING, excluding INVALID) through `CountableSales`, including `DashboardService` top tenants and revenue composition and `CommercialReportsController` month/YTD. A guard test fails the build on any raw `SUM(gross_sales)`/`SUM(net_sales)` or `->sum('gross_sales'|'net_sales')` in `app/` outside the helper, or an explicit allowlist with a reason for each entry.
 3. `Tenant::getDailySalesTotal` and the daily and per-transaction limit checks in `TransactionValidationService::validateBusinessRules()` are **dead code** (product owner, 2026-10-27): nothing calls `validateBusinessRules()`, and the `tenants.max_daily_sales` column doesn't exist on staging. They are left unchanged in this ADR and listed for the separate dead-code cleanup (Q6). Real tenant spending limits would need their own design.
 4. Approve the `PROCESSING_FAILED` filter and the new processing-failure alert type.
+
+### 10.1 Finance process requirement: period close (option A)
+
+With option A, an open period's total can go down if a PENDING sale is later found INVALID. So, for month-end billing (percentage rent or revenue share) and SAP B1 posting:
+1. Close a period only when it has **no PENDING sales**. A read-only "pending for period" check (follow-up command) supports this checklist step.
+2. Invoice and post from the closed figure. With no PENDING left, the recorded and validated totals are equal.
+3. Any change after close goes through an explicit adjustment in the next period, never a silent change to a closed period.
