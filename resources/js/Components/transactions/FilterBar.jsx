@@ -171,6 +171,7 @@ const FilterBar = ({ filters, onFilterChange, onReset, actionDisabled = false })
         { value: 'VOIDED', label: 'Voided' },
         { value: 'INVALID', label: 'Invalid' },
         { value: 'PENDING', label: 'Pending' },
+        { value: 'PROCESSING_FAILED', label: 'Processing Failed' },
         { value: 'WITH_ISSUES', label: 'With Issues' },
         { value: 'REFUNDED', label: 'Refunded' },
         { value: 'DUPLICATE', label: 'Duplicate' }

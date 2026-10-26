@@ -121,11 +121,80 @@ class NotificationService
     }
 
     /**
+     * ADR-004 D1/D3: alert on processing failures (job_status=FAILED without a final
+     * business outcome; see TransactionStatusFilter::processingFailed()). This is a
+     * separate alert type from the business-INVALID threshold above.
+     */
+    public function checkProcessingFailureThresholds(?string $posTerminalId = null): void
+    {
+        try {
+            $threshold = (int) ($this->config['processing_failure_threshold'] ?? 10);
+            $timeWindow = (int) ($this->config['processing_failure_time_window']
+                ?? $this->config['transaction_failure_time_window'] ?? 60);
+            $cutoffTime = Carbon::now()->subMinutes($timeWindow);
+
+            // updated_at: the failure is recorded after intake, on the row's last write.
+            $query = Transaction::processingFailed()->where('updated_at', '>=', $cutoffTime);
+
+            if ($posTerminalId) {
+                $query->where('terminal_id', $posTerminalId);
+            }
+
+            $failureCount = (clone $query)->count();
+
+            if ($failureCount < $threshold) {
+                return;
+            }
+
+            // Only a sample of the most recent failures goes into the alert.
+            $formattedFailures = $query->orderBy('updated_at', 'desc')->limit(10)->get()->map(fn ($transaction) => [
+                'transaction_id' => $transaction->transaction_id,
+                'error_message' => 'Processing failed - '.($transaction->last_error ?: 'job_status FAILED'),
+                'failed_at' => optional($transaction->updated_at)->format('Y-m-d H:i:s'),
+            ])->toArray();
+
+            $cooldownMinutes = (int) (config('notifications.rate_limiting.cooldown_minutes', 15));
+            $key = sprintf('alerts:tx-processing-failure-threshold:%s', $posTerminalId ?? 'global');
+            $allowed = RateLimiter::attempt($key, 1, fn () => true, $cooldownMinutes * 60);
+
+            if (! $allowed) {
+                Log::info('Processing failure alert suppressed due to cooldown', [
+                    'key' => $key,
+                    'cooldown_minutes' => $cooldownMinutes,
+                ]);
+
+                return;
+            }
+
+            $this->sendToAdmins(new TransactionFailureThresholdExceeded([
+                'alert_type' => TransactionFailureThresholdExceeded::TYPE_PROCESSING_FAILURE,
+                'threshold' => $threshold,
+                'current_count' => $failureCount,
+                'time_window_minutes' => $timeWindow,
+                'pos_terminal_id' => $posTerminalId,
+            ], $formattedFailures));
+
+            Log::warning('Transaction processing failure threshold exceeded', [
+                'pos_terminal_id' => $posTerminalId,
+                'threshold' => $threshold,
+                'current_count' => $failureCount,
+                'time_window_minutes' => $timeWindow,
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Failed to check transaction processing failure thresholds', [
+                'error' => $e->getMessage(),
+                'pos_terminal_id' => $posTerminalId,
+            ]);
+        }
+    }
+
+    /**
      * Send notification for transaction failure threshold exceeded
      */
     private function sendTransactionFailureNotification(?string $posTerminalId, int $failureCount, array $recentFailures): void
     {
         $thresholdData = [
+            'alert_type' => TransactionFailureThresholdExceeded::TYPE_BUSINESS_INVALID,
             'threshold' => $this->config['transaction_failure_threshold'],
             'current_count' => $failureCount,
             'time_window_minutes' => $this->config['transaction_failure_time_window'],

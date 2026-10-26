@@ -1052,11 +1052,13 @@ class TransactionIntakeService
                     'job_status' => 'COMPLETED',
                     'message' => 'Transaction already processed.',
                 ],
-                // Pre-existing enum mismatch (out of scope here): transactions.validation_status
-                // is ENUM('PENDING','VALID','ERROR','INVALID') but ProcessTransactionJob writes
-                // 'FAILED', which non-strict MySQL stores as ''. Treat FAILED/ERROR/INVALID and
-                // an empty/NULL status on an existing row as failed, never as pending.
-                Transaction::VALIDATION_STATUS_FAILED, 'ERROR', 'INVALID', '' => [
+                // ADR-004 D8: a business-INVALID sale is FAILED (correct and resend).
+                Transaction::VALIDATION_STATUS_INVALID,
+                // Legacy states, ADR-004 slice 3: deprecated ERROR and the blank '' that the
+                // old 'FAILED' write left behind stay FAILED. The watchdog only retries
+                // PENDING rows, so a PENDING reply for '' would leave the POS waiting forever.
+                // Slice 4 remediates '' to PENDING+FAILED and changes this mapping.
+                'ERROR', '' => [
                     'transaction_id' => $transactionId,
                     'status' => 'FAILED',
                     'validation_status' => 'INVALID',

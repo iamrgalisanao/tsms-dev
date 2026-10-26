@@ -9,11 +9,12 @@
       <p class="text-muted mb-0">{{ $transaction->transaction_id }}</p>
     </div>
     <div class="d-flex gap-2">
-      @if($transaction->validation_status === 'ERROR' && Gate::check('retry-transactions'))
+      {{-- ADR-004: retry only a failed job without a final business outcome (never VALID or INVALID). --}}
+      @if($transaction->isRetryable() && Gate::check('retry-transactions'))
       <button class="btn btn-warning" id="retryBtn">
         <i class="fas fa-sync-alt me-2"></i> Retry Transaction
       </button>
-      @elseif($transaction->validation_status === 'ERROR')
+      @elseif($transaction->isRetryable())
       <span class="text-muted small">You don’t have permission to retry transactions.</span>
       @endif
       <a href="{{ route('transactions.logs.index') }}" class="btn btn-outline-secondary">
@@ -32,10 +33,10 @@
             <h6 class="text-muted mb-2">Status</h6>
             <div class="mt-auto">
               <span
-                class="badge bg-{{ $transaction->validation_status === 'VALID' ? 'success' : ($transaction->validation_status === 'ERROR' ? 'danger' : 'warning') }}-subtle text-{{ $transaction->validation_status === 'VALID' ? 'success' : ($transaction->validation_status === 'ERROR' ? 'danger' : 'warning') }} px-3 py-2">
+                class="badge bg-{{ $transaction->statusBadgeColor() }}-subtle text-{{ $transaction->statusBadgeColor() }} px-3 py-2">
                 <i
-                  class="fas fa-{{ $transaction->validation_status === 'VALID' ? 'check-circle' : ($transaction->validation_status === 'ERROR' ? 'exclamation-circle' : 'clock') }} me-2"></i>
-                {{ $transaction->validation_status }}
+                  class="fas fa-{{ $transaction->validation_status === 'VALID' ? 'check-circle' : ($transaction->statusBadgeColor() === 'danger' || $transaction->isProcessingFailed() ? 'exclamation-circle' : 'clock') }} me-2"></i>
+                {{ $transaction->statusLabel() }}
               </span>
             </div>
           </div>

@@ -22,12 +22,8 @@
         <td>{{ $transaction->terminal->id ?? 'N/A' }}</td>
         <td class="text-end">₱{{ number_format($transaction->gross_sales, 2) }}</td>
         <td class="text-center">
-          <span class="badge bg-{{
-            $transaction->validation_status === 'VALID' ? 'success' :
-            ($transaction->validation_status === 'ERROR' ? 'danger' :
-            ($transaction->validation_status === null || $transaction->validation_status === '' || $transaction->validation_status === 'PENDING' ? 'warning' : 'secondary'))
-          }}">
-            {{ $transaction->validation_status ?: 'PENDING' }}
+          <span class="badge bg-{{ $transaction->statusBadgeColor() }}">
+            {{ $transaction->statusLabel() }}
           </span>
         </td>
         <td class="text-center">
@@ -44,7 +40,7 @@
             <a href="{{ route('transactions.logs.show', $transaction->id) }}" class="btn btn-sm btn-primary">
               <i class="fas fa-eye"></i> View Details
             </a>
-            @if($transaction->validation_status === 'ERROR')
+            @if($transaction->isRetryable())
             <button type="button" class="btn btn-sm btn-warning retry-transaction" data-id="{{ $transaction->id }}">
               <i class="fas fa-sync-alt"></i> Retry
             </button>

@@ -18,7 +18,7 @@
               <select class="form-select form-select-sm" id="validationStatus">
                 <option value="">All Validation Status</option>
                 <option value="VALID">Valid</option>
-                <option value="ERROR">Error</option>
+                <option value="INVALID">Invalid</option>
                 <option value="PENDING">Pending</option>
               </select>
             </div>
@@ -56,9 +56,8 @@
                   <td>{{ $transaction->terminal->identifier ?? 'N/A' }}</td>
                   <td class="text-end">₱{{ number_format($transaction->gross_sales, 2) }}</td>
                   <td class="text-center validation-status">
-                    <span
-                      class="badge bg-{{ $transaction->validation_status === 'VALID' ? 'success' : ($transaction->validation_status === 'ERROR' ? 'danger' : 'warning') }}">
-                      {{ $transaction->validation_status }}
+                    <span class="badge bg-{{ $transaction->statusBadgeColor() }}">
+                      {{ $transaction->statusLabel() }}
                     </span>
                   </td>
                   <td class="text-center job-status">
@@ -86,7 +85,7 @@
                       <a href="{{ route('transactions.show', $transaction->id) }}" class="btn btn-sm btn-primary">
                         <i class="fas fa-eye"></i> View Details
                       </a>
-                      @if($transaction->validation_status === 'ERROR')
+                      @if($transaction->isRetryable())
                       <button type="button" class="btn btn-sm btn-warning retry-transaction"
                         data-id="{{ $transaction->id }}">
                         <i class="fas fa-sync-alt"></i> Retry
@@ -167,7 +166,8 @@ function updateTransactionRow(row, transaction) {
 function getStatusBadge(status, type = 'validation') {
   let badgeClass = '';
   if (type === 'validation') {
-    badgeClass = status === 'VALID' ? 'success' : (status === 'ERROR' ? 'danger' : 'warning');
+    // ADR-004: INVALID (and legacy ERROR) danger; PENDING / processing failed warning.
+    badgeClass = status === 'VALID' ? 'success' : ((status === 'INVALID' || status === 'ERROR') ? 'danger' : 'warning');
   } else if (type === 'job') {
     badgeClass = status === 'COMPLETED' ? 'success' : (status === 'FAILED' ? 'danger' : 'info');
   }

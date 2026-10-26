@@ -6,6 +6,8 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use App\Models\Tenant;
 use App\Traits\BelongsToTenant;
+use App\Support\Reporting\CountableSales;
+use App\Support\Reporting\TransactionStatusFilter;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
@@ -26,14 +28,96 @@ class Transaction extends Model
         return $query->where('validation_status', self::VALIDATION_STATUS_PENDING);
     }
 
+    /**
+     * Business-invalid transactions (ADR-004 D1/D2).
+     */
+    public function scopeInvalid($query)
+    {
+        return $query->where('validation_status', self::VALIDATION_STATUS_INVALID);
+    }
+
+    /**
+     * @deprecated ADR-004: 'FAILED' is not a validation status. Kept as an alias of
+     *             scopeInvalid() for compatibility; use invalid() instead.
+     */
     public function scopeFailed($query)
     {
-        return $query->where('validation_status', self::VALIDATION_STATUS_FAILED);
+        return $this->scopeInvalid($query);
+    }
+
+    /**
+     * Processing failed before a business outcome was decided (ADR-004 D1/D3):
+     * job_status=FAILED and validation_status NOT IN ('VALID','INVALID'), i.e.
+     * PENDING, legacy '' or deprecated ERROR. Single definition in TransactionStatusFilter.
+     */
+    public function scopeProcessingFailed($query)
+    {
+        return TransactionStatusFilter::processingFailed($query, $this->getTable());
+    }
+
+    /**
+     * Sales that count toward gross/net sums (ADR-004 D10): not business-INVALID and,
+     * when tsms.reporting.exclude_voids_from_totals is on, not voided.
+     */
+    public function scopeCountableSales($query)
+    {
+        return CountableSales::apply($query, $this->getTable());
     }
 
     public function scopeQueued($query)
     {
         return $query->where('job_status', self::JOB_STATUS_QUEUED);
+    }
+
+    /**
+     * ADR-004 D1: processing failed before a business outcome was decided
+     * (job_status FAILED, validation_status PENDING or legacy '').
+     */
+    public function isProcessingFailed(): bool
+    {
+        return TransactionStatusFilter::isProcessingFailed($this->job_status, $this->validation_status);
+    }
+
+    /**
+     * ADR-004: a manual retry is offered only for a failed job without a final
+     * business outcome. Never for VALID or business-INVALID sales.
+     */
+    public function isRetryable(): bool
+    {
+        return $this->isProcessingFailed();
+    }
+
+    /**
+     * Status label for operator views (ADR-004 slice 3). Shared with the React util
+     * resources/js/utils/transactionStatus.js via tests/fixtures/transaction_status_labels.json.
+     * Legacy '' is always PROCESSING FAILED (never RECONCILED or INVALID); ERROR reads INVALID.
+     */
+    public function statusLabel(): string
+    {
+        $validation = strtoupper((string) $this->validation_status);
+        $job = strtoupper((string) $this->job_status);
+
+        return match (true) {
+            $validation === self::VALIDATION_STATUS_VALID => 'RECONCILED',
+            in_array($validation, [self::VALIDATION_STATUS_INVALID, 'ERROR'], true) => 'INVALID',
+            $validation === '' => 'PROCESSING FAILED',
+            $validation === self::VALIDATION_STATUS_PENDING && $job === self::JOB_STATUS_FAILED => 'PROCESSING FAILED',
+            $validation === self::VALIDATION_STATUS_PENDING => 'PENDING',
+            default => 'UNKNOWN',
+        };
+    }
+
+    /**
+     * Bootstrap colour for the status badge: VALID success, INVALID (and legacy
+     * ERROR) danger, everything else (PENDING, processing failed) warning.
+     */
+    public function statusBadgeColor(): string
+    {
+        return match ((string) $this->validation_status) {
+            self::VALIDATION_STATUS_VALID => 'success',
+            self::VALIDATION_STATUS_INVALID, 'ERROR' => 'danger',
+            default => 'warning',
+        };
     }
 
     /**
@@ -93,7 +177,7 @@ class Transaction extends Model
     // Validation statuses
     public const VALIDATION_STATUS_VALID   = 'VALID';
     public const VALIDATION_STATUS_PENDING = 'PENDING';
-    public const VALIDATION_STATUS_FAILED  = 'FAILED';
+    public const VALIDATION_STATUS_INVALID = 'INVALID';
     // Add more as needed
     use HasFactory, BelongsToTenant;
 

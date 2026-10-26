@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Support\Reporting\CountableSales;
 use App\Traits\ResolvesReportBusinessDate;
 use Carbon\Carbon;
 use Illuminate\Console\Command;
@@ -46,8 +47,8 @@ class RefreshDailyTransactionSummaries extends Command
         $receiptExpr = Schema::hasColumn('transactions', 'receipt_no')
             ? "COUNT(DISTINCT NULLIF(t.receipt_no, ''))"
             : 'COUNT(*)';
-        $grossExpr = Schema::hasColumn('transactions', 'gross_sales') ? 'COALESCE(SUM(t.gross_sales),0)' : '0';
-        $netExpr = Schema::hasColumn('transactions', 'net_sales') ? 'COALESCE(SUM(t.net_sales),0)' : '0';
+        $grossExpr = Schema::hasColumn('transactions', 'gross_sales') ? 'COALESCE('.CountableSales::sumExpr('t.gross_sales', 't').',0)' : '0';
+        $netExpr = Schema::hasColumn('transactions', 'net_sales') ? 'COALESCE('.CountableSales::sumExpr('t.net_sales', 't').',0)' : '0';
         $vatableExpr = Schema::hasColumn('transactions', 'vatable_sales') ? 'COALESCE(SUM(t.vatable_sales),0)' : '0';
         $vatExpr = Schema::hasColumn('transactions', 'vat_amount') ? 'COALESCE(SUM(t.vat_amount),0)' : '0';
         $scVatExpr = Schema::hasColumn('transactions', 'sc_vat_exempt_sales') ? 'COALESCE(SUM(t.sc_vat_exempt_sales),0)' : '0';
@@ -66,7 +67,6 @@ class RefreshDailyTransactionSummaries extends Command
         $serviceChargeExpr = Schema::hasColumn('transactions', 'service_charge') ? 'COALESCE(SUM(t.service_charge),0)' : '0';
         $managementServiceChargeExpr = Schema::hasColumn('transactions', 'management_service_charge') ? 'COALESCE(SUM(t.management_service_charge),0)' : '0';
         $otherTaxExpr = Schema::hasColumn('transactions', 'tax_exempt') ? 'COALESCE(SUM(t.tax_exempt),0)' : '0';
-        $excludeVoids = config('tsms.reporting.exclude_voids_from_totals', true);
         $hasAdjustmentPk = Schema::hasTable('transaction_adjustments')
             && Schema::hasColumn('transaction_adjustments', 'transaction_pk');
         $hasTaxPk = Schema::hasTable('transaction_taxes')
@@ -96,9 +96,7 @@ class RefreshDailyTransactionSummaries extends Command
             ->whereRaw($dateExpr . ' BETWEEN ? AND ?', [$from, $to])
             ->when($tenantId, fn ($q) => $q->where('t.tenant_id', $tenantId));
 
-        if ($excludeVoids && Schema::hasColumn('transactions', 'transaction_type')) {
-            $query->where('t.transaction_type', '!=', 'VOID')->whereNull('t.voided_at');
-        }
+        CountableSales::apply($query, 't', Schema::hasColumn('transactions', 'transaction_type'));
 
         if ($hasAdjustmentPk) {
             $adjustments = DB::table('transaction_adjustments')
@@ -214,9 +212,7 @@ class RefreshDailyTransactionSummaries extends Command
             ->whereRaw($dateExpr . ' BETWEEN ? AND ?', [$from, $to])
             ->when($tenantId, fn ($q) => $q->where('t.tenant_id', $tenantId));
 
-        if (config('tsms.reporting.exclude_voids_from_totals', true) && Schema::hasColumn('transactions', 'transaction_type')) {
-            $rows->where('t.transaction_type', '!=', 'VOID')->whereNull('t.voided_at');
-        }
+        CountableSales::apply($rows, 't', Schema::hasColumn('transactions', 'transaction_type'));
 
         $totals = [];
         foreach ($rows->cursor() as $row) {

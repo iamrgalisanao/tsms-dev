@@ -401,8 +401,11 @@ class TransactionController extends Controller
         // report VALID ahead of the async validation outcome.
         $validationStatus = strtoupper($validationStatus);
 
-        if ($validationStatus === Transaction::VALIDATION_STATUS_FAILED || $validationStatus === 'ERROR') {
-            return 'INVALID';
+        // ADR-004 D1: legacy ERROR is a business failure; legacy '' arrives here as
+        // PENDING (job_status carries the processing failure).
+        // Per ADR §10, '' stays reported as PENDING until the slice 4 remediation.
+        if ($validationStatus === 'ERROR') {
+            return Transaction::VALIDATION_STATUS_INVALID;
         }
 
         return $validationStatus;

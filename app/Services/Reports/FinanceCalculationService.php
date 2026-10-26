@@ -2,6 +2,7 @@
 
 namespace App\Services\Reports;
 
+use App\Support\Reporting\CountableSales;
 use Illuminate\Support\Collection;
 
 class FinanceCalculationService
@@ -120,10 +121,15 @@ class FinanceCalculationService
             'net_sales' => 0.0,
         ];
 
-        $excludeVoids = config('tsms.reporting.exclude_voids_from_totals', true);
+        $excludeVoids = CountableSales::excludeVoids();
 
         foreach ($transactions as $tx) {
             if ($excludeVoids && method_exists($tx, 'isVoided') && $tx->isVoided()) {
+                continue;
+            }
+
+            // ADR-004 D10: business-INVALID sales never count toward totals.
+            if (($tx->validation_status ?? null) === CountableSales::EXCLUDED_STATUS) {
                 continue;
             }
 

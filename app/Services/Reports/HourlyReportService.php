@@ -3,6 +3,7 @@
 namespace App\Services\Reports;
 
 use App\Models\Transaction;
+use App\Support\Reporting\CountableSales;
 use App\Traits\ResolvesReportBusinessDate;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Collection;
@@ -53,9 +54,7 @@ class HourlyReportService
                 if (! empty($terminalId)) {
                     $query->where('transactions.terminal_id', $terminalId);
                 }
-                if (config('tsms.reporting.exclude_voids_from_totals', true)) {
-                    $query->where('transactions.transaction_type', '!=', 'VOID')->whereNull('transactions.voided_at');
-                }
+                CountableSales::apply($query, 'transactions');
 
                 $finance = app(FinanceCalculationService::class);
                 $groups = $query->get()->groupBy(fn ($tx) => $this->reportHour($tx));

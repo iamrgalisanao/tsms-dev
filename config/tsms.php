@@ -13,16 +13,25 @@ return [
         'prune_failed_after_days' => (int) env('TX_PRUNE_FAILED_AFTER_DAYS', 14),
         'prune_pending_after_minutes' => (int) env('TX_PRUNE_PENDING_AFTER_MIN', 180), // treat as stale
         'enable_pruning' => (bool) env('TX_ENABLE_PRUNING', true),
+        // ADR-004 slice 2: the hourly prune never hard-deletes transactions. Even when
+        // this flag is true nothing is deleted until a retention ADR defines the
+        // deletable categories; the prune only logs an inventory snapshot.
+        'prune_delete_enabled' => (bool) env('TX_PRUNE_DELETE_ENABLED', false),
+        // ADR-004 D6: ProcessTransactionJob max tries (real pickups/timeouts; maxExceptions=3).
+        'job_tries' => (int) env('TX_JOB_TRIES', 5),
         'log_channel' => env('TX_PRUNE_LOG_CHANNEL', 'single'),
         // Watchdog settings for stuck / slow transactions
         'watchdog' => [
             'enabled' => (bool) env('TX_WATCHDOG_ENABLED', true),
-            // If a transaction stays PENDING this long, mark as FAILED (terminal timeout)
+            // If a transaction stays PENDING this long, set job_status=FAILED (validation_status untouched)
             'max_pending_minutes' => (int) env('TX_WATCHDOG_MAX_PENDING_MIN', 60),
             // Re-dispatch (requeue) PENDING+QUEUED transactions older than this age
             'requeue_after_minutes' => (int) env('TX_WATCHDOG_REQUEUE_AFTER_MIN', 10),
-            // Maximum re-dispatch attempts before forcing failure (uses transaction.job_attempts)
-            'max_requeue_attempts' => (int) env('TX_WATCHDOG_MAX_REQUEUE_ATTEMPTS', 2),
+            // Maximum watchdog re-dispatches of a PENDING+FAILED row (counted in the cache key
+            // txn:watchdog_requeues:{id}, never in job_attempts); then log, metric and one admin alert.
+            'max_requeue_attempts' => (int) env('TX_WATCHDOG_MAX_REQUEUE_ATTEMPTS', 3),
+            // Max PENDING+FAILED rows scanned per run (id order), bounding work on capped/backoff rows.
+            'max_failed_scan' => (int) env('TX_WATCHDOG_MAX_FAILED_SCAN', 1000),
         ],
     ],
 

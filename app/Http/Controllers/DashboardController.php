@@ -6,6 +6,8 @@ use App\Models\PosProvider;
 use App\Models\Tenant;
 use App\Models\PosTerminal;
 use App\Models\Transaction;
+use App\Support\Reporting\CountableSales;
+use App\Support\Reporting\TransactionStatusFilter;
 use App\Models\IntegrationLog;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -291,9 +293,16 @@ class DashboardController extends Controller
                 $baseQuery->where('tenant_id', $tenantId);
             }
 
+            // ADR-004 D10: sales sums exclude business-INVALID rows; counts stay visible.
+            $grossSum = CountableSales::sumExpr('gross_sales');
+            $netSum = CountableSales::sumExpr('COALESCE(net_sales, gross_sales, 0)');
+            // ADR-004 D1: an exception is business-INVALID or processing failed (legacy
+            // VALID+FAILED rows are reconciled, not exceptions).
+            $exceptionsExpr = "SUM(IF(validation_status = 'INVALID' OR ".TransactionStatusFilter::processingFailedSql().', 1, 0))';
+
             $topTenants = (clone $baseQuery)
                 ->leftJoin('tenants', 'transactions.tenant_id', '=', 'tenants.id')
-                ->selectRaw('transactions.tenant_id, COALESCE(tenants.trade_name, "Unknown Tenant") as tenant_name, COUNT(*) as transactions, SUM(gross_sales) as gross_sales')
+                ->selectRaw('transactions.tenant_id, COALESCE(tenants.trade_name, "Unknown Tenant") as tenant_name, COUNT(*) as transactions, '.CountableSales::sumExpr('gross_sales', 'transactions').' as gross_sales')
                 ->groupBy('transactions.tenant_id', 'tenant_name')
                 ->orderByDesc('transactions')
                 ->limit(10)
@@ -309,15 +318,15 @@ class DashboardController extends Controller
 
             if ($granularity === 'weekly_pattern') {
                 $stats = (clone $baseQuery)
-                    ->selectRaw('
+                    ->selectRaw("
                         DAYOFWEEK(transaction_timestamp) as day_of_week,
                         HOUR(transaction_timestamp) as hour,
-                        SUM(gross_sales) as sales,
-                        SUM(COALESCE(net_sales, gross_sales, 0)) as net_sales,
+                        {$grossSum} as sales,
+                        {$netSum} as net_sales,
                         COUNT(*) as count,
                         COUNT(DISTINCT terminal_id) as terminal_count,
                         COUNT(DISTINCT tenant_id) as tenant_count
-                    ')
+                    ")
                     ->groupBy('day_of_week', 'hour')
                     ->get();
 
@@ -346,16 +355,16 @@ class DashboardController extends Controller
 
             if ($granularity === 'hourly') {
                 $stats = (clone $baseQuery)
-                    ->selectRaw('
+                    ->selectRaw("
                         HOUR(transaction_timestamp) as hour,
-                        SUM(gross_sales) as sales,
-                        SUM(COALESCE(net_sales, gross_sales, 0)) as net_sales,
+                        {$grossSum} as sales,
+                        {$netSum} as net_sales,
                         COUNT(*) as count,
                         COUNT(DISTINCT terminal_id) as terminal_count,
                         COUNT(DISTINCT tenant_id) as tenant_count,
-                        SUM(IF(validation_status = "VALID", 1, 0)) as reconciled,
-                        SUM(IF(validation_status IN ("FAILED", "INVALID", "ERROR"), 1, 0)) as exceptions
-                    ')
+                        SUM(IF(validation_status = 'VALID', 1, 0)) as reconciled,
+                        {$exceptionsExpr} as exceptions
+                    ")
                     ->groupBy('hour')
                     ->get()
                     ->keyBy('hour');
@@ -392,16 +401,16 @@ class DashboardController extends Controller
 
             // Fetch current period metrics in a single query
             $stats = (clone $baseQuery)
-                ->selectRaw('
+                ->selectRaw("
                     DATE(transaction_timestamp) as date,
-                    SUM(gross_sales) as sales,
-                    SUM(COALESCE(net_sales, gross_sales, 0)) as net_sales,
+                    {$grossSum} as sales,
+                    {$netSum} as net_sales,
                     COUNT(*) as count,
                     COUNT(DISTINCT terminal_id) as terminal_count,
                     COUNT(DISTINCT tenant_id) as tenant_count,
-                    SUM(IF(validation_status = "VALID", 1, 0)) as reconciled,
-                    SUM(IF(validation_status IN ("FAILED", "INVALID", "ERROR"), 1, 0)) as exceptions
-                ')
+                    SUM(IF(validation_status = 'VALID', 1, 0)) as reconciled,
+                    {$exceptionsExpr} as exceptions
+                ")
                 ->groupBy('date')
                 ->get()
                 ->keyBy('date');
@@ -416,10 +425,10 @@ class DashboardController extends Controller
             }
 
             $prevStats = $prevQuery
-                ->selectRaw('
+                ->selectRaw("
                     DATE(transaction_timestamp) as date,
-                    SUM(gross_sales) as sales
-                ')
+                    {$grossSum} as sales
+                ")
                 ->groupBy('date')
                 ->get()
                 ->keyBy('date');

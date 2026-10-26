@@ -2,6 +2,7 @@
 
 namespace App\Console\Commands;
 
+use App\Support\Reporting\CountableSales;
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -83,7 +84,8 @@ class ReportingRefreshCommand extends Command
             // ignore and leave flags false
         }
 
-        $netSelect = $hasNet ? "SUM(COALESCE(net_sales,0)) AS total_net_amount,\n" : "0 AS total_net_amount,\n";
+        // ADR-004 D10: gross/net/avg exclude business-INVALID rows (row counts stay unfiltered).
+        $netSelect = $hasNet ? '  '.CountableSales::sumExpr('COALESCE(net_sales,0)')." AS total_net_amount,\n" : "0 AS total_net_amount,\n";
         // Build discount select while referencing only the columns that actually exist.
         if ($hasDiscount) {
             $hasDiscountTotal = \Illuminate\Support\Facades\Schema::hasColumn('transactions', 'discount_total');
@@ -136,23 +138,25 @@ class ReportingRefreshCommand extends Command
     $sampleChannelSelect = '';
     $samplePrimarySelect = '';
 
+    $countableAvg = self::countableStatExpr('AVG');
+    $issuesSelect = self::invalidIssuesSelect();
+
     $sql = "INSERT INTO " . $insertInto . " (tenant_id, terminal_id, hour, tx_count, total_amount, total_gross_amount, total_net_amount, total_discount_amount, total_tax_amount, total_service_charge_amount, avg_amount, min_amount, max_amount, success_count, decline_count, issues_count, issues_amount, void_count, refunded_count, duplicate_count, created_at, updated_at)\n".
             "SELECT\n".
             "  tenant_id, COALESCE(terminal_id, 0) AS terminal_id, DATE_FORMAT(transaction_timestamp, '%Y-%m-%d %H:00:00') AS hour,\n".
             "  COUNT(*) AS tx_count,\n".
-            "  SUM(gross_sales) AS total_amount,\n".
-            "  SUM(gross_sales) AS total_gross_amount,\n".
+            '  '.CountableSales::sumExpr('gross_sales')." AS total_amount,\n".
+            '  '.CountableSales::sumExpr('gross_sales')." AS total_gross_amount,\n".
             $netSelect.
             $discountSelect.
             $vatSelect.
             $scSelect.
-            "  AVG(gross_sales) AS avg_amount,\n".
-            "  MIN(gross_sales) AS min_amount,\n".
-            "  MAX(gross_sales) AS max_amount,\n".
+            '  '.$countableAvg." AS avg_amount,\n".
+            '  '.self::countableStatExpr('MIN')." AS min_amount,\n".
+            '  '.self::countableStatExpr('MAX')." AS max_amount,\n".
             "  SUM(CASE WHEN transaction_type = 'success' THEN 1 ELSE 0 END) AS success_count,\n".
             "  SUM(CASE WHEN transaction_type = 'decline' THEN 1 ELSE 0 END) AS decline_count,\n".
-            "  SUM(CASE WHEN validation_status = 'WITH_ISSUES' THEN 1 ELSE 0 END) AS issues_count,\n".
-            "  SUM(CASE WHEN validation_status = 'WITH_ISSUES' THEN gross_sales ELSE 0 END) AS issues_amount,\n".
+            $issuesSelect.
             $voidSelect.
             $refSelect.
             // sample_* selection omitted (resolved at application layer when needed)
@@ -203,9 +207,8 @@ class ReportingRefreshCommand extends Command
         $sql = "INSERT INTO " . $insertIntoDaily . " (tenant_id, terminal_id, date, tx_count, total_amount, avg_amount, issues_count, issues_amount, created_at, updated_at)\n".
             "SELECT\n".
             "  tenant_id, COALESCE(terminal_id, 0) AS terminal_id, DATE(transaction_timestamp) AS date,\n".
-            "  COUNT(*) AS tx_count, SUM(gross_sales) AS total_amount, AVG(gross_sales) AS avg_amount,\n".
-            "  SUM(CASE WHEN validation_status = 'WITH_ISSUES' THEN 1 ELSE 0 END) AS issues_count,\n".
-            "  SUM(CASE WHEN validation_status = 'WITH_ISSUES' THEN gross_sales ELSE 0 END) AS issues_amount,\n".
+            '  COUNT(*) AS tx_count, '.CountableSales::sumExpr('gross_sales').' AS total_amount, '.self::countableStatExpr('AVG')." AS avg_amount,\n".
+            self::invalidIssuesSelect().
             "  NOW() AS created_at, NOW() AS updated_at\n".
             "FROM transactions\n".
             "WHERE transaction_timestamp >= DATE_SUB(CURDATE(), INTERVAL 2 DAY)\n".
@@ -227,5 +230,26 @@ class ReportingRefreshCommand extends Command
             $this->error('Failed to refresh transactions_daily: ' . $e->getMessage());
             Log::error('Reporting refresh failed (daily)', ['error' => $e->getMessage()]);
         }
+    }
+
+    /**
+     * ADR-004 D10: row statistic (AVG/MIN/MAX) of gross over countable (non-INVALID)
+     * rows only; 0 when a bucket has no countable rows.
+     */
+    private static function countableStatExpr(string $function): string
+    {
+        return "COALESCE({$function}(CASE WHEN validation_status <> '".CountableSales::EXCLUDED_STATUS."' THEN gross_sales END), 0)";
+    }
+
+    /**
+     * ADR-004 D10: issues_count/issues_amount are repurposed to business-INVALID
+     * rows (the old 'WITH_ISSUES' value is not in the validation_status enum).
+     */
+    private static function invalidIssuesSelect(): string
+    {
+        $invalid = CountableSales::EXCLUDED_STATUS;
+
+        return "  SUM(CASE WHEN validation_status = '{$invalid}' THEN 1 ELSE 0 END) AS issues_count,\n".
+            "  SUM(CASE WHEN validation_status = '{$invalid}' THEN gross_sales ELSE 0 END) AS issues_amount,\n";
     }
 }

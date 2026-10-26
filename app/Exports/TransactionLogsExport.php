@@ -3,6 +3,7 @@
 namespace App\Exports;
 
 use App\Models\Transaction;
+use App\Support\Reporting\TransactionStatusFilter;
 use Carbon\Carbon;
 use DateTimeInterface;
 use Illuminate\Support\Facades\Log;
@@ -39,8 +40,9 @@ class TransactionLogsExport
                 'adjustments',
                 'taxes',
             ])
-            ->when($this->filters['status'] ?? null, function($query, $status) {
-                $query->where('validation_status', $status);
+            ->when($this->filters['status'] ?? null, function ($query, $status) {
+                // Export never had the VOIDED/REFUNDED pseudo-statuses; void handling is parked.
+                TransactionStatusFilter::apply($query, $status, null, false);
             })
             ->when($this->filters['transaction_id'] ?? null, function ($query, $transactionId) {
                 $search = str_replace('TX-', '', trim($transactionId));

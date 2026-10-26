@@ -4,8 +4,9 @@ namespace App\Jobs;
 
 use App\Models\Transaction;
 use App\Services\TransactionValidationService;
+use App\Support\Metrics;
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Queue\Middleware\WithoutOverlapping;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Contracts\Queue\ShouldBeUnique;
@@ -25,14 +26,35 @@ class ProcessTransactionJob implements ShouldQueue, ShouldBeUnique
      */
     protected int $transactionId;
 
-    /** Max processing attempts (framework also governs retries). */
-    public $tries = 3;
-    
+    /**
+     * ADR-004 D6 retry policy. With WithoutOverlapping gone, a try is only consumed by a real
+     * worker pickup (or a timeout), never by a lock release. A count (not retryUntil()) is
+     * used because a retryUntil() deadline is fixed at dispatch, so a processing backlog
+     * longer than the window would fail jobs that never ran. Overridden from
+     * tsms.transactions.job_tries (TX_JOB_TRIES) in the constructor.
+     */
+    public $tries = 5;
+
+    /** Real exceptions allowed before the job finally fails (failed() -> PENDING + job FAILED). */
+    public $maxExceptions = 3;
+
     /** Job timeout in seconds */
     public $timeout = 120;
-    
-    /** Backoff delay in seconds between retries */
-    public $backoff = 10;
+
+    /** A timed-out run is a final infrastructure failure (failed() -> PENDING + job FAILED). */
+    public $failOnTimeout = true;
+
+    /** Backoff delays in seconds between retries */
+    public $backoff = [10, 60, 180];
+
+    /**
+     * ShouldBeUnique lock lifetime in seconds. The lock is held from dispatch until the job
+     * completes or finally fails; this only bounds a lock orphaned by a lost job. It must
+     * exceed the job's worst-case active lifetime: 5 tries x 120s timeout + backoff
+     * (10 + 60 + 180 + 180) = 1030s < 1800s (asserted in TransactionStatusContractTest;
+     * queue wait time before the first pickup is not bounded by this).
+     */
+    public $uniqueFor = 1800;
 
     /**
      * Create a new job instance.
@@ -42,6 +64,7 @@ class ProcessTransactionJob implements ShouldQueue, ShouldBeUnique
     public function __construct(int $transactionId)
     {
         $this->transactionId = $transactionId;
+        $this->tries = max(1, (int) config('tsms.transactions.job_tries', 5));
         // Default to critical processing queue only if no queue was preset by the dispatcher (e.g., sharded queues)
         if (empty($this->queue)) {
             $this->onQueue('transaction-processing');
@@ -105,8 +128,8 @@ class ProcessTransactionJob implements ShouldQueue, ShouldBeUnique
                 'job_status' => $transaction->job_status
             ]);
 
-            // Short‑circuit if already processed / terminal
-            if (in_array($transaction->validation_status, [Transaction::VALIDATION_STATUS_VALID, Transaction::VALIDATION_STATUS_FAILED])) {
+            // Short‑circuit if already processed / terminal (ADR-004 D1: VALID or INVALID)
+            if (in_array($transaction->validation_status, [Transaction::VALIDATION_STATUS_VALID, Transaction::VALIDATION_STATUS_INVALID], true)) {
                     Log::debug('Early exit: already terminal status', [
                         'transaction_id' => $transaction->transaction_id,
                         'validation_status' => $transaction->validation_status,
@@ -119,8 +142,11 @@ class ProcessTransactionJob implements ShouldQueue, ShouldBeUnique
                 return;
             }
 
-            // Update main record to PROCESSING
+            // Update main record to PROCESSING. ADR-004 D4: job_attempts counts real
+            // handle() runs only, so it is incremented exactly once here (after the
+            // early exits) and nowhere else in this job.
             $transaction->job_status = Transaction::JOB_STATUS_PROCESSING;
+            $transaction->job_attempts = ($transaction->job_attempts ?? 0) + 1;
             if ($transaction->created_at === null) {
                 $transaction->created_at = now();
             }
@@ -155,28 +181,29 @@ class ProcessTransactionJob implements ShouldQueue, ShouldBeUnique
                 $flatErrors = $this->flattenErrorArray($errorsArray);
                 $errorMessage = implode('; ', $flatErrors);
 
+                // ADR-004 D2: a business validation failure is a completed run with an
+                // INVALID outcome. INVALID is FK-valid in validation_statuses.
                 $validation->update([
-                    'status_code' => Transaction::VALIDATION_STATUS_FAILED,
-                    'details' => json_encode($errorsArray),
-                    'completed_at' => now(),
+                    'status_code' => Transaction::VALIDATION_STATUS_INVALID,
+                    'validation_details' => json_encode($errorsArray),
+                    'validated_at' => now(),
                 ]);
                 $job->update([
-                    'job_status' => Transaction::JOB_STATUS_FAILED,
+                    'job_status' => Transaction::JOB_STATUS_COMPLETED,
                     'completed_at' => now(),
-                    'error_message' => $errorMessage,
+                    'last_error' => $errorMessage,
                 ]);
 
-                $transaction->validation_status = Transaction::VALIDATION_STATUS_FAILED;
-                $transaction->job_status = Transaction::JOB_STATUS_FAILED;
+                $transaction->validation_status = Transaction::VALIDATION_STATUS_INVALID;
+                $transaction->job_status = Transaction::JOB_STATUS_COMPLETED;
                 $transaction->last_error = $errorMessage;
-                $transaction->job_attempts = ($transaction->job_attempts ?? 0) + 1;
                 if ($transaction->created_at === null) {
                     $transaction->created_at = now();
                 }
                 if ($transaction->completed_at === null) {
                     $transaction->completed_at = now();
                 }
-                    Log::debug('About to save FAILED transaction status', [
+                    Log::debug('About to save INVALID transaction status', [
                         'transaction_id' => $transaction->transaction_id,
                         'validation_status' => $transaction->validation_status,
                         'job_status' => $transaction->job_status,
@@ -223,7 +250,6 @@ class ProcessTransactionJob implements ShouldQueue, ShouldBeUnique
             $transaction->validation_status = Transaction::VALIDATION_STATUS_VALID;
             $transaction->job_status = Transaction::JOB_STATUS_COMPLETED;
             $transaction->last_error = null;
-            $transaction->job_attempts = ($transaction->job_attempts ?? 0) + 1;
             if ($transaction->created_at === null) {
                 $transaction->created_at = now();
             }
@@ -340,46 +366,134 @@ class ProcessTransactionJob implements ShouldQueue, ShouldBeUnique
 
     protected function handleSuccess(): void { /* Deprecated - inline success handling now */ }
 
-    protected function handleError(\Throwable $e): void
+    /**
+     * Infrastructure failure handler (exception, timeout, MaxAttemptsExceeded via failed()).
+     *
+     * ADR-004 D3/D4:
+     *  - never changes validation_status (a PENDING row stays PENDING);
+     *  - sets job_status=FAILED and last_error, and marks the latest non-COMPLETED
+     *    transaction_jobs row FAILED;
+     *  - never writes 'FAILED' into transaction_validations (PENDING audit rows stay PENDING);
+     *  - a terminal row (VALID/INVALID + COMPLETED) is never touched: a late failure is only
+     *    logged and counted;
+     *  - does not increment job_attempts (counted once per real handle() run).
+     *
+     * This method must never throw: it runs inside handle()'s catch block before the original
+     * exception is rethrown, and from failed().
+     *
+     * @return string 'failed' (row is PENDING/non-terminal with job FAILED), 'terminal' (late
+     *                failure ignored), 'missing' (no row) or 'error' (handler itself failed)
+     */
+    protected function handleError(\Throwable $e): string
     {
-        $transaction = Transaction::find($this->transactionId);
-        Log::error('Transaction processing failed', [
-            'transaction_pk' => $this->transactionId,
-            'transaction_id' => optional($transaction)->transaction_id,
-            'error' => $e->getMessage(),
-        ]);
-        if ($transaction) {
-            // Update latest job & validation audit rows if exist
-            $job = $transaction->jobs()->latest()->first();
-            if ($job && $job->job_status !== Transaction::JOB_STATUS_COMPLETED) {
-                $job->update([
+        try {
+            $transaction = Transaction::find($this->transactionId);
+            Log::error('Transaction processing failed', [
+                'transaction_pk' => $this->transactionId,
+                'transaction_id' => optional($transaction)->transaction_id,
+                'error' => $e->getMessage(),
+            ]);
+            if (! $transaction) {
+                return 'missing';
+            }
+
+            // Atomic terminal guard (D4): the FAILED write only applies while the row is not
+            // terminal, so a successful run that lands between the read above and this write
+            // cannot be downgraded. validation_status is never part of the update (D3).
+            $now = $transaction->fromDateTime(now());
+            $affected = Transaction::query()
+                ->whereKey($transaction->getKey())
+                ->where(function ($q) {
+                    $q->whereNotIn('validation_status', [Transaction::VALIDATION_STATUS_VALID, Transaction::VALIDATION_STATUS_INVALID])
+                        ->orWhereNull('job_status')
+                        ->orWhere('job_status', '!=', Transaction::JOB_STATUS_COMPLETED);
+                })
+                ->update([
                     'job_status' => Transaction::JOB_STATUS_FAILED,
-                    'completed_at' => now(),
-                    'error_message' => $e->getMessage(),
+                    'last_error' => $e->getMessage(),
+                    'created_at' => DB::raw('COALESCE(created_at, '.DB::getPdo()->quote($now).')'),
+                    'completed_at' => DB::raw('COALESCE(completed_at, '.DB::getPdo()->quote($now).')'),
+                ]);
+
+            // MySQL reports changed rows, not matched rows: a repeat failure with identical
+            // values (handle() catch, then failed() with the same exception) also returns 0.
+            // Only a row that is actually terminal is a late failure.
+            $current = $affected === 0
+                ? Transaction::query()->whereKey($transaction->getKey())
+                    ->first(['id', 'transaction_id', 'tenant_id', 'validation_status', 'job_status'])
+                : null;
+            if ($affected === 0 && ($current === null || $this->isTerminal($current))) {
+                Log::warning('late failure after terminal state ignored', [
+                    'transaction_pk' => $transaction->id,
+                    'transaction_id' => $transaction->transaction_id,
+                    'tenant_id' => $transaction->tenant_id,
+                    'validation_status' => optional($current)->validation_status,
+                    'job_status' => optional($current)->job_status,
+                    'error_class' => get_class($e),
+                    'error' => $e->getMessage(),
+                ]);
+                Metrics::incr('transaction_job.late_failure_ignored');
+
+                return 'terminal';
+            }
+
+            // Audit rows are best-effort and only touched once the transaction row was
+            // actually marked FAILED.
+            try {
+                $job = $transaction->jobs()->orderByDesc('id')->first();
+                if ($job && $job->job_status !== Transaction::JOB_STATUS_COMPLETED) {
+                    $job->update([
+                        'job_status' => Transaction::JOB_STATUS_FAILED,
+                        'completed_at' => now(),
+                        'last_error' => $e->getMessage(),
+                    ]);
+                }
+                $validation = $transaction->validations()->orderByDesc('id')->first();
+                if ($validation && $validation->status_code === Transaction::VALIDATION_STATUS_PENDING) {
+                    // Keep status_code PENDING (no business outcome); record the error only.
+                    $validation->update([
+                        'validation_details' => 'Processing error: '.$e->getMessage(),
+                    ]);
+                }
+            } catch (\Throwable $auditEx) {
+                Log::error('Failed updating job/validation audit rows after processing failure', [
+                    'transaction_pk' => $transaction->id,
+                    'transaction_id' => $transaction->transaction_id,
+                    'error' => $auditEx->getMessage(),
                 ]);
             }
-            $validation = $transaction->validations()->latest()->first();
-            if ($validation && $validation->status_code === Transaction::VALIDATION_STATUS_PENDING) {
-                $validation->update([
-                    'status_code' => Transaction::VALIDATION_STATUS_FAILED,
-                    'details' => $e->getMessage(),
-                    'completed_at' => now(),
+
+            // The conditional query-builder update bypasses Eloquent events; re-fire
+            // 'updated' so the model's write hook (webapp tenant_version bump) still runs
+            // as it did with the previous save().
+            try {
+                $fresh = $transaction->fresh();
+                if ($fresh) {
+                    Transaction::getEventDispatcher()?->dispatch('eloquent.updated: '.Transaction::class, $fresh);
+                }
+            } catch (\Throwable $eventEx) {
+                Log::error('Failed firing updated event after processing failure', [
+                    'transaction_pk' => $transaction->id,
+                    'error' => $eventEx->getMessage(),
                 ]);
             }
-            $transaction->job_status = Transaction::JOB_STATUS_FAILED;
-            if ($transaction->validation_status !== Transaction::VALIDATION_STATUS_VALID) {
-                $transaction->validation_status = Transaction::VALIDATION_STATUS_FAILED;
-            }
-            $transaction->last_error = $e->getMessage();
-            $transaction->job_attempts = ($transaction->job_attempts ?? 0) + 1;
-            if ($transaction->created_at === null) {
-                $transaction->created_at = now();
-            }
-            if ($transaction->completed_at === null) {
-                $transaction->completed_at = now();
-            }
-            $transaction->save();
+        } catch (\Throwable $handlerEx) {
+            Log::error('ProcessTransactionJob failure handler itself failed', [
+                'transaction_pk' => $this->transactionId,
+                'original_error' => $e->getMessage(),
+                'handler_error' => $handlerEx->getMessage(),
+            ]);
+
+            return 'error';
         }
+
+        return 'failed';
+    }
+
+    private function isTerminal(Transaction $row): bool
+    {
+        return in_array($row->validation_status, [Transaction::VALIDATION_STATUS_VALID, Transaction::VALIDATION_STATUS_INVALID], true)
+            && $row->job_status === Transaction::JOB_STATUS_COMPLETED;
     }
 
     /**
@@ -388,9 +502,13 @@ class ProcessTransactionJob implements ShouldQueue, ShouldBeUnique
      * @param \Exception $exception
      * @return void
      */
-    public function failed(\Throwable $exception): void 
+    public function failed(\Throwable $exception): void
     {
-        $this->handleError($exception);
+        // Final infrastructure failure (exceptions exhausted, retry window expired or
+        // timeout). A late failure on a terminal row is not counted here.
+        if ($this->handleError($exception) === 'failed') {
+            Metrics::incr('transaction_job.failed_infra');
+        }
     }
 
     /**
@@ -421,16 +539,13 @@ class ProcessTransactionJob implements ShouldQueue, ShouldBeUnique
     }
 
     /**
-     * Ensure no overlapping runs for the same transaction pk across workers.
+     * ADR-004 D6: no WithoutOverlapping. Its release loop consumed attempts without handle()
+     * ever running; ShouldBeUnique (uniqueId txn:{id}, held until completion) already
+     * prevents a second copy of the job from being queued.
      */
     public function middleware(): array
     {
-        return [
-            // Prevent concurrent processing for the same transaction id
-            (new WithoutOverlapping('txn:'.$this->transactionId))
-                ->releaseAfter(10)   // requeue after 10s if lock held
-                ->expireAfter(600),  // safety expiry 10 minutes
-        ];
+        return [];
     }
 
     

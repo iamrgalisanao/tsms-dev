@@ -82,7 +82,8 @@
         }
       }
 
-      $annual_sales = $annual_sales ?? null;
+      // ADR-004 D10: annual sales come from CommercialReportsController::tenantShow (CountableSales).
+      $annual_sales = (float) ($annual_sales ?? 0.0);
       $transaction_count = $transaction_count ?? null;
 
       try {
@@ -91,7 +92,6 @@
           if ($dateColumn) {
             $query = $query->whereYear($dateColumn, $year);
           }
-          $annual_sales = $annual_sales ?? (float) $query->sum('gross_sales');
           $transaction_count = $transaction_count ?? (int) $query->sum('transaction_count');
         } else {
           // fallback to direct DB query
@@ -99,12 +99,10 @@
           if ($dateColumn) {
             $q = $q->whereYear($dateColumn, $year);
           }
-          $annual_sales = $annual_sales ?? (float) $q->sum('gross_sales');
           $transaction_count = $transaction_count ?? (int) $q->sum('transaction_count');
         }
       } catch (\Exception $e) {
         // if something goes wrong, keep values null and avoid breaking the view
-        $annual_sales = $annual_sales ?? 0.0;
         $transaction_count = $transaction_count ?? 0;
       }
 

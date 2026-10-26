@@ -1,0 +1,14 @@
+[
+    {"validation_status": "VALID", "job_status": "COMPLETED", "label": "RECONCILED"},
+    {"validation_status": "VALID", "job_status": "FAILED", "label": "RECONCILED"},
+    {"validation_status": "INVALID", "job_status": "COMPLETED", "label": "INVALID"},
+    {"validation_status": "ERROR", "job_status": "COMPLETED", "label": "INVALID"},
+    {"validation_status": "ERROR", "job_status": "FAILED", "label": "INVALID"},
+    {"validation_status": "", "job_status": "FAILED", "label": "PROCESSING FAILED"},
+    {"validation_status": "", "job_status": "COMPLETED", "label": "PROCESSING FAILED"},
+    {"validation_status": "", "job_status": "QUEUED", "label": "PROCESSING FAILED"},
+    {"validation_status": "PENDING", "job_status": "FAILED", "label": "PROCESSING FAILED"},
+    {"validation_status": "PENDING", "job_status": "QUEUED", "label": "PENDING"},
+    {"validation_status": "PENDING", "job_status": "PROCESSING", "label": "PENDING"},
+    {"validation_status": "REVIEW_REQUIRED", "job_status": "COMPLETED", "label": "UNKNOWN"}
+]

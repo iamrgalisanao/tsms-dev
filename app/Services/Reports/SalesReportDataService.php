@@ -3,6 +3,7 @@
 namespace App\Services\Reports;
 
 use App\Models\Transaction;
+use App\Support\Reporting\CountableSales;
 use App\Traits\ResolvesReportBusinessDate;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -33,8 +34,8 @@ class SalesReportDataService
             return $summary;
         }
 
-        $grossExpr = Schema::hasColumn('transactions', 'gross_sales') ? 'SUM(transactions.gross_sales)' : '0';
-        $netExpr = Schema::hasColumn('transactions', 'net_sales') ? 'SUM(transactions.net_sales)' : '0';
+        $grossExpr = Schema::hasColumn('transactions', 'gross_sales') ? CountableSales::sumExpr('transactions.gross_sales', 'transactions') : '0';
+        $netExpr = Schema::hasColumn('transactions', 'net_sales') ? CountableSales::sumExpr('transactions.net_sales', 'transactions') : '0';
         $vatableExpr = Schema::hasColumn('transactions', 'vatable_sales') ? 'SUM(transactions.vatable_sales)' : '0';
         $scVatExpr = Schema::hasColumn('transactions', 'sc_vat_exempt_sales') ? 'SUM(transactions.sc_vat_exempt_sales)' : '0';
         $vatExpr = Schema::hasColumn('transactions', 'vat_amount') ? 'SUM(transactions.vat_amount)' : '0';
@@ -79,9 +80,7 @@ class SalesReportDataService
             $query->where('transactions.tenant_id', $tenantId);
         }
 
-        if ($this->excludeVoids()) {
-            $query->where('transactions.transaction_type', '!=', 'VOID')->whereNull('transactions.voided_at');
-        }
+        CountableSales::apply($query, 'transactions');
 
         $dailyMain = $query->groupBy('report_date')->get()->keyBy('report_date');
         $dailyAdj = $this->adjustmentRows($startDate, $endDate, $tenantId, $joinedReportDateExpr, $filter->hasTenantScope());
@@ -204,9 +203,7 @@ class SalesReportDataService
             $query->where('transactions.tenant_id', $tenantId);
         }
 
-        if ($this->excludeVoids()) {
-            $query->where('transactions.transaction_type', '!=', 'VOID')->whereNull('transactions.voided_at');
-        }
+        CountableSales::apply($query, 'transactions');
 
         return $query->groupBy('report_date')->get()->keyBy('report_date');
     }
@@ -228,9 +225,7 @@ class SalesReportDataService
             $query->where('transactions.tenant_id', $tenantId);
         }
 
-        if ($this->excludeVoids()) {
-            $query->where('transactions.transaction_type', '!=', 'VOID')->whereNull('transactions.voided_at');
-        }
+        CountableSales::apply($query, 'transactions');
 
         return $query->groupBy('report_date')->get()->keyBy('report_date');
     }
@@ -301,9 +296,7 @@ class SalesReportDataService
             $rows->where('transactions.tenant_id', $tenantId);
         }
 
-        if ($this->excludeVoids()) {
-            $rows->where('transactions.transaction_type', '!=', 'VOID')->whereNull('transactions.voided_at');
-        }
+        CountableSales::apply($rows, 'transactions');
 
         $totals = [];
         foreach ($rows->cursor() as $row) {
@@ -347,10 +340,7 @@ class SalesReportDataService
             $query->where('transactions.tenant_id', $tenantId);
         }
 
-        if ($this->excludeVoids()) {
-            $query->where('transactions.transaction_type', '!=', 'VOID')
-                ->whereNull('transactions.voided_at');
-        }
+        CountableSales::apply($query, 'transactions');
 
         return $query->groupBy('report_date')
             ->get()
@@ -378,10 +368,5 @@ class SalesReportDataService
         }
 
         return (int) $query->distinct('business_date')->count('business_date') >= $expectedDays;
-    }
-
-    private function excludeVoids(): bool
-    {
-        return config('tsms.reporting.exclude_voids_from_totals', true);
     }
 }

@@ -7,6 +7,8 @@ use App\Models\PosTerminal;
 use App\Models\TerminalStatus;
 use App\Models\Tenant;
 use App\Models\TransactionIntake;
+use App\Support\Reporting\CountableSales;
+use App\Support\Reporting\TransactionStatusFilter;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -33,19 +35,19 @@ class DashboardService
         $hasJobStatus = Schema::hasColumn('transactions', 'job_status');
 
         $currentGrossSales = (float) $this->transactionQuery($tenantId)->whereBetween($dateColumn, [$todayStart, $todayEnd])
-            ->selectRaw("COALESCE(SUM(gross_sales), 0) as value")
+            ->selectRaw('COALESCE('.CountableSales::sumExpr('gross_sales').', 0) as value')
             ->value('value');
 
         $previousGrossSales = (float) $this->transactionQuery($tenantId)->whereBetween($dateColumn, [$previousStart, $previousEnd])
-            ->selectRaw("COALESCE(SUM(gross_sales), 0) as value")
+            ->selectRaw('COALESCE('.CountableSales::sumExpr('gross_sales').', 0) as value')
             ->value('value');
 
         $currentNetSales = (float) $this->transactionQuery($tenantId)->whereBetween($dateColumn, [$todayStart, $todayEnd])
-            ->selectRaw("COALESCE(SUM(net_sales), 0) as value")
+            ->selectRaw('COALESCE('.CountableSales::sumExpr('net_sales').', 0) as value')
             ->value('value');
 
         $previousNetSales = (float) $this->transactionQuery($tenantId)->whereBetween($dateColumn, [$previousStart, $previousEnd])
-            ->selectRaw("COALESCE(SUM(net_sales), 0) as value")
+            ->selectRaw('COALESCE('.CountableSales::sumExpr('net_sales').', 0) as value')
             ->value('value');
 
         $currentTransactions = (int) $this->transactionQuery($tenantId)->whereBetween($dateColumn, [$todayStart, $todayEnd])->count();
@@ -108,13 +110,13 @@ class DashboardService
         if ($hasValidationStatus || $hasJobStatus) {
             $failedQuery->where(function ($q) use ($hasValidationStatus, $hasJobStatus) {
                 if ($hasValidationStatus) {
-                    $q->where('validation_status', 'INVALID')
-                        ->orWhere('validation_status', Transaction::VALIDATION_STATUS_FAILED)
-                        ->orWhere('validation_status', 'ERROR');
+                    // ADR-004 D1: business-INVALID, or processing failed (below).
+                    $q->where('validation_status', Transaction::VALIDATION_STATUS_INVALID);
                 }
                 if ($hasJobStatus) {
+                    // Legacy VALID+FAILED rows are reconciled, not failures.
                     $hasValidationStatus
-                        ? $q->orWhere('job_status', Transaction::JOB_STATUS_FAILED)
+                        ? $q->orWhere(fn ($processing) => TransactionStatusFilter::processingFailed($processing))
                         : $q->where('job_status', Transaction::JOB_STATUS_FAILED);
                 }
             });
@@ -143,7 +145,11 @@ class DashboardService
             $invalidTaxRecords = (int) $this->transactionQuery($tenantId)->whereBetween($dateColumn, [$todayStart, $todayEnd])
                 ->where(function($query) {
                     $query->where(function($q) {
-                        $q->whereIn('validation_status', ['FAILED', 'INVALID', 'ERROR'])
+                        // ADR-004 D1: business-INVALID, or processing failed before a decision.
+                        $q->where(function ($status) {
+                            $status->where('validation_status', Transaction::VALIDATION_STATUS_INVALID)
+                                ->orWhere(fn ($processing) => TransactionStatusFilter::processingFailed($processing));
+                        })
                           ->where(function($sub) {
                               $sub->where('last_error', 'LIKE', '%tax%')
                                   ->orWhere('last_error', 'LIKE', '%vat%');
@@ -174,8 +180,9 @@ class DashboardService
                 ->join('tenants as t', 't.id', '=', 'tr.tenant_id')
                 ->when($tenantId !== null, fn ($query) => $query->where('tr.tenant_id', $tenantId))
                 ->whereBetween("tr.$dateColumn", [$todayStart, $todayEnd])
-                ->where('tr.validation_status', 'VALID')
-                ->selectRaw("t.trade_name, COALESCE(SUM(tr.gross_sales), 0) as total_revenue")
+                // ADR-004 D10 option A: VALID + PENDING, excluding INVALID (no void filter, as before).
+                ->where(fn ($query) => CountableSales::apply($query, 'tr', false))
+                ->selectRaw('t.trade_name, COALESCE('.CountableSales::sumExpr('tr.gross_sales', 'tr').', 0) as total_revenue')
                 ->groupBy('t.trade_name')
                 ->orderByDesc('total_revenue')
                 ->limit(5)
@@ -200,14 +207,15 @@ class DashboardService
         ];
         try {
             $compData = $this->transactionQuery($tenantId)->whereBetween($dateColumn, [$todayStart, $todayEnd])
-                ->where('validation_status', 'VALID')
-                ->selectRaw("
-                    COALESCE(SUM(net_sales), 0) as net_sales,
+                // ADR-004 D10 option A: VALID + PENDING, excluding INVALID (no void filter, as before).
+                ->where(fn ($query) => CountableSales::apply($query, null, false))
+                ->selectRaw('
+                    COALESCE('.CountableSales::sumExpr('net_sales').', 0) as net_sales,
                     COALESCE(SUM(sc_vat_exempt_sales), 0) as tax_exempt,
                     COALESCE(SUM(vat_amount), 0) as vat,
                     COALESCE(SUM(refund_amount), 0) as refunds,
                     COALESCE(SUM(promo_discount + senior_discount + pwd_discount + discount_total), 0) as discounts
-                ")
+                ')
                 ->first();
             if ($compData) {
                 $composition = [
@@ -383,7 +391,7 @@ class DashboardService
         $startDate = now()->subDays($dateRange);
         $endDate = now();
 
-        $data = Transaction::selectRaw('DATE(created_at) as date, COUNT(*) as count, SUM(gross_sales) as total_sales')
+        $data = Transaction::selectRaw('DATE(created_at) as date, COUNT(*) as count, '.CountableSales::sumExpr('gross_sales').' as total_sales')
             ->whereBetween('created_at', [$startDate, $endDate])
             ->groupBy('date')
             ->orderBy('date')
@@ -526,7 +534,7 @@ class DashboardService
             if ($mode === 'count') {
                 $values[] = (int) $query->count();
             } else {
-                $values[] = (float) $query->selectRaw("COALESCE(SUM($column), 0) as value")->value('value');
+                $values[] = (float) $query->selectRaw('COALESCE('.CountableSales::sumExpr($column).', 0) as value')->value('value');
             }
         }
 
