@@ -7,6 +7,8 @@ use App\Models\Tenant;
 use App\Models\Transaction;
 use App\Models\TransactionIntake;
 use App\Services\PayloadChecksumService;
+use App\Services\ProviderTimestampNormalizer;
+use App\Services\TransactionIntakeService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
@@ -322,8 +324,10 @@ class OfficialIdempotentReplayTest extends TestCase
         $this->seedProcessedIntake($payload, $terminal, TransactionIntake::PROCESSING_STATUS_PROCESSED);
         $this->seedTransactionRow($terminal, $goodTxId, Transaction::VALIDATION_STATUS_VALID);
         $earlier = $this->seedTransactionRow($terminal, (string) Str::uuid(), Transaction::VALIDATION_STATUS_VALID);
+        // Stored receipts are trimmed on write (normalizePayload / model
+        // mutator), so the lookup compares the raw column.
         DB::table('transactions')->where('id', $earlier->id)->update([
-            'receipt_no' => ' '.$payload['transactions'][1]['receipt_no'].' ',
+            'receipt_no' => $payload['transactions'][1]['receipt_no'],
             'transaction_timestamp' => Carbon::parse($payload['transactions'][1]['transaction_timestamp'])->subHours(2),
         ]);
         $this->mockRedisForAdmissionMiddleware();
@@ -376,6 +380,165 @@ class OfficialIdempotentReplayTest extends TestCase
         $this->assertStringContainsString('already used by a recorded transaction', $message);
         $this->assertStringContainsString('do not resend', $message);
         $this->assertStringNotContainsString('resend with a new submission_uuid', $message);
+    }
+
+    public function test_replay_receipt_conflict_window_boundaries(): void
+    {
+        [, $terminal] = $this->seedTenantAndTerminal();
+        $intake = $this->replayIntake($terminal);
+        $base = Carbon::now('UTC')->subHours(3)->startOfSecond();
+        $receipts = [];
+
+        foreach (['plus' => 86400, 'minus' => -86400, 'ms' => 86400.5, 'out' => 86401, 'outminus' => -86401] as $label => $offset) {
+            $receipt = 'RW-'.strtoupper($label).'-'.Str::upper(Str::random(6));
+            $receipts[$label] = $receipt;
+            $stored = date('Y-m-d H:i:s', $this->normalizedTs($terminal, $base) + (int) floor($offset));
+            if (fmod($offset, 1.0) !== 0.0) {
+                $stored .= '.500';
+            }
+            $this->seedReceiptRow($terminal, $receipt, $stored);
+        }
+
+        $transactions = [];
+        foreach ($receipts as $label => $receipt) {
+            $transactions[] = [
+                'transaction_id' => 'TX-'.$label,
+                'receipt_no' => $receipt,
+                'transaction_timestamp' => $base->format('Y-m-d\\TH:i:s\\Z'),
+            ];
+        }
+
+        $conflicts = $this->replayConflicts($intake, $transactions);
+
+        $this->assertSame(['TX-minus', 'TX-ms', 'TX-plus'], $this->sortedKeys($conflicts));
+    }
+
+    public function test_replay_receipt_conflict_matches_padded_incoming_receipt_and_respects_scope(): void
+    {
+        [$tenant, $terminal] = $this->seedTenantAndTerminal();
+        [$otherTenant] = $this->seedTenantAndTerminal();
+        $intake = $this->replayIntake($terminal);
+        $ts = Carbon::now('UTC')->subHours(3)->startOfSecond();
+        $receipt = 'R-100-'.Str::upper(Str::random(6));
+        $foreignOnly = 'R-200-'.Str::upper(Str::random(6));
+
+        $incomingTs = $this->normalizedTs($terminal, $ts);
+        $this->seedReceiptRow($terminal, $receipt, date('Y-m-d H:i:s', $incomingTs - 3600));
+        // Same terminal_id + receipt under another tenant_id must be ignored.
+        $foreign = $this->seedReceiptRow($terminal, $foreignOnly, date('Y-m-d H:i:s', $incomingTs));
+        DB::table('transactions')->where('id', $foreign->id)->update(['tenant_id' => $otherTenant->id]);
+
+        $conflicts = $this->replayConflicts($intake, [
+            ['transaction_id' => 'TX-PAD', 'receipt_no' => '  '.$receipt.' ', 'transaction_timestamp' => $ts->format('Y-m-d\\TH:i:s\\Z')],
+            ['transaction_id' => 'TX-FOREIGN', 'receipt_no' => $foreignOnly, 'transaction_timestamp' => $ts->format('Y-m-d\\TH:i:s\\Z')],
+            ['transaction_id' => 'TX-BADTS', 'receipt_no' => $receipt, 'transaction_timestamp' => 'not-a-date'],
+        ]);
+
+        $this->assertSame(['TX-PAD'], $this->sortedKeys($conflicts));
+        $this->assertSame($tenant->id, $intake->tenant_id);
+    }
+
+    public function test_replay_receipt_conflict_returns_none_when_no_timestamp_parses(): void
+    {
+        [, $terminal] = $this->seedTenantAndTerminal();
+        $intake = $this->replayIntake($terminal);
+        $receipt = 'RN-'.Str::upper(Str::random(6));
+        $this->seedReceiptRow($terminal, $receipt, Carbon::now('UTC')->format('Y-m-d H:i:s'));
+
+        $queries = [];
+        DB::listen(function ($query) use (&$queries) {
+            if (str_contains($query->sql, 'receipt_no')) {
+                $queries[] = $query->sql;
+            }
+        });
+
+        $conflicts = $this->replayConflicts($intake, [
+            ['transaction_id' => 'TX-1', 'receipt_no' => $receipt, 'transaction_timestamp' => 'garbage'],
+            ['transaction_id' => 'TX-2', 'receipt_no' => $receipt],
+        ]);
+
+        $this->assertSame([], $conflicts);
+        $this->assertSame([], $queries, 'no receipt lookup should run when no timestamp parses');
+    }
+
+    public function test_replay_receipt_conflict_query_is_sargable_with_no_trim(): void
+    {
+        [, $terminal] = $this->seedTenantAndTerminal();
+        $intake = $this->replayIntake($terminal);
+        $early = Carbon::now('UTC')->subHours(10)->startOfSecond();
+        $late = Carbon::now('UTC')->subHours(2)->startOfSecond();
+        $receipt = 'RS-'.Str::upper(Str::random(6));
+        $this->seedReceiptRow($terminal, $receipt, date('Y-m-d H:i:s', $this->normalizedTs($terminal, $late)));
+
+        $queries = [];
+        DB::listen(function ($query) use (&$queries) {
+            if (str_contains($query->sql, 'receipt_no')) {
+                $queries[] = $query;
+            }
+        });
+
+        $conflicts = $this->replayConflicts($intake, [
+            ['transaction_id' => 'TX-E', 'receipt_no' => ' '.$receipt, 'transaction_timestamp' => $early->format('Y-m-d\\TH:i:s\\Z')],
+            ['transaction_id' => 'TX-L', 'receipt_no' => 'OTHER-'.$receipt, 'transaction_timestamp' => $late->format('Y-m-d\\TH:i:s\\Z')],
+        ]);
+
+        $this->assertSame(['TX-E'], $this->sortedKeys($conflicts));
+        $this->assertCount(1, $queries);
+        $sql = $queries[0]->sql;
+        $this->assertStringNotContainsStringIgnoringCase('TRIM(', $sql);
+        $this->assertStringContainsString('`tenant_id` = ?', $sql);
+        $this->assertStringContainsString('`terminal_id` = ?', $sql);
+        $this->assertStringContainsString('`receipt_no` in (?, ?)', $sql);
+        $this->assertStringContainsString('`transaction_timestamp` >= ?', $sql);
+        $this->assertStringContainsString('`transaction_timestamp` < ?', $sql);
+        $this->assertContains($receipt, $queries[0]->bindings);
+        $this->assertContains(date('Y-m-d H:i:s', $this->normalizedTs($terminal, $early) - 86400), $queries[0]->bindings);
+        $this->assertContains(date('Y-m-d H:i:s', $this->normalizedTs($terminal, $late) + 86401), $queries[0]->bindings);
+    }
+
+    /**
+     * Unix time of the stored representation of an incoming item: the
+     * normalizer yields a UTC wall-clock string, and both the service and the
+     * seeded rows interpret it in the PHP default timezone, so derive seeded
+     * and expected values from it rather than from the Carbon instant.
+     */
+    private function normalizedTs(PosTerminal $terminal, Carbon $incoming): int
+    {
+        return strtotime(app(ProviderTimestampNormalizer::class)->normalize($incoming->format('Y-m-d\\TH:i:s\\Z'), $terminal->id));
+    }
+
+    private function replayIntake(PosTerminal $terminal): TransactionIntake
+    {
+        return new TransactionIntake([
+            'tenant_id' => $terminal->tenant_id,
+            'terminal_id' => $terminal->id,
+        ]);
+    }
+
+    private function replayConflicts(TransactionIntake $intake, array $transactions): array
+    {
+        $method = new \ReflectionMethod(TransactionIntakeService::class, 'replayReceiptConflicts');
+
+        return $method->invoke(app(TransactionIntakeService::class), $intake, $transactions);
+    }
+
+    private function sortedKeys(array $conflicts): array
+    {
+        $keys = array_map('strval', array_keys($conflicts));
+        sort($keys);
+
+        return $keys;
+    }
+
+    private function seedReceiptRow(PosTerminal $terminal, string $receiptNo, string $timestamp): Transaction
+    {
+        $row = $this->seedTransactionRow($terminal, (string) Str::uuid(), Transaction::VALIDATION_STATUS_VALID);
+        DB::table('transactions')->where('id', $row->id)->update([
+            'receipt_no' => $receiptNo,
+            'transaction_timestamp' => $timestamp,
+        ]);
+
+        return $row;
     }
 
     private function seedTenantAndTerminal(): array

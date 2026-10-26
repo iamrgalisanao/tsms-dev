@@ -449,7 +449,7 @@ class TransactionIngestService
         }
 
         if (Schema::hasColumn('transactions', 'receipt_no')) {
-            $normalized['receipt_no'] = $payload['receipt_no'] ?? null;
+            $normalized['receipt_no'] = isset($payload['receipt_no']) ? trim((string) $payload['receipt_no']) : null;
         }
 
         if (Schema::hasColumn('transactions', 'original_payload')) {
@@ -471,9 +471,23 @@ class TransactionIngestService
             return null;
         }
 
+        $ts = strtotime((string) $parent['transaction_timestamp']);
+
+        if ($ts === false) {
+            return null;
+        }
+
+        // Sargable on (tenant_id, terminal_id, receipt_no[, …]) indexes (staging
+        // EXPLAIN used ux_tx_tenant_terminal_receipt_date_unique; schemas differ by
+        // environment). Upper bound is exclusive +86401 because
+        // the column is timestamp(3) and strtotime() drops milliseconds; the PHP
+        // closure below remains the authoritative ±24h check.
         return DB::table('transactions')
+            ->where('tenant_id', $parent['tenant_id'])
             ->where('terminal_id', $parent['terminal_id'])
-            ->whereRaw('TRIM(receipt_no) = TRIM(?)', [(string) $parent['receipt_no']])
+            ->where('receipt_no', trim((string) $parent['receipt_no']))
+            ->where('transaction_timestamp', '>=', date('Y-m-d H:i:s', $ts - 86400))
+            ->where('transaction_timestamp', '<', date('Y-m-d H:i:s', $ts + 86401))
             ->get()
             ->first(function ($row) use ($parent) {
                 $existingTs = strtotime((string) $row->transaction_timestamp);

@@ -1176,21 +1176,42 @@ class TransactionIntakeService
             return [];
         }
 
+        $incomingTimestamps = [];
+
+        foreach ($receiptsByTransaction as $transactionId => [, $transaction]) {
+            $incomingTs = strtotime($this->replayNormalizedTimestamp($intake, (string) ($transaction['transaction_timestamp'] ?? '')));
+
+            if ($incomingTs !== false) {
+                $incomingTimestamps[$transactionId] = $incomingTs;
+            }
+        }
+
+        if ($incomingTimestamps === []) {
+            return [];
+        }
+
+        // Receipts are stored trimmed (normalizePayload / Transaction mutator), so
+        // compare the raw column: sargable on (tenant_id, terminal_id, receipt_no[, …])
+        // indexes (staging EXPLAIN used ux_tx_tenant_terminal_receipt_date_unique;
+        // schemas differ by environment).
+        // Upper bound is exclusive +86401 because the column is timestamp(3).
         $receiptNos = array_values(array_unique(array_column($receiptsByTransaction, 0)));
         $rows = DB::table('transactions')
             ->where('tenant_id', $intake->tenant_id)
             ->where('terminal_id', $intake->terminal_id)
-            ->whereIn(DB::raw('TRIM(receipt_no)'), $receiptNos)
+            ->whereIn('receipt_no', $receiptNos)
+            ->where('transaction_timestamp', '>=', date('Y-m-d H:i:s', min($incomingTimestamps) - 86400))
+            ->where('transaction_timestamp', '<', date('Y-m-d H:i:s', max($incomingTimestamps) + 86401))
             ->get(['receipt_no', 'transaction_timestamp']);
 
         $conflicts = [];
 
         foreach ($receiptsByTransaction as $transactionId => [$receiptNo, $transaction]) {
-            $incomingTs = strtotime($this->replayNormalizedTimestamp($intake, (string) ($transaction['transaction_timestamp'] ?? '')));
-
-            if ($incomingTs === false) {
+            if (! isset($incomingTimestamps[$transactionId])) {
                 continue;
             }
+
+            $incomingTs = $incomingTimestamps[$transactionId];
 
             foreach ($rows as $row) {
                 $existingTs = strtotime((string) $row->transaction_timestamp);
