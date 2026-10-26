@@ -155,3 +155,27 @@ Sales sums in `app/Services/Reports/*` and the dashboard gross sales **don't fil
 4. Exclude `INVALID` from gross and net sales sums; keep `PENDING` included (D10).
 5. Yes. Work towards strict SQL mode as a follow-up (D9).
 6. Remove dead status-writing code in a separate cleanup, not in this work.
+
+## 9. Slice 2 design (architect-approved 2026-10-26)
+
+**D6, retry policy.** `ProcessTransactionJob` keeps `ShouldBeUnique`, which holds its lock from dispatch to completion. Changes:
+- Drop the `WithoutOverlapping` middleware. Its release loop is what produced the zero-run MaxAttempts failures.
+- Set `uniqueFor = 1800`.
+- Replace `$tries` with `retryUntil()` = now + 15 min, `maxExceptions = 3`, backoff `[10, 60, 180]`, `timeout = 120`, `failOnTimeout = true`.
+- Final failure → `handleError` (slice 1): job FAILED, validation stays PENDING. Add metric `transaction_job.failed_infra`.
+
+**D7, watchdog.** Moves into a testable `TransactionWatchdogCommand` with the same schedule name.
+- Stale PENDING+QUEUED rows are re-dispatched only when the unique lock can be acquired; otherwise the row is counted as `skipped_inflight`.
+- Re-dispatch goes through `IngestionQueueRouter` (crc32 shards). The old `tenantId % 8` routing was a bug.
+- PENDING+FAILED rows are re-dispatched with exponential backoff, up to `max_requeue_attempts` (default 3). The counter lives in the cache, so no migration is needed. When the cap is reached: log, metric, and one admin alert per row.
+- The max-pending branch sets only `job_status=FAILED` through the conditional atomic update. **It never writes `validation_status`.**
+- `job_attempts` is never touched. Batches are 200 rows by id.
+
+**Prune guard.** The prune never deletes `PENDING` rows, and by default deletes nothing: `TX_PRUNE_DELETE_ENABLED=false`. It keeps an extended inventory snapshot. Any hard-delete retention policy needs its own ADR.
+
+**Defaults to confirm with the product owner before deploying:**
+- No transaction hard deletes.
+- Watchdog retry cap of 3, then an admin alert through the NotificationService admin recipients.
+- `retryUntil` window of 15 minutes.
+
+**Prune "38 counted, none deleted":** to be reproduced on the test database and the result recorded here.
