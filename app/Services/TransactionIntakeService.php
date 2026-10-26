@@ -19,6 +19,16 @@ use Illuminate\Support\Str;
 
 class TransactionIntakeService
 {
+    /**
+     * Format accepted for transaction_timestamp. The capture groups feed the
+     * raw range/checkdate check in assessTransactionTimestamp() (US5).
+     */
+    public const TRANSACTION_TIMESTAMP_REGEX = '/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?Z?$/';
+
+    public const INVALID_TRANSACTION_TIMESTAMP = 'INVALID_TRANSACTION_TIMESTAMP';
+
+    public const FUTURE_TRANSACTION_TIMESTAMP = 'FUTURE_TRANSACTION_TIMESTAMP';
+
     protected PayloadChecksumService $checksumService;
 
     protected SkewRankingService $skewRanking;
@@ -74,6 +84,10 @@ class TransactionIntakeService
         $tenantId = $terminal instanceof PosTerminal ? $terminal->tenant_id : ($payload['tenant_id'] ?? 0);
         $shardQueue = $this->queueRouter->intakeQueueForTenant($tenantId);
         $hardwareMismatch = null;
+        // US5: per-transaction timestamp assessments keyed by validation
+        // prefix, filled in the after() hook below.
+        $timestampFindings = [];
+        $timestampOnlyRejection = false;
 
         // 0. Cheap batch-count guard, before structural validation builds
         // per-item wildcard rules and before any DB work. Deliberately runs
@@ -104,7 +118,7 @@ class TransactionIntakeService
         // 1. Stage 1: Structural & Format Validation (Gatekeeping)
         $validator = Validator::make($payload, $this->officialStructuralRules($payload));
 
-        $validator->after(function ($validator) use ($payload, $terminal, &$hardwareMismatch) {
+        $validator->after(function ($validator) use ($payload, $terminal, $receivedAt, $traceId, &$hardwareMismatch, &$timestampFindings, &$timestampOnlyRejection) {
             if (! $terminal instanceof PosTerminal) {
                 $validator->errors()->add('authorization', 'Authenticated terminal context is required.');
 
@@ -131,12 +145,37 @@ class TransactionIntakeService
             foreach ($transactions as $index => $transaction) {
                 $prefix = $isBatch ? "transactions.{$index}" : 'transaction';
                 $this->validateNestedTransactionContent($validator, is_array($transaction) ? $transaction : [], $prefix);
+
+                if (is_array($transaction)) {
+                    $finding = $this->assessTransactionTimestamp($transaction, $terminal, $receivedAt, $traceId);
+                    if ($finding !== null) {
+                        $timestampFindings[$prefix] = $finding;
+                    }
+                }
             }
 
+            // Hardware binding is decided before enforce-mode timestamp
+            // errors are added, so a bad timestamp never hides a hardware
+            // mismatch: HARDWARE_ID_MISMATCH (403) keeps precedence exactly
+            // as before US5.
             if ($validator->errors()->isEmpty()) {
                 $hardwareMismatch = $this->findHardwareBindingMismatch($terminal, $transactions);
                 if ($hardwareMismatch !== null) {
                     $validator->errors()->add('hardware_id', 'Transaction hardware_id does not match the authenticated terminal.');
+                }
+            }
+
+            // US5 enforce mode (research A7): timestamp errors join the bag
+            // unless the hardware path already owns the response. Their
+            // specific code is used only when they are the only errors;
+            // otherwise STRUCTURAL_VALIDATION_FAILURE wins.
+            if ($hardwareMismatch === null && $this->timestampsEnforced()) {
+                $rejections = array_filter($timestampFindings, fn (array $f) => $f['code'] !== null);
+                if ($rejections !== []) {
+                    $timestampOnlyRejection = $validator->errors()->isEmpty();
+                    foreach ($rejections as $prefix => $finding) {
+                        $validator->errors()->add("{$prefix}.transaction_timestamp", $finding['message']);
+                    }
                 }
             }
         });
@@ -155,6 +194,20 @@ class TransactionIntakeService
                 ];
             }
 
+            if ($timestampOnlyRejection) {
+                $errorCode = $this->timestampRejectionCode($timestampFindings);
+                $this->persistRejection($payload, $validator->errors()->toArray(), $sourceIp, $traceId, $receivedAt, $errorCode);
+
+                return [
+                    'success' => false,
+                    'http_status' => 422,
+                    'message' => 'Transaction timestamp validation failed',
+                    'error_code' => $errorCode,
+                    'errors' => $validator->errors()->toArray(),
+                    'correlation_id' => $traceId,
+                ];
+            }
+
             $this->persistRejection($payload, $validator->errors()->toArray(), $sourceIp, $traceId, $receivedAt, 'STRUCTURAL_VALIDATION_FAILURE');
 
             return [
@@ -165,6 +218,12 @@ class TransactionIntakeService
                 'errors' => $validator->errors()->toArray(),
                 'correlation_id' => $traceId,
             ];
+        }
+
+        // US5 observe mode: count and log what enforce mode would have
+        // rejected at this exact point, then carry on unchanged.
+        if (! $this->timestampsEnforced()) {
+            $this->recordWouldRejectTimestamps($timestampFindings, $terminal, $traceId);
         }
 
         $this->observeTransactionBoundary('after_structural_validation');
@@ -233,6 +292,7 @@ class TransactionIntakeService
 
             $pilotTenants = config('tsms.rollout.pilot_tenants', []);
             $isPilot = in_array($intake->tenant_id, $pilotTenants);
+            $lateContext = $this->recordLateArrivals($timestampFindings, $receivedAt);
 
             Log::info('TransactionIntakeService: Intake queued asychronously', LogContext::ingestion([
                 'tenant_id' => $intake->tenant_id,
@@ -246,7 +306,7 @@ class TransactionIntakeService
                 'submission_uuid' => $intake->submission_uuid,
                 'queue' => $shardQueue,
                 'queued' => true,
-            ]));
+            ] + $lateContext));
 
             // Performance: Intake Dispatch Latency (Sync path)
             $latency = now()->diffInMilliseconds($receivedAt);
@@ -321,7 +381,7 @@ class TransactionIntakeService
             'payload_checksum' => 'required|string|min:64|max:64|regex:/^[0-9a-f]{64}$/i',
             $transactionPrefix.'.transaction_id' => ['required', 'string', new UuidV4],
             $transactionPrefix.'.hardware_id' => 'required|string|max:255',
-            $transactionPrefix.'.transaction_timestamp' => ['required', 'string', 'regex:/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z?$/'],
+            $transactionPrefix.'.transaction_timestamp' => ['required', 'string', 'regex:'.self::TRANSACTION_TIMESTAMP_REGEX],
             $transactionPrefix.'.gross_sales' => 'required|numeric|min:0',
             $transactionPrefix.'.net_sales' => 'required|numeric',
             $transactionPrefix.'.promo_status' => 'required|string|max:255',
@@ -462,6 +522,166 @@ class TransactionIntakeService
         }
     }
 
+    /**
+     * US5 timestamp sanity (research R4 + A7). Returns null when the value is
+     * not a string matching the format regex (the structural rule reports
+     * that; nothing is parsed). Otherwise returns
+     * ['code' => ?string, 'message' => ?string, 'normalized' => ?Carbon,
+     *  'transaction_id' => mixed]. The raw Y/m/d/H/i/s ranges and checkdate()
+     * are checked before any Carbon parse, because Carbon silently rolls
+     * 0000-00-00 and 02-30 over into valid dates.
+     */
+    protected function assessTransactionTimestamp(array $transaction, PosTerminal $terminal, \Carbon\Carbon $receivedAt, ?string $traceId = null): ?array
+    {
+        $raw = $transaction['transaction_timestamp'] ?? null;
+        if (! is_string($raw) || preg_match(self::TRANSACTION_TIMESTAMP_REGEX, $raw, $m) !== 1) {
+            return null;
+        }
+
+        $finding = [
+            'code' => null,
+            'message' => null,
+            'normalized' => null,
+            'transaction_id' => $transaction['transaction_id'] ?? null,
+        ];
+        $invalid = fn (string $message) => ['code' => self::INVALID_TRANSACTION_TIMESTAMP, 'message' => $message] + $finding;
+
+        [$year, $month, $day, $hour, $minute, $second] = array_map('intval', array_slice($m, 1, 6));
+        if ($year < 1 || ! checkdate($month, $day, $year) || $hour > 23 || $minute > 59 || $second > 59) {
+            return $invalid('Transaction timestamp is not a valid calendar date and time.');
+        }
+
+        try {
+            $normalized = \Carbon\Carbon::createFromFormat(
+                'Y-m-d H:i:s',
+                app(ProviderTimestampNormalizer::class)->normalize($raw, $terminal),
+                'UTC'
+            );
+        } catch (\InvalidArgumentException|\Carbon\Exceptions\Exception) {
+            // Genuine parse failure of the submitted value.
+            return $invalid('Transaction timestamp could not be parsed.');
+        } catch (\Throwable $e) {
+            // Infrastructure or unexpected failure (e.g. provider load hit a
+            // QueryException): fail open so an outage never rejects or
+            // flags valid sales. No message/bindings are logged.
+            Metrics::incr('intake.timestamp_check_error');
+            Log::warning('TransactionIntakeService: transaction timestamp check failed open', LogContext::ingestion([
+                'tenant_id' => $terminal->tenant_id,
+                'terminal_id' => $terminal->id,
+                'route' => 'transactions.official',
+                'correlation_id' => $traceId,
+                'decision' => 'timestamp_check_failed_open',
+            ], [
+                'transaction_id' => $finding['transaction_id'],
+                'exception_class' => $e::class,
+            ]));
+
+            return null;
+        }
+
+        $finding['normalized'] = $normalized;
+
+        $earliest = $this->earliestTransactionTimestamp();
+        if ($earliest !== null && $normalized->lt($earliest)) {
+            return ['code' => self::INVALID_TRANSACTION_TIMESTAMP, 'message' => 'Transaction timestamp is before the earliest accepted date.'] + $finding;
+        }
+
+        $toleranceMinutes = max(0, (int) config('ingestion.timestamps.future_tolerance_minutes', 1440));
+        if ($normalized->gt($receivedAt->copy()->addMinutes($toleranceMinutes))) {
+            return ['code' => self::FUTURE_TRANSACTION_TIMESTAMP, 'message' => 'Transaction timestamp is too far in the future.'] + $finding;
+        }
+
+        return $finding;
+    }
+
+    protected function earliestTransactionTimestamp(): ?\Carbon\Carbon
+    {
+        $configured = trim((string) config('ingestion.timestamps.earliest', '2020-01-01'));
+        if ($configured === '') {
+            // Empty INGESTION_TS_EARLIEST means no earliest bound.
+            return null;
+        }
+
+        try {
+            return \Carbon\Carbon::parse($configured, 'UTC');
+        } catch (\Throwable $e) {
+            Log::warning('TransactionIntakeService: ingestion.timestamps.earliest is unparseable; earliest bound disabled', [
+                'exception_class' => $e::class,
+            ]);
+
+            return null;
+        }
+    }
+
+    protected function timestampsEnforced(): bool
+    {
+        return config('ingestion.timestamps.mode', 'observe') === 'enforce';
+    }
+
+    /**
+     * One error_code per response: INVALID outranks FUTURE when a batch
+     * carries both.
+     */
+    protected function timestampRejectionCode(array $findings): string
+    {
+        foreach ($findings as $finding) {
+            if ($finding['code'] === self::INVALID_TRANSACTION_TIMESTAMP) {
+                return self::INVALID_TRANSACTION_TIMESTAMP;
+            }
+        }
+
+        return self::FUTURE_TRANSACTION_TIMESTAMP;
+    }
+
+    protected function recordWouldRejectTimestamps(array $findings, PosTerminal $terminal, string $traceId): void
+    {
+        foreach ($findings as $finding) {
+            if ($finding['code'] === null) {
+                continue;
+            }
+
+            Metrics::incr("intake.timestamp_would_reject.{$finding['code']}");
+            Log::notice('TransactionIntakeService: transaction timestamp would be rejected (observe mode)', LogContext::ingestion([
+                'tenant_id' => $terminal->tenant_id,
+                'terminal_id' => $terminal->id,
+                'route' => 'transactions.official',
+                'correlation_id' => $traceId,
+                'decision' => 'timestamp_would_reject',
+                'reason' => $finding['code'],
+            ], [
+                'transaction_id' => $finding['transaction_id'],
+                'code' => $finding['code'],
+            ]));
+        }
+    }
+
+    /**
+     * FR-019: valid sales older than the late threshold are accepted
+     * unchanged and flagged. Findings carrying a would-reject code (observe
+     * mode) are not "valid" and are excluded. Returns extra accept-log
+     * context: [] when nothing is late, else late=true and the largest lag.
+     */
+    protected function recordLateArrivals(array $findings, \Carbon\Carbon $receivedAt): array
+    {
+        $thresholdSeconds = max(0, (int) config('ingestion.timestamps.late_threshold_minutes', 1440)) * 60;
+        $maxLag = null;
+
+        foreach ($findings as $finding) {
+            if ($finding['code'] !== null || $finding['normalized'] === null) {
+                continue;
+            }
+
+            $lag = $receivedAt->getTimestamp() - $finding['normalized']->getTimestamp();
+            if ($lag > $thresholdSeconds) {
+                Metrics::incr('intake.late_count');
+                Metrics::bucket('intake.arrival_lag_seconds', $lag);
+                $maxLag = max($maxLag ?? 0, $lag);
+            }
+        }
+
+        return $maxLag === null ? [] : ['late' => true, 'lag_seconds' => $maxLag];
+    }
+
     protected function taxAmount(array $taxes, string $taxType): float
     {
         foreach ($taxes as $tax) {
@@ -523,6 +743,9 @@ class TransactionIntakeService
                 ]);
 
                 Metrics::incr('intake.rejected_count');
+                Metrics::incr("intake.rejected.code.{$errorCode}");
+                Metrics::incr('intake.rejected.tenant.'.(auth()->user()->tenant_id ?? 0));
+                Metrics::incr('intake.rejected.terminal.'.(auth()->user()->id ?? 0).".{$errorCode}");
             }
         } catch (\Exception $e) {
             Log::warning('TransactionIntakeService: Failed to persist rejection audit', LogContext::ingestion([
