@@ -36,7 +36,7 @@ class PosIngestionLicenseEnforcementTest extends TestCase
 
         $this->postJson('/api/v1/transactions/official', $payload, [
             'Authorization' => 'Bearer ' . $token,
-        ])->assertStatus(202);
+        ])->assertStatus(200)->assertJsonPath('code', 'ACCEPTED');
 
         $this->assertDatabaseHas('transaction_intake', [
             'submission_uuid' => $payload['submission_uuid'],

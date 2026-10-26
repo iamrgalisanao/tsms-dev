@@ -323,11 +323,12 @@ class IntakeTimestampSanityTest extends TestCase
 
     private function assertAccepted(TestResponse $response, string $label): void
     {
-        $response->assertStatus(202);
-        $this->assertSame('queued', $response->json('status'), $label);
+        $response->assertStatus(200);
+        $this->assertSame('PENDING', $response->json('status'), $label);
+        $this->assertSame('ACCEPTED', $response->json('code'), $label);
         $keys = array_keys($response->json());
         sort($keys);
-        $this->assertSame(['correlation_id', 'intake_id', 'message', 'retryable', 'status', 'submission_uuid', 'success'], $keys, $label);
+        $this->assertSame(['code', 'correlation_id', 'data', 'intake_id', 'message', 'retryable', 'status', 'submission_uuid', 'success'], $keys, $label);
     }
 
     private function metric(string $name): int

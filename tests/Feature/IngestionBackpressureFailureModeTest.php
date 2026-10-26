@@ -68,8 +68,8 @@ class IngestionBackpressureFailureModeTest extends TestCase
         // Observe mode never enforces, even when the health check itself is
         // unevaluable — the request must reach the controller normally.
         // (Retargeted from the retired /transactions/batch route, which
-        // answered 200; /official accepts with 202.)
-        $response->assertStatus(202)->assertJsonPath('success', true);
+        // answered 200; /official accepts with 200 PENDING/ACCEPTED.)
+        $response->assertStatus(200)->assertJsonPath('success', true)->assertJsonPath('code', 'ACCEPTED');
     }
 
     public function test_official_endpoint_returns_503_ingestion_degraded_when_intake_redis_check_throws_in_enforce_mode(): void

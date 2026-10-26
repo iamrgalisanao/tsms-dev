@@ -1,6 +1,6 @@
 # Contract: Ingest outcomes and intake processing status
 
-The official endpoint's HTTP contract is unchanged (accepted submissions still return the same status and body). This contract covers the asynchronous outcome recorded on `transaction_intake`.
+The official endpoint's HTTP contract is unchanged (accepted submissions still return the same status and body: 200 `success: true, status: PENDING, code: ACCEPTED` since PR #18, TSMS-004). This contract covers the asynchronous outcome recorded on `transaction_intake`.
 
 | Scenario | Ingest result | Intake processing_status | last_error_code |
 | --- | --- | --- | --- |

@@ -22,7 +22,7 @@ use Tests\TestCase;
  * 003-ingestion-hardening changes anything (tasks T003/T004). Every later
  * phase must keep this file green.
  *
- * Exception: test_batch_in_official_is_accepted_with_202_and_job_records_first_item_only_on_test_schema
+ * Exception: test_batch_in_official_is_accepted_with_200_pending_and_job_records_first_item_only_on_test_schema
  * documents behavior of the migration-built test schema (UNIQUE
  * submission_uuid index, absent on staging) rather than a production
  * contract, and may change deliberately if that schema changes.
@@ -32,7 +32,9 @@ class OfficialIntakeContractTest extends TestCase
     use RefreshDatabase;
 
     private const ACCEPTED_KEYS = [
+        'code',
         'correlation_id',
+        'data',
         'intake_id',
         'message',
         'retryable',
@@ -49,7 +51,7 @@ class OfficialIntakeContractTest extends TestCase
         'success',
     ];
 
-    public function test_single_transaction_is_accepted_with_202_and_queued_intake(): void
+    public function test_single_transaction_is_accepted_with_200_pending_and_queued_intake(): void
     {
         Queue::fake();
         [$tenant, $terminal] = $this->seedTenantAndTerminal();
@@ -57,12 +59,14 @@ class OfficialIntakeContractTest extends TestCase
 
         $response = $this->postOfficial($terminal, $payload);
 
-        $response->assertStatus(202)
+        $response->assertStatus(200)
             ->assertJsonPath('success', true)
-            ->assertJsonPath('status', 'queued')
-            ->assertJsonPath('message', 'Submission accepted')
+            ->assertJsonPath('status', 'PENDING')
+            ->assertJsonPath('code', 'ACCEPTED')
+            ->assertJsonPath('message', 'Official submission accepted: 1 pending, 0 failed')
             ->assertJsonPath('submission_uuid', $payload['submission_uuid'])
-            ->assertJsonPath('retryable', false);
+            ->assertJsonPath('retryable', false)
+            ->assertJsonPath('data.pending_count', 1);
         $this->assertSameKeys(self::ACCEPTED_KEYS, $response->json());
 
         $intake = TransactionIntake::where('submission_uuid', $payload['submission_uuid'])->firstOrFail();
@@ -85,7 +89,7 @@ class OfficialIntakeContractTest extends TestCase
         [$tenant, $terminal] = $this->seedTenantAndTerminal();
         $payload = $this->officialPayload($tenant->id, $terminal->id, $terminal->serial_number);
 
-        $this->postOfficial($terminal, $payload)->assertStatus(202);
+        $this->postOfficial($terminal, $payload)->assertStatus(200);
         $intake = TransactionIntake::where('submission_uuid', $payload['submission_uuid'])->firstOrFail();
 
         $this->runIntakeJob($intake);
@@ -118,7 +122,7 @@ class OfficialIntakeContractTest extends TestCase
         $this->assertChildRows($transaction, $tx);
     }
 
-    public function test_batch_in_official_is_accepted_with_202_and_job_records_first_item_only_on_test_schema(): void
+    public function test_batch_in_official_is_accepted_with_200_pending_and_job_records_first_item_only_on_test_schema(): void
     {
         // This test documents test-schema behavior; it only holds when the
         // unique submission_uuid index exists on the test DB.
@@ -138,12 +142,14 @@ class OfficialIntakeContractTest extends TestCase
 
         $response = $this->postOfficial($terminal, $payload);
 
-        $response->assertStatus(202)
+        $response->assertStatus(200)
             ->assertJsonPath('success', true)
-            ->assertJsonPath('status', 'queued')
-            ->assertJsonPath('message', 'Submission accepted')
+            ->assertJsonPath('status', 'PENDING')
+            ->assertJsonPath('code', 'ACCEPTED')
+            ->assertJsonPath('message', 'Official submission accepted: 2 pending, 0 failed')
             ->assertJsonPath('submission_uuid', $payload['submission_uuid'])
-            ->assertJsonPath('retryable', false);
+            ->assertJsonPath('retryable', false)
+            ->assertJsonPath('data.pending_count', 2);
         $this->assertSameKeys(self::ACCEPTED_KEYS, $response->json());
 
         $intakes = TransactionIntake::where('submission_uuid', $payload['submission_uuid'])->get();
@@ -265,22 +271,24 @@ class OfficialIntakeContractTest extends TestCase
         [$tenant, $terminal] = $this->seedTenantAndTerminal();
         $payload = $this->officialPayload($tenant->id, $terminal->id, $terminal->serial_number);
 
-        $first = $this->postOfficial($terminal, $payload)->assertStatus(202);
+        $first = $this->postOfficial($terminal, $payload)->assertStatus(200);
         $intake = TransactionIntake::where('submission_uuid', $payload['submission_uuid'])->firstOrFail();
 
         $response = $this->postOfficial($terminal, $payload);
 
-        $response->assertStatus(202)
+        $response->assertStatus(200)
             ->assertJsonPath('success', true)
-            ->assertJsonPath('status', 'queued')
+            ->assertJsonPath('status', 'PENDING')
+            ->assertJsonPath('code', 'ACCEPTED')
             ->assertJsonPath('message', 'Submission already accepted')
             ->assertJsonPath('submission_uuid', $payload['submission_uuid'])
             ->assertJsonPath('intake_id', $intake->id)
             ->assertJsonPath('retryable', false)
-            ->assertJsonPath('data.intake_status', TransactionIntake::INTAKE_STATUS_QUEUED)
-            ->assertJsonPath('data.processing_status', null)
+            ->assertJsonPath('data.intake_status', 'PENDING')
+            ->assertJsonPath('data.processing_status', 'PENDING')
+            ->assertJsonPath('data.checksum_validation', 'matched_stored_checksum')
             ->assertJsonPath('data.payload_checksum', $payload['payload_checksum']);
-        $this->assertSameKeys(array_merge(self::ACCEPTED_KEYS, ['data']), $response->json());
+        $this->assertSameKeys(self::ACCEPTED_KEYS, $response->json());
         $this->assertNotSame($first->json('correlation_id'), $response->json('correlation_id'));
 
         $this->assertSame(1, TransactionIntake::where('submission_uuid', $payload['submission_uuid'])->count());
@@ -321,7 +329,7 @@ class OfficialIntakeContractTest extends TestCase
 
         $response = $this->postOfficial($terminal, $payload, ['X-Request-Id' => 'contract-trace-001']);
 
-        $response->assertStatus(202)
+        $response->assertStatus(200)
             ->assertJsonPath('correlation_id', 'contract-trace-001');
         $intake = TransactionIntake::where('submission_uuid', $payload['submission_uuid'])->firstOrFail();
         $this->assertSame('contract-trace-001', $intake->trace_id);
