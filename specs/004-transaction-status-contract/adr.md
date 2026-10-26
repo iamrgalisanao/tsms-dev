@@ -233,3 +233,31 @@ With option A, an open period's total can go down if a PENDING sale is later fou
 1. Close a period only when it has **no PENDING sales**. A read-only "pending for period" check (follow-up command) supports this checklist step.
 2. Invoice and post from the closed figure. With no PENDING left, the recorded and validated totals are equal.
 3. Any change after close goes through an explicit adjustment in the next period, never a silent change to a closed period.
+
+### 10.2 Slice 3 implementation notes (revalidated 2026-10-27)
+
+**Accepted deviations.**
+- `avg_amount`, `min_amount` and `max_amount` use `COALESCE(fn(CASE WHEN validation_status <> 'INVALID' THEN gross_sales END), 0)`. INVALID is left out of the statistics, and the expression is strict-mode safe.
+- **One definition of "processing failed":** `job_status=FAILED AND validation_status NOT IN ('VALID','INVALID')`, which covers PENDING, legacy `''` and ERROR. It is defined in `TransactionStatusFilter` and used by the model scope, the log filter and export, the collection, the alert, the audit, the dashboard and DetailService. Legacy VALID+FAILED rows count as reconciled, not as exceptions.
+- VOIDED/REFUNDED keep their per-endpoint behaviour from main (void handling is parked). Page sums in `TransactionCollection` are unchanged.
+- Backend `Transaction::statusLabel()` and the JS `getStatusLabel()` share the fixture `tests/fixtures/transaction_status_labels.json`.
+
+**Guard allowlist** (a reason per entry is in `CountableSalesTest`; the scan covers `app/` and `resources/views`):
+
+| File | Count | Reason |
+| --- | --- | --- |
+| TransactionLogController | 4 | Rows already restricted; an explicit status filter shows that status's totals |
+| SalesReportDataService | 2 | Reads precomputed countable summaries |
+| TenantIngestionAuditService | 2 | Reconciliation of everything ingested |
+| TransactionCollection | 2 | Page totals of the listed rows |
+| ReportingRefreshCommand | 1 | `issues_amount` sums only INVALID rows |
+| Tenant::getDailySalesTotal | 1 | Dead code (Q6) |
+| Store::getDailySalesTotal | 1 | Dead code (Q6) |
+
+**Follow-ups (out of scope):**
+- `CommercialReportsController` month/YTD has always returned 0: `PosTerminal::transactions()` expects a non-existent `pos_terminal_id` column and the error is swallowed.
+- The commercial tenant profile page returns HTTP 500 because its layout links the undefined route `commercial.sales-report.hourly`.
+- `Transaction::scopeCountableSales` applies the void filter by default and has no callers. Remove it or document it in the dead-code cleanup.
+- `TransactionLogTest` "Undefined variable $elements" (`simplePaginate` with the bootstrap-4 pagination view) is a baseline failure.
+
+**Deploy:** slices 1, 2 and 3 ship together.

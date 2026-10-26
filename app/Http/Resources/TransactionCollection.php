@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources;
 
+use App\Support\Reporting\TransactionStatusFilter;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\ResourceCollection;
 
@@ -58,6 +59,13 @@ class TransactionCollection extends ResourceCollection
             'valid_transactions' => $transactions->where('validation_status', 'VALID')->count(),
             'failed_transactions' => $transactions->where('validation_status', 'INVALID')->count(),
             'pending_transactions' => $transactions->where('validation_status', 'PENDING')->count(),
+            // ADR-004 D1: processing failed before a final business outcome.
+            'processing_failed_transactions' => $transactions
+                ->filter(fn ($t) => TransactionStatusFilter::isProcessingFailed(
+                    data_get($t, 'job_status'),
+                    data_get($t, 'validation_status')
+                ))
+                ->count(),
             'voided_transactions' => $transactions->where('is_voided', true)->count(),
             'refunded_transactions' => $transactions->where('is_refunded', true)->count(),
         ];

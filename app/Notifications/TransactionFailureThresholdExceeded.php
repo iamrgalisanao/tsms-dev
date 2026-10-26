@@ -27,8 +27,24 @@ class TransactionFailureThresholdExceeded extends Notification implements Should
         return env('ADMIN_EMAIL');
     }
 
+    /** ADR-004: business-INVALID sales (the original alert). */
+    public const TYPE_BUSINESS_INVALID = 'business_invalid';
+
+    /** ADR-004: processing failed with no business outcome (PENDING or legacy ''). */
+    public const TYPE_PROCESSING_FAILURE = 'processing_failure';
+
     private array $thresholdData;
     private array $recentFailures;
+
+    public function alertType(): string
+    {
+        return $this->thresholdData['alert_type'] ?? self::TYPE_BUSINESS_INVALID;
+    }
+
+    private function isProcessingFailure(): bool
+    {
+        return $this->alertType() === self::TYPE_PROCESSING_FAILURE;
+    }
 
     public function __construct(array $thresholdData, array $recentFailures = [])
     {
@@ -79,9 +95,13 @@ class TransactionFailureThresholdExceeded extends Notification implements Should
         $posTerminalId = $this->thresholdData['pos_terminal_id'] ?? 'Multiple Terminals';
 
         return (new MailMessage)
-                    ->subject('TSMS Alert: Transaction Failure Threshold Exceeded')
+                    ->subject($this->isProcessingFailure()
+                        ? 'TSMS Alert: Transaction Processing Failure Threshold Exceeded'
+                        : 'TSMS Alert: Transaction Failure Threshold Exceeded')
                     ->priority(1) // High priority (1 = highest, 5 = lowest)
-                    ->line("Transaction failure threshold has been exceeded.")
+                    ->line($this->isProcessingFailure()
+                        ? 'Transaction processing failure threshold has been exceeded (processing failed before validation; TSMS retries these).'
+                        : 'Transaction failure threshold has been exceeded.')
                     ->line("POS Terminal: {$posTerminalId}")
                     ->line("Threshold: {$threshold} failures in {$timeWindow} minutes")
                     ->line("Current Count: {$currentCount} failures")
@@ -101,8 +121,23 @@ class TransactionFailureThresholdExceeded extends Notification implements Should
      */
     public function toDatabase(object $notifiable): array
     {
+        if ($this->isProcessingFailure()) {
+            return [
+                'type' => 'transaction_processing_failure_threshold_exceeded',
+                'alert_type' => self::TYPE_PROCESSING_FAILURE,
+                'title' => 'Transaction Processing Failure Threshold Exceeded',
+                'message' => "Transaction processing failures exceeded threshold of {$this->thresholdData['threshold']} in {$this->thresholdData['time_window_minutes']} minutes",
+                'threshold_data' => $this->thresholdData,
+                'recent_failures' => $this->recentFailures,
+                'severity' => 'high',
+                'pos_terminal_id' => $this->thresholdData['pos_terminal_id'] ?? null,
+                'created_at' => now(),
+            ];
+        }
+
         return [
             'type' => 'transaction_failure_threshold_exceeded',
+            'alert_type' => self::TYPE_BUSINESS_INVALID,
             'title' => 'Transaction Failure Threshold Exceeded',
             'message' => "Transaction failures exceeded threshold of {$this->thresholdData['threshold']} in {$this->thresholdData['time_window_minutes']} minutes",
             'threshold_data' => $this->thresholdData,

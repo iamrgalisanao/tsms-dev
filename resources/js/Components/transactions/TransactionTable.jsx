@@ -24,17 +24,15 @@ import KeyboardArrowDownIcon from '@mui/icons-material/KeyboardArrowDown';
 import KeyboardArrowUpIcon from '@mui/icons-material/KeyboardArrowUp';
 import InfoOutlinedIcon from '@mui/icons-material/InfoOutlined';
 import { formatDate } from '../../utils/dateFormatter';
+import { getOperationStatus, getValidationStatusLabel } from '../../utils/transactionStatus';
 
 const Row = ({ transaction, onViewDetails, getStatusColor, formatCurrency, formatDate }) => {
     const [open, setOpen] = useState(false);
     const receivedAt = transaction.created_at;
     const transactionDisplayTime = transaction.transaction_timestamp || transaction.completed_at || transaction.created_at;
-    const operationStatus = transaction.voided_at
-        ? 'ERROR'
-        : (['INVALID', 'WITH_ISSUES'].includes((transaction.validation_status || '').toUpperCase())
-            ? 'ERROR'
-            : ((transaction.validation_status || '').toUpperCase() === 'PENDING' ? 'PENDING' : 'RECONCILED'));
-    const operationStatusColor = operationStatus === 'RECONCILED' ? 'success' : operationStatus === 'PENDING' ? 'warning' : 'error';
+    // ADR-004: blank legacy status is never RECONCILED; see utils/transactionStatus.
+    const { label: operationStatus, color: operationStatusColor } = getOperationStatus(transaction);
+    const validationLabel = getValidationStatusLabel(transaction);
 
     return (
         <React.Fragment>
@@ -179,8 +177,8 @@ const Row = ({ transaction, onViewDetails, getStatusColor, formatCurrency, forma
                 </TableCell>
                 <TableCell align="center" sx={{ minWidth: 110 }}>
                     <Chip
-                        label={transaction.validation_status || 'UNKNOWN'}
-                        color={getStatusColor(transaction.validation_status)}
+                        label={validationLabel}
+                        color={getStatusColor(validationLabel)}
                         size="small"
                         sx={{ fontWeight: 800, fontSize: '0.65rem' }}
                     />
@@ -273,8 +271,8 @@ const Row = ({ transaction, onViewDetails, getStatusColor, formatCurrency, forma
                                         <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
                                             <Typography variant="caption" sx={{ fontWeight: 800, color: 'text.secondary' }}>AUDIT STATUS</Typography>
                                             <Chip
-                                                label={transaction.validation_status}
-                                                color={getStatusColor(transaction.validation_status)}
+                                                label={validationLabel}
+                                                color={getStatusColor(validationLabel)}
                                                 size="small"
                                                 sx={{ fontWeight: 800, fontSize: '0.65rem' }}
                                             />
@@ -332,6 +330,9 @@ const TransactionTable = ({ transactions, loading, page, rowsPerPage, totalCount
         switch (status?.toUpperCase()) {
             case 'VALID': return 'success';
             case 'INVALID': return 'error';
+            case 'ERROR': return 'error';
+            case 'PROCESSING FAILED':
+            case 'PROCESSING_FAILED': return 'warning';
             case 'WITH_ISSUES': return 'warning';
             case 'PENDING': return 'info';
             case 'REFUNDED': return 'warning';

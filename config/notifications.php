@@ -20,6 +20,11 @@ return [
     'transaction_failure_threshold' => env('NOTIFICATION_TRANSACTION_FAILURE_THRESHOLD', 10),
     'transaction_failure_time_window' => env('NOTIFICATION_TRANSACTION_FAILURE_TIME_WINDOW', 60), // minutes
 
+    // ADR-004 D1/D3: processing failures (job_status=FAILED with no business outcome:
+    // validation_status PENDING or legacy '') alert separately from business-INVALID sales.
+    'processing_failure_threshold' => env('NOTIFICATION_PROCESSING_FAILURE_THRESHOLD', 10),
+    'processing_failure_time_window' => env('NOTIFICATION_PROCESSING_FAILURE_TIME_WINDOW', 60), // minutes
+
     /*
     |--------------------------------------------------------------------------
     | Tenant Inactivity Monitoring

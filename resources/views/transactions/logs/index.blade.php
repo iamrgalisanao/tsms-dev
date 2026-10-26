@@ -436,7 +436,7 @@ use App\Helpers\FormatHelper;
                     <td class="text-center">{{ \Carbon\Carbon::parse($log->created_at)->format('Y-m-d H:i:s') }}</td> --}}
                     <td class="text-center">
                         <a href="{{ route('transactions.logs.show', $log->id) }}" class="btn btn-sm btn-outline-primary">View</a>
-                        @if($log->validation_status === 'ERROR' && Gate::check('retry-transactions'))
+                        @if($log->isRetryable() && Gate::check('retry-transactions'))
                             <form action="{{ route('transactions.retry', $log->id) }}" method="POST" class="d-inline">
                                 @csrf
                                 <button type="submit" class="btn btn-sm btn-warning">Retry</button>

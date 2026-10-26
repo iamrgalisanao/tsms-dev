@@ -25,6 +25,7 @@ import ErrorIcon from '@mui/icons-material/Error';
 import PendingIcon from '@mui/icons-material/Pending';
 import { transactionLogService } from '../../services/transactionLogService';
 import { formatDate } from '../../utils/dateFormatter';
+import { getOperationStatus } from '../../utils/transactionStatus';
 
 const TransactionDetailPanel = ({ open, onClose, transaction }) => {
     const [activeTab, setActiveTab] = useState(0);
@@ -118,8 +119,8 @@ const TransactionDetailPanel = ({ open, onClose, transaction }) => {
                     </Typography>
                     <Box sx={{ mt: 0.5 }}>
                         <Chip
-                            label={transaction?.voided_at ? 'VOIDED' : (transaction?.validation_status || 'PENDING')}
-                            color={getStatusColor(transaction?.voided_at ? 'VOIDED' : transaction?.validation_status)}
+                            label={getOperationStatus(transaction).label}
+                            color={getOperationStatus(transaction).color}
                             size="small"
                             sx={{ fontWeight: 'bold' }}
                         />

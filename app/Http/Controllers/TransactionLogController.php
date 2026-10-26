@@ -14,6 +14,8 @@ use App\Models\PosTerminal;
 use App\Models\Tenant;
 use App\Models\TransactionIntake;
 use App\Services\Reports\FinanceCalculationService;
+use App\Support\Reporting\CountableSales;
+use App\Support\Reporting\TransactionStatusFilter;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Artisan;
 use Illuminate\Support\Facades\DB;
@@ -82,6 +84,7 @@ class TransactionLogController extends Controller
             'receipt_no',
             'transaction_timestamp',
             'validation_status',
+            'job_status',
             'vat_amount as vat',
             'vatable_sales',
             'sc_vat_exempt_sales',
@@ -101,7 +104,8 @@ class TransactionLogController extends Controller
             return $query->where('transaction_id', 'like', "%{$search}%");
             })
             ->when(isset($filters['status']), function ($query) use ($filters) {
-            return $query->where('validation_status', $filters['status']);
+            // Index never had the VOIDED/REFUNDED pseudo-statuses; void handling is parked.
+            return $this->applyStatusFilter($query, $filters['status'], null, false);
             })
             ->when(isset($filters['date_from']), function ($query) use ($filters, $dateColumn) {
                 return $query->where($dateColumn, '>=', $this->dateFilterValue($dateColumn, $filters['date_from'], false));
@@ -189,6 +193,7 @@ class TransactionLogController extends Controller
                     'amount' => (float) ($transaction->gross_sales ?? 0),
                     'net_sales' => (float) ($transaction->net_sales ?? 0),
                     'validation_status' => $transaction->validation_status,
+                    'job_status' => $transaction->job_status,
                     'is_voided' => (bool) ($transaction->isVoided() ?? false),
                     'voided_at' => $transaction->voided_at,
                     'void_reason' => $transaction->void_reason,
@@ -488,13 +493,7 @@ class TransactionLogController extends Controller
         }
 
         if (isset($filters['status'])) {
-            if ($filters['status'] === 'VOIDED') {
-                $query->whereNotNull('voided_at');
-            } elseif ($filters['status'] === 'REFUNDED') {
-                $query->where('is_refunded', true);
-            } else {
-                $query->where('validation_status', $filters['status']);
-            }
+            $this->applyStatusFilter($query, $filters['status']);
         }
 
         if (isset($filters['date_from'])) {
@@ -704,13 +703,7 @@ class TransactionLogController extends Controller
             ->leftJoin('tenants as tn', 'tn.id', '=', 't.tenant_id')
             ->leftJoin('pos_terminals as term', 'term.id', '=', 't.terminal_id')
             ->when(isset($filters['status']), function ($q) use ($filters) {
-                if ($filters['status'] === 'VOIDED') {
-                    $q->whereNotNull('t.voided_at');
-                } elseif ($filters['status'] === 'REFUNDED') {
-                    $q->where('t.is_refunded', true);
-                } else {
-                    $q->where('t.validation_status', $filters['status']);
-                }
+                $this->applyStatusFilter($q, $filters['status'], 't');
             })
             ->when(isset($filters['date_from']), function ($q) use ($filters, $dateColumn) {
                 $q->where($dateColumn, '>=', $this->dateFilterValue($dateColumn, $filters['date_from'], false));
@@ -738,13 +731,7 @@ class TransactionLogController extends Controller
             $adjustmentDateColumn = str_replace('t.', 'adj_t.', $dateColumn);
             $adjustmentTotals
                 ->when(isset($filters['status']), function ($q) use ($filters) {
-                    if ($filters['status'] === 'VOIDED') {
-                        $q->whereNotNull('adj_t.voided_at');
-                    } elseif ($filters['status'] === 'REFUNDED') {
-                        $q->where('adj_t.is_refunded', true);
-                    } else {
-                        $q->where('adj_t.validation_status', $filters['status']);
-                    }
+                    $this->applyStatusFilter($q, $filters['status'], 'adj_t');
                 })
                 ->when(isset($filters['date_from']), function ($q) use ($filters, $adjustmentDateColumn) {
                     $q->where($adjustmentDateColumn, '>=', $this->dateFilterValue($adjustmentDateColumn, $filters['date_from'], false));
@@ -768,6 +755,11 @@ class TransactionLogController extends Controller
                     ->whereNull('adj_t.voided_at');
             }
 
+            // ADR-004 D10: business-INVALID sales never count toward totals unless explicitly filtered.
+            if (! isset($filters['status'])) {
+                CountableSales::apply($adjustmentTotals, 'adj_t', false);
+            }
+
             $adjustmentTotals->groupBy('transaction_pk');
 
             $baseQuery->leftJoinSub($adjustmentTotals, 'adj_totals', function ($join) {
@@ -780,19 +772,18 @@ class TransactionLogController extends Controller
                 ->whereNull('t.voided_at');
         }
 
+        // ADR-004 D10: business-INVALID sales never count toward totals unless explicitly filtered.
+        if (! isset($filters['status'])) {
+            CountableSales::apply($baseQuery, 't', false);
+        }
+
         $dateBasisDiscrepancy = null;
         $includeDateBasisDiscrepancy = $request->boolean('include_date_basis_discrepancy', false);
         if ($includeDateBasisDiscrepancy && $basis === 'transaction' && (isset($filters['date_from']) || isset($filters['date_to']))) {
             $discrepancyBaseQuery = DB::table('transactions as t')
                 ->leftJoin('pos_terminals as term', 'term.id', '=', 't.terminal_id')
                 ->when(isset($filters['status']), function ($q) use ($filters) {
-                    if ($filters['status'] === 'VOIDED') {
-                        $q->whereNotNull('t.voided_at');
-                    } elseif ($filters['status'] === 'REFUNDED') {
-                        $q->where('t.is_refunded', true);
-                    } else {
-                        $q->where('t.validation_status', $filters['status']);
-                    }
+                    $this->applyStatusFilter($q, $filters['status'], 't');
                 })
                 ->when(isset($filters['tenant_id']), function ($q) use ($filters) {
                     $q->where(function ($sub) use ($filters) {
@@ -807,6 +798,11 @@ class TransactionLogController extends Controller
             if ($hasReceiptNo && !isset($filters['status'])) {
                 $discrepancyBaseQuery->where('t.validation_status', '!=', 'DUPLICATE')
                     ->whereNull('t.voided_at');
+            }
+
+            // ADR-004 D10: business-INVALID sales never count toward totals unless explicitly filtered.
+            if (! isset($filters['status'])) {
+                CountableSales::apply($discrepancyBaseQuery, 't', false);
             }
 
             $completedDateQuery = clone $discrepancyBaseQuery;
@@ -1059,13 +1055,7 @@ class TransactionLogController extends Controller
             ->selectRaw($dateExpr . ' as date')
             ->addSelect('t.tenant_id', 't.terminal_id', 't.promo_status', 't.original_payload')
             ->when(isset($filters['status']), function ($q) use ($filters) {
-                if ($filters['status'] === 'VOIDED') {
-                    $q->whereNotNull('t.voided_at');
-                } elseif ($filters['status'] === 'REFUNDED') {
-                    $q->where('t.is_refunded', true);
-                } else {
-                    $q->where('t.validation_status', $filters['status']);
-                }
+                $this->applyStatusFilter($q, $filters['status'], 't');
             })
             ->when(isset($filters['date_from']), function ($q) use ($filters, $dateColumn) {
                 $q->where($dateColumn, '>=', $this->dateFilterValue($dateColumn, $filters['date_from'], false));
@@ -1086,6 +1076,11 @@ class TransactionLogController extends Controller
         if ($hasReceiptNo && !isset($filters['status'])) {
             $query->where('t.validation_status', '!=', 'DUPLICATE')
                 ->whereNull('t.voided_at');
+        }
+
+        // ADR-004 D10: business-INVALID sales never count toward totals unless explicitly filtered.
+        if (! isset($filters['status'])) {
+            CountableSales::apply($query, 't', false);
         }
 
         $totals = [];
@@ -1118,6 +1113,15 @@ class TransactionLogController extends Controller
     private function transactionSummaryPayloadAdjustmentKey($date, $tenantId, $terminalId): string
     {
         return implode('|', [(string) $date, (string) $tenantId, (string) $terminalId]);
+    }
+
+    /**
+     * Apply the status filter (validation statuses plus VOIDED, REFUNDED and the
+     * ADR-004 PROCESSING_FAILED pseudo-status) shared by the list, totals and export.
+     */
+    private function applyStatusFilter($query, string $status, ?string $alias = null, bool $voidRefundPseudoStatuses = true)
+    {
+        return TransactionStatusFilter::apply($query, $status, $alias, $voidRefundPseudoStatuses);
     }
 
     private function scopeFiltersForUser(Request $request, array $filters): array

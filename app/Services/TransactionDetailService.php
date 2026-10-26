@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Transaction;
+use App\Support\Reporting\TransactionStatusFilter;
 
 class TransactionDetailService
 {
@@ -130,7 +131,7 @@ class TransactionDetailService
         
         return Transaction::where('terminal_id', $terminalId)
             ->where('created_at', '>=', $thirtyDaysAgo)
-            ->selectRaw('DATE(created_at) as date, COUNT(*) as total, SUM(CASE WHEN validation_status = "ERROR" THEN 1 ELSE 0 END) as errors')
+            ->selectRaw("DATE(created_at) as date, COUNT(*) as total, SUM(CASE WHEN validation_status = 'INVALID' OR ".TransactionStatusFilter::processingFailedSql().' THEN 1 ELSE 0 END) as errors')
             ->groupBy('date')
             ->orderBy('date', 'desc')
             ->get();

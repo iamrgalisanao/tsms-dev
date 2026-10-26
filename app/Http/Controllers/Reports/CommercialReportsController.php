@@ -6,6 +6,7 @@ use App\Http\Controllers\Controller;
 use Illuminate\Http\Request;
 use App\Models\Tenant;
 use App\Models\Transaction;
+use App\Support\Reporting\CountableSales;
 use App\Http\Controllers\API\Webapp\HourlyTransactionsController as ApiHourlyController;
 use App\Services\Reports\HourlyReportService;
 use App\Services\Reports\DailyReportService;
@@ -489,10 +490,12 @@ class CommercialReportsController extends Controller
                 $currentMonthEnd = now()->endOfMonth();
                 $monthSales = $tenant->posTerminals()->get()->map(function ($terminal) use ($currentMonthStart, $currentMonthEnd) {
                     try {
-                        return $terminal->transactions()
-                            ->whereBetween('transaction_timestamp', [$currentMonthStart, $currentMonthEnd])
-                            ->where('validation_status', 'VALID')
-                            ->sum('gross_sales');
+                        // ADR-004 D10 option A: VALID + PENDING, excluding INVALID (no void filter, as before).
+                        return CountableSales::sum(
+                            $terminal->transactions()->whereBetween('transaction_timestamp', [$currentMonthStart, $currentMonthEnd]),
+                            'gross_sales',
+                            'transactions'
+                        );
                     } catch (\Throwable $e) {
                         return 0;
                     }
@@ -503,10 +506,12 @@ class CommercialReportsController extends Controller
                 $yearEnd = now()->endOfYear();
                 $ytdSales = $tenant->posTerminals()->get()->map(function ($terminal) use ($yearStart, $yearEnd) {
                     try {
-                        return $terminal->transactions()
-                            ->whereBetween('transaction_timestamp', [$yearStart, $yearEnd])
-                            ->where('validation_status', 'VALID')
-                            ->sum('gross_sales');
+                        // ADR-004 D10 option A: VALID + PENDING, excluding INVALID (no void filter, as before).
+                        return CountableSales::sum(
+                            $terminal->transactions()->whereBetween('transaction_timestamp', [$yearStart, $yearEnd]),
+                            'gross_sales',
+                            'transactions'
+                        );
                     } catch (\Throwable $e) {
                         return 0;
                     }
@@ -566,7 +571,40 @@ class CommercialReportsController extends Controller
             }
         }
 
-        return view('reports.commercial.tenants.show', compact('tenant'));
+        $annual_sales = $this->tenantAnnualSales($tenant, (int) $request->get('year', now()->year));
+
+        return view('reports.commercial.tenants.show', compact('tenant', 'annual_sales'));
+    }
+
+    /**
+     * Annual sales for the tenant profile page (ADR-004 D10 option A: VALID + PENDING,
+     * excluding INVALID). Same row set as the former in-view computation, which had no
+     * void filter: year on transaction_date when present, else created_at.
+     */
+    private function tenantAnnualSales(Tenant $tenant, int $year): float
+    {
+        try {
+            $dateColumn = null;
+            if (\Illuminate\Support\Facades\Schema::hasTable('transactions')) {
+                if (\Illuminate\Support\Facades\Schema::hasColumn('transactions', 'transaction_date')) {
+                    $dateColumn = 'transaction_date';
+                } elseif (\Illuminate\Support\Facades\Schema::hasColumn('transactions', 'created_at')) {
+                    $dateColumn = 'created_at';
+                }
+            }
+
+            $query = method_exists($tenant, 'transactions')
+                ? $tenant->transactions()
+                : \Illuminate\Support\Facades\DB::table('transactions')->where('tenant_id', $tenant->id);
+
+            if ($dateColumn) {
+                $query->whereYear('transactions.'.$dateColumn, $year);
+            }
+
+            return CountableSales::sum($query, 'gross_sales', 'transactions');
+        } catch (\Throwable $e) {
+            return 0.0;
+        }
     }
 
     /**
@@ -1105,9 +1143,7 @@ class CommercialReportsController extends Controller
                 ->orWhereNull('transactions.transaction_timestamp'))
             ->whereRaw("{$reportDateExpr} BETWEEN ? AND ?", [$from, $to]);
 
-        if (config('tsms.reporting.exclude_voids_from_totals', true)) {
-            $query->where('transactions.transaction_type', '!=', 'VOID')->whereNull('transactions.voided_at');
-        }
+        CountableSales::apply($query, 'transactions');
 
         $finance = app(FinanceCalculationService::class);
         $rows = $query->get()

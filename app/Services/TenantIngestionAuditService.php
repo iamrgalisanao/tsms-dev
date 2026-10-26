@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\PosTerminal;
 use App\Models\Tenant;
+use App\Support\Reporting\TransactionStatusFilter;
 use Illuminate\Support\Carbon;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Facades\DB;
@@ -64,6 +65,8 @@ class TenantIngestionAuditService
                     'transactions' => (int) ($tx['count'] ?? 0),
                     'valid' => (int) ($tx['valid_count'] ?? 0),
                     'pending' => (int) ($tx['pending_count'] ?? 0),
+                    'invalid' => (int) ($tx['invalid_count'] ?? 0),
+                    'processing_failed' => (int) ($tx['processing_failed_count'] ?? 0),
                     'invalid_or_failed' => (int) ($tx['invalid_or_failed_count'] ?? 0),
                     'job_failed' => (int) ($tx['job_failed_count'] ?? 0),
                     'voided' => (int) ($tx['voided_count'] ?? 0),
@@ -146,7 +149,7 @@ class TenantIngestionAuditService
             DB::raw('COALESCE(SUM(transactions.net_sales), 0) as net_sales'),
             DB::raw("SUM(CASE WHEN transactions.validation_status = 'VALID' THEN 1 ELSE 0 END) as valid_count"),
             DB::raw("SUM(CASE WHEN transactions.validation_status = 'PENDING' THEN 1 ELSE 0 END) as pending_count"),
-            DB::raw("SUM(CASE WHEN transactions.validation_status IN ('INVALID', 'FAILED') THEN 1 ELSE 0 END) as invalid_or_failed_count"),
+            DB::raw("SUM(CASE WHEN transactions.validation_status = 'INVALID' THEN 1 ELSE 0 END) as invalid_count"),
             DB::raw('SUM(CASE WHEN pos_terminals.tenant_id IS NOT NULL AND transactions.tenant_id <> pos_terminals.tenant_id THEN 1 ELSE 0 END) as tenant_terminal_drift'),
             DB::raw('MAX(transactions.transaction_timestamp) as last_transaction_at'),
         ];
@@ -154,6 +157,12 @@ class TenantIngestionAuditService
         $selects[] = Schema::hasColumn('transactions', 'job_status')
             ? DB::raw("SUM(CASE WHEN transactions.job_status IN ('FAILED', 'PERMANENTLY_FAILED') THEN 1 ELSE 0 END) as job_failed_count")
             : DB::raw('0 as job_failed_count');
+
+        // ADR-004 D1: processing failed without a business outcome (PENDING or legacy '').
+        // INVALID rows are excluded so invalid_count + processing_failed_count never double-count.
+        $selects[] = Schema::hasColumn('transactions', 'job_status')
+            ? DB::raw('SUM(CASE WHEN '.TransactionStatusFilter::processingFailedSql('transactions').' THEN 1 ELSE 0 END) as processing_failed_count')
+            : DB::raw('0 as processing_failed_count');
 
         $selects[] = Schema::hasColumn('transactions', 'voided_at')
             ? DB::raw('SUM(CASE WHEN transactions.voided_at IS NOT NULL THEN 1 ELSE 0 END) as voided_count')
@@ -166,7 +175,12 @@ class TenantIngestionAuditService
         return $query->select($selects)
             ->get()
             ->keyBy(fn ($row) => (int) $row->tenant_id)
-            ->map(fn ($row) => (array) $row)
+            ->map(function ($row) {
+                $row = (array) $row;
+                $row['invalid_or_failed_count'] = (int) ($row['invalid_count'] ?? 0) + (int) ($row['processing_failed_count'] ?? 0);
+
+                return $row;
+            })
             ->all();
     }
 

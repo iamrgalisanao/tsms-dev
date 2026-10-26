@@ -55,6 +55,8 @@ class CheckTransactionFailureThresholdsJob implements ShouldQueue
             ]);
 
             $notificationService->checkTransactionFailureThresholds($this->posTerminalId);
+            // ADR-004: processing failures alert separately from business-INVALID sales.
+            $notificationService->checkProcessingFailureThresholds($this->posTerminalId);
 
             Log::info('Transaction failure threshold check completed', [
                 'pos_terminal_id' => $this->posTerminalId,

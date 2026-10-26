@@ -269,6 +269,68 @@ class OfficialIdempotentReplayTest extends TestCase
             ->assertJsonPath('data.transactions.0.job_status', 'FAILED');
     }
 
+    /**
+     * ADR-004 D8 (slice 3): INVALID is FAILED; PENDING with a failed job stays PENDING
+     * (TSMS retries it); a validated sale with a failed job (legacy TSMS-12) is COMPLETED.
+     */
+    public function test_replay_of_processed_intake_with_invalid_row_returns_422(): void
+    {
+        [$tenant, $terminal] = $this->seedTenantAndTerminal();
+        $payload = $this->buildOfficialPayloadWithTx((string) Str::uuid(), $tenant->id, $terminal->id, (string) Str::uuid(), $terminal->serial_number);
+
+        $this->seedProcessedIntake($payload, $terminal, TransactionIntake::PROCESSING_STATUS_PROCESSED);
+        $row = $this->seedTransactionRow($terminal, $payload['transaction']['transaction_id'], Transaction::VALIDATION_STATUS_INVALID);
+        DB::table('transactions')->where('id', $row->id)->update(['job_status' => Transaction::JOB_STATUS_COMPLETED]);
+        $this->mockRedisForAdmissionMiddleware();
+
+        $this->postJson('/api/v1/transactions/official', $payload, $this->headersFor($terminal))
+            ->assertStatus(422)
+            ->assertJsonPath('status', 'FAILED')
+            ->assertJsonPath('error_code', 'TRANSACTION_VALIDATION_FAILED')
+            ->assertJsonPath('data.failed_count', 1)
+            ->assertJsonPath('data.transactions.0.status', 'FAILED')
+            ->assertJsonPath('data.transactions.0.validation_status', 'INVALID');
+    }
+
+    public function test_replay_of_processed_intake_with_pending_row_and_failed_job_reports_pending(): void
+    {
+        [$tenant, $terminal] = $this->seedTenantAndTerminal();
+        $payload = $this->buildOfficialPayloadWithTx((string) Str::uuid(), $tenant->id, $terminal->id, (string) Str::uuid(), $terminal->serial_number);
+
+        $this->seedProcessedIntake($payload, $terminal, TransactionIntake::PROCESSING_STATUS_PROCESSED);
+        $row = $this->seedTransactionRow($terminal, $payload['transaction']['transaction_id'], Transaction::VALIDATION_STATUS_PENDING);
+        DB::table('transactions')->where('id', $row->id)->update(['job_status' => Transaction::JOB_STATUS_FAILED]);
+        $this->mockRedisForAdmissionMiddleware();
+
+        $this->postJson('/api/v1/transactions/official', $payload, $this->headersFor($terminal))
+            ->assertStatus(200)
+            ->assertJsonPath('status', 'PENDING')
+            ->assertJsonPath('retryable', false)
+            ->assertJsonPath('data.pending_count', 1)
+            ->assertJsonPath('data.failed_count', 0)
+            ->assertJsonPath('data.transactions.0.status', 'PENDING')
+            ->assertJsonPath('data.transactions.0.validation_status', 'PENDING');
+    }
+
+    public function test_replay_of_processed_intake_with_valid_row_and_failed_job_reports_completed(): void
+    {
+        [$tenant, $terminal] = $this->seedTenantAndTerminal();
+        $payload = $this->buildOfficialPayloadWithTx((string) Str::uuid(), $tenant->id, $terminal->id, (string) Str::uuid(), $terminal->serial_number);
+
+        $this->seedProcessedIntake($payload, $terminal, TransactionIntake::PROCESSING_STATUS_PROCESSED);
+        $row = $this->seedTransactionRow($terminal, $payload['transaction']['transaction_id'], Transaction::VALIDATION_STATUS_VALID);
+        DB::table('transactions')->where('id', $row->id)->update(['job_status' => Transaction::JOB_STATUS_FAILED]);
+        $this->mockRedisForAdmissionMiddleware();
+
+        $this->postJson('/api/v1/transactions/official', $payload, $this->headersFor($terminal))
+            ->assertStatus(200)
+            ->assertJsonPath('status', 'COMPLETED')
+            ->assertJsonPath('data.processed_count', 1)
+            ->assertJsonPath('data.failed_count', 0)
+            ->assertJsonPath('data.transactions.0.status', 'COMPLETED')
+            ->assertJsonPath('data.transactions.0.validation_status', 'VALID');
+    }
+
     public function test_replay_of_processed_intake_without_row_reports_not_recorded(): void
     {
         [$tenant, $terminal] = $this->seedTenantAndTerminal();
