@@ -40,10 +40,14 @@ Schedule::command('tsms:reconcile-intake --repair-missing')
 
 // Keep derived daily report summaries warm for dashboards/reports. This is
 // intentionally incremental; historical ranges should be refreshed manually.
+// The overlap lock expires after 60 minutes (the 24h default left a killed run
+// blocking this task for a day). Running in the background keeps a long refresh
+// from delaying the sequential scheduler (watchdog, rejection monitor, prune).
 Schedule::command('reports:refresh-daily-transaction-summaries --days=2')
     ->everyFifteenMinutes()
     ->name('reports-refresh-daily-transaction-summaries')
-    ->withoutOverlapping()
+    ->withoutOverlapping(60)
+    ->runInBackground()
     ->onOneServer();
 
 // --------------------------------------------------------------------------
