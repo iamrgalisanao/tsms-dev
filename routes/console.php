@@ -146,11 +146,15 @@ Schedule::call(function () {
 // --------------------------------------------------------------------------
 // SystemLog pruning: scheduled safe prune (uses systemlogs:prune command)
 // Default: keep 90 days of logs; scheduled daily at 02:00. Can be toggled
-// via config key `tsms.logs.enable_prune`.
+// via config key `tsms.logs.enable_prune`. The first run after the $hard fix
+// can soft-delete a large backlog, so it runs in the background (not holding
+// up the sequential scheduler) under a 12h overlap lock.
 // --------------------------------------------------------------------------
 Schedule::command('systemlogs:prune --days=90 --force')
     ->dailyAt('02:00')
     ->name('systemlogs-prune-daily')
+    ->withoutOverlapping(720)
+    ->runInBackground()
     ->onOneServer()
     ->when(fn () => (bool) (config('tsms.logs.enable_prune') ?? true));
 

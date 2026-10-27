@@ -62,6 +62,11 @@ return [
         'exclude_voids_from_totals' => (bool) env('TSMS_REPORTING_EXCLUDE_VOIDS', true),
     ],
 
+    // Kill switch for the daily systemlogs-prune-daily schedule (routes/console.php).
+    'logs' => [
+        'enable_prune' => (bool) env('TSMS_LOGS_ENABLE_PRUNE', true),
+    ],
+
     'transaction_logs' => [
         'max_date_range_days' => (int) env('TSMS_TRANSACTION_LOGS_MAX_RANGE_DAYS', 31),
         'max_per_page' => (int) env('TSMS_TRANSACTION_LOGS_MAX_PER_PAGE', 1000),
