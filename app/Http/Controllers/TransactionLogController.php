@@ -1124,11 +1124,33 @@ class TransactionLogController extends Controller
         return TransactionStatusFilter::apply($query, $status, $alias, $voidRefundPseudoStatuses);
     }
 
+    /**
+     * Internal PITX roles that may view transaction logs across all tenants
+     * (TSMS-0060). Admin always can; finance/commercial only when the user is
+     * internal staff (no tenant_id). Tenant-bound users stay limited to their
+     * own tenant_id.
+     */
+    private const CROSS_TENANT_LOG_ROLES = ['finance', 'commercial'];
+
+    private function canViewAllTenantLogs($user): bool
+    {
+        if (! $user || ! method_exists($user, 'hasRole')) {
+            return false;
+        }
+
+        if ($user->hasRole('admin')) {
+            return true;
+        }
+
+        return ($user->tenant_id ?? null) === null
+            && $user->hasAnyRole(self::CROSS_TENANT_LOG_ROLES);
+    }
+
     private function scopeFiltersForUser(Request $request, array $filters): array
     {
         $user = $request->user();
 
-        if ($user && method_exists($user, 'hasRole') && $user->hasRole('admin')) {
+        if ($this->canViewAllTenantLogs($user)) {
             return $filters;
         }
 
@@ -1143,7 +1165,7 @@ class TransactionLogController extends Controller
     {
         $user = $request->user();
 
-        if ($user && method_exists($user, 'hasRole') && $user->hasRole('admin')) {
+        if ($this->canViewAllTenantLogs($user)) {
             return;
         }
 
