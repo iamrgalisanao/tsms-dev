@@ -64,7 +64,7 @@ return [
 
     'transaction_logs' => [
         'max_date_range_days' => (int) env('TSMS_TRANSACTION_LOGS_MAX_RANGE_DAYS', 31),
-        'max_per_page' => (int) env('TSMS_TRANSACTION_LOGS_MAX_PER_PAGE', 1000),
+        'max_per_page' => (int) env('TSMS_TRANSACTION_LOGS_MAX_PER_PAGE', 500),
         'slow_query_threshold_ms' => (int) env('TSMS_TRANSACTION_LOGS_SLOW_QUERY_MS', 3000),
         'timezone' => env('TSMS_TRANSACTION_LOGS_TIMEZONE', 'Asia/Manila'),
     ],

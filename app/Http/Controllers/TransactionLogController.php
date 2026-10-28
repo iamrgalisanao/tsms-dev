@@ -142,6 +142,12 @@ class TransactionLogController extends Controller
             ? $logs->paginate($perPage)->appends($request->all())
             : $logs->simplePaginate($perPage)->appends($request->all());
 
+        // TSMS-0061: the logs list never uses the Transaction model's computed
+        // $appends (net_amount, calculated_net_sales, display_tenant_code).
+        // Each one runs extra queries per row, so 500 rows meant ~2,000
+        // queries and a server error. Skip them so the query count stays flat.
+        $logs->getCollection()->each->setAppends([]);
+
         if ($request->wantsJson()) {
             $payload = $logs->toArray();
             if (! $needsExactPaginationTotal) {
