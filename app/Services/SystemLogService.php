@@ -129,7 +129,8 @@ class SystemLogService
                 $dt = \Carbon\Carbon::parse($before)->startOfDay();
                 $query->where('created_at', '<', $dt);
             } catch (\Exception $e) {
-                // ignore parse errors; let caller validate
+                // Never fall through without a date filter (would prune every row)
+                return ['error' => 'Invalid before date: '.$before];
             }
         } elseif ($days) {
             $dt = now()->subDays($days)->startOfDay();
@@ -152,7 +153,7 @@ class SystemLogService
 
         $deleted = 0;
         // Use chunking to avoid locking huge sets in one query
-        $query->orderBy('id')->chunkById($chunk, function($rows) use (&$deleted) {
+        $query->orderBy('id')->chunkById($chunk, function($rows) use (&$deleted, $hard) {
             $ids = $rows->pluck('id')->toArray();
             if (!empty($ids)) {
                 if ($hard) {
