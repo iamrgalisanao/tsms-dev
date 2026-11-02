@@ -13,6 +13,9 @@ class SalesReportDataService
 {
     use ResolvesReportBusinessDate;
 
+    /** @var array<string, bool> Per-instance memo of schema checks (each one queries information_schema). */
+    private array $schemaCache = [];
+
     public function __construct(private readonly FinanceCalculationService $finance)
     {
     }
@@ -34,25 +37,25 @@ class SalesReportDataService
             return $summary;
         }
 
-        $grossExpr = Schema::hasColumn('transactions', 'gross_sales') ? CountableSales::sumExpr('transactions.gross_sales', 'transactions') : '0';
-        $netExpr = Schema::hasColumn('transactions', 'net_sales') ? CountableSales::sumExpr('transactions.net_sales', 'transactions') : '0';
-        $vatableExpr = Schema::hasColumn('transactions', 'vatable_sales') ? 'SUM(transactions.vatable_sales)' : '0';
-        $scVatExpr = Schema::hasColumn('transactions', 'sc_vat_exempt_sales') ? 'SUM(transactions.sc_vat_exempt_sales)' : '0';
-        $vatExpr = Schema::hasColumn('transactions', 'vat_amount') ? 'SUM(transactions.vat_amount)' : '0';
-        $promoWithExpr = (Schema::hasColumn('transactions', 'promo_discount') && Schema::hasColumn('transactions', 'promo_status'))
+        $grossExpr = $this->hasColumn('transactions', 'gross_sales') ? CountableSales::sumExpr('transactions.gross_sales', 'transactions') : '0';
+        $netExpr = $this->hasColumn('transactions', 'net_sales') ? CountableSales::sumExpr('transactions.net_sales', 'transactions') : '0';
+        $vatableExpr = $this->hasColumn('transactions', 'vatable_sales') ? 'SUM(transactions.vatable_sales)' : '0';
+        $scVatExpr = $this->hasColumn('transactions', 'sc_vat_exempt_sales') ? 'SUM(transactions.sc_vat_exempt_sales)' : '0';
+        $vatExpr = $this->hasColumn('transactions', 'vat_amount') ? 'SUM(transactions.vat_amount)' : '0';
+        $promoWithExpr = ($this->hasColumn('transactions', 'promo_discount') && $this->hasColumn('transactions', 'promo_status'))
             ? "SUM(IF(transactions.promo_status = 'WITH_APPROVAL', transactions.promo_discount, 0))"
             : '0';
-        $promoWithoutExpr = Schema::hasColumn('transactions', 'promo_discount')
-            ? (Schema::hasColumn('transactions', 'promo_status')
+        $promoWithoutExpr = $this->hasColumn('transactions', 'promo_discount')
+            ? ($this->hasColumn('transactions', 'promo_status')
                 ? "SUM(IF(transactions.promo_status != 'WITH_APPROVAL' OR transactions.promo_status IS NULL, transactions.promo_discount, 0))"
                 : 'SUM(transactions.promo_discount)')
             : '0';
-        $seniorExpr = Schema::hasColumn('transactions', 'senior_discount') ? 'SUM(transactions.senior_discount)' : '0';
-        $pwdExpr = Schema::hasColumn('transactions', 'pwd_discount') ? 'SUM(transactions.pwd_discount)' : '0';
-        $regularExpr = Schema::hasColumn('transactions', 'discount_total') ? 'SUM(transactions.discount_total)' : '0';
-        $serviceChargeExpr = Schema::hasColumn('transactions', 'service_charge') ? 'SUM(transactions.service_charge)' : '0';
-        $managementServiceChargeExpr = Schema::hasColumn('transactions', 'management_service_charge') ? 'SUM(transactions.management_service_charge)' : '0';
-        $otherTaxExpr = Schema::hasColumn('transactions', 'tax_exempt') ? 'SUM(transactions.tax_exempt)' : '0';
+        $seniorExpr = $this->hasColumn('transactions', 'senior_discount') ? 'SUM(transactions.senior_discount)' : '0';
+        $pwdExpr = $this->hasColumn('transactions', 'pwd_discount') ? 'SUM(transactions.pwd_discount)' : '0';
+        $regularExpr = $this->hasColumn('transactions', 'discount_total') ? 'SUM(transactions.discount_total)' : '0';
+        $serviceChargeExpr = $this->hasColumn('transactions', 'service_charge') ? 'SUM(transactions.service_charge)' : '0';
+        $managementServiceChargeExpr = $this->hasColumn('transactions', 'management_service_charge') ? 'SUM(transactions.management_service_charge)' : '0';
+        $otherTaxExpr = $this->hasColumn('transactions', 'tax_exempt') ? 'SUM(transactions.tax_exempt)' : '0';
 
         $query = Transaction::query()
             ->leftJoin('pos_terminals as pt', 'pt.id', '=', 'transactions.terminal_id')
@@ -74,6 +77,7 @@ class SalesReportDataService
                 {$promoWithoutExpr} as promo_without_approval,
                 COUNT(*) as transaction_count
             ")
+            ->tap(fn ($q) => $this->applyTransactionReportDateWindow($q, $startDate, $endDate))
             ->whereRaw("{$reportDateExpr} BETWEEN ? AND ?", [$startDate, $endDate]);
 
         if ($filter->hasTenantScope()) {
@@ -100,7 +104,7 @@ class SalesReportDataService
 
     private function dailySummaryResult(SalesReportFilter $filter, string $reportDateExpr, string $joinedReportDateExpr): ?SalesReportResult
     {
-        if (! Schema::hasTable('daily_transaction_summaries') || ! Schema::hasTable('report_refresh_states')) {
+        if (! $this->hasTable('daily_transaction_summaries') || ! $this->hasTable('report_refresh_states')) {
             return null;
         }
 
@@ -197,6 +201,7 @@ class SalesReportDataService
                 SUM(IF(transaction_adjustments.adjustment_type IN ('pwd_discount', 'pwd_citizen_discount', 'pwddiscount', 'pwd'), transaction_adjustments.amount, 0)) as pwd_discount,
                 SUM(IF(transaction_adjustments.adjustment_type IN ('vip_card_discount', 'VIP'), transaction_adjustments.amount, 0)) as vip_discount
             ")
+            ->tap(fn ($q) => $this->applyTransactionReportDateWindow($q, $startDate, $endDate))
             ->whereRaw("{$reportDateExpr} BETWEEN ? AND ?", [$startDate, $endDate]);
 
         if ($hasTenantScope) {
@@ -219,6 +224,7 @@ class SalesReportDataService
                 SUM(IF(transaction_taxes.tax_type IN ('SC_VAT_EXEMPT_SALES', 'VAT_EXEMPT_SALES', 'VATEXEMPT_SALES', 'VAT-EXEMPT', 'EXEMPT', 'VATEXEMPT'), transaction_taxes.amount, 0)) as sc_vat_exempt_fallback,
                 SUM(IF(transaction_taxes.tax_type NOT IN ('VAT', 'VAT_AMOUNT', 'VATABLE_SALES', 'SC_VAT_EXEMPT_SALES', 'VAT-EXEMPT', 'EXEMPT', 'VATEXEMPT', 'VATEXEMPT_SALES', 'VAT_EXEMPT_SALES', 'ZERO_RATED', 'NON-VAT', 'NON_VAT', 'ZERO-RATED'), transaction_taxes.amount, 0)) as other_tax_basis
             ")
+            ->tap(fn ($q) => $this->applyTransactionReportDateWindow($q, $startDate, $endDate))
             ->whereRaw("{$reportDateExpr} BETWEEN ? AND ?", [$startDate, $endDate]);
 
         if ($hasTenantScope) {
@@ -277,7 +283,7 @@ class SalesReportDataService
 
     private function payloadAdjustmentTotals(string $startDate, string $endDate, mixed $tenantId, string $reportDateExpr, bool $hasTenantScope): array
     {
-        if (! Schema::hasColumn('transactions', 'original_payload')) {
+        if (! $this->hasColumn('transactions', 'original_payload')) {
             return [];
         }
 
@@ -286,9 +292,10 @@ class SalesReportDataService
             ->leftJoin('pos_providers as pp', 'pp.id', '=', 'pt.provider_id')
             ->selectRaw($reportDateExpr . ' as report_date')
             ->addSelect('transactions.original_payload')
+            ->tap(fn ($q) => $this->applyTransactionReportDateWindow($q, $startDate, $endDate))
             ->whereRaw($reportDateExpr . ' BETWEEN ? AND ?', [$startDate, $endDate]);
 
-        if (Schema::hasColumn('transactions', 'promo_status')) {
+        if ($this->hasColumn('transactions', 'promo_status')) {
             $rows->addSelect('transactions.promo_status');
         }
 
@@ -323,7 +330,7 @@ class SalesReportDataService
 
     private function dailyAdjustmentTotals(string $startDate, string $endDate, mixed $tenantId, string $reportDateExpr, bool $hasTenantScope): array
     {
-        if (! Schema::hasTable('transaction_adjustments')) {
+        if (! $this->hasTable('transaction_adjustments')) {
             return [];
         }
 
@@ -334,6 +341,7 @@ class SalesReportDataService
             ->selectRaw($reportDateExpr . ' as report_date')
             ->selectRaw("SUM(IF(transaction_adjustments.adjustment_type IN ('senior_discount', 'senior_citizen_discount', 'senior'), transaction_adjustments.amount, 0)) as senior_discount")
             ->selectRaw("SUM(IF(transaction_adjustments.adjustment_type IN ('pwd_discount', 'pwd_citizen_discount', 'pwddiscount', 'pwd'), transaction_adjustments.amount, 0)) as pwd_discount")
+            ->tap(fn ($q) => $this->applyTransactionReportDateWindow($q, $startDate, $endDate))
             ->whereRaw($reportDateExpr . ' BETWEEN ? AND ?', [$startDate, $endDate]);
 
         if ($hasTenantScope) {
@@ -368,5 +376,20 @@ class SalesReportDataService
         }
 
         return (int) $query->distinct('business_date')->count('business_date') >= $expectedDays;
+    }
+
+    private function applyTransactionReportDateWindow($query, string $startDate, string $endDate)
+    {
+        return $this->applyReportDateWindow($query, 'transactions.transaction_timestamp', 'transactions.created_at', $startDate, $endDate);
+    }
+
+    private function hasColumn(string $table, string $column): bool
+    {
+        return $this->schemaCache["{$table}.{$column}"] ??= Schema::hasColumn($table, $column);
+    }
+
+    private function hasTable(string $table): bool
+    {
+        return $this->schemaCache[$table] ??= Schema::hasTable($table);
     }
 }

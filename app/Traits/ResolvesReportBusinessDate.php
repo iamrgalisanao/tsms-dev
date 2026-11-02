@@ -89,6 +89,36 @@ trait ResolvesReportBusinessDate
         END";
     }
 
+    /**
+     * Index-friendly pre-filter for "reportDateExpression(...) BETWEEN $startDate AND $endDate".
+     *
+     * reportDateExpression() resolves to DATE(ts) or DATE(ts shifted by the report timezone
+     * offset), where ts = COALESCE($timestampColumn, $fallbackColumn) and the offset is always
+     * under 24h. Any row whose business date falls in [$startDate, $endDate] therefore has
+     * ts in [$startDate - 1 day, $endDate + 2 days), so this window is a strict superset of the
+     * matching rows. It must be combined with (never replace) the exact expression filter:
+     * it only lets MySQL use a timestamp index instead of evaluating the JSON-parsing CASE
+     * against the tenant's entire history.
+     *
+     * @param  \Illuminate\Database\Query\Builder|\Illuminate\Database\Eloquent\Builder  $query
+     * @return \Illuminate\Database\Query\Builder|\Illuminate\Database\Eloquent\Builder
+     */
+    protected function applyReportDateWindow($query, string $timestampColumn, string $fallbackColumn, string $startDate, string $endDate)
+    {
+        $lower = Carbon::parse($startDate)->subDay()->startOfDay()->toDateTimeString();
+        $upper = Carbon::parse($endDate)->addDays(2)->startOfDay()->toDateTimeString();
+
+        return $query->where(function ($window) use ($timestampColumn, $fallbackColumn, $lower, $upper) {
+            $window->where(function ($primary) use ($timestampColumn, $lower, $upper) {
+                $primary->where($timestampColumn, '>=', $lower)->where($timestampColumn, '<', $upper);
+            })->orWhere(function ($fallback) use ($timestampColumn, $fallbackColumn, $lower, $upper) {
+                $fallback->whereNull($timestampColumn)
+                    ->where($fallbackColumn, '>=', $lower)
+                    ->where($fallbackColumn, '<', $upper);
+            });
+        });
+    }
+
     protected function localReportDateExpression(string $timestampExpression): string
     {
         $offsetMinutes = Carbon::now($this->reportTimezone())->utcOffset();
