@@ -93,6 +93,7 @@ class RefreshDailyTransactionSummaries extends Command
             ->selectRaw($serviceChargeExpr . ' as service_charge_distributed')
             ->selectRaw($managementServiceChargeExpr . ' as service_charge_retained')
             ->selectRaw($otherTaxExpr . ' as transaction_other_tax')
+            ->tap(fn ($q) => $this->applyReportDateWindow($q, 't.transaction_timestamp', 't.created_at', $from, $to))
             ->whereRaw($dateExpr . ' BETWEEN ? AND ?', [$from, $to])
             ->when($tenantId, fn ($q) => $q->where('t.tenant_id', $tenantId));
 
@@ -209,6 +210,7 @@ class RefreshDailyTransactionSummaries extends Command
             ->selectRaw('t.tenant_id, t.terminal_id')
             ->selectRaw($dateExpr . ' as business_date')
             ->addSelect('t.promo_status', 't.original_payload')
+            ->tap(fn ($q) => $this->applyReportDateWindow($q, 't.transaction_timestamp', 't.created_at', $from, $to))
             ->whereRaw($dateExpr . ' BETWEEN ? AND ?', [$from, $to])
             ->when($tenantId, fn ($q) => $q->where('t.tenant_id', $tenantId));
 
