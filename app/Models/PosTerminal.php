@@ -83,28 +83,33 @@ class PosTerminal extends Model implements Authenticatable, Authorizable
         return $this->api_key;
     }
 
+    /**
+     * The single source of truth for terminal token abilities. Every issuance
+     * path (admin rotation, v1 admin API, POS self-authentication) uses this
+     * list via App\Services\Terminals\TerminalCredentialService.
+     */
+    public const TOKEN_ABILITIES = [
+        'transaction:create',
+        'transaction:read',
+        'transaction:status',
+        'heartbeat:send',
+    ];
+
     // Sanctum token abilities
     public function getTokenAbilities()
     {
-        return [
-            'transaction:create',
-            'transaction:read',
-            'transaction:status',
-            'heartbeat:send',
-        ];
+        return self::TOKEN_ABILITIES;
     }
 
-    // Generate access token using serial number
+    /**
+     * Generate access token for POS self-authentication (/v1/auth/*).
+     * Delegates to the credential service so issuance is defined in one place.
+     */
     public function generateAccessToken()
     {
-        $this->tokens()->delete();
-        
-        $token = $this->createToken(
-            'terminal-' . $this->serial_number,
-            $this->getTokenAbilities()
-        );
-
-        return $token->plainTextToken;
+        return app(\App\Services\Terminals\TerminalCredentialService::class)
+            ->issueForAuthentication($this)
+            ->plainTextToken;
     }
 
     // Check if terminal is active and valid

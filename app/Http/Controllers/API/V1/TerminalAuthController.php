@@ -2,19 +2,23 @@
 
 namespace App\Http\Controllers\API\V1;
 
+use App\Exceptions\TerminalNotEligibleException;
 use App\Http\Controllers\Controller;
-use App\Models\PosTerminal;
-use App\Models\Tenant;
 use App\Models\PosProvider;
+use App\Models\PosTerminal;
 use App\Models\ProviderStatistics;
-use Illuminate\Http\Request;
+use App\Models\Tenant;
+use App\Services\Terminals\TerminalCredentialService;
+use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Validation\ValidationException;
-use Carbon\Carbon;
 
 class TerminalAuthController extends Controller
 {
+    public function __construct(private readonly TerminalCredentialService $credentials) {}
+
     public function authenticate(Request $request): JsonResponse
     {
         try {
@@ -35,7 +39,9 @@ class TerminalAuthController extends Controller
                 ], 401);
             }
 
-            $accessToken = $terminal->generateAccessToken();
+            $credential = $this->credentials->issueForAuthentication($terminal);
+            $accessToken = $credential->plainTextToken;
+            $terminal = $credential->terminal;
             $terminal->forceFill(['last_seen_at' => now()])->save();
 
             return response()->json([
@@ -57,6 +63,12 @@ class TerminalAuthController extends Controller
                 'message' => 'Invalid request data',
                 'errors' => $e->errors(),
             ], 422);
+        } catch (TerminalNotEligibleException $e) {
+            // Terminal was revoked/expired between the pre-check and the locked issuance.
+            return response()->json([
+                'error' => 'Authentication failed',
+                'message' => 'Invalid serial number or API key, or terminal is inactive',
+            ], 401);
         } catch (\Throwable $e) {
             Log::error('Terminal authentication failed', ['error' => $e->getMessage()]);
 
@@ -85,10 +97,20 @@ class TerminalAuthController extends Controller
             ], 403);
         }
 
+        try {
+            $credential = $this->credentials->issueForAuthentication($terminal);
+        } catch (TerminalNotEligibleException $e) {
+            // Terminal was revoked/expired between the pre-check and the locked issuance.
+            return response()->json([
+                'error' => 'Terminal inactive',
+                'message' => 'Terminal is no longer active or has expired',
+            ], 403);
+        }
+
         return response()->json([
             'success' => true,
             'data' => [
-                'access_token' => $terminal->generateAccessToken(),
+                'access_token' => $credential->plainTextToken,
                 'token_type' => 'Bearer',
                 'expires_in' => config('sanctum.expiration') ? (int) config('sanctum.expiration') * 60 : null,
             ],
@@ -137,16 +159,16 @@ class TerminalAuthController extends Controller
         try {
             $terminal = $request->user();
 
-            if (!$terminal) {
+            if (! $terminal) {
                 return response()->json([
-                    'error' => 'Unauthenticated'
+                    'error' => 'Unauthenticated',
                 ], 401);
             }
 
             // Ensure token has heartbeat ability when Sanctum abilities are enforced
-            if (method_exists($terminal, 'tokenCan') && !$terminal->tokenCan('heartbeat:send')) {
+            if (method_exists($terminal, 'tokenCan') && ! $terminal->tokenCan('heartbeat:send')) {
                 return response()->json([
-                    'error' => 'Insufficient permissions'
+                    'error' => 'Insufficient permissions',
                 ], 403);
             }
 
@@ -155,7 +177,7 @@ class TerminalAuthController extends Controller
             $terminal->save();
 
             $serverTime = Carbon::now();
-            $threshold = (int)($terminal->heartbeat_threshold ?? 300); // default 5 minutes if unset
+            $threshold = (int) ($terminal->heartbeat_threshold ?? 300); // default 5 minutes if unset
             $nextDue = (clone $serverTime)->addSeconds($threshold);
 
             return response()->json([
@@ -164,16 +186,17 @@ class TerminalAuthController extends Controller
                     'message' => 'Heartbeat received',
                     'server_time' => $serverTime->toISOString(),
                     'next_heartbeat_due' => $nextDue->toISOString(),
-                ]
+                ],
             ]);
         } catch (\Throwable $e) {
             Log::error('Heartbeat failed', [
                 'error' => $e->getMessage(),
                 'terminal_id' => isset($terminal) && $terminal instanceof PosTerminal ? $terminal->id : null,
             ]);
+
             return response()->json([
                 'error' => 'Heartbeat failed',
-                'message' => 'Unable to process heartbeat'
+                'message' => 'Unable to process heartbeat',
             ], 500);
         }
     }
@@ -210,8 +233,8 @@ class TerminalAuthController extends Controller
 
             // Generate Sanctum token
             $token = $terminal->createToken(
-                'terminal-' . $terminal->serial_number,
-                ['transaction:create', 'transaction:read', 'transaction:status', 'heartbeat:send']
+                'terminal-'.$terminal->serial_number,
+                PosTerminal::TOKEN_ABILITIES
             )->plainTextToken;
 
             // Update provider statistics
@@ -242,11 +265,11 @@ class TerminalAuthController extends Controller
         // Try to find existing provider by name
         $provider = PosProvider::where('name', $providerName)->first();
 
-        if (!$provider) {
+        if (! $provider) {
             // Create new provider if doesn't exist
             $provider = PosProvider::create([
                 'name' => $providerName,
-                'contact_email' => 'support@' . strtolower(str_replace(' ', '', $providerName)) . '.com',
+                'contact_email' => 'support@'.strtolower(str_replace(' ', '', $providerName)).'.com',
                 'contact_phone' => 'N/A',
                 'status' => 'active',
             ]);
@@ -254,6 +277,7 @@ class TerminalAuthController extends Controller
 
         return $provider;
     }
+
     private function updateProviderStatistics($providerId)
     {
         try {
