@@ -28,6 +28,7 @@ import WeekendReportPage from './Pages/Commercial/WeekendReportPage.jsx';
 import TenantDirectoryPage from './Pages/Commercial/TenantDirectoryPage.jsx';
 import TenantProfilePage from './Pages/Commercial/TenantProfilePage.jsx';
 import TenantUserManagementPage from './Pages/Commercial/TenantUserManagementPage.jsx';
+import TenantEnrollmentPreviewPage from './Pages/Commercial/TenantEnrollmentPreviewPage.jsx';
 import './bootstrap';
 import '../css/app.css';
 
@@ -185,6 +186,11 @@ const App = () => {
                     <Route path="/commercial/tenants/manage" element={
                       <ProtectedRoute roles={['admin']}>
                         <TenantUserManagementPage />
+                      </ProtectedRoute>
+                    } />
+                    <Route path="/commercial/tenants/enrollment-preview" element={
+                      <ProtectedRoute roles={['admin', 'manager', 'commercial']}>
+                        <TenantEnrollmentPreviewPage />
                       </ProtectedRoute>
                     } />
                     <Route path="/commercial/tenants/:uuid" element={
