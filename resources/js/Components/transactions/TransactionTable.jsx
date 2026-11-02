@@ -409,7 +409,7 @@ const TransactionTable = ({ transactions, loading, page, rowsPerPage, totalCount
                         onPageChange={onPageChange}
                         rowsPerPage={rowsPerPage}
                         onRowsPerPageChange={onRowsPerPageChange}
-                        rowsPerPageOptions={[15, 50, 100, 500, 1000]}
+                        rowsPerPageOptions={[15, 50, 100, 500]}
                         sx={{ border: 'none' }}
                     />
                 </Box>

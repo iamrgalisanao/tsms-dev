@@ -286,7 +286,7 @@ const SummaryTable = ({ summary, grandTotal, loading, page, rowsPerPage, totalCo
                     onPageChange={onPageChange}
                     rowsPerPage={rowsPerPage}
                     onRowsPerPageChange={onRowsPerPageChange}
-                    rowsPerPageOptions={[15, 50, 100, 500, 1000]}
+                    rowsPerPageOptions={[15, 50, 100, 500]}
                     sx={{ border: 'none' }}
                 />
             </Box>
