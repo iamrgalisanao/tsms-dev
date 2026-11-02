@@ -30,11 +30,10 @@ import {
     HelpOutline as HelpOutlineIcon,
     LocationOn as LocationOnIcon,
     MapsHomeWork as MapsHomeWorkIcon,
-    Person as PersonIcon,
     PointOfSale as PointOfSaleIcon,
-    ReceiptLong as ReceiptLongIcon,
     RestartAlt as RestartAltIcon,
     SquareFoot as SquareFootIcon,
+    Storefront as StorefrontIcon,
 } from '@mui/icons-material';
 
 // Prototype only: this page keeps everything in local state and never calls the API.
@@ -47,52 +46,40 @@ const STATUSES = ['Operational', 'Not Operational'];
 
 // Points still waiting on a client decision; shown beside the field when review notes are on.
 const OPEN_QUESTIONS = {
-    owner_name: 'Is the owner a person or the corporate owner? One owner per tenant?',
-    tenant_name: 'Trade name (storefront) or registered business name?',
-    machines: 'BIR MIN or internal number? Should enrollment control which machines may register?',
-    location: 'Is Location the floor/level, or a free-text description?',
-    tin: 'TIN per tenant (with branch code) or per company?',
+    machines: 'Confirm the MIN length/format as printed on the BIR Permit to Use.',
+    location: 'Confirm the actual levels and unit numbering for the property.',
     status: 'Confirm status list: Operational / Not Operational vs Operational / Closed / Pending.',
 };
 
 const EMPTY_FORM = {
-    owner_name: '',
     tenant_code: '',
     tenant_name: '',
+    trade_name: '',
     category: '',
     status: 'Operational',
     location: '',
     location_type: 'Inline',
     unit_no: '',
     floor_area: '',
-    tin: '',
     machines: [''],
 };
 
 const SAMPLE_FORM = {
-    owner_name: 'Maria Santos',
     tenant_code: 'C-D1016',
-    tenant_name: 'Kape Kalye',
+    tenant_name: 'KALYE FOODS CORPORATION',
+    trade_name: 'Kape Kalye',
     category: 'F&B',
     status: 'Operational',
     location: 'Level 2',
     location_type: 'Kiosk',
     unit_no: 'K-214',
     floor_area: '18.50',
-    tin: '123-456-789-00000',
-    machines: ['2002', '2003'],
-};
-
-// Formats raw digits as ###-###-###-##### (9-digit TIN + up to 5-digit branch code).
-const formatTin = (value) => {
-    const digits = value.replace(/\D/g, '').slice(0, 14);
-    const parts = [digits.slice(0, 3), digits.slice(3, 6), digits.slice(6, 9), digits.slice(9)];
-    return parts.filter(Boolean).join('-');
+    machines: ['21031813205238282', '21031813205238283'],
 };
 
 const validate = (form) => {
     const errors = {};
-    const required = ['owner_name', 'tenant_code', 'tenant_name', 'category', 'location', 'floor_area', 'tin'];
+    const required = ['tenant_code', 'tenant_name', 'trade_name', 'category', 'location', 'floor_area'];
     required.forEach((key) => {
         if (!String(form[key] ?? '').trim()) errors[key] = 'Required';
     });
@@ -107,17 +94,11 @@ const validate = (form) => {
         else if (area > 999999.99) errors.floor_area = 'Too large';
     }
 
-    if (form.tin) {
-        const digits = form.tin.replace(/\D/g, '');
-        if (![12, 14].includes(digits.length)) {
-            errors.tin = '9-digit TIN plus a 3- or 5-digit branch code';
-        }
-    }
-
     const machineErrors = form.machines.map((m, i) => {
         const value = m.trim();
-        if (!value) return i === 0 ? 'At least one machine is required' : 'Remove empty row or fill it in';
-        if (form.machines.findIndex((other) => other.trim() === value) !== i) return 'Duplicate machine #';
+        if (!value) return i === 0 ? 'At least one MIN is required' : 'Remove empty row or fill it in';
+        if (!/^\d+$/.test(value)) return 'MIN must contain digits only';
+        if (form.machines.findIndex((other) => other.trim() === value) !== i) return 'Duplicate MIN';
         return null;
     });
     if (machineErrors.some(Boolean)) errors.machines = machineErrors;
@@ -197,7 +178,7 @@ const TenantEnrollmentPreviewPage = () => {
         machines: prev.machines.filter((_, i) => i !== index),
     }));
 
-    const requiredKeys = ['owner_name', 'tenant_code', 'tenant_name', 'category', 'location', 'floor_area', 'tin', 'machines'];
+    const requiredKeys = ['tenant_code', 'tenant_name', 'trade_name', 'category', 'location', 'floor_area', 'machines'];
     const completed = requiredKeys.filter((k) => !errors[k]).length;
 
     const reset = (next) => {
@@ -268,10 +249,20 @@ const TenantEnrollmentPreviewPage = () => {
                                     {...fieldProps('tenant_name')}
                                     label="Tenant's Name"
                                     required
-                                    placeholder="e.g., Kape Kalye"
+                                    placeholder="e.g., GOLDEN ARCHES DEVELOPMENT CORPORATION"
+                                    helperText={showError('tenant_name') || 'Registered name per BIR Form 2303: owner\'s name if sole proprietorship, company name if corporation.'}
                                     InputProps={{ startAdornment: <InputAdornment position="start"><BusinessIcon fontSize="small" color="action" /></InputAdornment> }}
                                 />
-                                <OpenQuestion show={showNotes} field="tenant_name" />
+                            </Box>
+                            <Box>
+                                <TextField
+                                    {...fieldProps('trade_name')}
+                                    label="Trade Name"
+                                    required
+                                    placeholder="e.g., McDonald's"
+                                    helperText={showError('trade_name') || 'Store name shown on the storefront.'}
+                                    InputProps={{ startAdornment: <InputAdornment position="start"><StorefrontIcon fontSize="small" color="action" /></InputAdornment> }}
+                                />
                             </Box>
                             <Box>
                                 <Typography variant="caption" color={showError('category') ? 'error' : 'text.secondary'} fontWeight={600} sx={{ display: 'block', mb: 0.75 }}>
@@ -305,34 +296,6 @@ const TenantEnrollmentPreviewPage = () => {
                         </FieldGrid>
                     </Paper>
 
-                    <Paper variant="outlined" sx={{ p: 3, borderRadius: 3 }}>
-                        <SectionHeader icon={PersonIcon} title="Owner & Tax" subtitle="Ownership and BIR registration details." />
-                        <FieldGrid>
-                            <Box>
-                                <TextField
-                                    {...fieldProps('owner_name')}
-                                    label="Owner's Name"
-                                    required
-                                    placeholder="e.g., Maria Santos"
-                                    InputProps={{ startAdornment: <InputAdornment position="start"><PersonIcon fontSize="small" color="action" /></InputAdornment> }}
-                                />
-                                <OpenQuestion show={showNotes} field="owner_name" />
-                            </Box>
-                            <Box>
-                                <TextField
-                                    {...fieldProps('tin')}
-                                    onChange={(e) => setForm((prev) => ({ ...prev, tin: formatTin(e.target.value) }))}
-                                    label="TIN #"
-                                    required
-                                    placeholder="000-000-000-00000"
-                                    inputProps={{ inputMode: 'numeric' }}
-                                    helperText={showError('tin') || 'Tax Identification Number with branch code'}
-                                    InputProps={{ startAdornment: <InputAdornment position="start"><ReceiptLongIcon fontSize="small" color="action" /></InputAdornment> }}
-                                />
-                                <OpenQuestion show={showNotes} field="tin" />
-                            </Box>
-                        </FieldGrid>
-                    </Paper>
 
                     <Paper variant="outlined" sx={{ p: 3, borderRadius: 3 }}>
                         <SectionHeader icon={LocationOnIcon} title="Location" subtitle="Where the tenant sits in the property." />
@@ -381,8 +344,8 @@ const TenantEnrollmentPreviewPage = () => {
 
                     <Paper variant="outlined" sx={{ p: 3, borderRadius: 3 }}>
                         <Stack direction="row" justifyContent="space-between" alignItems="flex-start">
-                            <SectionHeader icon={PointOfSaleIcon} title="POS Machines" subtitle="A tenant can run more than one machine." />
-                            <Button size="small" startIcon={<AddIcon />} onClick={addMachine}>Add machine</Button>
+                            <SectionHeader icon={PointOfSaleIcon} title="POS Machines (BIR MIN)" subtitle="Machine Identification Number from each machine's BIR Permit to Use. Changes to a registered MIN can then be flagged." />
+                            <Button size="small" startIcon={<AddIcon />} onClick={addMachine} sx={{ flexShrink: 0 }}>Add machine</Button>
                         </Stack>
                         <Stack spacing={1.5}>
                             {form.machines.map((machine, i) => {
@@ -392,9 +355,10 @@ const TenantEnrollmentPreviewPage = () => {
                                         <TextField
                                             fullWidth
                                             size="small"
-                                            label={`Machine # ${i + 1}`}
+                                            label={`MIN ${i + 1}`}
                                             required={i === 0}
-                                            placeholder="e.g., 2002"
+                                            placeholder="e.g., 21031813205238282"
+                                            inputProps={{ inputMode: 'numeric' }}
                                             value={machine}
                                             onChange={(e) => setMachine(i, e.target.value)}
                                             onBlur={() => setTouched((prev) => ({ ...prev, [`machine_${i}`]: true }))}
@@ -429,14 +393,13 @@ const TenantEnrollmentPreviewPage = () => {
                         <Box sx={{ height: '100%', width: `${(completed / requiredKeys.length) * 100}%`, bgcolor: 'primary.main', transition: 'width .2s' }} />
                     </Box>
                     <Divider sx={{ mb: 1 }} />
-                    <SummaryRow label="Owner" value={form.owner_name} />
                     <SummaryRow label="Tenant code" value={form.tenant_code} />
                     <SummaryRow label="Tenant name" value={form.tenant_name} />
+                    <SummaryRow label="Trade name" value={form.trade_name} />
                     <SummaryRow label="Category" value={form.category} />
                     <SummaryRow label="Location" value={[form.location, form.unit_no, form.location_type].filter(Boolean).join(' · ')} />
                     <SummaryRow label="Floor area" value={form.floor_area && `${form.floor_area} sqm`} />
-                    <SummaryRow label="TIN" value={form.tin} />
-                    <SummaryRow label="Machines" value={payload.machines.join(', ')} />
+                    <SummaryRow label="MIN" value={payload.machines.join(', ')} />
                     <Divider sx={{ my: 2 }} />
                     <Button type="submit" variant="contained" size="large" fullWidth sx={{ fontWeight: 700, borderRadius: 2 }}>
                         Enroll Tenant
