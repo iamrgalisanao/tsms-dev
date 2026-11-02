@@ -3,7 +3,6 @@ import {
     Alert,
     Box,
     Button,
-    Chip,
     Dialog,
     DialogActions,
     DialogContent,
@@ -110,8 +109,8 @@ const validate = (form) => {
 
     if (form.tin) {
         const digits = form.tin.replace(/\D/g, '');
-        if (![9, 12, 14].includes(digits.length)) {
-            errors.tin = '9 digits, plus a 3- or 5-digit branch code';
+        if (![12, 14].includes(digits.length)) {
+            errors.tin = '9-digit TIN plus a 3- or 5-digit branch code';
         }
     }
 
@@ -141,16 +140,13 @@ const SectionHeader = ({ icon: Icon, title, subtitle }) => (
 const OpenQuestion = ({ show, field }) => {
     if (!show || !OPEN_QUESTIONS[field]) return null;
     return (
-        <Tooltip title={OPEN_QUESTIONS[field]} arrow>
-            <Chip
-                icon={<HelpOutlineIcon />}
-                label="Needs client decision"
-                size="small"
-                color="warning"
-                variant="outlined"
-                sx={{ mt: 0.75, fontWeight: 600 }}
-            />
-        </Tooltip>
+        <Stack direction="row" spacing={0.75} alignItems="flex-start" sx={{ mt: 0.75, color: 'warning.dark' }}>
+            <HelpOutlineIcon sx={{ fontSize: 16, mt: '2px' }} aria-hidden="true" />
+            <Typography variant="caption" sx={{ lineHeight: 1.5 }}>
+                <Box component="span" fontWeight={700}>Needs client decision: </Box>
+                {OPEN_QUESTIONS[field]}
+            </Typography>
+        </Stack>
     );
 };
 
