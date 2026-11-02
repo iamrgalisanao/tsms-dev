@@ -52,6 +52,7 @@ const MainLayout = ({ children }) => {
         { name: 'Reports', path: '/commercial/reports', icon: DescriptionIcon, roles: ['commercial'] },
         { name: 'Tenants', path: '/commercial/tenants', icon: PeopleIcon, roles: ['commercial'] },
         { name: 'Tenant Management', path: '/commercial/tenants/manage', icon: DescriptionIcon, roles: ['admin'] },
+        { name: 'Enrollment (Preview)', path: '/commercial/tenants/enrollment-preview', icon: PeopleIcon, roles: ['admin', 'commercial'] },
     ];
 
     const filteredItems = menuItems.filter(item => {
