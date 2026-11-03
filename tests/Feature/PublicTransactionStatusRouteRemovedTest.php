@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Models\PosTerminal;
 use App\Models\Tenant;
 use App\Models\Transaction;
+use Illuminate\Http\Request;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
 
@@ -61,6 +62,29 @@ class PublicTransactionStatusRouteRemovedTest extends TestCase
             ->assertStatus(401);
     }
 
+    public function test_legacy_api_flag_does_not_reopen_an_unauthenticated_v1_status_route(): void
+    {
+        // routes/api.php reads TSMS_ENABLE_LEGACY_API at registration time, so the
+        // application (and its routes) must be rebuilt with the flag on.
+        $this->setLegacyApiFlag('true');
+
+        try {
+            $this->refreshApplication();
+
+            $legacyBatch = app('router')->getRoutes()->match(Request::create('/api/v1/transactions/batch', 'POST'));
+            $this->assertSame('retiredBatch', $legacyBatch->getActionMethod(), 'Legacy route block was not registered.');
+
+            $response = $this->getJson('/api/v1/transactions/'.$this->transaction->id.'/status');
+
+            $response->assertStatus(401);
+            $response->assertJsonMissingPath('data.gross_sales');
+            $response->assertJsonMissingPath('data.customer_code');
+        } finally {
+            $this->setLegacyApiFlag(null);
+            $this->refreshApplication();
+        }
+    }
+
     public function test_authenticated_v1_status_route_still_works_for_the_owning_terminal(): void
     {
         Sanctum::actingAs($this->terminal, ['transaction:read']);
@@ -68,5 +92,19 @@ class PublicTransactionStatusRouteRemovedTest extends TestCase
         $this->getJson('/api/v1/transactions/'.$this->transaction->transaction_id.'/status')
             ->assertOk()
             ->assertJsonPath('data.transaction_id', $this->transaction->transaction_id);
+    }
+
+    private function setLegacyApiFlag(?string $value): void
+    {
+        if ($value === null) {
+            putenv('TSMS_ENABLE_LEGACY_API');
+            unset($_ENV['TSMS_ENABLE_LEGACY_API'], $_SERVER['TSMS_ENABLE_LEGACY_API']);
+
+            return;
+        }
+
+        putenv("TSMS_ENABLE_LEGACY_API={$value}");
+        $_ENV['TSMS_ENABLE_LEGACY_API'] = $value;
+        $_SERVER['TSMS_ENABLE_LEGACY_API'] = $value;
     }
 }
