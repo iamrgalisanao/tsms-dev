@@ -190,50 +190,28 @@ class SalesReportDataService
 
     private function adjustmentRows(string $startDate, string $endDate, mixed $tenantId, string $reportDateExpr, bool $hasTenantScope)
     {
-        $query = DB::table('transaction_adjustments')
-            ->join('transactions', 'transaction_adjustments.transaction_pk', '=', 'transactions.id')
-            ->leftJoin('pos_terminals as pt', 'pt.id', '=', 'transactions.terminal_id')
-            ->leftJoin('pos_providers as pp', 'pp.id', '=', 'pt.provider_id')
+        return $this->reportDatedChildRows('transaction_adjustments', $startDate, $endDate, $tenantId, $reportDateExpr, $hasTenantScope)
             ->selectRaw("
-                {$reportDateExpr} as report_date,
                 SUM(IF(transaction_adjustments.adjustment_type IN ('employee_discount', 'EMPLOYEE'), transaction_adjustments.amount, 0)) as employee_discount,
                 SUM(IF(transaction_adjustments.adjustment_type IN ('senior_discount', 'senior_citizen_discount', 'senior'), transaction_adjustments.amount, 0)) as senior_discount,
                 SUM(IF(transaction_adjustments.adjustment_type IN ('pwd_discount', 'pwd_citizen_discount', 'pwddiscount', 'pwd'), transaction_adjustments.amount, 0)) as pwd_discount,
                 SUM(IF(transaction_adjustments.adjustment_type IN ('vip_card_discount', 'VIP'), transaction_adjustments.amount, 0)) as vip_discount
             ")
-            ->tap(fn ($q) => $this->applyTransactionReportDateWindow($q, $startDate, $endDate))
-            ->whereRaw("{$reportDateExpr} BETWEEN ? AND ?", [$startDate, $endDate]);
-
-        if ($hasTenantScope) {
-            $query->where('transactions.tenant_id', $tenantId);
-        }
-
-        CountableSales::apply($query, 'transactions');
-
-        return $query->groupBy('report_date')->get()->keyBy('report_date');
+            ->groupBy('report_date')
+            ->get()
+            ->keyBy('report_date');
     }
 
     private function taxRows(string $startDate, string $endDate, mixed $tenantId, string $reportDateExpr, bool $hasTenantScope)
     {
-        $query = DB::table('transaction_taxes')
-            ->join('transactions', 'transaction_taxes.transaction_pk', '=', 'transactions.id')
-            ->leftJoin('pos_terminals as pt', 'pt.id', '=', 'transactions.terminal_id')
-            ->leftJoin('pos_providers as pp', 'pp.id', '=', 'pt.provider_id')
+        return $this->reportDatedChildRows('transaction_taxes', $startDate, $endDate, $tenantId, $reportDateExpr, $hasTenantScope)
             ->selectRaw("
-                {$reportDateExpr} as report_date,
                 SUM(IF(transaction_taxes.tax_type IN ('SC_VAT_EXEMPT_SALES', 'VAT_EXEMPT_SALES', 'VATEXEMPT_SALES', 'VAT-EXEMPT', 'EXEMPT', 'VATEXEMPT'), transaction_taxes.amount, 0)) as sc_vat_exempt_fallback,
                 SUM(IF(transaction_taxes.tax_type NOT IN ('VAT', 'VAT_AMOUNT', 'VATABLE_SALES', 'SC_VAT_EXEMPT_SALES', 'VAT-EXEMPT', 'EXEMPT', 'VATEXEMPT', 'VATEXEMPT_SALES', 'VAT_EXEMPT_SALES', 'ZERO_RATED', 'NON-VAT', 'NON_VAT', 'ZERO-RATED'), transaction_taxes.amount, 0)) as other_tax_basis
             ")
-            ->tap(fn ($q) => $this->applyTransactionReportDateWindow($q, $startDate, $endDate))
-            ->whereRaw("{$reportDateExpr} BETWEEN ? AND ?", [$startDate, $endDate]);
-
-        if ($hasTenantScope) {
-            $query->where('transactions.tenant_id', $tenantId);
-        }
-
-        CountableSales::apply($query, 'transactions');
-
-        return $query->groupBy('report_date')->get()->keyBy('report_date');
+            ->groupBy('report_date')
+            ->get()
+            ->keyBy('report_date');
     }
 
     private function deriveDailyTotals($dailyMain, $dailyAdj, $dailyTax, array $dailyPayloadAdjustments): array
@@ -334,29 +312,49 @@ class SalesReportDataService
             return [];
         }
 
-        $query = DB::table('transaction_adjustments')
-            ->join('transactions', 'transaction_adjustments.transaction_pk', '=', 'transactions.id')
-            ->leftJoin('pos_terminals as pt', 'pt.id', '=', 'transactions.terminal_id')
-            ->leftJoin('pos_providers as pp', 'pp.id', '=', 'pt.provider_id')
-            ->selectRaw($reportDateExpr . ' as report_date')
+        return $this->reportDatedChildRows('transaction_adjustments', $startDate, $endDate, $tenantId, $reportDateExpr, $hasTenantScope)
             ->selectRaw("SUM(IF(transaction_adjustments.adjustment_type IN ('senior_discount', 'senior_citizen_discount', 'senior'), transaction_adjustments.amount, 0)) as senior_discount")
             ->selectRaw("SUM(IF(transaction_adjustments.adjustment_type IN ('pwd_discount', 'pwd_citizen_discount', 'pwddiscount', 'pwd'), transaction_adjustments.amount, 0)) as pwd_discount")
-            ->tap(fn ($q) => $this->applyTransactionReportDateWindow($q, $startDate, $endDate))
-            ->whereRaw($reportDateExpr . ' BETWEEN ? AND ?', [$startDate, $endDate]);
-
-        if ($hasTenantScope) {
-            $query->where('transactions.tenant_id', $tenantId);
-        }
-
-        CountableSales::apply($query, 'transactions');
-
-        return $query->groupBy('report_date')
+            ->groupBy('report_date')
             ->get()
             ->mapWithKeys(fn ($row) => [(string) $row->report_date => [
                 'senior_discount' => (float) ($row->senior_discount ?? 0),
                 'pwd_discount' => (float) ($row->pwd_discount ?? 0),
             ]])
             ->all();
+    }
+
+    /**
+     * Child rows (adjustments/taxes) joined to their countable transaction's business date.
+     *
+     * The business-date CASE parses original_payload JSON, so it is resolved once per
+     * transaction in a materialized derived table and then joined to the (roughly 7x more
+     * numerous) child rows, instead of being re-evaluated for every child row. The row set
+     * and each child row's date are exactly those of the former direct join.
+     */
+    private function reportDatedChildRows(string $childTable, string $startDate, string $endDate, mixed $tenantId, string $reportDateExpr, bool $hasTenantScope)
+    {
+        $transactionDates = DB::table('transactions')
+            ->leftJoin('pos_terminals as pt', 'pt.id', '=', 'transactions.terminal_id')
+            ->leftJoin('pos_providers as pp', 'pp.id', '=', 'pt.provider_id')
+            ->select('transactions.id')
+            ->selectRaw("{$reportDateExpr} as report_date")
+            ->tap(fn ($q) => $this->applyTransactionReportDateWindow($q, $startDate, $endDate))
+            ->whereRaw("{$reportDateExpr} BETWEEN ? AND ?", [$startDate, $endDate]);
+
+        if ($hasTenantScope) {
+            $transactionDates->where('transactions.tenant_id', $tenantId);
+        }
+
+        CountableSales::apply($transactionDates, 'transactions');
+
+        // NO_MERGE keeps MySQL from folding the derived table back into a per-child-row
+        // evaluation; other drivers treat the hint as a comment. It must stay the first select
+        // expression: distinct()/select() on this builder would drop or invalidate it.
+        return DB::query()
+            ->fromSub($transactionDates, 'tx_dates')
+            ->join($childTable, "{$childTable}.transaction_pk", '=', 'tx_dates.id')
+            ->selectRaw('/*+ NO_MERGE(tx_dates) */ tx_dates.report_date as report_date');
     }
 
     private function hasCompleteDailySummaryRefresh(string $startDate, string $endDate, mixed $tenantId, bool $hasTenantScope): bool
