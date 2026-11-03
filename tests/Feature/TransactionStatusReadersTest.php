@@ -201,8 +201,10 @@ class TransactionStatusReadersTest extends TestCase
             'error' => ['INVALID', 'COMPLETED'],
         ];
 
+        Sanctum::actingAs($this->terminal, ['transaction:read']);
+
         foreach ($expect as $key => [$validation, $job]) {
-            $this->getJson('/api/transactions/'.$this->rows[$key]->id.'/status')
+            $this->getJson('/api/v1/transactions/'.$this->rows[$key]->id.'/status')
                 ->assertOk()
                 ->assertJsonPath('data.validation_status', $validation)
                 ->assertJsonPath('data.job_status', $job);

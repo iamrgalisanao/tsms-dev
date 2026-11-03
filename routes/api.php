@@ -292,16 +292,15 @@ if (env('TSMS_ENABLE_LEGACY_API', false)) {
         // Route::post('/transactions', [TransactionController::class, 'store']);
         // Retired: same 410 as the authenticated route (003-ingestion-hardening US1).
         Route::post('/transactions/batch', [TransactionController::class, 'retiredBatch']);
-        Route::get('/transactions/{id}/status', [TransactionController::class, 'status']);
+        // Unauthenticated status lookup removed: it bypassed tenant scoping.
+        // Use the authenticated GET /api/v1/transactions/{transaction}/status.
     });
 }
 
-// Public transaction endpoints for testing (legacy)
-Route::middleware('api')->group(function () {
-    // Legacy public ingestion endpoint disabled
-    // Route::post('/transactions', [TransactionController::class, 'store']);
-    Route::get('/transactions/{id}/status', [TransactionController::class, 'status']);
-});
+// Public (unauthenticated) GET /api/transactions/{id}/status removed: with no
+// authenticated terminal the tenant scope did not apply, so any transaction's
+// amounts and customer code could be read by sequential id. POS providers use
+// the authenticated GET /api/v1/transactions/{transaction}/status.
 
 // V1 Retry History API Routes
 Route::middleware(['auth:sanctum', 'role:admin|manager|finance|commercial'])
