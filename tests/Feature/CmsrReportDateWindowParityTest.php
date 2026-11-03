@@ -144,6 +144,37 @@ class CmsrReportDateWindowParityTest extends TestCase
             $this->assertMatchesRegularExpression('/`?transaction_timestamp`? >= \?/', $sql);
             $this->assertMatchesRegularExpression('/`?created_at`? < \?/', $sql);
         }
+
+        // Adjustment/tax rows join to a materialized per-transaction date, not the raw CASE.
+        $childQueries = $dateFiltered->filter(fn (string $sql) => str_contains($sql, 'transaction_adjustments') || str_contains($sql, 'transaction_taxes'));
+        $this->assertCount(2, $childQueries);
+        foreach ($childQueries as $sql) {
+            $this->assertStringContainsString('/*+ NO_MERGE(tx_dates) */', $sql);
+        }
+    }
+
+    public function test_summary_path_adjustments_use_per_transaction_dates(): void
+    {
+        $this->artisan('reports:refresh-daily-transaction-summaries', [
+            '--from' => '2026-10-01',
+            '--to' => '2026-10-31',
+            '--tenant' => $this->tenant->id,
+        ])->assertSuccessful();
+
+        Sanctum::actingAs($this->adminUser);
+        DB::enableQueryLog();
+
+        $this->getJson('/reports/data?month=2026-10&tenant='.$this->tenant->id)
+            ->assertOk()
+            ->assertJsonPath('source', 'daily_transaction_summaries');
+
+        $adjustmentQueries = collect(DB::getQueryLog())
+            ->pluck('query')
+            ->filter(fn (string $sql) => str_contains($sql, 'transaction_adjustments') && str_contains($sql, 'JSON_VALID'));
+        DB::disableQueryLog();
+
+        $this->assertCount(1, $adjustmentQueries);
+        $this->assertStringContainsString('/*+ NO_MERGE(tx_dates) */', $adjustmentQueries->first());
     }
 
     private function assertReportMatchesExpectation(array $report): void
@@ -165,6 +196,8 @@ class CmsrReportDateWindowParityTest extends TestCase
         // senior = max(column 0, adjustment table 3, payload 5); the out-of-month 100 must not leak in.
         $this->assertEquals(5.0, (float) $report['daily_totals']['2026-10-01']['senior_discount']);
         $this->assertEquals(6.0, (float) $report['daily_totals']['2026-10-31']['other_tax']);
+        // pwd = SUM of both adjustment-table rows (no column/payload value); the INVALID row's 1000 is excluded.
+        $this->assertEquals(2.0 + 4.0, (float) $report['daily_totals']['2026-10-15']['pwd_discount']);
     }
 
     /**
@@ -236,8 +269,21 @@ class CmsrReportDateWindowParityTest extends TestCase
             'transaction_timestamp' => null,
             'created_at' => '2026-09-30 17:00:00',
         ]);
-        // Mid-month, no payload (in, Oct 15).
-        $this->createRow($this->terminal, '2026-10-15 04:00:00', null, 64.00);
+        // Mid-month, no payload (in, Oct 15); only the adjustment table carries its PWD discount.
+        $midMonth = $this->createRow($this->terminal, '2026-10-15 04:00:00', null, 64.00);
+        foreach ([2.00, 4.00] as $amount) {
+            DB::table('transaction_adjustments')->insert([
+                'transaction_pk' => $midMonth->id, 'adjustment_type' => 'pwd_discount', 'amount' => $amount,
+                'created_at' => now(), 'updated_at' => now(),
+            ]);
+        }
+        // Same day but INVALID: neither its sale nor its PWD adjustment may count.
+        $invalid = $this->createRow($this->terminal, '2026-10-15 05:00:00', null, 512.00);
+        DB::table('transactions')->where('id', $invalid->id)->update(['validation_status' => 'INVALID']);
+        DB::table('transaction_adjustments')->insert([
+            'transaction_pk' => $invalid->id, 'adjustment_type' => 'pwd_discount', 'amount' => 1000.00,
+            'created_at' => now(), 'updated_at' => now(),
+        ]);
         // Clearly outside the month.
         $this->createRow($this->terminal, '2026-08-15 04:00:00', null, 128.00);
         $this->createRow($this->terminal, '2026-09-29 20:00:00', '2026-09-29T20:00:00Z', 256.00);
