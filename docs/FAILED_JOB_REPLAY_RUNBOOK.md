@@ -282,11 +282,16 @@ single retries of intake jobs (HTTP 409).
 
 ### Deploying the code
 
-Run `php artisan config:cache` immediately after the code is in place, before
-workers can pick up the new code, even though nothing is enabled yet. A config
-cache built before this code lacks the new keys. The job falls back to its default
-overlap values (release 10, expire 0) and a missing floor or freeze behaves as off,
-so the cache must be rebuilt for the settings to take effect.
+1. **Require a clean worktree.** On staging, run `git status --short`. It must show
+   no tracked changes. List and review any untracked files before continuing.
+2. **Record the deployed commit.** Run `git rev-parse HEAD` and record the SHA before
+   the pull. Pull with `git pull --ff-only origin main`, then run it again and verify
+   that it equals the merged PR commit exactly.
+3. Run `php artisan config:cache` immediately after the code is in place, before
+   workers can pick up the new code, even though nothing is enabled yet. A config
+   cache built before this code lacks the new keys. The job falls back to its default
+   overlap values (release 10, expire 0) and a missing floor or freeze behaves as off,
+   so the cache must be rebuilt for the settings to take effect.
 
 ### Before enabling
 
@@ -301,12 +306,20 @@ so the cache must be rebuilt for the settings to take effect.
    ```
 
    The exit code must be 0. Any difference means the floor would hold rows other
-   than the manifest rows; do not enable it. Confirm the printed environment is
+   than the manifest rows; do not enable it. A `truncated` result is a mismatch: more
+   rows are excluded than the manifest lists, and its lists are incomplete. Confirm the printed environment is
    `staging` and the normalized floor is the intended instant.
 
 ### Enabling
 
-1. Set in the staging `.env`:
+1. Back up `.env` without overwriting an earlier backup, and keep the path for the
+   abort path below:
+
+   ```
+   cp -p .env ~/env-before-containment-$(date +%Y%m%dT%H%M%S)
+   ```
+
+2. Set in the staging `.env`:
 
    ```
    TSMS_INTAKE_CONTAINMENT_FLOOR=2026-10-27T00:00:00+08:00
@@ -315,44 +328,95 @@ so the cache must be rebuilt for the settings to take effect.
    TSMS_INTAKE_OVERLAP_RELEASE_SECONDS=310
    ```
 
-2. Run `php artisan config:cache`.
-3. Verify the armed state **before restarting workers**, so a mistyped floor is
+3. **Check the exact value now in `.env` before it can go live.** Nothing has been
+   cached yet, so a failure here needs no abort path: restore `.env` from the backup
+   and stop. The exit code must be 0:
+
+   ```
+   php artisan tsms:intake-containment-status --floor="$(grep -E '^TSMS_INTAKE_CONTAINMENT_FLOOR=' .env | cut -d= -f2-)" --manifest=/path/to/manifest.csv
+   ```
+
+4. Run `php artisan config:cache`. The scheduled reconciler reads this on its next
+   run, so its floor is live from this point.
+5. Verify the armed state **before restarting workers**, so a mistyped floor is
    caught before every worker restarts and holds all intake jobs. The exit code
    must be 0 and the output must show `Floor state: armed`, with the freeze on and
-   the overlap values above:
+   the overlap values above. If this check fails, use the abort path and do not
+   continue:
 
    ```
    php artisan tsms:intake-containment-status --manifest=/path/to/manifest.csv
    ```
 
-4. Run `php artisan horizon:terminate`.
-5. Confirm replacement workers are running: `php artisan horizon:status` and
+6. Run `php artisan horizon:terminate`.
+7. Confirm replacement workers are running: `php artisan horizon:status` and
    `php artisan horizon:supervisors`. Old workers keep the old configuration
    until they exit.
 
-### Watching
+### Abort path (only before `horizon:terminate`)
 
-Compare failed-job growth over **at least two reconciliation windows** (10-15
-minutes each), counted from when the replacement workers started. Jobs that were
-already in flight on old workers can still fail just before that point. Jobs
-already released with their attempts used up can also still fail on replacement
-workers, because the worker checks max attempts before any job middleware runs.
-Start counting a little after cutover and do not treat those failures as a
-containment failure. Bound every query on this overloaded database:
+Use this only if the manifest or armed check in step 5 fails. **Do not terminate
+workers** unless the escalation below applies.
+
+1. Restore the previous values from the `.env` backup made in step 1.
+2. Run `php artisan config:cache`.
+3. Run `php artisan tsms:intake-containment-status`. The output must show
+   `Floor state: absent`, `Retry freeze: off`, `Overlap expire seconds: 0` and
+   `Overlap release seconds: 10`. The exit code is non-zero here because the floor is
+   not armed; that is expected on this path.
+
+Autoscaled workers can start with the cached configuration in the short window before
+the abort, and they keep it in memory after the cache is restored. With a valid floor
+they hold only pre-floor rows. Held rows are not changed.
+
+**Escalate if the floor that went live was invalid (malformed or in the future).** Any
+worker started in that window holds **every** intake job until it exits, including
+live sales. Those sales are delayed, not lost: their rows stay `QUEUED`, and the
+reconciler redispatches them once the configuration is corrected. Check
+`php artisan horizon:supervisors`, then tell the incident owner immediately. Only the
+incident owner can authorize `horizon:terminate` here, after the restored configuration
+has been verified, to clear those workers.
+
+**After worker cutover this rollback path must not be used.** The warning below
+applies from that point.
+
+### Monitoring
+
+Use the status command's Horizon line. It reads the Horizon Redis connection, makes
+no writes, and works even when the floor or manifest result fails:
 
 ```
-SELECT /*+ MAX_EXECUTION_TIME(30000) */ COUNT(*) FROM failed_jobs
-WHERE failed_at >= NOW() - INTERVAL 30 MINUTE;
+php artisan tsms:intake-containment-status --manifest=/path/to/manifest.csv
 ```
 
-`failed_at` has no index, so this can reach the 30 second limit. If it does, compare
-Horizon's failed-job count across the same interval instead, which reads Redis and
-does not touch MySQL: `redis-cli ZCARD tsms:horizon:failed_jobs`.
+Record the `Horizon failed jobs: N at <timestamp>` line at these points:
 
-Growth from the looping intakes should stop. Held jobs appear in the logs at info
-level as `ProcessTransactionIntakeJob: held by containment floor`, and each
-Mode A run logs `ReconcileStrandedIntake: containment floor armed`. Any log line
-`Intake containment floor is set but not usable` needs immediate attention.
+1. At cutover, after a short settling period once the replacement workers are running.
+2. At the end of each of **at least two reconciliation windows** (10-15 minutes each).
+
+Do not count the settling period. Jobs in flight on old workers can still fail just
+before cutover. Jobs already released with their attempts used up can also still fail
+on replacement workers, because the worker checks max attempts before any job
+middleware runs. Those failures are not a containment failure.
+
+**Success:** across both windows the count grows by little or nothing, against about
+50 a minute (roughly 750 per 15 minutes) before containment. The count covers every
+job class, so a small rise from other jobs is possible. The status command still
+exits 0, with `Floor state: armed` and the manifest matching. Horizon trims old
+entries, so a falling count does not prove anything by itself.
+
+**Escalate to the incident owner, without changing the floor, if:**
+
+- growth in the second window is still near the earlier rate, or has not clearly
+  dropped from the first window;
+- the Horizon line shows `unavailable` at a checkpoint, so that window cannot be
+  judged;
+- the floor is not armed, or the manifest no longer matches;
+- any log line says `Intake containment floor is set but not usable`.
+
+Held jobs appear in the logs at info level as `ProcessTransactionIntakeJob: held by
+containment floor`, and each Mode A run logs `ReconcileStrandedIntake: containment
+floor armed`.
 
 ### Warnings
 

@@ -24,6 +24,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Queue;
+use Illuminate\Support\Facades\Redis;
 use Illuminate\Support\Str;
 use Laravel\Sanctum\Sanctum;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -66,6 +67,7 @@ class IntakeContainmentTest extends TestCase
     {
         // TestCase::setUp refreshes the application, so RefreshDatabase does not roll these back.
         TransactionIntake::query()->whereIn('id', $this->intakeIds)->delete();
+        TransactionIntake::query()->where('tenant_id', $this->tenant->id)->delete();
         DB::table('failed_jobs')->whereIn('uuid', $this->failedJobUuids)->delete();
         array_map('unlink', array_filter($this->tempFiles, 'is_file'));
         Carbon::setTestNow();
@@ -867,12 +869,142 @@ class IntakeContainmentTest extends TestCase
 
         [$exit, $output] = $this->runStatus(['--manifest' => $this->manifest($ids)]);
         $this->assertSame(1, $exit);
-        $this->assertStringContainsString("Only excluded (1): {$missing}", $output);
+        $this->assertStringContainsString('truncated', $output);
+        $this->assertStringContainsString("Only excluded (at least 1, list incomplete): {$missing}", $output);
+        $this->assertStringContainsString('Only in manifest: not computed', $output);
+        $this->assertStringNotContainsString('matches', $output);
 
         $extra = PHP_INT_MAX;
         [$exit, $output] = $this->runStatus(['--manifest' => $this->manifest([...$ids, $missing, $extra])]);
         $this->assertSame(1, $exit);
         $this->assertStringContainsString("Only in manifest (1): {$extra}", $output);
+    }
+
+    public function test_status_manifest_with_the_same_count_but_a_different_id_lists_both_sides(): void
+    {
+        config(['tsms.intake.containment_floor' => self::FLOOR]);
+
+        $ids = array_merge($this->excludedIds(), $this->arrangeStatusRows());
+        $swapped = array_pop($ids);
+
+        [$exit, $output] = $this->runStatus(['--manifest' => $this->manifest([...$ids, PHP_INT_MAX])]);
+
+        $this->assertSame(1, $exit);
+        $this->assertStringContainsString('Only in manifest (1): '.PHP_INT_MAX, $output);
+        $this->assertStringContainsString("Only excluded (1): {$swapped}", $output);
+    }
+
+    public function test_status_exact_match_at_the_manifest_cap_uses_the_unique_count(): void
+    {
+        config(['tsms.intake.containment_floor' => self::FLOOR]);
+
+        $ids = array_merge($this->excludedIds(), $this->arrangeStatusRows());
+        $manifest = $this->manifest([...$ids, $ids[0]]);
+        $queries = $this->captureQueries();
+
+        [$exit, $output] = $this->runStatus(['--manifest' => $manifest]);
+
+        $this->assertSame(0, $exit, $output);
+        $this->assertStringContainsString('The manifest matches', $output);
+        $this->assertStringNotContainsString('truncated', $output);
+        $this->assertCount(1, $queries->all);
+        $this->assertStringEndsWith('order by `id` asc limit '.(count($ids) + 1), $queries->all[0]);
+    }
+
+    public function test_status_empty_manifest_with_excluded_rows_is_a_mismatch(): void
+    {
+        config(['tsms.intake.containment_floor' => self::FLOOR]);
+        $this->arrangeStatusRows();
+
+        [$exit, $output] = $this->runStatus(['--manifest' => $this->manifest([], false)]);
+
+        $this->assertSame(1, $exit);
+        $this->assertStringContainsString('truncated', $output);
+        $this->assertStringNotContainsString('matches', $output);
+    }
+
+    public function test_status_without_a_manifest_is_non_success_when_the_cap_is_reached(): void
+    {
+        config(['tsms.intake.containment_floor' => self::FLOOR]);
+        $now = self::NOW;
+
+        foreach (array_chunk(range(1, 5000), 1000) as $chunk) {
+            DB::table('transaction_intake')->insert(array_map(fn () => [
+                'submission_uuid' => (string) Str::uuid(),
+                'tenant_id' => $this->tenant->id,
+                'terminal_id' => $this->terminal->id,
+                'payload_checksum' => str_repeat('a', 64),
+                'payload' => '{}',
+                'payload_size_bytes' => 2,
+                'source_ip' => '127.0.0.1',
+                'intake_status' => TransactionIntake::INTAKE_STATUS_QUEUED,
+                'trace_id' => (string) Str::uuid(),
+                'received_at' => self::BEFORE_FLOOR,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ], $chunk));
+        }
+
+        [$exit, $output] = $this->runStatus();
+
+        $this->assertSame(1, $exit);
+        $this->assertStringContainsString('Excluded rows: at least 5000', $output);
+        $this->assertStringContainsString('Result truncated at 5000 rows', $output);
+    }
+
+    public function test_status_prints_the_horizon_failed_job_count_with_a_timestamp(): void
+    {
+        config(['tsms.intake.containment_floor' => self::FLOOR]);
+
+        // Any command other than ZCARD on this mock would fail, so nothing can write.
+        $connection = \Mockery::mock();
+        $connection->shouldReceive('zcard')->once()->with('failed_jobs')->andReturn(42);
+        Redis::shouldReceive('connection')->once()->with('horizon')->andReturn($connection);
+
+        [$exit, $output] = $this->runStatus();
+
+        $this->assertSame(0, $exit);
+        $this->assertStringContainsString('Horizon failed jobs: 42 at 2026-11-07T12:00:00+00:00', $output);
+    }
+
+    public function test_horizon_connection_carries_the_configured_prefix(): void
+    {
+        $this->assertSame(config('horizon.prefix'), config('database.redis.horizon.options.prefix'));
+        $this->assertSame(
+            config('database.redis.'.config('horizon.use').'.database'),
+            config('database.redis.horizon.database')
+        );
+    }
+
+    #[DataProvider('statusFloorResults')]
+    public function test_status_result_survives_redis_being_unavailable(?string $floor, int $expectedExit): void
+    {
+        config(['tsms.intake.containment_floor' => $floor]);
+        Redis::shouldReceive('connection')->once()->with('horizon')->andThrow(new \RuntimeException('redis down'));
+
+        [$exit, $output] = $this->runStatus();
+
+        $this->assertSame($expectedExit, $exit);
+        $this->assertStringContainsString('Horizon failed jobs: unavailable at 2026-11-07T12:00:00+00:00', $output);
+        $this->assertStringNotContainsString('redis down', $output);
+    }
+
+    public static function statusFloorResults(): array
+    {
+        return ['armed' => [self::FLOOR, 0], 'absent' => [null, 1]];
+    }
+
+    public function test_status_manifest_result_survives_redis_being_unavailable(): void
+    {
+        config(['tsms.intake.containment_floor' => self::FLOOR]);
+        $ids = array_merge($this->excludedIds(), $this->arrangeStatusRows());
+        Redis::shouldReceive('connection')->with('horizon')->andThrow(new \RuntimeException('redis down'));
+
+        [$exit, $output] = $this->runStatus(['--manifest' => $this->manifest($ids)]);
+
+        $this->assertSame(0, $exit, $output);
+        $this->assertStringContainsString('unavailable', $output);
+        $this->assertStringContainsString('The manifest matches', $output);
     }
 
     public function test_status_rejects_an_unreadable_or_invalid_manifest_without_querying(): void

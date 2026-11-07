@@ -9,10 +9,13 @@ use Carbon\CarbonImmutable;
 use Illuminate\Console\Command;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Redis;
 
 class IntakeContainmentStatus extends Command
 {
     private const MAX_EXECUTION_TIME_MS = 30000;
+
+    private const NO_MANIFEST_ROW_CAP = 5000;
 
     protected $signature = 'tsms:intake-containment-status
         {--floor= : Preview this floor value instead of the configured one}
@@ -36,6 +39,8 @@ class IntakeContainmentStatus extends Command
         $this->line('Overlap expire seconds: '.ProcessTransactionIntakeJob::overlapExpireSeconds());
         $this->line('Overlap release seconds: '.ProcessTransactionIntakeJob::overlapReleaseSeconds());
 
+        $this->line($this->horizonFailedJobsLine());
+
         if (! $containment->isArmed()) {
             $this->error('The floor is not armed or previewable. No rows were inspected.');
 
@@ -52,13 +57,33 @@ class IntakeContainmentStatus extends Command
             }
         }
 
-        $excluded = $this->excludedIds($containment->floor);
+        // One row past the manifest is enough to prove a mismatch.
+        $cap = $manifest === null ? self::NO_MANIFEST_ROW_CAP : count($manifest) + 1;
+        $excluded = $this->excludedIds($containment->floor, $cap);
+        $truncated = count($excluded) >= $cap;
 
-        $this->line('Excluded rows: '.count($excluded));
-        $this->line('Excluded IDs: '.implode(',', $excluded));
+        $this->line('Excluded rows: '.($truncated ? 'at least ' : '').count($excluded));
+        $this->line(($truncated ? "Excluded IDs (first {$cap}, truncated): " : 'Excluded IDs: ').implode(',', $excluded));
 
         if ($manifest === null) {
+            if ($truncated) {
+                $this->error("Result truncated at {$cap} rows. More excluded rows may exist and the list may be incomplete.");
+
+                return self::FAILURE;
+            }
+
             return self::SUCCESS;
+        }
+
+        if ($truncated) {
+            $seen = array_values(array_diff($excluded, $manifest));
+
+            $this->line('Manifest rows: '.count($manifest));
+            $this->line('Only in manifest: not computed, the result is truncated');
+            $this->line('Only excluded (at least '.count($seen).', list incomplete): '.implode(',', $seen));
+            $this->error('Result truncated: more rows are excluded than the manifest lists, so the manifest does not match.');
+
+            return self::FAILURE;
         }
 
         $onlyInManifest = array_values(array_diff($manifest, $excluded));
@@ -85,7 +110,7 @@ class IntakeContainmentStatus extends Command
      *
      * @return array<int, int>
      */
-    private function excludedIds(CarbonImmutable $floor): array
+    private function excludedIds(CarbonImmutable $floor, int $limit): array
     {
         $idColumn = DB::connection()->getDriverName() === 'mysql'
             ? '/*+ MAX_EXECUTION_TIME('.self::MAX_EXECUTION_TIME_MS.') */ id'
@@ -111,10 +136,30 @@ class IntakeContainmentStatus extends Command
                     ->orWhereNull('received_at');
             })
             ->orderBy('id')
+            ->limit($limit)
             ->toBase()
             ->pluck('id')
             ->map(fn ($id) => (int) $id)
             ->all();
+    }
+
+    /**
+     * Same connection and key as Horizon's RedisJobRepository::countFailed(). The
+     * horizon connection carries the configured prefix (see Horizon::use()).
+     */
+    private function horizonFailedJobsLine(): string
+    {
+        $at = now()->toIso8601String();
+
+        try {
+            $count = Redis::connection('horizon')->zcard('failed_jobs');
+        } catch (\Throwable) {
+            $count = null;
+        }
+
+        return is_numeric($count)
+            ? "Horizon failed jobs: {$count} at {$at}"
+            : "Horizon failed jobs: unavailable at {$at}";
     }
 
     /**
