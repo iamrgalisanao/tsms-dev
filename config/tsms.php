@@ -104,6 +104,16 @@ return [
         'max_batch_count' => (int) env('TSMS_INTAKE_MAX_BATCH_COUNT', 500),
         'shard_count' => (int) env('TSMS_INTAKE_SHARD_COUNT', 8),
         'vip_shard' => env('TSMS_INTAKE_VIP_SHARD', 'vip'),
+        // Temporary incident containment, read through App\Support\IntakeContainmentFloor.
+        // To be replaced by an exact hold table before any recovery. See
+        // docs/FAILED_JOB_REPLAY_RUNBOOK.md section 10.
+        'containment_floor' => env('TSMS_INTAKE_CONTAINMENT_FLOOR'),
+        'retry_freeze' => (bool) env('TSMS_INCIDENT_RETRY_FREEZE', false),
+        // ProcessTransactionIntakeJob WithoutOverlapping timing. 0 means the lock never
+        // expires. A blank value means the default. ProcessTransactionIntakeJob also
+        // guards the values it reads, because a stale config cache can omit these keys.
+        'overlap_expire_seconds' => (int) (env('TSMS_INTAKE_OVERLAP_EXPIRE_SECONDS') ?: 0),
+        'overlap_release_seconds' => (int) (env('TSMS_INTAKE_OVERLAP_RELEASE_SECONDS') ?: 10),
     ],
 
     'processing' => [

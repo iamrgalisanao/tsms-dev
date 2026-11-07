@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\API\V1;
 
 use App\Http\Controllers\Controller;
+use App\Jobs\ProcessTransactionIntakeJob;
 use App\Models\SystemLog;
 use App\Models\Tenant;
 use App\Models\Transaction;
@@ -109,6 +110,10 @@ class FailedJobController extends Controller
             return response()->json(['message' => 'Failed job not found.'], 404);
         }
 
+        if (config('tsms.intake.retry_freeze') && $this->isFrozenFromRetry($job->payload)) {
+            return response()->json(['message' => 'Retry is paused by the incident retry freeze.'], 409);
+        }
+
         try {
             Artisan::call('queue:retry', ['id' => [$uuid]]);
 
@@ -146,6 +151,10 @@ class FailedJobController extends Controller
      */
     public function retryAll()
     {
+        if (config('tsms.intake.retry_freeze')) {
+            return response()->json(['message' => 'Retry all is paused by the incident retry freeze.'], 409);
+        }
+
         $count = DB::table('failed_jobs')->count();
 
         if ($count === 0) {
@@ -224,6 +233,21 @@ class FailedJobController extends Controller
             'by_queue'           => $byQueue,
             'threshold_exceeded' => $total >= (int) config('tsms.dlq.alert_threshold', 10),
         ]);
+    }
+
+    /**
+     * Whether the retry freeze blocks this stored payload: an intake job, or a
+     * payload whose job class cannot be read (fail closed).
+     */
+    private function isFrozenFromRetry(?string $payload): bool
+    {
+        $decoded = json_decode($payload ?? '', true);
+        $classes = array_filter(
+            [data_get($decoded, 'displayName'), data_get($decoded, 'data.commandName')],
+            fn ($class) => is_string($class) && $class !== ''
+        );
+
+        return $classes === [] || in_array(ProcessTransactionIntakeJob::class, $classes, true);
     }
 
     /**

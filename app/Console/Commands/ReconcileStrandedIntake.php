@@ -7,6 +7,7 @@ use App\Jobs\ProcessTransactionJob;
 use App\Models\TransactionIntake;
 use App\Services\IngestionQueueRouter;
 use App\Services\TransactionIngestService;
+use App\Support\IntakeContainmentFloor;
 use Illuminate\Console\Command;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Facades\DB;
@@ -14,6 +15,10 @@ use Illuminate\Support\Facades\Log;
 
 class ReconcileStrandedIntake extends Command
 {
+    public const EXIT_REPAIR_PAUSED = 3;
+
+    private ?IntakeContainmentFloor $containment = null;
+
     protected $signature = 'tsms:reconcile-intake
         {--from= : Received-at start date/time for missing processed intake scan}
         {--to= : Received-at end date/time for missing processed intake scan}
@@ -31,8 +36,30 @@ class ReconcileStrandedIntake extends Command
 
     public function handle(TransactionIngestService $ingestService, IngestionQueueRouter $queueRouter): int
     {
+        // Keyed on --repair-missing, not --dry-run: --dry-run --repair-missing repairs.
+        if ($this->option('repair-missing') && config('tsms.intake.retry_freeze')) {
+            $this->warn('Repair is paused by the incident retry freeze (TSMS_INCIDENT_RETRY_FREEZE). Nothing was repaired.');
+
+            return self::EXIT_REPAIR_PAUSED;
+        }
+
         if ($this->option('dry-run') || $this->option('repair-missing')) {
             return $this->reconcileProcessedMissingTransactions($ingestService, $queueRouter);
+        }
+
+        $this->containment = IntakeContainmentFloor::current();
+        $this->containment->alertIfNeeded();
+
+        if ($this->containment->isInvalid()) {
+            $this->error('Reconciliation skipped: the intake containment floor is invalid ('.$this->containment->reason.'). Nothing was dispatched.');
+
+            return self::FAILURE;
+        }
+
+        if ($this->containment->isArmed()) {
+            Log::info('ReconcileStrandedIntake: containment floor armed', [
+                'floor' => $this->containment->floor->toIso8601String(),
+            ]);
         }
 
         $acceptedThreshold = now()->subMinutes(max(1, (int) $this->option('accepted-stale-minutes')));
@@ -84,16 +111,24 @@ class ReconcileStrandedIntake extends Command
         return self::SUCCESS;
     }
 
+    /**
+     * Shared base of all four normal-mode queries, carrying the containment scope.
+     */
+    private function normalModeQuery(): Builder
+    {
+        return $this->containment->applyScope(TransactionIntake::query());
+    }
+
     private function strandedAcceptedQuery(\DateTimeInterface $threshold): Builder
     {
-        return TransactionIntake::query()
+        return $this->normalModeQuery()
             ->where('intake_status', TransactionIntake::INTAKE_STATUS_ACCEPTED)
             ->where('received_at', '<=', $threshold);
     }
 
     private function staleQueuedPendingQuery(\DateTimeInterface $threshold): Builder
     {
-        return TransactionIntake::query()
+        return $this->normalModeQuery()
             ->where('intake_status', TransactionIntake::INTAKE_STATUS_QUEUED)
             ->whereNull('processing_status')
             ->where(function (Builder $query) use ($threshold): void {
@@ -117,7 +152,7 @@ class ReconcileStrandedIntake extends Command
 
     private function staleQueuedStatusQuery(string $processingStatus, \DateTimeInterface $threshold): Builder
     {
-        return TransactionIntake::query()
+        return $this->normalModeQuery()
             ->where('intake_status', TransactionIntake::INTAKE_STATUS_QUEUED)
             ->where('processing_status', $processingStatus)
             ->where(function (Builder $query) use ($threshold): void {

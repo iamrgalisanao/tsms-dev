@@ -2,6 +2,7 @@
 
 namespace App\Jobs;
 
+use App\Jobs\Middleware\HoldContainedIntake;
 use App\Models\TransactionIntake;
 use App\Services\CircuitBreaker;
 use App\Services\IngestionQueueRouter;
@@ -46,7 +47,30 @@ class ProcessTransactionIntakeJob implements ShouldQueue
      */
     public function middleware(): array
     {
-        return [(new WithoutOverlapping((string) $this->intakeId))->releaseAfter(10)];
+        return [
+            new HoldContainedIntake,
+            (new WithoutOverlapping((string) $this->intakeId))
+                ->releaseAfter(self::overlapReleaseSeconds())
+                ->expireAfter(self::overlapExpireSeconds()),
+        ];
+    }
+
+    /**
+     * A NULL releaseAfter makes WithoutOverlapping skip the release, and the job is
+     * then deleted as a success, so a missing or unusable value must use the default.
+     */
+    public static function overlapReleaseSeconds(): int
+    {
+        $seconds = config('tsms.intake.overlap_release_seconds');
+
+        return is_numeric($seconds) && (int) $seconds >= 1 ? (int) $seconds : 10;
+    }
+
+    public static function overlapExpireSeconds(): int
+    {
+        $seconds = config('tsms.intake.overlap_expire_seconds');
+
+        return is_numeric($seconds) && (int) $seconds >= 0 ? (int) $seconds : 0;
     }
 
     /**

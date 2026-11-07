@@ -255,6 +255,189 @@ Before running either mode manually:
 php artisan test tests/Feature/ReconcileStrandedIntakeTest.php   # expect: all pass
 ```
 
+## 10. Temporary Intake Loop Containment (Staging Only)
+
+**Purpose and status.** On staging, 678 intakes (`QUEUED`, `processing_status`
+NULL, newest `received_at` 2026-10-26 21:05:30) hold permanent
+`WithoutOverlapping` locks (TTL -1). Mode A redispatches them, each job exhausts
+its tries on the lock, and this produces about 71-76k failed jobs a day. This
+containment stops that producer without replaying anything. It is **temporary**:
+the floor is a blunt date boundary and must be replaced by an exact hold table
+before any recovery. Replay of these intakes **remains unapproved**.
+
+What it changes while the floor is armed:
+
+- Mode A's four queries only consider rows with `received_at >= floor`.
+- `ProcessTransactionIntakeJob` jobs for rows before the floor, or with a NULL
+  `received_at`, are deleted without failing. They do not touch the lock, the
+  row or the transaction tables. A malformed or future floor holds **every** job
+  and makes Mode A skip with a non-success exit, so such a value also stops
+  recent intake from being ingested until it is corrected.
+- The floor is honoured only when `APP_ENV` is `staging` or `testing`.
+
+The retry freeze is independent of the floor and never reads it. It makes
+`--repair-missing` exit non-success with no work, including the scheduled 23:00
+run and the dashboard's Reconcile action (HTTP 409), and blocks DLQ retry-all and
+single retries of intake jobs (HTTP 409).
+
+**Bounded commands.** The configured Redis connection has no connect or read timeout,
+so a Redis outage could otherwise hang these commands indefinitely. Every
+`tsms:intake-containment-status`, `horizon:status` and `horizon:supervisors` call in
+this section runs under an outer `timeout`. Exit code `124` means the command timed out
+and **counts as a failed check**, never as a pass.
+
+### Deploying the code
+
+1. **Require a clean worktree.** On staging, run `git status --short`. It must show
+   no tracked changes. List and review any untracked files before continuing.
+2. **Record the deployed commit.** Run `git rev-parse HEAD` and record the SHA before
+   the pull. Pull with `git pull --ff-only origin main`, then run it again and verify
+   that it equals the merged PR commit exactly.
+3. Run `php artisan config:cache` immediately after the code is in place, before
+   workers can pick up the new code, even though nothing is enabled yet. A config
+   cache built before this code lacks the new keys. The job falls back to its default
+   overlap values (release 10, expire 0) and a missing floor or freeze behaves as off,
+   so the cache must be rebuilt for the settings to take effect.
+
+### Before enabling
+
+1. **Freeze Horizon and CLI retries as an operating rule, and record it.** The code
+   does not restrict them. Nobody runs `queue:retry` or the Horizon dashboard's retry
+   for intake jobs while this containment is active. Do not continue until the freeze
+   has been communicated to everyone with `admin` or `ops` roles or an `admin:manage`
+   token, and the recipients and time are recorded in the incident notes.
+2. **Run the manifest check** with the values already deployed and before setting
+   the floor. It is read-only and has a 30 second execution limit:
+
+   ```
+   timeout 45 php artisan tsms:intake-containment-status --floor=2026-10-27T00:00:00+08:00 --manifest=/path/to/manifest.csv
+   ```
+
+   The exit code must be 0. Any difference means the floor would hold rows other
+   than the manifest rows; do not enable it. A `truncated` result is a mismatch: more
+   rows are excluded than the manifest lists, and its lists are incomplete. Confirm the printed environment is
+   `staging` and the normalized floor is the intended instant.
+
+### Enabling
+
+1. Back up `.env` without overwriting an earlier backup, and keep the path for the
+   abort path below:
+
+   ```
+   cp -p .env ~/env-before-containment-$(date +%Y%m%dT%H%M%S)
+   ```
+
+2. Set in the staging `.env`:
+
+   ```
+   TSMS_INTAKE_CONTAINMENT_FLOOR=2026-10-27T00:00:00+08:00
+   TSMS_INCIDENT_RETRY_FREEZE=true
+   TSMS_INTAKE_OVERLAP_EXPIRE_SECONDS=300
+   TSMS_INTAKE_OVERLAP_RELEASE_SECONDS=310
+   ```
+
+3. **Check the exact value now in `.env` before it can go live.** Nothing has been
+   cached yet, so a failure here needs no abort path: restore `.env` from the backup
+   and stop. The exit code must be 0:
+
+   ```
+   timeout 45 php artisan tsms:intake-containment-status --floor="$(grep -E '^TSMS_INTAKE_CONTAINMENT_FLOOR=' .env | cut -d= -f2-)" --manifest=/path/to/manifest.csv
+   ```
+
+4. Run `php artisan config:cache`. The scheduled reconciler reads this on its next
+   run, so its floor is live from this point.
+5. Verify the armed state **before restarting workers**, so a mistyped floor is
+   caught before every worker restarts and holds all intake jobs. The exit code
+   must be 0 and the output must show `Floor state: armed`, with the freeze on and
+   the overlap values above. If this check fails, use the abort path and do not
+   continue:
+
+   ```
+   timeout 45 php artisan tsms:intake-containment-status --manifest=/path/to/manifest.csv
+   ```
+
+6. Run `php artisan horizon:terminate`.
+7. Confirm replacement workers are running: `timeout 30 php artisan horizon:status` and
+   `timeout 30 php artisan horizon:supervisors`. Old workers keep the old configuration
+   until they exit.
+
+### Abort path (only before `horizon:terminate`)
+
+Use this only if the manifest or armed check in step 5 fails. **Do not terminate
+workers** unless the escalation below applies.
+
+1. Restore the previous values from the `.env` backup made in step 1.
+2. Run `php artisan config:cache`.
+3. Run `timeout 45 php artisan tsms:intake-containment-status`. The output must show
+   `Floor state: absent`, `Retry freeze: off`, `Overlap expire seconds: 0` and
+   `Overlap release seconds: 10`. The exit code is non-zero here because the floor is
+   not armed; that is expected on this path, but exit `124` is not. A timeout means the
+   state was not verified.
+
+Autoscaled workers can start with the cached configuration in the short window before
+the abort, and they keep it in memory after the cache is restored. With a valid floor
+they hold only pre-floor rows. Held rows are not changed.
+
+**Escalate if the floor that went live was invalid (malformed or in the future).** Any
+worker started in that window holds **every** intake job until it exits, including
+live sales. Those sales are delayed, not lost: their rows stay `QUEUED`, and the
+reconciler redispatches them once the configuration is corrected. Check
+`timeout 30 php artisan horizon:supervisors`, then tell the incident owner immediately. Only the
+incident owner can authorize `horizon:terminate` here, after the restored configuration
+has been verified, to clear those workers.
+
+**After worker cutover this rollback path must not be used.** The warning below
+applies from that point.
+
+### Monitoring
+
+Use the status command's Horizon line. It reads the Horizon Redis connection, makes
+no writes, and works even when the floor or manifest result fails:
+
+```
+timeout 45 php artisan tsms:intake-containment-status --manifest=/path/to/manifest.csv
+```
+
+Record the `Horizon failed jobs: N at <timestamp>` line at these points:
+
+1. At cutover, after a short settling period once the replacement workers are running.
+2. At the end of each of **at least two reconciliation windows** (10-15 minutes each).
+
+Do not count the settling period. Jobs in flight on old workers can still fail just
+before cutover. Jobs already released with their attempts used up can also still fail
+on replacement workers, because the worker checks max attempts before any job
+middleware runs. Those failures are not a containment failure.
+
+**Success:** across both windows the count grows by little or nothing, against about
+50 a minute (roughly 750 per 15 minutes) before containment. The count covers every
+job class, so a small rise from other jobs is possible. The status command still
+exits 0, with `Floor state: armed` and the manifest matching. Horizon trims old
+entries, so a falling count does not prove anything by itself.
+
+**Escalate to the incident owner, without changing the floor, if:**
+
+- growth in the second window is still near the earlier rate, or has not clearly
+  dropped from the first window;
+- the Horizon line shows `unavailable` at a checkpoint, so that window cannot be
+  judged;
+- the floor is not armed, or the manifest no longer matches;
+- any log line says `Intake containment floor is set but not usable`.
+
+Held jobs appear in the logs at info level as `ProcessTransactionIntakeJob: held by
+containment floor`, and each Mode A run logs `ReconcileStrandedIntake: containment
+floor armed`.
+
+### Warnings
+
+- **Do not roll back before the hold table exists.** Unsetting the floor or
+  reverting this change resumes the loop, and it can ingest a row whose lock has
+  vanished, which is an unapproved replay.
+- **Existing locks are not changed.** The 678 existing locks keep TTL -1 because
+  the expire setting only applies to newly acquired locks. They must not be
+  removed.
+- Held rows stay `QUEUED` and stay untouched. Being held is not a recovery, and
+  it does not clean up anything.
+
 ## Unknown / Not Verifiable From This Repository
 
 - Real production incident history (how often Mode A's scheduled every-minute
