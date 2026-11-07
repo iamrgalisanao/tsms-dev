@@ -280,6 +280,12 @@ The retry freeze is independent of the floor and never reads it. It makes
 run and the dashboard's Reconcile action (HTTP 409), and blocks DLQ retry-all and
 single retries of intake jobs (HTTP 409).
 
+**Bounded commands.** The configured Redis connection has no connect or read timeout,
+so a Redis outage could otherwise hang these commands indefinitely. Every
+`tsms:intake-containment-status`, `horizon:status` and `horizon:supervisors` call in
+this section runs under an outer `timeout`. Exit code `124` means the command timed out
+and **counts as a failed check**, never as a pass.
+
 ### Deploying the code
 
 1. **Require a clean worktree.** On staging, run `git status --short`. It must show
@@ -295,14 +301,16 @@ single retries of intake jobs (HTTP 409).
 
 ### Before enabling
 
-1. **Freeze Horizon and CLI retries as an operating rule.** The code does not
-   restrict them. Nobody runs `queue:retry` or the Horizon dashboard's retry for
-   intake jobs while this containment is active.
+1. **Freeze Horizon and CLI retries as an operating rule, and record it.** The code
+   does not restrict them. Nobody runs `queue:retry` or the Horizon dashboard's retry
+   for intake jobs while this containment is active. Do not continue until the freeze
+   has been communicated to everyone with `admin` or `ops` roles or an `admin:manage`
+   token, and the recipients and time are recorded in the incident notes.
 2. **Run the manifest check** with the values already deployed and before setting
    the floor. It is read-only and has a 30 second execution limit:
 
    ```
-   php artisan tsms:intake-containment-status --floor=2026-10-27T00:00:00+08:00 --manifest=/path/to/manifest.csv
+   timeout 45 php artisan tsms:intake-containment-status --floor=2026-10-27T00:00:00+08:00 --manifest=/path/to/manifest.csv
    ```
 
    The exit code must be 0. Any difference means the floor would hold rows other
@@ -333,7 +341,7 @@ single retries of intake jobs (HTTP 409).
    and stop. The exit code must be 0:
 
    ```
-   php artisan tsms:intake-containment-status --floor="$(grep -E '^TSMS_INTAKE_CONTAINMENT_FLOOR=' .env | cut -d= -f2-)" --manifest=/path/to/manifest.csv
+   timeout 45 php artisan tsms:intake-containment-status --floor="$(grep -E '^TSMS_INTAKE_CONTAINMENT_FLOOR=' .env | cut -d= -f2-)" --manifest=/path/to/manifest.csv
    ```
 
 4. Run `php artisan config:cache`. The scheduled reconciler reads this on its next
@@ -345,12 +353,12 @@ single retries of intake jobs (HTTP 409).
    continue:
 
    ```
-   php artisan tsms:intake-containment-status --manifest=/path/to/manifest.csv
+   timeout 45 php artisan tsms:intake-containment-status --manifest=/path/to/manifest.csv
    ```
 
 6. Run `php artisan horizon:terminate`.
-7. Confirm replacement workers are running: `php artisan horizon:status` and
-   `php artisan horizon:supervisors`. Old workers keep the old configuration
+7. Confirm replacement workers are running: `timeout 30 php artisan horizon:status` and
+   `timeout 30 php artisan horizon:supervisors`. Old workers keep the old configuration
    until they exit.
 
 ### Abort path (only before `horizon:terminate`)
@@ -360,10 +368,11 @@ workers** unless the escalation below applies.
 
 1. Restore the previous values from the `.env` backup made in step 1.
 2. Run `php artisan config:cache`.
-3. Run `php artisan tsms:intake-containment-status`. The output must show
+3. Run `timeout 45 php artisan tsms:intake-containment-status`. The output must show
    `Floor state: absent`, `Retry freeze: off`, `Overlap expire seconds: 0` and
    `Overlap release seconds: 10`. The exit code is non-zero here because the floor is
-   not armed; that is expected on this path.
+   not armed; that is expected on this path, but exit `124` is not. A timeout means the
+   state was not verified.
 
 Autoscaled workers can start with the cached configuration in the short window before
 the abort, and they keep it in memory after the cache is restored. With a valid floor
@@ -373,7 +382,7 @@ they hold only pre-floor rows. Held rows are not changed.
 worker started in that window holds **every** intake job until it exits, including
 live sales. Those sales are delayed, not lost: their rows stay `QUEUED`, and the
 reconciler redispatches them once the configuration is corrected. Check
-`php artisan horizon:supervisors`, then tell the incident owner immediately. Only the
+`timeout 30 php artisan horizon:supervisors`, then tell the incident owner immediately. Only the
 incident owner can authorize `horizon:terminate` here, after the restored configuration
 has been verified, to clear those workers.
 
@@ -386,7 +395,7 @@ Use the status command's Horizon line. It reads the Horizon Redis connection, ma
 no writes, and works even when the floor or manifest result fails:
 
 ```
-php artisan tsms:intake-containment-status --manifest=/path/to/manifest.csv
+timeout 45 php artisan tsms:intake-containment-status --manifest=/path/to/manifest.csv
 ```
 
 Record the `Horizon failed jobs: N at <timestamp>` line at these points:
