@@ -255,6 +255,116 @@ Before running either mode manually:
 php artisan test tests/Feature/ReconcileStrandedIntakeTest.php   # expect: all pass
 ```
 
+## 10. Temporary Intake Loop Containment (Staging Only)
+
+**Purpose and status.** On staging, 678 intakes (`QUEUED`, `processing_status`
+NULL, newest `received_at` 2026-10-26 21:05:30) hold permanent
+`WithoutOverlapping` locks (TTL -1). Mode A redispatches them, each job exhausts
+its tries on the lock, and this produces about 71-76k failed jobs a day. This
+containment stops that producer without replaying anything. It is **temporary**:
+the floor is a blunt date boundary and must be replaced by an exact hold table
+before any recovery. Replay of these intakes **remains unapproved**.
+
+What it changes while the floor is armed:
+
+- Mode A's four queries only consider rows with `received_at >= floor`.
+- `ProcessTransactionIntakeJob` jobs for rows before the floor, or with a NULL
+  `received_at`, are deleted without failing. They do not touch the lock, the
+  row or the transaction tables. A malformed or future floor holds **every** job
+  and makes Mode A skip with a non-success exit, so such a value also stops
+  recent intake from being ingested until it is corrected.
+- The floor is honoured only when `APP_ENV` is `staging` or `testing`.
+
+The retry freeze is independent of the floor and never reads it. It makes
+`--repair-missing` exit non-success with no work, including the scheduled 23:00
+run and the dashboard's Reconcile action (HTTP 409), and blocks DLQ retry-all and
+single retries of intake jobs (HTTP 409).
+
+### Deploying the code
+
+Run `php artisan config:cache` immediately after the code is in place, before
+workers can pick up the new code, even though nothing is enabled yet. A config
+cache built before this code lacks the new keys. The job falls back to its default
+overlap values (release 10, expire 0) and a missing floor or freeze behaves as off,
+so the cache must be rebuilt for the settings to take effect.
+
+### Before enabling
+
+1. **Freeze Horizon and CLI retries as an operating rule.** The code does not
+   restrict them. Nobody runs `queue:retry` or the Horizon dashboard's retry for
+   intake jobs while this containment is active.
+2. **Run the manifest check** with the values already deployed and before setting
+   the floor. It is read-only and has a 30 second execution limit:
+
+   ```
+   php artisan tsms:intake-containment-status --floor=2026-10-27T00:00:00+08:00 --manifest=/path/to/manifest.csv
+   ```
+
+   The exit code must be 0. Any difference means the floor would hold rows other
+   than the manifest rows; do not enable it. Confirm the printed environment is
+   `staging` and the normalized floor is the intended instant.
+
+### Enabling
+
+1. Set in the staging `.env`:
+
+   ```
+   TSMS_INTAKE_CONTAINMENT_FLOOR=2026-10-27T00:00:00+08:00
+   TSMS_INCIDENT_RETRY_FREEZE=true
+   TSMS_INTAKE_OVERLAP_EXPIRE_SECONDS=300
+   TSMS_INTAKE_OVERLAP_RELEASE_SECONDS=310
+   ```
+
+2. Run `php artisan config:cache`.
+3. Verify the armed state **before restarting workers**, so a mistyped floor is
+   caught before every worker restarts and holds all intake jobs. The exit code
+   must be 0 and the output must show `Floor state: armed`, with the freeze on and
+   the overlap values above:
+
+   ```
+   php artisan tsms:intake-containment-status --manifest=/path/to/manifest.csv
+   ```
+
+4. Run `php artisan horizon:terminate`.
+5. Confirm replacement workers are running: `php artisan horizon:status` and
+   `php artisan horizon:supervisors`. Old workers keep the old configuration
+   until they exit.
+
+### Watching
+
+Compare failed-job growth over **at least two reconciliation windows** (10-15
+minutes each), counted from when the replacement workers started. Jobs that were
+already in flight on old workers can still fail just before that point. Jobs
+already released with their attempts used up can also still fail on replacement
+workers, because the worker checks max attempts before any job middleware runs.
+Start counting a little after cutover and do not treat those failures as a
+containment failure. Bound every query on this overloaded database:
+
+```
+SELECT /*+ MAX_EXECUTION_TIME(30000) */ COUNT(*) FROM failed_jobs
+WHERE failed_at >= NOW() - INTERVAL 30 MINUTE;
+```
+
+`failed_at` has no index, so this can reach the 30 second limit. If it does, compare
+Horizon's failed-job count across the same interval instead, which reads Redis and
+does not touch MySQL: `redis-cli ZCARD tsms:horizon:failed_jobs`.
+
+Growth from the looping intakes should stop. Held jobs appear in the logs at info
+level as `ProcessTransactionIntakeJob: held by containment floor`, and each
+Mode A run logs `ReconcileStrandedIntake: containment floor armed`. Any log line
+`Intake containment floor is set but not usable` needs immediate attention.
+
+### Warnings
+
+- **Do not roll back before the hold table exists.** Unsetting the floor or
+  reverting this change resumes the loop, and it can ingest a row whose lock has
+  vanished, which is an unapproved replay.
+- **Existing locks are not changed.** The 678 existing locks keep TTL -1 because
+  the expire setting only applies to newly acquired locks. They must not be
+  removed.
+- Held rows stay `QUEUED` and stay untouched. Being held is not a recovery, and
+  it does not clean up anything.
+
 ## Unknown / Not Verifiable From This Repository
 
 - Real production incident history (how often Mode A's scheduled every-minute

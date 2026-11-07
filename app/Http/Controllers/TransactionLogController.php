@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Console\Commands\ReconcileStrandedIntake;
 use App\Events\TransactionLogUpdated;
 use App\Exports\TransactionLogsExport;
 use App\Models\Transaction;
@@ -546,10 +547,10 @@ class TransactionLogController extends Controller
                 'role' => $user?->role ?? null,
             ]);
 
-            Artisan::call('tsms:reconcile-intake');
+            $strandedExit = Artisan::call('tsms:reconcile-intake');
             $strandedOutput = trim(Artisan::output());
 
-            Artisan::call('tsms:reconcile-intake', [
+            $repairExit = Artisan::call('tsms:reconcile-intake', [
                 '--repair-missing' => true,
             ]);
             $repairOutput = trim(Artisan::output());
@@ -574,6 +575,27 @@ class TransactionLogController extends Controller
                 Log::error('Failed to write manual reconciliation AuditLog', [
                     'error' => $auditEx->getMessage(),
                 ]);
+            }
+
+            $repairPaused = $repairExit === ReconcileStrandedIntake::EXIT_REPAIR_PAUSED;
+            $strandedSkipped = $strandedExit === ReconcileStrandedIntake::FAILURE;
+
+            if ($repairPaused || $strandedSkipped) {
+                $outcome = array_filter([
+                    $strandedSkipped ? 'Normal reconciliation was skipped.' : null,
+                    $repairPaused ? 'Repair is paused by the incident retry freeze and did not run.' : null,
+                ]);
+
+                return response()->json([
+                    'status' => 'paused',
+                    'message' => implode("\n", array_filter([implode(' ', $outcome), $strandedOutput, $repairOutput])),
+                    'details' => [
+                        'stranded' => $strandedOutput,
+                        'repair' => $repairOutput,
+                        'stranded_skipped' => $strandedSkipped,
+                        'repair_paused' => $repairPaused,
+                    ],
+                ], 409);
             }
 
             $message = 'Reconciliation completed successfully.';
